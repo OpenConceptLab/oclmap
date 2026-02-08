@@ -54,7 +54,7 @@ EXPOSE ${WEB_PORT}
 CMD ["bash", "-c", "./start.sh"]
 
 # Stage-2 Production Environment
-FROM nginx:1.19-alpine
+FROM nginx:1.29.5-alpine
 
 ENV WEB_PORT=${WEB_PORT:-4004}
 
