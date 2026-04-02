@@ -195,6 +195,7 @@ const MapProject = () => {
   const [repo, setRepo] = React.useState(false)
   const [repoVersion, setRepoVersion] = React.useState(false)
   const [mappedSources, setMappedSources] = React.useState([])
+  const [CIELMappedSources, setCIELMappedSources] = React.useState([])
   const [locales, setLocales] = React.useState([])
   const [isLoadingLocales, setIsLoadingLocales] = React.useState(false)
   const [versions, setVersions] = React.useState([])
@@ -901,7 +902,7 @@ const MapProject = () => {
 
   const fetchRepo = (url, _repo) => APIService.new().overrideURL(url).get().then(response => setRepo(response.data?.id ? response.data : _repo))
 
-  const fetchMappedSources = url => {
+  const fetchMappedSources = (url, setter) => {
     let limit = 25
 
     const recurse = (offset, page, fetchedSoFar, accumulated) => {
@@ -909,7 +910,7 @@ const MapProject = () => {
         const data = response?.data || []
         const updated = [...accumulated, ...data]
 
-        setMappedSources(updated)
+        setter(updated)
 
         const fetched = fetchedSoFar + data.length
         const numFound = parseInt(response?.headers?.num_found || 0)
@@ -943,7 +944,9 @@ const MapProject = () => {
     setRepoVersion(version)
     if(version?.version_url) {
       fetchLocaleDistribution(version.version_url)
-      fetchMappedSources(version.version_url)
+      fetchMappedSources(version.version_url, setMappedSources)
+      if(isEmpty(CIELMappedSources))
+        fetchMappedSources('/orgs/CIEL/sources/CIEL/', setCIELMappedSources)
       updateAlgosByRepoVersion(version)
     }
   }
@@ -2611,7 +2614,7 @@ const MapProject = () => {
             limit={CANDIDATES_LIMIT}
             user={user}
             ref={bridgeRef}
-            mappedRepoURLs={mappedSources.map(source => source.url)}
+            mappedRepoURLs={CIELMappedSources.map(source => source.url)}
           />
       }
       {
