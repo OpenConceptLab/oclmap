@@ -255,7 +255,10 @@ const MapProject = () => {
         service.appendToUrl('/match-algorithms/');
 
         const response = await service.get();
-        setApiAlgos(response?.data?.results || []);
+        const _algos = response?.data?.results || []
+        setApiAlgos(_algos);
+        if(find(_algos, {type: 'ocl-ciel-bridge'}))
+          fetchMappedSources('/orgs/CIEL/sources/CIEL/latest/', setCIELMappedSources)
       } catch {
         // pass
       }
@@ -945,8 +948,6 @@ const MapProject = () => {
     if(version?.version_url) {
       fetchLocaleDistribution(version.version_url)
       fetchMappedSources(version.version_url, setMappedSources)
-      if(isEmpty(CIELMappedSources))
-        fetchMappedSources('/orgs/CIEL/sources/CIEL/latest/', setCIELMappedSources)
       updateAlgosByRepoVersion(version)
     }
   }
