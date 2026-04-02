@@ -946,7 +946,7 @@ const MapProject = () => {
       fetchLocaleDistribution(version.version_url)
       fetchMappedSources(version.version_url, setMappedSources)
       if(isEmpty(CIELMappedSources))
-        fetchMappedSources('/orgs/CIEL/sources/CIEL/', setCIELMappedSources)
+        fetchMappedSources('/orgs/CIEL/sources/CIEL/latest/', setCIELMappedSources)
       updateAlgosByRepoVersion(version)
     }
   }
