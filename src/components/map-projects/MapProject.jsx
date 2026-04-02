@@ -2603,7 +2603,7 @@ const MapProject = () => {
   return permissionDenied ? <Error403/> : (
     <div className='col-xs-12 padding-0' style={{borderRadius: '10px', width: 'calc(100vw - 32px)'}}>
       {
-        Boolean(repoVersion?.url) &&
+        Boolean(repoVersion?.url) && mappedSources.length &&
           <BridgeMatch
             service={getMatchAPIService()}
             repo={repoVersion}
@@ -2611,6 +2611,7 @@ const MapProject = () => {
             limit={CANDIDATES_LIMIT}
             user={user}
             ref={bridgeRef}
+            mappedRepoURLs={mappedSources.map(source => source.url)}
           />
       }
       {
