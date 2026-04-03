@@ -838,7 +838,7 @@ const MapProject = () => {
     let _getCandidates = (_candidates, returnAll) => {
       let __candidates = []
       forEach(_candidates, ___candidates => {
-        let __results = __candidates.results || []
+        let __results = ___candidates.results || []
         let results = returnAll ? __results : __results.slice(0, CANDIDATES_LIMIT)
         results = map(results, result => {
           const concept = omit(getConcept(result), '_source')
