@@ -2607,7 +2607,7 @@ const MapProject = () => {
   return permissionDenied ? <Error403/> : (
     <div className='col-xs-12 padding-0' style={{borderRadius: '10px', width: 'calc(100vw - 32px)'}}>
       {
-        Boolean(repoVersion?.url) && CIELMappedSources.length &&
+        Boolean(repoVersion?.url) && CIELMappedSources.length > 0 &&
           <BridgeMatch
             service={getMatchAPIService()}
             repo={repoVersion}
