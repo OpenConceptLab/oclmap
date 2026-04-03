@@ -2216,6 +2216,24 @@ const MapProject = () => {
 
   const getAllCandidatesForRow = index => flatten(map(allCandidatesRef.current, candidates => getCandidatesForRow(index, candidates)))
 
+  const getRawScoresForConcept = (index, concept) => {
+    if(!concept || !isNumber(index))
+      return []
+
+    return compact(map(allCandidates, (candidates, algorithm) => {
+      const rowCandidates = getCandidatesForRow(index, candidates)
+      const matchingConcept = find(
+        rowCandidates,
+        candidate => candidate?.url === concept?.url || (
+          candidate?.id === concept?.id &&
+          (candidate?.source || candidate?.repo?.id || candidate?.repo?.short_code) === (concept?.source || concept?.repo?.id || concept?.repo?.short_code)
+        )
+      )
+      const score = parseFloat(matchingConcept?.search_meta?.search_score)
+      return Number.isFinite(score) ? {algorithm, score: score.toFixed(2)} : null
+    }))
+  }
+
   const isReadyForRerank = _index => {
     const index = isNumber(_index) ? _index : rowIndex
     if(isNumber(index) && get(rowStageRef.current, `${index}.rerank`) !== 0) {
@@ -2607,7 +2625,7 @@ const MapProject = () => {
   return permissionDenied ? <Error403/> : (
     <div className='col-xs-12 padding-0' style={{borderRadius: '10px', width: 'calc(100vw - 32px)'}}>
       {
-        Boolean(repoVersion?.url) && CIELMappedSources.length &&
+        Boolean(repoVersion?.url) && CIELMappedSources.length > 0 &&
           <BridgeMatch
             service={getMatchAPIService()}
             repo={repoVersion}
@@ -3148,9 +3166,9 @@ const MapProject = () => {
               <SearchHighlightsDialog
                 open={Boolean(showHighlights)}
                 onClose={() => setShowHighlights(false)}
-                highlight={showHighlights?.search_meta?.search_highlight || []}
-                score={parseFloat(showHighlights?.search_meta?.search_normalized_score || 0).toFixed(2)}
-                raw_score={parseFloat(showHighlights?.search_meta?.search_score || 0).toFixed(2)}
+                concept={showHighlights}
+                rawScores={getRawScoresForConcept(rowIndex, showHighlights)}
+                candidatesScore={candidatesScore}
               />
             </> :
               <ProjectLogs open={showProjectLogs} onClose={() => setShowProjectLogs(false) } logs={projectLogs} project={project} />
