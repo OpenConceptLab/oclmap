@@ -116,6 +116,7 @@ class APIService {
     const obj = defaults(headers, this.headers);
     if (token) obj['Authorization'] = `Token ${token}`;
     obj['INCLUDESEARCHLATEST'] = true
+    obj['X-OCL-CLIENT'] = 'oclmap/0.0.1-alpha';
     return obj;
   }
 
