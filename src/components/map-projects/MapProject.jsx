@@ -2185,19 +2185,27 @@ const MapProject = () => {
       const service = APIService.concepts().appendToUrl('$rerank/')
       try {
         const response = await service.post({q: query, rows: candidates,});
-        log({action: 'rerank_finished'}, index)
-        markAlgo(index, 'rerank', 1)
 
         setAllCandidates(prev => {
-          const newCandidates = {...allCandidatesRef.current}
+          const newCandidates = {...prev}
           forEach(keys(prev), algoId => {
-            const existingCandidates = [...allCandidatesRef.current[algoId]]
+            const existingCandidates = [...(prev[algoId] || [])]
             const ranked = filter(response.data, result => result.search_meta.algorithm === algoId)
-            if(ranked.length > 0)
-              existingCandidates[findIndex(existingCandidates, match => match.row.__index === index)].results = ranked
+            if(ranked.length > 0) {
+              const matchIndex = findIndex(existingCandidates, match => match.row.__index === index)
+              if(matchIndex > -1) {
+                existingCandidates[matchIndex] = {
+                  ...existingCandidates[matchIndex],
+                  results: ranked
+                }
+                newCandidates[algoId] = existingCandidates
+              }
+            }
           })
           return newCandidates
         })
+        markAlgo(index, 'rerank', 1)
+        log({action: 'rerank_finished'}, index)
         if(isBulk)
           setTimeout(() => setAutoMatched([index]), 1000)
         return response
