@@ -2059,9 +2059,9 @@ const MapProject = () => {
         return
       let __row = isEmpty(_row) ? row : _row
 
-      const existingCandidates = find(allCandidates[algoId], c => c.row.__index === __row.__index)
+      const existingCandidates = find(allCandidatesRef.current[algoId], c => c.row.__index === __row.__index)
 
-      if(!forceReload && offset === 0 && !_retired && (existingCandidates?.length > 0 || !isEmpty(existingCandidates?.row))) {
+      if(!forceReload && offset === 0 && !_retired && existingCandidates?.results?.length > 0) {
         markAlgo(__row.__index, algoId, 1)
         setTimeout(() => highlightTexts((existingCandidates?.results || []), null, false), 100)
         const nextAlgo = getNextAlgoDef(algoId)
