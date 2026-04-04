@@ -2106,24 +2106,22 @@ const MapProject = () => {
           return
         }
         log({action: 'algo_finished', extras: {algo: algoId}}, __row.__index)
-        markAlgo(__row.__index, algoId, 1)
         let data = isArray(response) ? response : (response?.data || [])
-        setAllCandidates(prev => {
-          let nextCandidates
-          if(offset === 0) {
-            const results = algoId === 'ocl-scispacy-loinc' ? [{row: __row, results: fromScispacyResultsToConcepts(get(response.data, __row.__index) || [])}] : data
-            nextCandidates = {...prev, [algoId]: [...reject(prev[algoId], c => c.row.__index === __row.__index), ...(results || [])]}
-            lookupCandidates(algoId, get(results, '0.results'))
-          } else {
-            const newMatches = [...(prev[algoId] || [])]
-            const index = findIndex(newMatches, match => match.row.__index === __row.__index)
-            newMatches[index].results = [...newMatches[index].results, ...(get(data, '0.results') || [])]
-            lookupCandidates(algoId, get(data, '0.results'))
-            nextCandidates = {...prev, [algoId]: newMatches}
-          }
-          allCandidatesRef.current = nextCandidates
-          return nextCandidates
-        })
+        let nextCandidates
+        if(offset === 0) {
+          const results = algoId === 'ocl-scispacy-loinc' ? [{row: __row, results: fromScispacyResultsToConcepts(get(response.data, __row.__index) || [])}] : data
+          nextCandidates = {...allCandidatesRef.current, [algoId]: [...reject(allCandidatesRef.current[algoId], c => c.row.__index === __row.__index), ...(results || [])]}
+          lookupCandidates(algoId, get(results, '0.results'))
+        } else {
+          const newMatches = [...(allCandidatesRef.current[algoId] || [])]
+          const index = findIndex(newMatches, match => match.row.__index === __row.__index)
+          newMatches[index].results = [...newMatches[index].results, ...(get(data, '0.results') || [])]
+          lookupCandidates(algoId, get(data, '0.results'))
+          nextCandidates = {...allCandidatesRef.current, [algoId]: newMatches}
+        }
+        allCandidatesRef.current = nextCandidates
+        setAllCandidates(nextCandidates)
+        markAlgo(__row.__index, algoId, 1)
         setIsLoadingInDecisionView(false)
         let items = get(response?.data, '0.results') || []
         if(items.length > 0){
