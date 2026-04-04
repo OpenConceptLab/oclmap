@@ -2044,6 +2044,18 @@ const MapProject = () => {
       }).then(response => callback(response, payload))
   }
 
+  const normalizeCandidateRequestValue = value => {
+    if(isArray(value))
+      return orderBy(map(value, normalizeCandidateRequestValue))
+    if(value && typeof value === 'object')
+      return Object.fromEntries(orderBy(keys(value)).map(key => [key, normalizeCandidateRequestValue(value[key])]))
+    return value
+  }
+
+  const areCandidateRequestsEqual = (left, right) => JSON.stringify(normalizeCandidateRequestValue(left || {})) === JSON.stringify(normalizeCandidateRequestValue(right || {}))
+
+  const getRequestedCandidateFilter = (index, _filters) => getFacetQueryParam(isEmpty(_filters) ? appliedFacets[index] : _filters)
+
   const fetchAllCandidatesForRow = (algoId, _row, offset=0, _retired, scrollToBottom, _filters, forceReload=false) => {
     if(loadingMatches)
       return
@@ -2060,8 +2072,14 @@ const MapProject = () => {
       let __row = isEmpty(_row) ? row : _row
 
       const existingCandidates = find(allCandidatesRef.current[algoId], c => c.row.__index === __row.__index)
+      const requestedFilter = getRequestedCandidateFilter(__row.__index, _filters)
+      const canReuseExistingCandidates = !forceReload &&
+        offset === 0 &&
+        !_retired &&
+        existingCandidates?.results?.length > 0 &&
+        areCandidateRequestsEqual(existingCandidates?.filter, requestedFilter)
 
-      if(!forceReload && offset === 0 && !_retired && existingCandidates?.results?.length > 0) {
+      if(canReuseExistingCandidates) {
         markAlgo(__row.__index, algoId, 1)
         setTimeout(() => highlightTexts((existingCandidates?.results || []), null, false), 100)
         const nextAlgo = getNextAlgoDef(algoId)
@@ -2071,7 +2089,7 @@ const MapProject = () => {
         } else {
           if(![0, 1].includes(get(rowStageRef.current, `${__row.__index}.rerank`)) && some(getAllCandidatesForRow(__row.__index), r => !isNumber(r.search_meta.search_rerank_score))) {
             markAlgo(__row.__index, 'rerank', -1)
-            setTimeout(() => rerank(__row.__index), 1000)
+            rerank(__row.__index)
           } else {
             markAlgo(__row.__index, 'rerank', 1)
           }
@@ -2091,19 +2109,20 @@ const MapProject = () => {
         markAlgo(__row.__index, algoId, 1)
         let data = isArray(response) ? response : (response?.data || [])
         setAllCandidates(prev => {
+          let nextCandidates
           if(offset === 0) {
-            const newCandidates = {...prev}
             const results = algoId === 'ocl-scispacy-loinc' ? [{row: __row, results: fromScispacyResultsToConcepts(get(response.data, __row.__index) || [])}] : data
-            newCandidates[algoId] = [...reject(prev[algoId], c => c.row.__index === __row.__index), ...(results || [])]
+            nextCandidates = {...prev, [algoId]: [...reject(prev[algoId], c => c.row.__index === __row.__index), ...(results || [])]}
             lookupCandidates(algoId, get(results, '0.results'))
-            return newCandidates
           } else {
             const newMatches = [...(prev[algoId] || [])]
             const index = findIndex(newMatches, match => match.row.__index === __row.__index)
             newMatches[index].results = [...newMatches[index].results, ...(get(data, '0.results') || [])]
             lookupCandidates(algoId, get(data, '0.results'))
-            return {...prev, [algoId]: newMatches}
+            nextCandidates = {...prev, [algoId]: newMatches}
           }
+          allCandidatesRef.current = nextCandidates
+          return nextCandidates
         })
         setIsLoadingInDecisionView(false)
         let items = get(response?.data, '0.results') || []
@@ -2117,7 +2136,7 @@ const MapProject = () => {
           fetchAllCandidatesForRow(nextAlgo.id, __row, offset, _retired, scrollToBottom, _filters, forceReload)
         } else {
           markAlgo(__row.__index, 'rerank', -1)
-          setTimeout(() => rerank(__row.__index), 1000)
+          rerank(__row.__index)
         }
           if(scrollToBottom) {
             setTimeout(() => {
@@ -2202,6 +2221,7 @@ const MapProject = () => {
               }
             }
           })
+          allCandidatesRef.current = newCandidates
           return newCandidates
         })
         markAlgo(index, 'rerank', 1)
