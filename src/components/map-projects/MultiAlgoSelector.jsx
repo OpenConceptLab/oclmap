@@ -238,7 +238,7 @@ export default function MultiAlgoSelector({
     const service = APIService.new();
     service.URL = selected.url;
 
-    const response = await service.get(token || null, {}, undefined, true);
+    const response = await service.get(token || false, {}, undefined, true);
     const status = response?.response?.status || response?.status;
 
     if([401, 403].includes(status)) {
