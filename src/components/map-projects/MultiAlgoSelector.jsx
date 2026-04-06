@@ -34,6 +34,7 @@ import orderBy from 'lodash/orderBy'
 
 
 import ConceptIcon from '../concepts/ConceptIcon'
+import APIService from '../../services/APIService';
 
 /**
  * MultiAlgoSelector (MUI5)
@@ -78,6 +79,7 @@ export default function MultiAlgoSelector({
   const { t } = useTranslation()
   const [expanded, setExpanded] = useState(() => new Map());
   const [errors, setErrors] = React.useState({})
+  const [customAlgoMeta, setCustomAlgoMeta] = React.useState({})
 
   const normalizedValue = useMemo(() => {
     let changed = false;
@@ -152,6 +154,7 @@ export default function MultiAlgoSelector({
   const removeSelected = (key) => {
     const next = (value || []).filter((v) => v.__key !== key);
     onChange(next);
+    setCustomAlgoMeta(prev => omit(prev, [key]));
 
     setExpanded((prev) => {
       const n = new Map(prev);
@@ -219,6 +222,68 @@ export default function MultiAlgoSelector({
     return <TuneRoundedIcon sx={{fontSize: '1.5rem', color: 'warning.main'}} />
 
   };
+
+  const setCustomAlgoState = (key, patch) => {
+    setCustomAlgoMeta(prev => ({...prev, [key]: {...prev[key], ...patch}}));
+  };
+
+  const verifyCustomAlgorithm = async (key, tokenOverride) => {
+    const selected = normalizedValue.find(v => v.__key === key);
+    if(!selected?.url)
+      return;
+
+    const token = tokenOverride ?? selected?.token;
+    setCustomAlgoState(key, {isLoading: true, requestError: '', requestSuccess: '', tokenRequired: false});
+
+    const service = APIService.new();
+    service.URL = selected.url;
+
+    const response = await service.get(token || null, {}, undefined, true);
+    const status = response?.response?.status || response?.status;
+
+    if([401, 403].includes(status)) {
+      setCustomAlgoState(key, {
+        isLoading: false,
+        tokenRequired: true,
+        requestError: '',
+        requestSuccess: '',
+      });
+      return;
+    }
+
+    if(response?.response || response?.detail || response?.message === 'Network Error' || typeof response === 'string') {
+      setCustomAlgoState(key, {
+        isLoading: false,
+        tokenRequired: false,
+        requestError: response?.response?.data?.detail || response?.detail || response?.message || response || t('unknown_error'),
+        requestSuccess: '',
+      });
+      return;
+    }
+
+    const data = response?.data || response;
+    if(!data?.name || !(data?.ID || data?.id)) {
+      setCustomAlgoState(key, {
+        isLoading: false,
+        tokenRequired: false,
+        requestError: t('unknown_error'),
+        requestSuccess: '',
+      });
+      return;
+    }
+
+    updateSelected(key, {
+      id: data.ID || data.id || '',
+      name: data.name || '',
+      description: data.description || '',
+    });
+    setCustomAlgoState(key, {
+      isLoading: false,
+      tokenRequired: false,
+      requestError: '',
+      requestSuccess: t('common.saved'),
+    });
+  };
   return (
     <Box sx={{ width: "100%" }}>
       <Stack spacing={1.5}>
@@ -228,6 +293,7 @@ export default function MultiAlgoSelector({
 
           const isOpen = expanded.get(sel.__key) ?? false;
           const hasErrors = errors[sel.__key]?.id || errors[sel.__key]?.name
+          const customMeta = customAlgoMeta[sel.__key] || {}
 
           return (
             <Paper
@@ -320,6 +386,51 @@ export default function MultiAlgoSelector({
                           borderLeftStyle: "solid",
                         }}
                       >
+                        <Stack spacing={1.5}>
+                          <TextField
+                            fullWidth
+                            required
+                            label={t('map_project.api_url')}
+                            value={sel.url || ""}
+                            onChange={(e) => {
+                              updateSelected(sel.__key, { url: e.target.value });
+                              if(customMeta.requestError || customMeta.requestSuccess || customMeta.tokenRequired) {
+                                setCustomAlgoState(sel.__key, {
+                                  requestError: '',
+                                  requestSuccess: '',
+                                  tokenRequired: false,
+                                });
+                              }
+                            }}
+                            onBlur={() => verifyCustomAlgorithm(sel.__key)}
+                            placeholder="https://example.com/match"
+                            error={Boolean(customMeta.requestError)}
+                            helperText={customMeta.requestError || customMeta.requestSuccess || ''}
+                          />
+                          <TextField
+                            fullWidth
+                            required={Boolean(customMeta.tokenRequired)}
+                            type='password'
+                            label={t('map_project.api_token')}
+                            value={sel.token || ""}
+                            onChange={(e) => {
+                              updateSelected(sel.__key, { token: e.target.value });
+                              if(customMeta.requestError || customMeta.requestSuccess) {
+                                setCustomAlgoState(sel.__key, {
+                                  requestError: '',
+                                  requestSuccess: '',
+                                });
+                              }
+                            }}
+                            onBlur={() => {
+                              if(sel.url && eHasValue(sel.token || '')) {
+                                verifyCustomAlgorithm(sel.__key, sel.token);
+                              }
+                            }}
+                            placeholder="••••••••"
+                            error={Boolean(customMeta.tokenRequired && !sel.token)}
+                            helperText={customMeta.tokenRequired && !sel.token ? 'Authentication is required for this algorithm.' : ''}
+                          />
                           <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
                             <TextField
                               sx={{width: '50%'}}
@@ -346,34 +457,14 @@ export default function MultiAlgoSelector({
                               helperText={errors[sel.__key]?.name ? t('map_project.algo_conflicting_name') : ''}
                             />
                           </Stack>
-                        <Stack direction={{ xs: "column", sm: "row" }} sx={{marginTop: '12px'}} spacing={1.5}>
                           <TextField
                             fullWidth
                             label={t('common.description')}
                             value={sel.description || ''}
                             onChange={(e) =>
-                              updateSelected(sel.__key, { id: e.target.value || '' })
+                              updateSelected(sel.__key, { description: e.target.value || '' })
                             }
                           />
-                        </Stack>
-                        <Stack spacing={1.5} sx={{marginTop: '12px'}}>
-                          <TextField
-                            fullWidth
-                            required
-                            label={t('map_project.api_url')}
-                            value={sel.url || ""}
-                            onChange={(e) => updateSelected(sel.__key, { url: e.target.value })}
-                            placeholder="https://example.com/match"
-                          />
-                          <TextField
-                            fullWidth
-                            type='password'
-                            label={t('map_project.api_token')}
-                            value={sel.token || ""}
-                            onChange={(e) => updateSelected(sel.__key, { token: e.target.value })}
-                            placeholder="••••••••"
-                          />
-
                           <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
                             <TextField
                               label={t('map_project.batch_size')}
@@ -510,4 +601,8 @@ function clampInt(value, min, max) {
   const n = Number.parseInt(value, 10);
   if (Number.isNaN(n)) return min;
   return Math.max(min, Math.min(max, n));
+}
+
+function eHasValue(value) {
+  return Boolean(value && String(value).trim());
 }
