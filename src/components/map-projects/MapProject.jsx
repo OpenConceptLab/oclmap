@@ -2044,18 +2044,6 @@ const MapProject = () => {
       }).then(response => callback(response, payload))
   }
 
-  const normalizeCandidateRequestValue = value => {
-    if(isArray(value))
-      return orderBy(map(value, normalizeCandidateRequestValue))
-    if(value && typeof value === 'object')
-      return Object.fromEntries(orderBy(keys(value)).map(key => [key, normalizeCandidateRequestValue(value[key])]))
-    return value
-  }
-
-  const areCandidateRequestsEqual = (left, right) => JSON.stringify(normalizeCandidateRequestValue(left || {})) === JSON.stringify(normalizeCandidateRequestValue(right || {}))
-
-  const getRequestedCandidateFilter = (index, _filters) => getFacetQueryParam(isEmpty(_filters) ? appliedFacets[index] : _filters)
-
   const fetchAllCandidatesForRow = (algoId, _row, offset=0, _retired, scrollToBottom, _filters, forceReload=false) => {
     if(loadingMatches)
       return
@@ -2072,12 +2060,10 @@ const MapProject = () => {
       let __row = isEmpty(_row) ? row : _row
 
       const existingCandidates = find(allCandidatesRef.current[algoId], c => c.row.__index === __row.__index)
-      const requestedFilter = getRequestedCandidateFilter(__row.__index, _filters)
       const canReuseExistingCandidates = !forceReload &&
         offset === 0 &&
         !_retired &&
-        existingCandidates?.results?.length > 0 &&
-        areCandidateRequestsEqual(existingCandidates?.filter, requestedFilter)
+        existingCandidates?.results?.length > 0
 
       if(canReuseExistingCandidates) {
         markAlgo(__row.__index, algoId, 1)
