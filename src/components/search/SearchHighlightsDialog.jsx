@@ -89,9 +89,9 @@ const SearchHighlightsDialog = ({onClose, concept, rawScores, candidatesScore, o
                 {
                   rawScores?.length ? (
                     <Stack spacing={0.75} alignItems='flex-end'>
-                      {map(rawScores, rawScore => (
+                      {map(rawScores, (rawScore, index) => (
                         <Stack
-                          key={`${rawScore.algorithm}-${rawScore.score}`}
+                          key={`${rawScore.algorithm}-${rawScore.score}-${index}`}
                           direction='row'
                           spacing={0.75}
                           alignItems='center'
