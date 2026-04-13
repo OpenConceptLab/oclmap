@@ -2233,12 +2233,12 @@ const MapProject = () => {
           return newCandidates
         })
         markAlgo(index, 'rerank', 1)
-        log({action: 'rerank_finished'}, index)
+        log({action: 'rerank_finished', description: `Reranked with ${encoderModel}`}, index)
         if(isBulk)
           setTimeout(() => setAutoMatched([index]), 1000)
         return response
       } catch (e) {
-        log({action: 'rerank_failed'}, index)
+        log({action: 'rerank_failed', description: `Rerank failed with ${encoderModel}`}, index)
         markAlgo(index, 'rerank', -2); // optional: failed state
         return null;
       }
