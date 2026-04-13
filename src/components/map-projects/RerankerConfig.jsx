@@ -5,6 +5,7 @@ import TextField from '@mui/material/TextField'
 import Collapse from '@mui/material/Collapse'
 import Button from '@mui/material/Button'
 import FormHelperText from '@mui/material/FormHelperText'
+import ListItemText from '@mui/material/ListItemText'
 import UpIcon from '@mui/icons-material/ArrowDropUp';
 import DownIcon from '@mui/icons-material/ArrowDropDown';
 import { CUSTOM_ENCODER_MODEL_OPTION, DEFAULT_ENCODER_MODEL, ENCODER_MODEL_OPTIONS } from './rerankerModels'
@@ -13,15 +14,16 @@ const RerankerConfig = ({ value, onChange }) => {
   const { t } = useTranslation()
   const [open, setOpen] = React.useState(false)
   const presetOptions = ENCODER_MODEL_OPTIONS.map(model => ({
-    id: model,
-    label: model,
-    isDefault: model === DEFAULT_ENCODER_MODEL,
+    id: model.id,
+    label: model.description,
+    isDefault: Boolean(model.default),
+    disabled: Boolean(model.disabled)
   }))
   const options = [
     ...presetOptions,
     { id: CUSTOM_ENCODER_MODEL_OPTION, label: t('map_project.reranker_configuration_custom_option') }
   ]
-  const isKnownOption = ENCODER_MODEL_OPTIONS.includes(value)
+  const isKnownOption = ENCODER_MODEL_OPTIONS.map(option => option.id).includes(value)
   const selectedOption = isKnownOption ?
     presetOptions.find(option => option.id === value) :
     options.find(option => option.id === CUSTOM_ENCODER_MODEL_OPTION)
@@ -48,8 +50,9 @@ const RerankerConfig = ({ value, onChange }) => {
             disableClearable
             options={options}
             value={selectedOption || null}
-            getOptionLabel={option => option?.label || ''}
+            getOptionLabel={option => option?.id || ''}
             isOptionEqualToValue={(option, current) => option.id === current.id}
+            getOptionDisabled={(option) => option?.disabled}
             onChange={(event, option) => {
               if(option?.id === CUSTOM_ENCODER_MODEL_OPTION) {
                 onChange(isKnownOption ? '' : value)
@@ -65,9 +68,13 @@ const RerankerConfig = ({ value, onChange }) => {
               />
             )}
             renderOption={(props, option) => (
-              <li {...props} key={option.id}>
-                {option.label}{option.isDefault ? ` (${t('common.default')})` : ''}
-              </li>
+              <ListItemText
+                {...props}
+                key={option.id}
+              sx={{flexDirection: 'column', alignItems: 'flex-start !important'}}
+              primary={`${option.id}${option.isDefault ? ` (${t('common.default')})` : ''}`}
+              secondary={option.label}
+                />
             )}
           />
           {
