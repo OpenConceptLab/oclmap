@@ -55,7 +55,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
     return algos.map(algo => {
       if(algo.type === 'ocl-semantic')
         algo.disabled = Boolean(isLLMAlgoNotAllowed)
-      else if(algo.type === 'ocl-ciel-bridge')
+      else if(['ocl-bridge', 'ocl-ciel-bridge'].includes(algo.type))
         algo.disabled = !canBridge
       else if(algo.type === 'ocl-scispacy')
         algo.disabled = !canScispacy
@@ -222,6 +222,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
         value={algosSelected}
         onChange={setAlgosSelected}
         repo={repoVersion}
+        isCoreUser={isCoreUser}
       />
       {
         isCoreUser &&

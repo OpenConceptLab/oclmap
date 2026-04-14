@@ -184,7 +184,7 @@ const ConceptItem = ({_id, notClickable, isSelectedToShow, firstChild, lastChild
 
 
 const Concept = ({_id, firstChild, lastChild, concept, setShowHighlights, isShown, onCardClick, onMap, isSelectedForMap, noScore, repoVersion, isAIRecommended, AIRecommendedCandidateId, sx, notClickable, noSynonymPrefix, locales, showAlgo, candidatesScore, algoScoreFirst, asTarget, conceptCache}) => {
-  const bridge = concept?.search_meta?.algorithm === 'ocl-ciel-bridge'
+  const bridge = concept?.search_meta?.algorithm?.includes('bridge')
   const scispacy = concept?.search_meta?.algorithm === 'ocl-scispacy-loinc'
   const id = concept?.version_url || concept?.url || concept?.id
   const isSelectedToShow = isShown ? isShown(id) : false

@@ -196,7 +196,7 @@ const MapProject = () => {
   const [repo, setRepo] = React.useState(false)
   const [repoVersion, setRepoVersion] = React.useState(false)
   const [mappedSources, setMappedSources] = React.useState([])
-  const [CIELMappedSources, setCIELMappedSources] = React.useState([])
+  const [bridgeMappedSources, setBridgeMappedSources] = React.useState({})
   const [locales, setLocales] = React.useState([])
   const [isLoadingLocales, setIsLoadingLocales] = React.useState(false)
   const [versions, setVersions] = React.useState([])
@@ -241,7 +241,8 @@ const MapProject = () => {
   const canScispacy = Boolean(canBridge && SCISPACY_API_URL && toggles.SCISPACY_LOINC_TOGGLE === true)
   const isMultiAlgo = algosSelected.length > 1
   const scispacyEnabled = find(algosSelected, {type: 'ocl-scispacy'})
-  const bridgeEnabled = find(algosSelected, {type: 'ocl-ciel-bridge'})
+  const bridgeAlgo = find(algosSelected, a => ['ocl-bridge', 'ocl-ciel-bridge'].includes(a.type))
+  const bridgeEnabled = Boolean(bridgeAlgo)
 
   const baseAlgos = useAlgos(t, toggles)
   const [apiAlgos, setApiAlgos] = React.useState([]);
@@ -259,8 +260,12 @@ const MapProject = () => {
         const response = await service.get();
         const _algos = response?.data?.results || []
         setApiAlgos(_algos);
-        if(find(_algos, {type: 'ocl-ciel-bridge'}))
-          fetchMappedSources('/orgs/CIEL/sources/CIEL/latest/', setCIELMappedSources)
+        const bridgeAlgoFromApi = find(_algos, a => ['ocl-bridge', 'ocl-ciel-bridge'].includes(a.type))
+        if(bridgeAlgoFromApi) {
+          const bridgeUrl = bridgeAlgoFromApi.target_repo_url || '/orgs/CIEL/sources/CIEL/'
+          fetchMappedSources(bridgeUrl + 'latest/', sources =>
+            setBridgeMappedSources(prev => ({...prev, [bridgeUrl]: sources})))
+        }
       } catch {
         // pass
       }
@@ -1229,7 +1234,7 @@ const MapProject = () => {
       forEach(_selectedAlgos, algo => {
         if(['custom', 'ocl-search', 'ocl-semantic'].includes(algo.type))
           algoPromises.push(processWithConcurrency(repo, algo, rowsToProcess));
-        else if(algo.type === 'ocl-ciel-bridge' && canBridge)
+        else if(['ocl-bridge', 'ocl-ciel-bridge'].includes(algo.type) && canBridge)
           algoPromises.push(fetchBulkBridgeCandidates(rowsToProcess, algo))
         else if(algo.type === 'ocl-scispacy' && canScispacy)
           algoPromises.push(fetchBulkScispacyCandidates(rowsToProcess, algo))
@@ -1490,7 +1495,7 @@ const MapProject = () => {
   const getBulkBridgeCandidatesButtonLabel = () => {
     const effectiveEnd = loadingMatches ? _now : bridgeCandidatesEndedAt;
     const matchingDuration = getMatchingDuration(bridgeCandidatesStartedAt, effectiveEnd)
-    if(loadingMatches || allCandidatesRef.current['ocl-ciel-bridge']?.length)
+    if(loadingMatches || Object.keys(allCandidatesRef.current).some(k => k.includes('bridge') && allCandidatesRef.current[k]?.length))
       return `${t('map_project.bridge_candidates')} (${matchingDuration})`
     return t('map_project.bridge_candidates')
   }
@@ -1709,7 +1714,7 @@ const MapProject = () => {
       __candidates = times(CANDIDATES_LIMIT, i => __candidates[i])
       forEach(__candidates, (candidate, i) => {
         if(candidate?.id) {
-          const isBridge = algoId === 'ocl-ciel-bridge'
+          const isBridge = algoId.includes('bridge')
           candidates[`__result_${algoKey}_${twoDigit(i + 1)}__`] = candidate?.id ?
             (
               isBridge ?
@@ -2050,18 +2055,6 @@ const MapProject = () => {
       }).then(response => callback(response, payload))
   }
 
-  const normalizeCandidateRequestValue = value => {
-    if(isArray(value))
-      return orderBy(map(value, normalizeCandidateRequestValue))
-    if(value && typeof value === 'object')
-      return Object.fromEntries(orderBy(keys(value)).map(key => [key, normalizeCandidateRequestValue(value[key])]))
-    return value
-  }
-
-  const areCandidateRequestsEqual = (left, right) => JSON.stringify(normalizeCandidateRequestValue(left || {})) === JSON.stringify(normalizeCandidateRequestValue(right || {}))
-
-  const getRequestedCandidateFilter = (index, _filters) => getFacetQueryParam(isEmpty(_filters) ? appliedFacets[index] : _filters)
-
   const fetchAllCandidatesForRow = (algoId, _row, offset=0, _retired, scrollToBottom, _filters, forceReload=false) => {
     if(loadingMatches)
       return
@@ -2078,12 +2071,10 @@ const MapProject = () => {
       let __row = isEmpty(_row) ? row : _row
 
       const existingCandidates = find(allCandidatesRef.current[algoId], c => c.row.__index === __row.__index)
-      const requestedFilter = getRequestedCandidateFilter(__row.__index, _filters)
       const canReuseExistingCandidates = !forceReload &&
         offset === 0 &&
         !_retired &&
-        existingCandidates?.results?.length > 0 &&
-        areCandidateRequestsEqual(existingCandidates?.filter, requestedFilter)
+        existingCandidates?.results?.length > 0
 
       if(canReuseExistingCandidates) {
         markAlgo(__row.__index, algoId, 1)
@@ -2155,7 +2146,7 @@ const MapProject = () => {
         fetchOCLOrCustomCandidates(algoDef, _row, offset, _retired, _filters, onResponse)
       } else if (algoDef.type === 'ocl-scispacy') {
         fetchScispacyCandidates(__row, scrollToBottom, forceReload, false, onResponse)
-      } else if (algoDef.type === 'ocl-ciel-bridge') {
+      } else if (['ocl-bridge', 'ocl-ciel-bridge'].includes(algoDef.type)) {
         fetchBridgeCandidates(__row, offset, _retired, scrollToBottom, _filters, forceReload, false, onResponse)
       }
     } else {
@@ -2252,6 +2243,24 @@ const MapProject = () => {
 
   const getAllCandidatesForRow = index => flatten(map(allCandidatesRef.current, candidates => getCandidatesForRow(index, candidates)))
 
+  const getRawScoresForConcept = (index, concept) => {
+    if(!concept || !isNumber(index))
+      return []
+
+    return compact(map(allCandidates, (candidates, algorithm) => {
+      const rowCandidates = getCandidatesForRow(index, candidates)
+      const matchingConcept = find(
+        rowCandidates,
+        candidate => candidate?.url === concept?.url || (
+          candidate?.id === concept?.id &&
+          (candidate?.source || candidate?.repo?.id || candidate?.repo?.short_code) === (concept?.source || concept?.repo?.id || concept?.repo?.short_code)
+        )
+      )
+      const score = parseFloat(matchingConcept?.search_meta?.search_score)
+      return Number.isFinite(score) ? {algorithm, score: score.toFixed(2)} : null
+    }))
+  }
+
   const isReadyForRerank = _index => {
     const index = isNumber(_index) ? _index : rowIndex
     if(isNumber(index) && get(rowStageRef.current, `${index}.rerank`) !== 0) {
@@ -2271,7 +2280,8 @@ const MapProject = () => {
 
   const fetchBridgeCandidates = (_row, offset=0, _retired, scrollToBottom, _filters, forceReload=false, isBulk=false, callback) => {
     let __row = isEmpty(_row) ? row : _row
-    const existingCandidates = find(allCandidatesRef.current['ocl-ciel-bridge'], c => c.row.__index === __row.__index)?.results
+    const bridgeAlgoId = bridgeAlgo?.id || 'ocl-ciel-bridge'
+    const existingCandidates = find(allCandidatesRef.current[bridgeAlgoId], c => c.row.__index === __row.__index)?.results
     if(!isBulk && !forceReload && offset === 0 && !_retired && existingCandidates?.length> 0) {
       setTimeout(() => highlightTexts(existingCandidates, null, false), 100)
       return
@@ -2290,8 +2300,8 @@ const MapProject = () => {
           callback(candidates, payload)
       },
       (response, errorMsg) => {
-        markAlgo(__row.__index, 'ocl-ciel-bridge', -2)
-        log({action: 'algo_failed', extras: {algo: 'ocl-ciel-bridge'}}, __row.__index)
+        markAlgo(__row.__index, bridgeAlgoId, -2)
+        log({action: 'algo_failed', extras: {algo: bridgeAlgoId}}, __row.__index)
         setAlert({message: response?.detail || errorMsg, severity: 'error'})
         setIsLoadingInDecisionView(false)
       }
@@ -2302,7 +2312,7 @@ const MapProject = () => {
     const algo = algoId ? getAlgoDef(algoId) : null
     if(algo?.lookup_required && (lookupConfig?.url || repoVersion.url) && candidates && isArray(candidates) && candidates.length) {
       candidates.forEach(concept => {
-        if(algo.type === 'ocl-ciel-bridge') {
+        if(['ocl-bridge', 'ocl-ciel-bridge'].includes(algo.type)) {
           forEach(concept.mappings, mapping => {
             lookupCode(mapping.cascade_target_concept_code)
           })
@@ -2631,6 +2641,7 @@ const MapProject = () => {
       isLoadingLocales={isLoadingLocales}
       bridgeEnabled={bridgeEnabled}
       canBridge={canBridge}
+      isCoreUser={isCoreUser}
       canScispacy={canScispacy}
       scispacyEnabled={scispacyEnabled}
       setAIAssistantColumns={setAIAssistantColumns}
@@ -2647,16 +2658,20 @@ const MapProject = () => {
   return permissionDenied ? <Error403/> : (
     <div className='col-xs-12 padding-0' style={{borderRadius: '10px', width: 'calc(100vw - 32px)'}}>
       {
-        Boolean(repoVersion?.url) && CIELMappedSources.length > 0 &&
-          <BridgeMatch
-            service={getMatchAPIService()}
-            repo={repoVersion}
-            bridgeRepoURL='/orgs/CIEL/sources/CIEL/'
-            limit={CANDIDATES_LIMIT}
-            user={user}
-            ref={bridgeRef}
-            mappedRepoURLs={CIELMappedSources.map(source => source.url)}
-          />
+        (() => {
+          const bridgeUrl = bridgeAlgo?.target_repo_url || '/orgs/CIEL/sources/CIEL/'
+          const mappedSrcs = bridgeMappedSources[bridgeUrl] || []
+          return Boolean(repoVersion?.url) && mappedSrcs.length > 0 &&
+            <BridgeMatch
+              service={getMatchAPIService()}
+              repo={repoVersion}
+              bridgeRepoURL={bridgeUrl}
+              limit={CANDIDATES_LIMIT}
+              user={user}
+              ref={bridgeRef}
+              mappedRepoURLs={mappedSrcs.map(source => source.url)}
+            />
+        })()
       }
       {
         loadingProject &&
@@ -3188,9 +3203,9 @@ const MapProject = () => {
               <SearchHighlightsDialog
                 open={Boolean(showHighlights)}
                 onClose={() => setShowHighlights(false)}
-                highlight={showHighlights?.search_meta?.search_highlight || []}
-                score={parseFloat(showHighlights?.search_meta?.search_normalized_score || 0).toFixed(2)}
-                raw_score={parseFloat(showHighlights?.search_meta?.search_score || 0).toFixed(2)}
+                concept={showHighlights}
+                rawScores={getRawScoresForConcept(rowIndex, showHighlights)}
+                candidatesScore={candidatesScore}
               />
             </> :
               <ProjectLogs open={showProjectLogs} onClose={() => setShowProjectLogs(false) } logs={projectLogs} project={project} />

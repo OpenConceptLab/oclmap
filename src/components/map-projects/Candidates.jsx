@@ -612,7 +612,7 @@ const Candidates = ({rowIndex, alert, setAlert, candidates, setShowItem, showIte
                 bucketId={`${rowIndex}-${algo.id}`}
                 noToolbar={i !== 0}
                 isFirst={i === 0}
-                bridge={algo.id === 'ocl-ciel-bridge'}
+                bridge={algo.type?.includes('bridge')}
                 scispacy={algo.id === 'ocl-scispacy-loinc'}
                 collapsed={collapsed}
                 onCollapse={setCollapsed}
