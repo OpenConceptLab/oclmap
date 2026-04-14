@@ -74,7 +74,8 @@ export default function MultiAlgoSelector({
   value,
   onChange,
   maxAlgos=5,
-  repo
+  repo,
+  isCoreUser
 }) {
   const { t } = useTranslation()
   const [expanded, setExpanded] = useState(() => new Map());
@@ -213,7 +214,7 @@ export default function MultiAlgoSelector({
       return <MatchingIcon sx={{fontSize: '1.5rem', color: 'primary.main'}} />
     if(algo.type === 'ocl-semantic' && algo.provider === 'ocl')
       return <MatchingIcon sx={{fontSize: '1.5rem', color: 'primary.main'}} />
-    if(algo.type === 'ocl-ciel-bridge' && algo.provider === 'ocl')
+    if(algo.type?.includes('bridge') && algo.provider === 'ocl')
       return <i className="fa-solid fa-bridge" style={{fontSize: '1.5rem', color: 'primary.main'}} />
     if(algo.type === 'ocl-scispacy' && algo.provider === 'ocl')
       return <img src="https://allenai.github.io/scispacy/scispacy-logo-square.png" style={{objectFit: 'cover', width: '28px', height: '28px'}} />
@@ -503,6 +504,39 @@ export default function MultiAlgoSelector({
                           </Stack>
                         </Stack>
                       </Paper>
+                    ) : algo.type?.includes('bridge') ? (
+                      <Stack spacing={1.5}>
+                        {isCoreUser && (
+                          <TextField
+                            fullWidth
+                            label={t('map_project.bridge_source_url') || 'Bridge Source URL'}
+                            value={sel.target_repo_url ?? algo.target_repo_url ?? '/orgs/CIEL/sources/CIEL/'}
+                            onChange={(e) => updateSelected(sel.__key, { target_repo_url: e.target.value })}
+                            placeholder="/orgs/CIEL/sources/CIEL/"
+                            helperText={t('map_project.bridge_source_url_description') || 'The interface terminology to search through for bridge matching'}
+                          />
+                        )}
+                        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+                          <TextField
+                            label={t('map_project.batch_size')}
+                            sx={{width: '50%'}}
+                            type="number"
+                            value={sel.batch_size ?? algo.batch_size ?? 10}
+                            onChange={(e) => updateSelected(sel.__key, { batch_size: clampInt(e.target.value, 1, 1000) })}
+                          />
+                          <TextField
+                            label={t('map_project.concurrent_requests')}
+                            sx={{width: '50%'}}
+                            type="number"
+                            value={sel.concurrent_requests ?? algo.concurrent_requests ?? 1}
+                            onChange={(e) =>
+                              updateSelected(sel.__key, {
+                                concurrent_requests: clampInt(e.target.value, 1, 50),
+                              })
+                            }
+                          />
+                        </Stack>
+                      </Stack>
                     ) : (
                       <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
                         <TextField
