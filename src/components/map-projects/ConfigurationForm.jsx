@@ -46,7 +46,7 @@ const VisuallyHiddenInput = styled('input')({
 });
 
 
-const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, name, setName, description, setDescription, repo, onRepoChange, repoVersion, setRepoVersion, versions, mappedSources, targetSourcesFromRows, algosSelected, setAlgosSelected, sx, algos, validColumns, columns, isValidColumnValue, updateColumn, configure, setConfigure, columnVisibilityModel, setColumnVisibilityModel, onSave, isSaving, candidatesScore, onScoreChange, includeDefaultFilter, setIncludeDefaultFilter, filters, setFilters, locales, isLoadingLocales, setAIAssistantColumns, AIAssistantColumns, inAIAssistantGroup, lookupConfig, setLookupConfig, canBridge, canScispacy }) => {
+const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, name, setName, description, setDescription, repo, onRepoChange, repoVersion, setRepoVersion, versions, mappedSources, targetSourcesFromRows, algosSelected, setAlgosSelected, sx, algos, validColumns, columns, isValidColumnValue, updateColumn, configure, setConfigure, columnVisibilityModel, setColumnVisibilityModel, onSave, isSaving, candidatesScore, onScoreChange, includeDefaultFilter, setIncludeDefaultFilter, filters, setFilters, locales, isLoadingLocales, setAIAssistantColumns, AIAssistantColumns, inAIAssistantGroup, lookupConfig, setLookupConfig, canBridge, isCoreUser, canScispacy }) => {
   const { t } = useTranslation();
   const isLLMAlgoNotAllowed = !repoVersion?.match_algorithms?.includes('llm')
   const appliedLocales = filters?.locale ? filters?.locale?.split(',') : []
@@ -54,7 +54,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
     return algos.map(algo => {
       if(algo.type === 'ocl-semantic')
         algo.disabled = Boolean(isLLMAlgoNotAllowed)
-      else if(algo.type === 'ocl-ciel-bridge')
+      else if(['ocl-bridge', 'ocl-ciel-bridge'].includes(algo.type))
         algo.disabled = !canBridge
       else if(algo.type === 'ocl-scispacy')
         algo.disabled = !canScispacy
@@ -221,6 +221,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
         value={algosSelected}
         onChange={setAlgosSelected}
         repo={repoVersion}
+        isCoreUser={isCoreUser}
       />
       <>
         <Typography component="div" sx={{fontSize: '16px', fontWeight: 'bold', marginTop: '20px'}}>
