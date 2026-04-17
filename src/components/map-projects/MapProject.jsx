@@ -874,7 +874,7 @@ const MapProject = () => {
     formData.append('algorithms', JSON.stringify(map(algosSelected, algo => omit(algo, ['__key']))))
     formData.append('score_configuration', JSON.stringify(candidatesScore))
     formData.append('lookup_config', JSON.stringify(lookupConfig))
-    formData.append('encoder_model', encoderModel)
+    formData.append('encoder_model', encoderModel || DEFAULT_ENCODER_MODEL)
     formData.append('include_retired', retired)
     formData.append('filters', JSON.stringify(getFilters()))
     const isUpdate = Boolean(project?.id)
@@ -2530,7 +2530,7 @@ const MapProject = () => {
       filters: filters,
       fields_mapped: cols,
       score_configuration: candidatesScore,
-      encoder_model: encoderModel,
+      encoder_model: encoderModel || DEFAULT_ENCODER_MODEL,
       target_repo: repo
     }
   }
