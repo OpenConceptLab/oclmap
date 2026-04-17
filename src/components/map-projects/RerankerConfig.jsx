@@ -68,13 +68,13 @@ const RerankerConfig = ({ value, onChange }) => {
               />
             )}
             renderOption={(props, option) => (
-              <ListItemText
-                {...props}
-                key={option.id}
-              sx={{flexDirection: 'column', alignItems: 'flex-start !important'}}
-              primary={`${option.id}${option.isDefault ? ` (${t('common.default')})` : ''}`}
-              secondary={option.label}
+              <li {...props} key={option.id}>
+                <ListItemText
+                  sx={{flexDirection: 'column', alignItems: 'flex-start !important'}}
+                  primary={`${option.id}${option.isDefault ? ` (${t('common.default')})` : ''}`}
+                  secondary={option.label}
                 />
+              </li>
             )}
           />
           {
