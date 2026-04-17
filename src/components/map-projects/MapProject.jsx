@@ -2649,8 +2649,8 @@ const MapProject = () => {
       inAIAssistantGroup={inAIAssistantGroup}
       lookupConfig={lookupConfig}
       setLookupConfig={setLookupConfig}
-      rerankerConfig={encoderModel}
-      setRerankerConfig={setEncoderModel}
+      encoderModel={encoderModel}
+      setEncoderModel={setEncoderModel}
       isCoreUser={isCoreUser}
     />
   )
