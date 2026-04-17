@@ -2651,7 +2651,6 @@ const MapProject = () => {
       setLookupConfig={setLookupConfig}
       encoderModel={encoderModel}
       setEncoderModel={setEncoderModel}
-      isCoreUser={isCoreUser}
     />
   )
 
