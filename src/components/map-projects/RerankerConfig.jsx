@@ -83,6 +83,8 @@ const RerankerConfig = ({ value, onChange }) => {
                 sx={{ marginTop: '12px' }}
                 label={t('map_project.reranker_configuration_custom_model')}
                 fullWidth
+                required
+                error={!value}
                 value={value || ''}
                 placeholder={t('map_project.reranker_configuration_placeholder')}
                 onChange={event => onChange(event.target.value || '')}
