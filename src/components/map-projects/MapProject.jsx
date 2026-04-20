@@ -2124,8 +2124,13 @@ const MapProject = () => {
           markAlgo(__row.__index, nextAlgo.id, 0)
           fetchAllCandidatesForRow(nextAlgo.id, __row, offset, _retired, scrollToBottom, _filters, forceReload)
         } else {
-          markAlgo(__row.__index, 'rerank', -1)
-          rerank(__row.__index)
+          const currentAlgo = algoId ? getAlgoDef(algoId) : null
+          if(!isMultiAlgo && currentAlgo?.provider === 'ocl')
+            markAlgo(__row.__index, 'rerank', 1)
+          else {
+            markAlgo(__row.__index, 'rerank', -1)
+            rerank(__row.__index)
+          }
         }
           if(scrollToBottom) {
             setTimeout(() => {
