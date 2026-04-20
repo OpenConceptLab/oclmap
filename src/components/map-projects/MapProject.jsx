@@ -2542,6 +2542,12 @@ const MapProject = () => {
     }
     let _candidates = flatten(map(selectedAlgoIds, algoId => find(allCandidatesRef.current[algoId], c => c.row?.__index === __index)?.results || []))
     if(isNumber(__index) && repoVersion && !analysis[__index] && _candidates?.length > 0) {
+      if(!promptTemplate?.key) {
+        setAlert({message: 'AI Assistant prompt template is not available', severity: 'error'})
+        markAlgo(__index, 'recommend', -3)
+        return false
+      }
+
       markAlgo(__index, 'recommend', 0)
       let rowData = prepareRow(__row, true, true)
       const payload = {
