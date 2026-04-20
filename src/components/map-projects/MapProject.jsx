@@ -219,11 +219,10 @@ const MapProject = () => {
   const rowStageRef = React.useRef([]);
   const [, _setRowStage] = React.useState({})  // {'0': {'algo1': -2, -1, 0, 1, 'rerank': -2, -1, 0, 1}} --> -2: failed, -1: not run yet, 0: running, 1: done
   const setRowStage = React.useCallback((updater) => {
-    _setRowStage(prev => {
-      const next = typeof updater === "function" ? updater(prev) : updater;
-      rowStageRef.current = next; // ✅ always in sync with the committed update
-      return next;
-    });
+    const next = typeof updater === "function" ? updater(rowStageRef.current) : updater;
+    // Keep the ref in lockstep with imperative consumers like rerank checks.
+    rowStageRef.current = next;
+    _setRowStage(next);
   }, []);
 
   const allCandidatesRef = React.useRef({})
