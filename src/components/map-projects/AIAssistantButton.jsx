@@ -84,9 +84,8 @@ const AIAssistantButton = ({ models, selected, onClick, onModelChange, popperPro
   };
 
 
-  const recommendedOptions = filter(models, {recommended: true})
-  const otherOptions = filter(models, {recommended: false})
-
+  const recommendedOptions = filter(models, {is_recommended: true})
+  const otherOptions = filter(models, {is_recommended: false})
 
   return (
     <React.Fragment>
