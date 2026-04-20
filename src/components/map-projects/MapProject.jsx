@@ -103,6 +103,7 @@ import ImportToCollection from './ImportToCollection'
 import ProjectLogs from './ProjectLogs';
 import { useAlgos } from './algorithms'
 import AutoMatchDialog from './AutoMatchDialog'
+import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
 
 import './MapProject.scss'
 import '../common/ResizablePanel.scss'
@@ -209,6 +210,7 @@ const MapProject = () => {
   const [analysis, setAnalysis] = React.useState({})
   const [AIModels, setAIModels] = React.useState([])
   const [lookupConfig, setLookupConfig] = React.useState({})
+  const [encoderModel, setEncoderModel] = React.useState(DEFAULT_ENCODER_MODEL)
 
   // import
   const [openImportToCollection, setOpenImportToCollection] = React.useState(false)
@@ -426,6 +428,7 @@ const MapProject = () => {
       setRetired(Boolean(response.data?.include_retired))
       setCandidatesScore(response.data?.score_configuration)
       setLookupConfig(response.data?.lookup_config)
+      setEncoderModel(response.data?.encoder_model || DEFAULT_ENCODER_MODEL)
       setAnalysis(response.data?.analysis || {})
       setProject(response.data)
       setConfigure(false)
@@ -870,6 +873,7 @@ const MapProject = () => {
     formData.append('algorithms', JSON.stringify(map(algosSelected, algo => omit(algo, ['__key']))))
     formData.append('score_configuration', JSON.stringify(candidatesScore))
     formData.append('lookup_config', JSON.stringify(lookupConfig))
+    formData.append('encoder_model', encoderModel || DEFAULT_ENCODER_MODEL)
     formData.append('include_retired', retired)
     formData.append('filters', JSON.stringify(getFilters()))
     const isUpdate = Boolean(project?.id)
@@ -1102,7 +1106,8 @@ const MapProject = () => {
         includeMappings: true,
         mappingBrief: true,
         mapTypes: 'SAME-AS,SAME AS,SAME_AS',
-        reranker: !isMultiAlgo
+        reranker: !isMultiAlgo,
+        ...(encoderModel ? { encoder_model: encoderModel } : {})
       }
 
       forEach(rowBatch, __row => markAlgo(__row.__index, algo.id, 0))
@@ -2044,7 +2049,8 @@ const MapProject = () => {
         limit: algoDef.limit || CANDIDATES_LIMIT,
         offset: offset || 0,
         semantic: ['ocl-semantic', 'custom'].includes(algoDef.type),
-        reranker: !isMultiAlgo && algoDef.provider === 'ocl'
+        reranker: !isMultiAlgo && algoDef.provider === 'ocl',
+        encoder_model: !isMultiAlgo && encoderModel ? encoderModel : undefined
       }).then(response => callback(response, payload))
   }
 
@@ -2196,7 +2202,11 @@ const MapProject = () => {
       markAlgo(index, 'rerank', 0)
       const service = APIService.concepts().appendToUrl('$rerank/')
       try {
-        const response = await service.post({q: query, rows: candidates,});
+        const response = await service.post({
+          q: query,
+          rows: candidates,
+          ...(encoderModel ? { encoder_model: encoderModel } : {})
+        });
 
         setAllCandidates(prev => {
           const newCandidates = {...prev}
@@ -2218,12 +2228,12 @@ const MapProject = () => {
           return newCandidates
         })
         markAlgo(index, 'rerank', 1)
-        log({action: 'rerank_finished'}, index)
+        log({action: 'rerank_finished', description: `Reranked with ${encoderModel}`}, index)
         if(isBulk)
           setTimeout(() => setAutoMatched([index]), 1000)
         return response
       } catch (e) {
-        log({action: 'rerank_failed'}, index)
+        log({action: 'rerank_failed', description: `Rerank failed with ${encoderModel}`}, index)
         markAlgo(index, 'rerank', -2); // optional: failed state
         return null;
       }
@@ -2524,6 +2534,7 @@ const MapProject = () => {
       filters: filters,
       fields_mapped: cols,
       score_configuration: candidatesScore,
+      encoder_model: encoderModel || DEFAULT_ENCODER_MODEL,
       target_repo: repo
     }
   }
@@ -2648,6 +2659,8 @@ const MapProject = () => {
       inAIAssistantGroup={inAIAssistantGroup}
       lookupConfig={lookupConfig}
       setLookupConfig={setLookupConfig}
+      encoderModel={encoderModel}
+      setEncoderModel={setEncoderModel}
     />
   )
 

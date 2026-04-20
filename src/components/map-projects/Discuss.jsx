@@ -56,8 +56,11 @@ const Discuss = ({ logs, onAdd }) => {
     }
     if(log.action === 'algo_finished')
       return <>{t('map_project.finished_running')} <b>{log.extras.algo}</b></>
-    if(log.action === 'rerank_finished')
+    if(log.action === 'rerank_finished') {
+      if(log.description)
+        return log.description
       return <>{t('map_project.finished_reranking')}</>
+    }
     return log.description || startCase(log.action)
   }
 
