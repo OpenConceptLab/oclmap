@@ -123,6 +123,8 @@ const MapProject = () => {
   const params = useParams()
   const history = useHistory()
   const bridgeRef = React.useRef()
+  const facetsRequestsRef = React.useRef({})
+  const latestFacetRequestRef = React.useRef({})
   // project state
   const [project, setProject] = React.useState(null)
   const [name, setName] = React.useState('')
@@ -141,7 +143,8 @@ const MapProject = () => {
   const [allCandidates, setAllCandidates] = React.useState({}); // ocl-scispacy-loinc
 
   const [searchedConcepts, setSearchedConcepts] = React.useState({});
-  const [facets, setFacets] = React.useState({});
+  const [fetchedFacets, setFetchedFacets] = React.useState({});
+  const [rowFacetKeys, setRowFacetKeys] = React.useState({});
   const [appliedFacets, setAppliedFacets] = React.useState({});
   const [searchResponse, setSearchResponse] = React.useState({});
   const [algosSelected, setAlgosSelected] = React.useState([])
@@ -586,6 +589,8 @@ const MapProject = () => {
   }
 
   const resetState = () => {
+    facetsRequestsRef.current = {}
+    latestFacetRequestRef.current = {}
     setRowStatuses({reviewed: [], readyForReview: [], unmapped: []})
     setDecisions({})
     setDecisionFilters([])
@@ -593,7 +598,8 @@ const MapProject = () => {
     setMatchedConcepts([])
     setAllCandidates({})
     setSearchedConcepts({})
-    setFacets({})
+    setFetchedFacets({})
+    setRowFacetKeys({})
     setSearchResponse({})
     setNotes({})
     setMapTypes({})
@@ -1814,7 +1820,7 @@ const MapProject = () => {
         setAppliedFacets({...appliedFacets, [csvRow.__index]: getAppliedFacetFromQueryParam(_filters)})
       }
       fetchAllCandidatesForRow(null, csvRow, 0, undefined, undefined, getAppliedFacetFromQueryParam(_filters))
-      if(isEmpty(facets[csvRow.__index]))
+      if(isEmpty(getFacetsForRow(csvRow.__index)))
         getFacets(true, csvRow.__index)
 
     }
@@ -1935,7 +1941,7 @@ const MapProject = () => {
     if(newValue === 'candidates' && repo?.id && !find(allCandidatesRef.current[firstAlgo?.id], c => c.row.__index === rowIndex)?.results?.length) {
       fetchAllCandidatesForRow(firstAlgo.id)
     }
-    if(['candidates', 'search'].includes(newValue) && isEmpty(facets[rowIndex]))
+    if(['candidates', 'search'].includes(newValue) && isEmpty(getFacetsForRow(rowIndex)))
       getFacets(true)
   }
 
@@ -2406,14 +2412,51 @@ const MapProject = () => {
   }
 
   const getFacets = (firstLoad, rowIndex) => {
-    getLookupService().get(lookupConfig?.token, null, {
+    const targetRowIndex = isNumber(rowIndex) ? rowIndex : row?.__index
+    if(!isNumber(targetRowIndex))
+      return Promise.resolve()
+
+    const query = {
       q: firstLoad ? '' : searchStr,
       includeRetired: retired,
       facetsOnly: true
-    }).then(response => {
-      setFacets({...facets, [isNumber(rowIndex) ? rowIndex : row.__index]: response?.data?.facets?.fields || {}})
+    }
+    const requestKey = JSON.stringify({
+      repoVersion: repoVersion?.version_url || '',
+      lookupURL: lookupConfig?.url || '',
+      query
     })
+
+    latestFacetRequestRef.current[targetRowIndex] = requestKey
+
+    if(fetchedFacets[requestKey]) {
+      setRowFacetKeys(prev => ({...prev, [targetRowIndex]: requestKey}))
+      return Promise.resolve(fetchedFacets[requestKey])
+    }
+
+    if(facetsRequestsRef.current[requestKey]) {
+      return facetsRequestsRef.current[requestKey].then(response => {
+        if(latestFacetRequestRef.current[targetRowIndex] === requestKey)
+          setRowFacetKeys(prev => ({...prev, [targetRowIndex]: requestKey}))
+        return response
+      })
+    }
+
+    const request = getLookupService().get(lookupConfig?.token, null, query).then(response => {
+      const fields = response?.data?.facets?.fields || {}
+      setFetchedFacets(prev => ({...prev, [requestKey]: fields}))
+      if(latestFacetRequestRef.current[targetRowIndex] === requestKey)
+        setRowFacetKeys(prev => ({...prev, [targetRowIndex]: requestKey}))
+      return response
+    }).finally(() => {
+      delete facetsRequestsRef.current[requestKey]
+    })
+
+    facetsRequestsRef.current[requestKey] = request
+    return request
   }
+
+  const getFacetsForRow = index => fetchedFacets[rowFacetKeys[index]] || {}
 
   const getFacetQueryParam = filters => {
     const queryParam = {}
@@ -3157,7 +3200,7 @@ const MapProject = () => {
                       onFetchRecommendation={fetchRecommendation}
                       analysis={analysis[rowIndex]}
                       columns={getValidColumns()}
-                      facets={facets[rowIndex]}
+                      facets={getFacetsForRow(rowIndex)}
                       appliedFacets={appliedFacets[rowIndex]}
                       defaultFilters={getAppliedFacetFromQueryParam(getFilters())}
                       filters={getFilters(rowIndex)}
@@ -3193,7 +3236,7 @@ const MapProject = () => {
                       setSearchStr={setSearchStr}
                       isLoading={isLoadingInDecisionView}
                       columns={getValidColumns()}
-                      facets={facets[rowIndex]}
+                      facets={getFacetsForRow(rowIndex)}
                       appliedFacets={appliedFacets[rowIndex]}
                       defaultFilters={getAppliedFacetFromQueryParam(getFilters())}
                       filters={getFilters()}
