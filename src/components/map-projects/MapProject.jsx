@@ -2498,7 +2498,7 @@ const MapProject = () => {
     service.URL = AI_ASSISTANT_API_URL
 
     let _models = models?.length ? models : AIModels
-    const defaultModel = find(_models, {default: true})
+    const defaultModel = find(_models, {is_default: true})
     service.appendToUrl('/prompts/match-recommend/').get().then(response => {
       if(response?.detail || !response?.data?.default_model) {
         setAIModel(defaultModel?.id)

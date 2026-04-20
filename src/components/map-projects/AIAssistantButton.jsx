@@ -48,10 +48,10 @@ const AIAssistantButton = ({ models, selected, onClick, onModelChange, popperPro
   const { t } = useTranslation()
   const [open, setOpen] = React.useState(false);
   const anchorRef = React.useRef(null);
-  const [model, setModel] = React.useState(selected || find(models, {default: true})?.id || '')
+  const [model, setModel] = React.useState(selected || find(models, {is_default: true})?.id || '')
 
   React.useEffect(() => {
-    setModel(selected || find(models, {default: true})?.id || '')
+    setModel(selected || find(models, {is_default: true})?.id || '')
   }, [selected])
 
   const handleToggle = event => {
