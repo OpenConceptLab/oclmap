@@ -587,7 +587,9 @@
     "requested_by": "请求者",
     "primary": "主要",
     "alternates": "备选",
-    "model": "模型"
+    "model": "模型",
+    "bridge_source_url": "桥接源 URL",
+    "bridge_source_url_description": "用于搜索匹配候选对象的接口术语"
   },
   "app": {
     "web_version": "Web 版本",

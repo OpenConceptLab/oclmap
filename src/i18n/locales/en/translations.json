@@ -587,7 +587,9 @@
     "requested_by": "Requested by",
     "primary": "Primary",
     "alternates": "Alternates",
-    "model": "Model"
+    "model": "Model",
+    "bridge_source_url": "Bridge Source URL",
+    "bridge_source_url_description": "The interface terminology to search through for bridge matching"
   },
   "app": {
     "web_version": "Web Version",

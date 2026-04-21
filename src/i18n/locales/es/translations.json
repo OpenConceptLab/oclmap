@@ -562,7 +562,9 @@
     "requested_by": "Solicitado por",
     "primary": "Principal",
     "alternates": "Alternativas",
-    "model": "Modelo"
+    "model": "Modelo",
+    "bridge_source_url": "URL de la fuente de Bridge",
+    "bridge_source_url_description": "La terminología de interfaz para buscar candidatos de coincidencia"
   },
   "app": {
     "web_version": "Versión Web",
