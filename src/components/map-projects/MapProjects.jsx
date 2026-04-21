@@ -37,7 +37,8 @@ const MapProjects = () => {
   const fetchOrgProjects = () => APIService.users(user.username).appendToUrl('orgs/map-projects/').get().then(handleProjectsResponse)
 
   const handleProjectsResponse = response => {
-    setProjects(prev => [...prev, ...(response?.data || [])])
+    const nextProjects = Array.isArray(response?.data) ? response.data : [];
+    setProjects(prev => [...prev, ...nextProjects])
     setLoading(prev => [...prev, false])
   }
 

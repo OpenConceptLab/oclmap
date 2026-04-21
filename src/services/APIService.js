@@ -4,6 +4,7 @@ import {get, omit, isPlainObject, isString, defaults } from 'lodash';
 import { currentUserToken, getAPIURL, logoutUser } from '../common/utils';
 
 const APIServiceProvider = {};
+const throttlingListeners = new Set();
 const RESOURCES = [
   { name: 'concepts', relations: [] },
   { name: 'mappings', relations: [] },
@@ -18,6 +19,60 @@ const RESOURCES = [
   { name: 'toggles', relations: [] },
   { name: 'new', relations: [] },
 ];
+
+const getHeaderValue = (headers = {}, key) => {
+  if(headers && typeof headers.get === 'function') {
+    const headerValue = headers.get(key) ?? headers.get(key.toLowerCase()) ?? headers.get(key.toUpperCase());
+    if(headerValue !== undefined && headerValue !== null)
+      return headerValue;
+  }
+
+  return headers?.[key] ?? headers?.[key.toLowerCase()] ?? headers?.[key.toUpperCase()];
+};
+
+export const getThrottlingDetails = response => {
+  const retryAfter = Number(getHeaderValue(response?.headers, 'retry-after'));
+  const minuteRemaining = Number(getHeaderValue(response?.headers, 'x-limitremaining-minute'));
+  const dayRemaining = Number(getHeaderValue(response?.headers, 'x-limitremaining-day'));
+  const hasMinuteRemaining = Number.isFinite(minuteRemaining);
+  const hasDayRemaining = Number.isFinite(dayRemaining);
+  let limitType = 'unknown';
+  if(hasMinuteRemaining && minuteRemaining <= 0 && hasDayRemaining && dayRemaining <= 0)
+    limitType = 'minute_and_day';
+  else if(hasMinuteRemaining && minuteRemaining <= 0)
+    limitType = 'minute';
+  else if(hasDayRemaining && dayRemaining <= 0)
+    limitType = 'day';
+
+  return {
+    retryAfter: Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 0,
+    limitType,
+    minuteRemaining: hasMinuteRemaining ? minuteRemaining : null,
+    dayRemaining: hasDayRemaining ? dayRemaining : null,
+    response,
+  };
+}
+
+const notifyThrottlingListeners = response => {
+  const details = getThrottlingDetails(response);
+  throttlingListeners.forEach(listener => listener(details));
+}
+
+const createPendingRequest = () => new Promise(() => {})
+
+const handleAPIError = (error, raw=false) => {
+  if(error?.response?.status === 401 && error?.response?.config?.url?.startsWith(getAPIURL())) {
+    logoutUser(true)
+    return { handled: true, result: undefined };
+  }
+
+  if(error?.response?.status === 429) {
+    notifyThrottlingListeners(error.response);
+    return { handled: true, result: raw ? error : createPendingRequest() };
+  }
+
+  return { handled: false };
+}
 
 class APIService {
   constructor(name, id, relations) {
@@ -77,14 +132,14 @@ class APIService {
     return axios(request)
       .then(response => response || null)
       .catch(error => {
-        if(error?.response?.status === 401 && error?.response?.config?.url?.startsWith(getAPIURL())) {
-          logoutUser(true)
-        } else {
-          if(raw)
-            return error;
+        const { handled, result } = handleAPIError(error, raw);
+        if(handled)
+          return result;
 
-          return error.response ? error.response.data : error.message;
-        }
+        if(raw)
+          return error;
+
+        return error.response ? error.response.data : error.message;
 
       });
   }
@@ -108,7 +163,10 @@ class APIService {
     }
     let request = this.getRequest(method, data, token, headers, query);
     request = {...request, ...omit(config, ['headers', 'query'])};
-    return axios(request);
+    return axios(request).catch(error => {
+      handleAPIError(error);
+      return Promise.reject(error);
+    });
   };
 
   getHeaders(token, headers) {
@@ -143,5 +201,10 @@ class APIService {
 RESOURCES.forEach(resource => {
   APIServiceProvider[resource.name] = (id, query) => new APIService(resource.name, id, resource.relations, query);
 });
+
+APIServiceProvider.onThrottle = listener => {
+  throttlingListeners.add(listener);
+  return () => throttlingListeners.delete(listener);
+};
 
 export default APIServiceProvider;

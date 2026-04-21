@@ -109,7 +109,18 @@
     "401": "Se requiere iniciar sesión",
     "403": "No tiene autorización para acceder a esta página",
     "404": "Lo siento, no se pudo encontrar tu página.",
-    "network_error": "Error de red"
+    "network_error": "Error de red",
+    "throttled": {
+      "title": "Demasiadas solicitudes",
+      "retry_after": "Esto desaparecerá después de:",
+      "ended": "La ventana del límite de solicitudes terminó. Puedes continuar donde lo dejaste.",
+      "limit_hit": {
+        "minute": "Se alcanzó el límite de solicitudes por minuto. Restante por minuto: {{minuteRemaining}}.",
+        "day": "Se alcanzó el límite diario de solicitudes. Restante del día: {{dayRemaining}}.",
+        "minute_and_day": "Se alcanzaron los límites de solicitudes por minuto y por día. Restante por minuto: {{minuteRemaining}}. Restante del día: {{dayRemaining}}.",
+        "unknown": "Se alcanzó un límite de solicitudes."
+      }
+    }
   },
   "dashboard": {
     "my": "Mi tablero",
