@@ -91,6 +91,7 @@
     "draft": "Borrador",
     "highlights": "Destacados",
     "click_to_copy": "Clic para copiar",
+    "copy": "Copiar",
     "submit": "Enviar",
     "external_id": "ID externo",
     "access_level": "Nivel de acceso",
@@ -564,7 +565,8 @@
     "alternates": "Alternativas",
     "model": "Modelo",
     "bridge_source_url": "URL de la fuente de Bridge",
-    "bridge_source_url_description": "La terminología de interfaz para buscar candidatos de coincidencia"
+    "bridge_source_url_description": "La terminología de interfaz para buscar candidatos de coincidencia",
+    "copy_project": "Crea un nuevo proyecto copiando solo la configuración de este proyecto. No se copiarán candidatos, decisiones ni archivos de entrada."
   },
   "app": {
     "web_version": "Versión Web",

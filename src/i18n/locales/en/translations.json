@@ -83,6 +83,7 @@
     "draft": "Draft",
     "highlights": "Highlights",
     "click_to_copy": "Click to Copy",
+    "copy": "Copy",
     "submit": "Submit",
     "external_id": "External ID",
     "access_level": "Access Level",
@@ -589,7 +590,8 @@
     "alternates": "Alternates",
     "model": "Model",
     "bridge_source_url": "Bridge Source URL",
-    "bridge_source_url_description": "The interface terminology to search through for bridge matching"
+    "bridge_source_url_description": "The interface terminology to search through for bridge matching",
+    "copy_project": "Creates a new project by copying this project's configuration only. No candidates, decisions, or input files will be copied."
   },
   "app": {
     "web_version": "Web Version",

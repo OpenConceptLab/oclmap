@@ -7,7 +7,7 @@ import moment from 'moment'
 import Split from 'react-split';
 import BridgeMatch from '../../services/LazyLoader'
 
-import { useParams, useHistory } from 'react-router-dom'
+import { useParams, useHistory, useLocation } from 'react-router-dom'
 
 import Paper from '@mui/material/Paper'
 import Button from '@mui/material/Button';
@@ -122,6 +122,12 @@ const MapProject = () => {
   const user = getCurrentUser()
   const params = useParams()
   const history = useHistory()
+  const location = useLocation()
+  const copyFromProjectURL = React.useMemo(() => {
+    const queryParams = new URLSearchParams(location.search)
+    return queryParams.get('copyFrom')
+  }, [location.search])
+
   const bridgeRef = React.useRef()
   const facetsRequestsRef = React.useRef({})
   const latestFacetRequestRef = React.useRef({})
@@ -304,10 +310,15 @@ const MapProject = () => {
 
   React.useEffect(() => {
     fetchMapTypes()
+    fetchAIModels()
+
     if(params.projectId && params.owner) {
       fetchAndSetProject()
+      return
     }
-    fetchAIModels()
+    if(copyFromProjectURL) {
+      copyFromProject()
+    }
   }, [])
 
   React.useEffect(() => {
@@ -323,6 +334,27 @@ const MapProject = () => {
       setIncludeDefaultFilter(true)
     }
   }, [repoVersion, project])
+
+
+  const copyFromProject = () => {
+    setLoadingProject(true)
+    APIService.new().overrideURL(copyFromProjectURL).appendToUrl('configurations/').get().then(response => {
+      const copiedProject = response.data
+      setProject(null)
+      setFilters(copiedProject.filters || {})
+      setLookupConfig(copiedProject.lookup_config || {})
+      setCandidatesScore(copiedProject.score_configuration || {recommended: 99, available: 70})
+      setRetired(Boolean(copiedProject.include_retired || false))
+      setAlgosSelected(copiedProject.algorithms || [])
+      setEncoderModel(copiedProject.encoder_model || DEFAULT_ENCODER_MODEL)
+      if(copiedProject.target_repo_url) {
+        const repoParams = URIToParentParams(copiedProject.target_repo_url, true)
+        fetchRepo(dropVersion(copiedProject.target_repo_url))
+        fetchVersions(copiedProject.target_repo_url, repoParams?.repoVersion || 'HEAD')
+      }
+      setConfigure(true)
+    }).finally(() => setLoadingProject(false))
+  }
 
   const fetchAndSetProject = () => {
     setLoadingProject(true)
@@ -2707,6 +2739,15 @@ const MapProject = () => {
     />
   )
 
+
+  const onCopyClick = event => {
+    event.preventDefault()
+    event.stopPropagation()
+    if(project?.url) {
+      window.open(`/#/map-projects/new?copyFrom=${encodeURIComponent(project.url)}`, '_blank', 'noopener,noreferrer')
+    }
+  }
+
   return permissionDenied ? <Error403/> : (
     <div className='col-xs-12 padding-0' style={{borderRadius: '10px', width: 'calc(100vw - 32px)'}}>
       {
@@ -2860,6 +2901,7 @@ const MapProject = () => {
                     isProjectsLogOpen={showProjectLogs}
                     configure={configure}
                     setConfigure={setConfigure}
+                    onCopyClick={onCopyClick}
                   />
               }
           </div>

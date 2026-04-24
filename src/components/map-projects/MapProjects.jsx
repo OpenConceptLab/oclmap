@@ -1,4 +1,7 @@
 import React from 'react'
+import { useHistory } from 'react-router-dom'
+import { useTranslation } from 'react-i18next';
+
 import moment from 'moment'
 import reject from 'lodash/reject'
 import Button from '@mui/material/Button'
@@ -12,6 +15,7 @@ import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import Skeleton from '@mui/material/Skeleton';
 import ListItemText from '@mui/material/ListItemText'
+import Tooltip from '@mui/material/Tooltip'
 import AddIcon from '@mui/icons-material/Add'
 import times from 'lodash/times'
 import APIService from '../../services/APIService'
@@ -19,14 +23,16 @@ import { getCurrentUser } from '../../common/utils'
 import OwnerIcon from '../common/OwnerIcon'
 import NoResults from '../search/NoResults';
 import MapProjectDeleteConfirmDialog from './MapProjectDeleteConfirmDialog';
-import { useTranslation } from 'react-i18next';
 
 const MapProjects = () => {
   const { t } = useTranslation();
+  const history = useHistory()
+
   const user = getCurrentUser()
   const [loading, setLoading] = React.useState([])
   const [projects, setProjects] = React.useState([])
   const [deleteProject, setDeleteProject] = React.useState(null)
+
   const fetchProjects = () => {
     fetchUserProjects()
     fetchOrgProjects()
@@ -51,6 +57,14 @@ const MapProjects = () => {
       setProjects(reject(projects, {id: deleteProject.id}))
     }
     setDeleteProject(null)
+  }
+
+  const onCopyClick = (event, project) => {
+    event.preventDefault()
+    event.stopPropagation()
+    if(project?.url) {
+      history.push(`/map-projects/new?copyFrom=${encodeURIComponent(project.url)}`)
+    }
   }
 
   const isSplitView = false
@@ -141,10 +155,15 @@ const MapProjects = () => {
                     </TableCell>
                     <TableCell align='right'>
                       <span style={{display: 'flex', alignItems: 'center'}}>
-                        <Button size='small' color='primary' variant='contained' sx={{textTransform: 'none'}} href={`#${project.url}`}>
+                    <Button size='small' color='primary' variant='contained' sx={{textTransform: 'none', margin: '0 4px'}} href={`#${project.url}`}>
                           {t('common.open')}
                         </Button>
-                        <Button size='small' color='error' variant='text' sx={{marginLeft: '8px', textTransform: 'none'}} onClick={() => setDeleteProject(project)}>
+                    <Tooltip title={t('map_project.copy_project')}>
+                      <Button size='small' variant='contained' color='secondary' sx={{margin: '0 4px', textTransform: 'none'}} onClick={event => onCopyClick(event, project)}>
+                          {t('common.copy')}
+                    </Button>
+                    </Tooltip>
+                        <Button size='small' color='error' variant='text' sx={{margin: '0 4px', textTransform: 'none'}} onClick={() => setDeleteProject(project)}>
                           {t('common.delete')}
                         </Button>
                         </span>
