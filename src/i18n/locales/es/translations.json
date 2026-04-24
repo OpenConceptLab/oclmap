@@ -115,9 +115,9 @@
       "retry_after": "Esto desaparecerá después de:",
       "ended": "La ventana del límite de solicitudes terminó. Puedes continuar donde lo dejaste.",
       "limit_hit": {
-        "minute": "Se alcanzó el límite de solicitudes por minuto. Restante por minuto: {{minuteRemaining}}.",
-        "day": "Se alcanzó el límite diario de solicitudes. Restante del día: {{dayRemaining}}.",
-        "minute_and_day": "Se alcanzaron los límites de solicitudes por minuto y por día. Restante por minuto: {{minuteRemaining}}. Restante del día: {{dayRemaining}}.",
+        "minute": "Se alcanzó el límite de solicitudes por minuto.",
+        "day": "Se alcanzó el límite diario de solicitudes.",
+        "minute_and_day": "Se alcanzaron los límites de solicitudes por minuto y por día.",
         "unknown": "Se alcanzó un límite de solicitudes."
       }
     }

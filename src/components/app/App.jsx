@@ -17,7 +17,7 @@ import Footer from './Footer';
 import DocumentTitle from "./DocumentTitle"
 import './App.scss';
 import { hotjar } from 'react-hotjar';
-import APIService, { getThrottlingDetails } from '../../services/APIService'
+import APIService from '../../services/APIService'
 import Header from './Header';
 import OIDLoginCallback from '../users/OIDLoginCallback';
 import { OperationsContext } from './LayoutContext';
@@ -101,7 +101,7 @@ const App = props => {
 
   React.useEffect(() => {
     const unsubscribe = APIService.onThrottle(details => {
-      setThrottlingError(getThrottlingDetails(details.response || details))
+      setThrottlingError(details)
     })
 
     forceLoginUser()

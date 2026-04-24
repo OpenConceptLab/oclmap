@@ -114,9 +114,9 @@
       "retry_after": "此提示将在以下时间后消失：",
       "ended": "请求限制窗口已结束。您可以从刚才的位置继续。",
       "limit_hit": {
-        "minute": "已达到每分钟请求限制。当前分钟剩余：{{minuteRemaining}}。",
-        "day": "已达到每日请求限制。今日剩余：{{dayRemaining}}。",
-        "minute_and_day": "已达到每分钟和每日请求限制。当前分钟剩余：{{minuteRemaining}}。今日剩余：{{dayRemaining}}。",
+        "minute": "已达到每分钟请求限制。",
+        "day": "已达到每日请求限制。",
+        "minute_and_day": "已达到每分钟和每日请求限制。",
         "unknown": "已达到请求限制。"
       }
     }
