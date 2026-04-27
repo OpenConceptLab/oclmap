@@ -1,4 +1,7 @@
 import React from 'react'
+import { useHistory } from 'react-router-dom'
+import { useTranslation } from 'react-i18next';
+
 import moment from 'moment'
 import reject from 'lodash/reject'
 import Button from '@mui/material/Button'
@@ -19,14 +22,16 @@ import { getCurrentUser } from '../../common/utils'
 import OwnerIcon from '../common/OwnerIcon'
 import NoResults from '../search/NoResults';
 import MapProjectDeleteConfirmDialog from './MapProjectDeleteConfirmDialog';
-import { useTranslation } from 'react-i18next';
 
 const MapProjects = () => {
   const { t } = useTranslation();
+  const history = useHistory()
+
   const user = getCurrentUser()
   const [loading, setLoading] = React.useState([])
   const [projects, setProjects] = React.useState([])
   const [deleteProject, setDeleteProject] = React.useState(null)
+
   const fetchProjects = () => {
     fetchUserProjects()
     fetchOrgProjects()
@@ -54,6 +59,14 @@ const MapProjects = () => {
     setDeleteProject(null)
   }
 
+  const onCopyClick = (event, project) => {
+    event.preventDefault()
+    event.stopPropagation()
+    if(project?.url) {
+      history.push(`/map-projects/new?templateFrom=${encodeURIComponent(project.url)}`)
+    }
+  }
+
   const isSplitView = false
   const loaded = loading.length === 2
   return (
@@ -61,9 +74,9 @@ const MapProjects = () => {
       <Paper component="div" className={isSplitView ? 'col-xs-6 split padding-0' : 'col-xs-12 split padding-0'} sx={{boxShadow: 'none', p: 0, backgroundColor: 'white', borderRadius: '10px', border: 'solid 0.3px', borderColor: 'surface.nv80', minHeight: 'calc(100vh - 100px) !important'}}>
         <Paper component="div" className='col-xs-12' sx={{backgroundColor: 'surface.main', boxShadow: 'none', padding: '16px', borderRadius: '10px 10px 0 0'}}>
           <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
-          <Typography component='span' sx={{fontSize: '28px', color: 'surface.dark', fontWeight: 600, display: 'flex', alignItems: 'center'}}>
-            {t('map_project.mapping_projects')}
-          </Typography>
+            <Typography component='span' sx={{fontSize: '28px', color: 'surface.dark', fontWeight: 600, display: 'flex', alignItems: 'center'}}>
+              {t('map_project.mapping_projects')}
+            </Typography>
             <Button variant='contained' color='primary' startIcon={<AddIcon />} href='#/map-projects/new' sx={{textTransform: 'none'}}>
               {t('map_project.new_map_project')}
             </Button>
@@ -102,60 +115,63 @@ const MapProjects = () => {
                     <TableRow>
                       <TableCell colSpan={6} align='center'>
                         <NoResults text={t('map_project.no_projects_found')} height='300px' />
-                        </TableCell>
-                      </TableRow>
+                      </TableCell>
+                    </TableRow>
                 }
                 {
                   projects.map(project => (
-                  <TableRow key={project.id}>
-                    <TableCell>{project.id}</TableCell>
-                    <TableCell>
-                      <span style={{display: 'flex', alignItems: 'center'}}>
-                      <OwnerIcon sx={{fontSize: '1rem', marginRight: '8px'}} noTooltip ownerType={project.owner_type} />
-                        {project.owner}
+                    <TableRow key={project.id}>
+                      <TableCell>{project.id}</TableCell>
+                      <TableCell>
+                        <span style={{display: 'flex', alignItems: 'center'}}>
+                          <OwnerIcon sx={{fontSize: '1rem', marginRight: '8px'}} noTooltip ownerType={project.owner_type} />
+                          {project.owner}
                         </span>
-                    </TableCell>
-                    <TableCell>
-                      <ListItemText primary={project.name} />
-                    </TableCell>
-                    <TableCell>
-                      <ListItemText
-                        primary={
-                          <span style={{display: 'flex', alignItems: 'center'}}>
-                            <OwnerIcon sx={{fontSize: '1rem', marginRight: '8px'}} noTooltip ownerType='user' />
-                            {project.created_by}
-                          </span>
-                        }
-                        secondary={moment(project.created_at).fromNow()}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <ListItemText
-                        primary={
-                          <span style={{display: 'flex', alignItems: 'center'}}>
-                            <OwnerIcon sx={{fontSize: '1rem', marginRight: '8px'}} noTooltip ownerType='user' />
-                            {project.updated_by}
-                          </span>
-                        }
-                        secondary={moment(project.updated_at).fromNow()}
-                      />
-                    </TableCell>
-                    <TableCell align='right'>
-                      <span style={{display: 'flex', alignItems: 'center'}}>
-                        <Button size='small' color='primary' variant='contained' sx={{textTransform: 'none'}} href={`#${project.url}`}>
-                          {t('common.open')}
-                        </Button>
-                        <Button size='small' color='error' variant='text' sx={{marginLeft: '8px', textTransform: 'none'}} onClick={() => setDeleteProject(project)}>
-                          {t('common.delete')}
-                        </Button>
+                      </TableCell>
+                      <TableCell>
+                        <ListItemText primary={project.name} />
+                      </TableCell>
+                      <TableCell>
+                        <ListItemText
+                          primary={
+                            <span style={{display: 'flex', alignItems: 'center'}}>
+                              <OwnerIcon sx={{fontSize: '1rem', marginRight: '8px'}} noTooltip ownerType='user' />
+                              {project.created_by}
+                            </span>
+                          }
+                          secondary={moment(project.created_at).fromNow()}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <ListItemText
+                          primary={
+                            <span style={{display: 'flex', alignItems: 'center'}}>
+                              <OwnerIcon sx={{fontSize: '1rem', marginRight: '8px'}} noTooltip ownerType='user' />
+                              {project.updated_by}
+                            </span>
+                          }
+                          secondary={moment(project.updated_at).fromNow()}
+                        />
+                      </TableCell>
+                      <TableCell align='right'>
+                        <span style={{display: 'flex', alignItems: 'center'}}>
+                          <Button size='small' color='primary' variant='contained' sx={{textTransform: 'none', margin: '0 4px'}} href={`#${project.url}`}>
+                            {t('common.open')}
+                          </Button>
+                          <Button size='small' variant='contained' color='secondary' sx={{margin: '0 4px', textTransform: 'none'}} onClick={event => onCopyClick(event, project)}>
+                            {t('map_project.create_similar')}
+                          </Button>
+                          <Button size='small' color='error' variant='text' sx={{margin: '0 4px', textTransform: 'none'}} onClick={() => setDeleteProject(project)}>
+                            {t('common.delete')}
+                          </Button>
                         </span>
-                    </TableCell>
+                      </TableCell>
                     </TableRow>
                   ))
                 }
               </TableBody>
             </Table>
-            </TableContainer>
+          </TableContainer>
         </Paper>
       </Paper>
       {

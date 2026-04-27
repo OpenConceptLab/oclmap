@@ -15,6 +15,7 @@ import TimelineIcon from '@mui/icons-material/Timeline';
 import SettingsIcon from '@mui/icons-material/Settings';
 import SaveIcon from '@mui/icons-material/Save';
 import DeleteIcon from '@mui/icons-material/Delete';
+import CopyIcon from '@mui/icons-material/CopyAll';
 import JSONIcon from '@mui/icons-material/DataObject';
 import { copyToClipboard } from '../../common/utils'
 import RepoIcon from '../repos/RepoIcon'
@@ -38,7 +39,7 @@ const IkonButton = ({title, icon, onClick, color, disabled, id}) => {
   )
 }
 
-const Controls = ({project, onDownload, onSave, onDelete, owner, file, isSaving, onImport, importResponse, onDownloadImportReport, onProjectLogsClick, isProjectsLogOpen, configure, setConfigure, isCoreUser, loadingMatches}) => {
+const Controls = ({project, onDownload, onSave, onDelete, owner, file, isSaving, onImport, importResponse, onDownloadImportReport, onProjectLogsClick, isProjectsLogOpen, configure, setConfigure, isCoreUser, loadingMatches, onCopyClick}) => {
   const { t } = useTranslation();
   const [anchorEl, setAnchorEl] = React.useState(null);
   const downloadOpen = Boolean(anchorEl);
@@ -76,6 +77,16 @@ const Controls = ({project, onDownload, onSave, onDelete, owner, file, isSaving,
           icon={<DownloadIcon />}
           disabled={loadingMatches}
         />
+        {
+          project?.id &&
+            <IkonButton
+              id='copy-button'
+              color='secondary'
+              onClick={onCopyClick}
+              title={t('map_project.create_similar')}
+              icon={<CopyIcon />}
+            />
+        }
         {
           project?.id &&
             <IkonButton
