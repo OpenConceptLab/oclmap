@@ -208,9 +208,17 @@ const MapProjects = () => {
                       </TableCell>
                       <TableCell align='right'>
                         <Tooltip title={t('common.more_actions')}>
-                        <IconButton color='secondary' size='small' onClick={event => openActionMenu(event, project)}>
-                          <MoreVertIcon fontSize='small' />
-                        </IconButton>
+                          <IconButton
+                            color='secondary'
+                            size='small'
+                            aria-label={t('common.more_actions')}
+                            aria-haspopup='menu'
+                            aria-controls={actionMenuAnchorEl ? 'map-project-actions-menu' : undefined}
+                            aria-expanded={actionMenuAnchorEl ? 'true' : undefined}
+                            onClick={event => openActionMenu(event, project)}
+                          >
+                            <MoreVertIcon fontSize='small' />
+                          </IconButton>
                         </Tooltip>
                       </TableCell>
                     </TableRow>
@@ -220,10 +228,13 @@ const MapProjects = () => {
             </Table>
           </TableContainer>
           <Menu
+            id='map-project-actions-menu'
             anchorEl={actionMenuAnchorEl}
             open={Boolean(actionMenuAnchorEl)}
             onClose={closeActionMenu}
             onClick={event => event.stopPropagation()}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            transformOrigin={{ vertical: 'top', horizontal: 'right' }}
           >
             <MenuItem onClick={onMenuCopyClick}>
               <ListItemIcon><ContentCopy fontSize="small" /></ListItemIcon>
