@@ -120,7 +120,17 @@ const MapProjects = () => {
                 }
                 {
                   projects.map(project => (
-                    <TableRow key={project.id}>
+                    <TableRow
+                      key={project.id}
+                      onClick={() => history.push(project.url)}
+                      hover
+                      sx={{
+                        cursor: 'pointer',
+                        '&.MuiTableRow-hover:hover': {
+                          backgroundColor: 'primary.95'
+                        },
+                      }}
+                    >
                       <TableCell>{project.id}</TableCell>
                       <TableCell>
                         <span style={{display: 'flex', alignItems: 'center'}}>
@@ -155,9 +165,6 @@ const MapProjects = () => {
                       </TableCell>
                       <TableCell align='right'>
                         <span style={{display: 'flex', alignItems: 'center'}}>
-                          <Button size='small' color='primary' variant='contained' sx={{textTransform: 'none', margin: '0 4px'}} href={`#${project.url}`}>
-                            {t('common.open')}
-                          </Button>
                           <Button size='small' variant='contained' color='secondary' sx={{margin: '0 4px', textTransform: 'none'}} onClick={event => onCopyClick(event, project)}>
                             {t('map_project.create_similar')}
                           </Button>
