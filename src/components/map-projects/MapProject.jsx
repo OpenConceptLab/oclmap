@@ -123,9 +123,9 @@ const MapProject = () => {
   const params = useParams()
   const history = useHistory()
   const location = useLocation()
-  const copyFromProjectURL = React.useMemo(() => {
+  const templateFromProjectURL = React.useMemo(() => {
     const queryParams = new URLSearchParams(location.search)
-    return queryParams.get('copyFrom')
+    return queryParams.get('templateFrom')
   }, [location.search])
 
   const bridgeRef = React.useRef()
@@ -316,8 +316,8 @@ const MapProject = () => {
       fetchAndSetProject()
       return
     }
-    if(copyFromProjectURL) {
-      copyFromProject()
+    if(templateFromProjectURL) {
+      createProjectFromTemplate()
     }
   }, [])
 
@@ -336,9 +336,9 @@ const MapProject = () => {
   }, [repoVersion, project])
 
 
-  const copyFromProject = () => {
+  const createProjectFromTemplate = () => {
     setLoadingProject(true)
-    APIService.new().overrideURL(copyFromProjectURL).appendToUrl('configurations/').get().then(response => {
+    APIService.new().overrideURL(templateFromProjectURL).appendToUrl('configurations/').get().then(response => {
       const copiedProject = response.data
       setProject(null)
       setFilters(copiedProject.filters || {})
@@ -2744,7 +2744,7 @@ const MapProject = () => {
     event.preventDefault()
     event.stopPropagation()
     if(project?.url) {
-      window.open(`/#/map-projects/new?copyFrom=${encodeURIComponent(project.url)}`, '_blank', 'noopener,noreferrer')
+      window.open(`/#/map-projects/new?templateFrom=${encodeURIComponent(project.url)}`, '_blank', 'noopener,noreferrer')
     }
   }
 

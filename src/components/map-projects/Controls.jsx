@@ -83,7 +83,7 @@ const Controls = ({project, onDownload, onSave, onDelete, owner, file, isSaving,
               id='copy-button'
               color='secondary'
               onClick={onCopyClick}
-              title={t('map_project.copy_project')}
+              title={t('map_project.create_similar')}
               icon={<CopyIcon />}
             />
         }
