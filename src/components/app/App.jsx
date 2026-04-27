@@ -10,6 +10,7 @@ import Error403 from '../errors/Error403';
 import Error401 from '../errors/Error401';
 import WaitListing from '../errors/WaitListing'
 import NetworkError from '../errors/NetworkError'
+import ThrottlingError from '../errors/ThrottlingError'
 import ErrorBoundary from '../errors/ErrorBoundary';
 import CheckAuth from './CheckAuth'
 import Footer from './Footer';
@@ -23,6 +24,7 @@ import { OperationsContext } from './LayoutContext';
 import Alert from '../common/Alert';
 import MapProject from '../map-projects/MapProject'
 import MapProjects from '../map-projects/MapProjects'
+import { useTranslation } from 'react-i18next';
 
 const AuthenticationRequiredRoute = ({component: Component, ...rest}) => {
   const { toggles } = React.useContext(OperationsContext);
@@ -47,7 +49,9 @@ const AuthenticationRequiredRoute = ({component: Component, ...rest}) => {
 }
 
 const App = props => {
-  const [networkError, setNetworkError] = React.useState(false)
+  const { t } = useTranslation();
+  const [startupError, setStartupError] = React.useState(null)
+  const [throttlingError, setThrottlingError] = React.useState(null)
   const { alert, setAlert, setToggles } = React.useContext(OperationsContext);
   const setupHotJar = () => {
     /*eslint no-undef: 0*/
@@ -60,8 +64,8 @@ const App = props => {
     return new Promise(resolve => {
       APIService.toggles().get().then(response => {
         if(response === 'Network Error')
-          setNetworkError(true)
-        else {
+          setStartupError({ type: 'network' })
+        else if(response?.status !== 429) {
           setToggles(response.data)
           resolve();
         }
@@ -96,12 +100,27 @@ const App = props => {
   }
 
   React.useEffect(() => {
+    const unsubscribe = APIService.onThrottle(details => {
+      setThrottlingError(details)
+    })
+
     forceLoginUser()
     fetchToggles()
     addLogoutListenerForAllTabs()
     recordGAPageView()
     setupHotJar()
+
+    return () => unsubscribe()
   }, [])
+
+  const clearThrottlingError = React.useCallback(() => {
+    setThrottlingError(null)
+    setAlert({
+      severity: 'success',
+      message: t('errors.throttled.ended'),
+      duration: 4000,
+    })
+  }, [setAlert, t])
 
   return (
     <div>
@@ -109,16 +128,28 @@ const App = props => {
       <Header>
         <ErrorBoundary>
           <main className='content'>
-            {networkError && <NetworkError />}
-            <Switch>
-              <Route exact path="/oidc/login" component={OIDLoginCallback} />
-              <AuthenticationRequiredRoute exact path='/' component={MapProjects} />
-              <AuthenticationRequiredRoute exact path='/map-projects' component={MapProjects} />
-              <AuthenticationRequiredRoute exact path='/map-projects/new' component={MapProject} />
-              <AuthenticationRequiredRoute exact path='/:ownerType/:owner/map-projects/:projectId' component={MapProject} />
-              <Route exact path='/403' component={Error403} />
-              <Route component={Error404} />
-            </Switch>
+            {startupError?.type === 'network' ? (
+              <NetworkError />
+            ) : (
+              <React.Fragment>
+                <Switch>
+                  <Route exact path="/oidc/login" component={OIDLoginCallback} />
+                  <AuthenticationRequiredRoute exact path='/' component={MapProjects} />
+                  <AuthenticationRequiredRoute exact path='/map-projects' component={MapProjects} />
+                  <AuthenticationRequiredRoute exact path='/map-projects/new' component={MapProject} />
+                  <AuthenticationRequiredRoute exact path='/:ownerType/:owner/map-projects/:projectId' component={MapProject} />
+                  <Route exact path='/403' component={Error403} />
+                  <Route component={Error404} />
+                </Switch>
+                {throttlingError && (
+                  <ThrottlingError
+                    retryAfter={throttlingError.retryAfter}
+                    limitType={throttlingError.limitType}
+                    onExpire={clearThrottlingError}
+                  />
+                )}
+              </React.Fragment>
+            )}
             <Alert message={alert?.message} onClose={() => setAlert(false)} severity={alert?.severity} duration={alert?.duration} />
           </main>
         </ErrorBoundary>
@@ -129,4 +160,3 @@ const App = props => {
 }
 
 export default withRouter(App);
-

@@ -108,7 +108,18 @@
     "401": "Login is required",
     "403": "Access to this page is not authorized",
     "404": "Sorry your page could not be found.",
-    "network_error": "Network Error"
+    "network_error": "Network Error",
+    "throttled": {
+      "title": "Too many requests",
+      "retry_after": "This will disappear after:",
+      "ended": "Rate limit window ended. You can continue where you left off.",
+      "limit_hit": {
+        "minute": "The per-minute request limit has been reached.",
+        "day": "The daily request limit has been reached.",
+        "minute_and_day": "The per-minute and daily request limits have been reached",
+        "unknown": "A request limit has been reached."
+      }
+    }
   },
   "dashboard": {
     "name": "Dashboard",
