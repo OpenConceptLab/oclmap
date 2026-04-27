@@ -4,7 +4,13 @@ import { useTranslation } from 'react-i18next';
 
 import moment from 'moment'
 import reject from 'lodash/reject'
+import times from 'lodash/times'
+
 import Button from '@mui/material/Button'
+import Divider from '@mui/material/Divider'
+import IconButton from '@mui/material/IconButton'
+import Menu from '@mui/material/Menu'
+import MenuItem from '@mui/material/MenuItem'
 import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
 import Table from '@mui/material/Table';
@@ -15,10 +21,17 @@ import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import Skeleton from '@mui/material/Skeleton';
 import ListItemText from '@mui/material/ListItemText'
+import ListItemIcon from '@mui/material/ListItemIcon'
+import Tooltip from '@mui/material/Tooltip'
+
 import AddIcon from '@mui/icons-material/Add'
-import times from 'lodash/times'
+import MoreVertIcon from '@mui/icons-material/MoreVert'
+import ContentCopy from '@mui/icons-material/ContentCopy';
+import DeleteOutlined from '@mui/icons-material/DeleteOutlined';
+
 import APIService from '../../services/APIService'
 import { getCurrentUser } from '../../common/utils'
+
 import OwnerIcon from '../common/OwnerIcon'
 import NoResults from '../search/NoResults';
 import MapProjectDeleteConfirmDialog from './MapProjectDeleteConfirmDialog';
@@ -31,6 +44,8 @@ const MapProjects = () => {
   const [loading, setLoading] = React.useState([])
   const [projects, setProjects] = React.useState([])
   const [deleteProject, setDeleteProject] = React.useState(null)
+  const [actionMenuAnchorEl, setActionMenuAnchorEl] = React.useState(null)
+  const [actionMenuProject, setActionMenuProject] = React.useState(null)
 
   const fetchProjects = () => {
     fetchUserProjects()
@@ -52,8 +67,8 @@ const MapProjects = () => {
     fetchProjects()
   }, [])
 
-  const onProjectDelete = success => {
-    if(success) {
+  const onProjectDelete = (success) => {
+    if(success === true) {
       setProjects(reject(projects, {id: deleteProject.id}))
     }
     setDeleteProject(null)
@@ -65,6 +80,34 @@ const MapProjects = () => {
     if(project?.url) {
       history.push(`/map-projects/new?templateFrom=${encodeURIComponent(project.url)}`)
     }
+  }
+
+  const openActionMenu = (event, project) => {
+    event.preventDefault()
+    event.stopPropagation()
+    setActionMenuAnchorEl(event.currentTarget)
+    setActionMenuProject(project)
+  }
+
+  const closeActionMenu = event => {
+    event?.preventDefault?.()
+    event?.stopPropagation?.()
+    setActionMenuAnchorEl(null)
+    setActionMenuProject(null)
+  }
+
+  const onMenuCopyClick = event => {
+    if(actionMenuProject) {
+      onCopyClick(event, actionMenuProject)
+    }
+    closeActionMenu(event)
+  }
+
+  const onMenuDeleteClick = event => {
+    event.preventDefault()
+    event.stopPropagation()
+    setDeleteProject(actionMenuProject)
+    closeActionMenu(event)
   }
 
   const isSplitView = false
@@ -120,7 +163,17 @@ const MapProjects = () => {
                 }
                 {
                   projects.map(project => (
-                    <TableRow key={project.id}>
+                    <TableRow
+                      key={project.id}
+                      onClick={() => history.push(project.url)}
+                      hover
+                      sx={{
+                        cursor: 'pointer',
+                        '&.MuiTableRow-hover:hover': {
+                          backgroundColor: 'primary.95'
+                        },
+                      }}
+                    >
                       <TableCell>{project.id}</TableCell>
                       <TableCell>
                         <span style={{display: 'flex', alignItems: 'center'}}>
@@ -154,17 +207,19 @@ const MapProjects = () => {
                         />
                       </TableCell>
                       <TableCell align='right'>
-                        <span style={{display: 'flex', alignItems: 'center'}}>
-                          <Button size='small' color='primary' variant='contained' sx={{textTransform: 'none', margin: '0 4px'}} href={`#${project.url}`}>
-                            {t('common.open')}
-                          </Button>
-                          <Button size='small' variant='contained' color='secondary' sx={{margin: '0 4px', textTransform: 'none'}} onClick={event => onCopyClick(event, project)}>
-                            {t('map_project.create_similar')}
-                          </Button>
-                          <Button size='small' color='error' variant='text' sx={{margin: '0 4px', textTransform: 'none'}} onClick={() => setDeleteProject(project)}>
-                            {t('common.delete')}
-                          </Button>
-                        </span>
+                        <Tooltip title={t('common.more_actions')}>
+                          <IconButton
+                            color='secondary'
+                            size='small'
+                            aria-label={t('common.more_actions')}
+                            aria-haspopup='menu'
+                            aria-controls={actionMenuAnchorEl ? 'map-project-actions-menu' : undefined}
+                            aria-expanded={actionMenuAnchorEl ? 'true' : undefined}
+                            onClick={event => openActionMenu(event, project)}
+                          >
+                            <MoreVertIcon fontSize='small' />
+                          </IconButton>
+                        </Tooltip>
                       </TableCell>
                     </TableRow>
                   ))
@@ -172,6 +227,25 @@ const MapProjects = () => {
               </TableBody>
             </Table>
           </TableContainer>
+          <Menu
+            id='map-project-actions-menu'
+            anchorEl={actionMenuAnchorEl}
+            open={Boolean(actionMenuAnchorEl)}
+            onClose={closeActionMenu}
+            onClick={event => event.stopPropagation()}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+          >
+            <MenuItem onClick={onMenuCopyClick}>
+              <ListItemIcon><ContentCopy fontSize="small" /></ListItemIcon>
+              <ListItemText>{t('map_project.create_similar')}</ListItemText>
+            </MenuItem>
+            <Divider />
+            <MenuItem onClick={onMenuDeleteClick} sx={{color: 'error.main'}}>
+              <ListItemIcon sx={{ color: 'error.main' }}><DeleteOutlined fontSize="small" /></ListItemIcon>
+              <ListItemText>{t('common.delete')}</ListItemText>
+            </MenuItem>
+          </Menu>
         </Paper>
       </Paper>
       {
