@@ -590,7 +590,8 @@
     "model": "Model",
     "bridge_source_url": "Bridge Source URL",
     "bridge_source_url_description": "The interface terminology to search through for bridge matching",
-    "create_similar": "Create similar"
+    "create_similar": "Create similar",
+    "create_similar_name": "Copy of {{name}}"
   },
   "app": {
     "web_version": "Web Version",

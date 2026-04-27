@@ -590,7 +590,8 @@
     "model": "模型",
     "bridge_source_url": "桥接源 URL",
     "bridge_source_url_description": "用于搜索匹配候选对象的接口术语",
-    "create_similar": "创建类似项目"
+    "create_similar": "创建类似项目",
+    "create_similar_name": "{{name}} 的副本"
   },
   "app": {
     "web_version": "Web 版本",

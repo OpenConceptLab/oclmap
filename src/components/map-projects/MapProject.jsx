@@ -341,6 +341,7 @@ const MapProject = () => {
     APIService.new().overrideURL(templateFromProjectURL).appendToUrl('configurations/').get().then(response => {
       const copiedProject = response.data
       setProject(null)
+      setName(copiedProject.name ? t('map_project.create_similar_name', {name: copiedProject.name}) : '')
       setFilters(copiedProject.filters || {})
       setLookupConfig(copiedProject.lookup_config || {})
       setCandidatesScore(copiedProject.score_configuration || {recommended: 99, available: 70})

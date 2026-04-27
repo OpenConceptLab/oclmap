@@ -565,7 +565,8 @@
     "model": "Modelo",
     "bridge_source_url": "URL de la fuente de Bridge",
     "bridge_source_url_description": "La terminología de interfaz para buscar candidatos de coincidencia",
-    "create_similar": "Crear similar"
+    "create_similar": "Crear similar",
+    "create_similar_name": "Copia de {{name}}"
   },
   "app": {
     "web_version": "Versión Web",
