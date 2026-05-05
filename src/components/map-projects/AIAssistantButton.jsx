@@ -20,6 +20,8 @@ import find from 'lodash/find'
 import filter from 'lodash/filter'
 import orderBy from 'lodash/orderBy'
 
+import AIAssistantSelectorPanel from './AIAssistantSelectorPanel'
+
 const Model = ({ model, selected, onClick }) => {
   return (
     <MenuItem
@@ -44,7 +46,18 @@ const Model = ({ model, selected, onClick }) => {
 }
 
 
-const AIAssistantButton = ({ models, selected, onClick, onModelChange, popperProps, ...rest }) => {
+const AIAssistantButton = ({
+  models,
+  selected,
+  onClick,
+  onModelChange,
+  popperProps,
+  isCoreUser,
+  promptTemplates,
+  promptTemplate,
+  onPromptTemplateChange,
+  ...rest
+}) => {
   const { t } = useTranslation()
   const [open, setOpen] = React.useState(false);
   const anchorRef = React.useRef(null);
@@ -61,8 +74,10 @@ const AIAssistantButton = ({ models, selected, onClick, onModelChange, popperPro
   };
 
   const handleClose = (event) => {
-    event.stopPropagation()
-    event.preventDefault()
+    if(event?.stopPropagation)
+      event.stopPropagation()
+    if(event?.preventDefault)
+      event.preventDefault()
 
     if (anchorRef.current && anchorRef.current.contains(event.target))
       return;
@@ -83,9 +98,75 @@ const AIAssistantButton = ({ models, selected, onClick, onModelChange, popperPro
     setOpen(false);
   };
 
+  const handleSubmit = event => {
+    event.preventDefault()
+    event.stopPropagation()
+    setOpen(false)
+    onClick(event, model)
+  }
 
   const recommendedOptions = filter(models, {is_recommended: true})
   const otherOptions = filter(models, {is_recommended: false})
+
+  if (isCoreUser && promptTemplates?.length) {
+    return (
+      <React.Fragment>
+        <Button
+          size='small'
+          variant='outlined'
+          ref={anchorRef}
+          color='primary'
+          onClick={handleToggle}
+          startIcon={<AssistantIcon fontSize='inherit' sx={{marginTop: '-1px'}} />}
+          {...rest}
+          sx={{textTransform: 'none', whiteSpace: 'nowrap', paddingTop: '5px', ...rest.sx}}
+        >
+          {t('map_project.ai_assistant')}
+        </Button>
+        <Popper
+          sx={{
+            zIndex: 3,
+          }}
+          open={open}
+          anchorEl={anchorRef.current}
+          role={undefined}
+          transition
+          {...popperProps}
+        >
+          {({ TransitionProps, placement }) => (
+            <Grow
+              {...TransitionProps}
+              style={{
+                transformOrigin:
+                placement === 'bottom' ? 'center top' : 'center bottom',
+              }}
+            >
+              <Paper sx={{padding: '12px', maxWidth: '420px'}}>
+                <ClickAwayListener onClickAway={handleClose}>
+                  <div>
+                    <AIAssistantSelectorPanel
+                      promptTemplates={promptTemplates}
+                      promptTemplate={promptTemplate}
+                      onPromptTemplateChange={onPromptTemplateChange}
+                      models={models}
+                      selectedModel={model}
+                      onModelChange={nextModel => {
+                        setModel(nextModel)
+                        onModelChange(nextModel)
+                      }}
+                      onSubmit={handleSubmit}
+                      showSubmit
+                      sx={{border: 'none', padding: 0, minWidth: '360px'}}
+                    />
+                  </div>
+                </ClickAwayListener>
+              </Paper>
+            </Grow>
+          )}
+        </Popper>
+      </React.Fragment>
+    )
+  }
 
   return (
     <React.Fragment>

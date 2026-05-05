@@ -99,7 +99,15 @@ const AICandidatesAnalysis = ({ analysis, onClose, sx, isCoreUser }) => {
                   {t('map_project.model')}:
                 </Typography>
                 <Typography gutterBottom sx={{ color: 'text.primary', fontSize: 12, mb: 0 }} component='span'>
-                  {analysis?.model || '-'}
+                  {analysis?.model_name || analysis?.model || '-'}
+                </Typography>
+              </span>
+              <span style={{marginRight: '4px', display: 'inline-flex'}}>
+                <Typography gutterBottom sx={{ color: 'text.secondary', fontSize: 12, mb: 0 }} component='span'>
+                  {t('map_project.ai_prompt_template')}:
+                </Typography>
+                <Typography gutterBottom sx={{ color: 'text.primary', fontSize: 12, mb: 0 }} component='span'>
+                  {analysis?.prompt_template?.key ? `${analysis.prompt_template.key} (${t('common.version')}: ${analysis.prompt_template.version || '-'})` : '-'}
                 </Typography>
               </span>
               <span style={{marginRight: '4px', display: 'inline-flex'}}>

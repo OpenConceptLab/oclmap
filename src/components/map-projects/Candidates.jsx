@@ -292,7 +292,7 @@ const CandidateList = ({candidates, header, rowIndex, orderBy, order, setShowIte
   )
 }
 
-const Candidates = ({rowIndex, alert, setAlert, candidates, setShowItem, showItem, setShowHighlights, isSelectedForMap, onMap, onFetchMore, isLoading, candidatesScore, repoVersion, analysis, onFetchRecommendation, appliedFacets, setAppliedFacets, filters, facets, columns, defaultFilters, locales, models, selectedModel, onModelChange, onRefreshClick, rowStage, inAIAssistantGroup, algosSelected, conceptCache, isCoreUser}) => {
+const Candidates = ({rowIndex, alert, setAlert, candidates, setShowItem, showItem, setShowHighlights, isSelectedForMap, onMap, onFetchMore, isLoading, candidatesScore, repoVersion, analysis, onFetchRecommendation, appliedFacets, setAppliedFacets, filters, facets, columns, defaultFilters, locales, models, selectedModel, onModelChange, promptTemplates, promptTemplate, onPromptTemplateChange, onRefreshClick, rowStage, inAIAssistantGroup, algosSelected, conceptCache, isCoreUser}) => {
   const { t } = useTranslation();
   const [sortBy, setSortBy] = React.useState('search_meta.search_normalized_score')
   const [groupBy, setGroupBy] = React.useState('quality')
@@ -443,6 +443,10 @@ const Candidates = ({rowIndex, alert, setAlert, candidates, setShowItem, showIte
                 onClick={onRecommend}
                 sx={{margin: '0 8px'}}
                 onModelChange={onModelChange}
+                promptTemplates={promptTemplates}
+                promptTemplate={promptTemplate}
+                onPromptTemplateChange={onPromptTemplateChange}
+                isCoreUser={isCoreUser}
                 disabled={!areAlgoRun}
               />
           }

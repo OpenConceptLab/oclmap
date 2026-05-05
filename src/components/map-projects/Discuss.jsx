@@ -159,6 +159,12 @@ const Discuss = ({ logs, onAdd }) => {
                           </Typography>
                       }
                       {
+                        log.action === 'AIRecommendation' && log?.extras?.prompt_template?.key &&
+                          <Typography sx={{fontSize: '12px', color: 'rgba(0, 0, 0, 0.7)'}}>
+                            {t('map_project.ai_prompt_template')}: {log.extras.prompt_template.key} ({t('common.version')}: {log.extras.prompt_template.version || '-'})
+                          </Typography>
+                      }
+                      {
                         log?.extras?.algorithm &&
                           <Typography sx={{fontSize: '12px', color: 'rgba(0, 0, 0, 0.7)'}}>
                             {t('map_project.algorithm')}: {log.extras.algorithm}
