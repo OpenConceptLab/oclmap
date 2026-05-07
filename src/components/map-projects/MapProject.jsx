@@ -172,7 +172,7 @@ const MapProject = () => {
   const [AIModel, setAIModel] = React.useState('')
   const [promptTemplate, setPromptTemplate] = React.useState(false)
   const [promptTemplates, setPromptTemplates] = React.useState(false)
-  const [projectPromptTemplateURL, setProjectPromptTemplateURL] = React.useState('')
+  const [projectPromptTemplateKey, setProjectPromptTemplateKey] = React.useState('')
 
   const abortRef = React.useRef(false);
 
@@ -343,7 +343,7 @@ const MapProject = () => {
     APIService.new().overrideURL(templateFromProjectURL).appendToUrl('configurations/').get().then(response => {
       const copiedProject = response.data
       setProject(null)
-      setProjectPromptTemplateURL(copiedProject.prompt_template_url || '')
+      setProjectPromptTemplateKey(copiedProject.prompt_template_key || '')
       setName(copiedProject.name ? t('map_project.create_similar_name', {name: copiedProject.name}) : '')
       setFilters(copiedProject.filters || {})
       setLookupConfig(copiedProject.lookup_config || {})
@@ -468,7 +468,7 @@ const MapProject = () => {
       setCandidatesScore(response.data?.score_configuration)
       setLookupConfig(response.data?.lookup_config)
       setEncoderModel(response.data?.encoder_model || DEFAULT_ENCODER_MODEL)
-      setProjectPromptTemplateURL(response.data?.prompt_template_url || '')
+      setProjectPromptTemplateKey(response.data?.prompt_template_key || '')
       setAnalysis(response.data?.analysis || {})
       setProject(response.data)
       setConfigure(false)
@@ -919,7 +919,7 @@ const MapProject = () => {
     formData.append('encoder_model', encoderModel || DEFAULT_ENCODER_MODEL)
     formData.append('include_retired', retired)
     formData.append('filters', JSON.stringify(getFilters()))
-    formData.append('prompt_template_url', getProjectPromptTemplateURL())
+    formData.append('prompt_template_key', getProjectPromptTemplateKey())
     const isUpdate = Boolean(project?.id)
     let service = APIService.new().overrideURL(owner).appendToUrl('map-projects/')
     if(isUpdate)
@@ -932,7 +932,7 @@ const MapProject = () => {
       if(response?.data?.id) {
         projectLog({action: isUpdate ? 'Updated' : 'Created', extras: isUpdate ? undefined : {project: response.data}})
         setConfigure(false)
-        setProjectPromptTemplateURL(response.data?.prompt_template_url || getProjectPromptTemplateURL())
+        setProjectPromptTemplateKey(response.data?.prompt_template_key || getProjectPromptTemplateKey())
         setProject(response.data)
         if(response.data.url)
           history.push(response.data.url)
@@ -2597,13 +2597,6 @@ const MapProject = () => {
     return 'low_ranked'
   }
 
-  const getPromptTemplateKeyFromURL = React.useCallback((url) => {
-    if(!url)
-      return ''
-    const match = url.match(/\/prompts\/([^/]+)\//)
-    return match?.[1] || ''
-  }, [])
-
   const getPromptTemplateVersionFromURL = React.useCallback((url) => {
     if(!url)
       return ''
@@ -2612,11 +2605,9 @@ const MapProject = () => {
     return version && version !== 'invoke' ? version : ''
   }, [])
 
-  const getProjectPromptTemplateURL = React.useCallback((template = promptTemplate) => {
-    if(!template?.key)
-      return projectPromptTemplateURL || ''
-    return `/prompts/${template.key}/`
-  }, [projectPromptTemplateURL, promptTemplate])
+  const getProjectPromptTemplateKey = React.useCallback((template = promptTemplate) => (
+    template?.key || projectPromptTemplateKey || ''
+  ), [projectPromptTemplateKey, promptTemplate])
 
   const getDefaultAIModelId = React.useCallback((template, models = AIModels) => (
     find(models, {id: template?.default_model})?.id || find(models, {is_default: true})?.id || ''
@@ -2640,8 +2631,8 @@ const MapProject = () => {
   }, [AI_ASSISTANT_API_URL, getResolvedPromptTemplateURI])
 
   const getConfiguredPromptTemplateKey = React.useCallback(() => (
-    getPromptTemplateKeyFromURL(projectPromptTemplateURL) || PROMPTS_KEY_DEFAULT
-  ), [getPromptTemplateKeyFromURL, projectPromptTemplateURL])
+    projectPromptTemplateKey || PROMPTS_KEY_DEFAULT
+  ), [projectPromptTemplateKey])
 
   const fetchAIModels = () => {
     if(!AIModels.length) {
@@ -2664,14 +2655,14 @@ const MapProject = () => {
     if(!key)
       return undefined
 
-    const uri = template?.uri || template?.prompt_template_uri || template?.url || getProjectPromptTemplateURL(template)
+    const uri = template?.uri || template?.prompt_template_uri || template?.url || `/prompts/${key}/`
 
     return {
       key,
       version: template?.version || getPromptTemplateVersionFromURL(uri) || null,
       uri: uri || null
     }
-  }, [getConfiguredPromptTemplateKey, getProjectPromptTemplateURL, getPromptTemplateVersionFromURL, promptTemplate])
+  }, [getConfiguredPromptTemplateKey, getPromptTemplateVersionFromURL, promptTemplate])
 
   const getSelectedAIModel = React.useCallback((modelId = AIModel) => (
     find(AIModels, {id: modelId})
