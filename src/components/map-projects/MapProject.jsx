@@ -2235,7 +2235,8 @@ const MapProject = () => {
     const index = isNumber(_index) ? _index : rowIndex
     if(isNumber(index) && (isBulk || isReadyForRerank(index))) {
       const candidates = getAllCandidatesForRow(index) || []
-      const query = get(prepareRow(rows[index]), 'name')
+      let row = rows[index] || data[index]
+      const query = get(prepareRow(row), 'name')
       if(!candidates.length || !query)
         return
       markAlgo(index, 'rerank', 0)
