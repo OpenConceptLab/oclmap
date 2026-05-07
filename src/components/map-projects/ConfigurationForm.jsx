@@ -33,6 +33,7 @@ import FilterTable from './FilterTable'
 import MultiAlgoSelector from './MultiAlgoSelector'
 import LookupConfig from './LookupConfig'
 import RerankerConfig from './RerankerConfig'
+import AIAssistantSelectorPanel from './AIAssistantSelectorPanel'
 
 const VisuallyHiddenInput = styled('input')({
   clip: 'rect(0 0 0 0)',
@@ -47,7 +48,7 @@ const VisuallyHiddenInput = styled('input')({
 });
 
 
-const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, name, setName, description, setDescription, repo, onRepoChange, repoVersion, setRepoVersion, versions, mappedSources, targetSourcesFromRows, algosSelected, setAlgosSelected, sx, algos, validColumns, columns, isValidColumnValue, updateColumn, configure, setConfigure, columnVisibilityModel, setColumnVisibilityModel, onSave, isSaving, candidatesScore, onScoreChange, includeDefaultFilter, setIncludeDefaultFilter, filters, setFilters, locales, isLoadingLocales, setAIAssistantColumns, AIAssistantColumns, inAIAssistantGroup, lookupConfig, setLookupConfig, encoderModel, setEncoderModel, isCoreUser, canBridge, canScispacy }) => {
+const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, name, setName, description, setDescription, repo, onRepoChange, repoVersion, setRepoVersion, versions, mappedSources, targetSourcesFromRows, algosSelected, setAlgosSelected, sx, algos, validColumns, columns, isValidColumnValue, updateColumn, configure, setConfigure, columnVisibilityModel, setColumnVisibilityModel, onSave, isSaving, candidatesScore, onScoreChange, includeDefaultFilter, setIncludeDefaultFilter, filters, setFilters, locales, isLoadingLocales, setAIAssistantColumns, AIAssistantColumns, inAIAssistantGroup, lookupConfig, setLookupConfig, encoderModel, setEncoderModel, isCoreUser, canBridge, canScispacy, promptTemplates, promptTemplate, onPromptTemplateChange, AIModels, AIModel, setAIModel }) => {
   const { t } = useTranslation();
   const isLLMAlgoNotAllowed = !repoVersion?.match_algorithms?.includes('llm')
   const appliedLocales = filters?.locale ? filters?.locale?.split(',') : []
@@ -210,6 +211,27 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
       }
 
       <LookupConfig value={lookupConfig} onChange={setLookupConfig}/>
+
+      {
+        inAIAssistantGroup && isCoreUser && promptTemplates?.length > 0 &&
+          <>
+            <Typography component="div" sx={{fontSize: '16px', fontWeight: 'bold', marginTop: '20px'}}>
+              {t('map_project.ocl_ai_assistant')}
+            </Typography>
+            <FormHelperText sx={{marginTop: 0}}>
+              {t('map_project.ai_prompt_template_description')}
+            </FormHelperText>
+            <AIAssistantSelectorPanel
+              promptTemplates={promptTemplates}
+              promptTemplate={promptTemplate}
+              onPromptTemplateChange={onPromptTemplateChange}
+              models={AIModels}
+              selectedModel={AIModel}
+              onModelChange={setAIModel}
+              sx={{marginTop: '12px'}}
+            />
+          </>
+      }
 
       <Typography component="div" sx={{fontSize: '16px', fontWeight: 'bold', marginTop: '20px'}}>
         {t('map_project.matching_algorithm')}

@@ -110,6 +110,17 @@ const AICandidatesAnalysis = ({ analysis, onClose, sx, isCoreUser }) => {
                   {analysis?.prompt_template?.key ? `${analysis.prompt_template.key} (${t('common.version')}: ${analysis.prompt_template.version || '-'})` : '-'}
                 </Typography>
               </span>
+              {
+                analysis?.prompt_template_uri &&
+                  <span style={{marginRight: '4px', display: 'inline-flex'}}>
+                    <Typography gutterBottom sx={{ color: 'text.secondary', fontSize: 12, mb: 0 }} component='span'>
+                      URI:
+                    </Typography>
+                    <Typography gutterBottom sx={{ color: 'text.primary', fontSize: 12, mb: 0 }} component='span'>
+                      {analysis.prompt_template_uri}
+                    </Typography>
+                  </span>
+              }
               <span style={{marginRight: '4px', display: 'inline-flex'}}>
                 <Typography gutterBottom sx={{ color: 'text.secondary', fontSize: 12, mb: 0 }} component='span'>
                   {t('map_project.requested_by')}:
