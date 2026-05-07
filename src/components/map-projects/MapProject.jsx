@@ -2235,7 +2235,7 @@ const MapProject = () => {
     const index = isNumber(_index) ? _index : rowIndex
     if(isNumber(index) && (isBulk || isReadyForRerank(index))) {
       const candidates = getAllCandidatesForRow(index) || []
-      let row = rows[index] || data[index]
+      let row = data[index]
       const query = get(prepareRow(row), 'name')
       if(!candidates.length || !query)
         return
