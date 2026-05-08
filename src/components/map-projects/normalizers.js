@@ -224,13 +224,13 @@ export const normalizeAlgoResult = (result, ctx = {}) => {
 
   // For bridge results, fan out one bridge_child candidate per cascade mapping.
   if (isBridge && Array.isArray(result.mappings)) {
-    for (const mapping of result.mappings) {
+    result.mappings.forEach(mapping => {
       const targetDef = cascadeTargetToConceptDefinition(
         mapping,
         identityConfig.cascade_target,
         projectContext
       )
-      if (!targetDef) continue
+      if (!targetDef) return
 
       // Avoid duplicate ConceptDefinition entries within the same result.
       if (!conceptDefinitions.some(cd => cd.key === targetDef.key)) {
@@ -250,7 +250,7 @@ export const normalizeAlgoResult = (result, ctx = {}) => {
         parent_candidate_id: primaryCandidate.id,
         map_type: mapping.map_type
       })
-    }
+    })
   }
 
   return {
@@ -298,7 +298,7 @@ export const normalizeAlgorithmInvocation = (rawPayload, ctx = {}) => {
   const defsByKey = new Map()
   const rowsByKey = new Map()
 
-  for (const result of results) {
+  results.forEach(result => {
     const { candidates, concept_definitions, concept_rows } = normalizeAlgoResult(result, {
       algorithmId,
       algorithmConfig,
@@ -306,19 +306,19 @@ export const normalizeAlgorithmInvocation = (rawPayload, ctx = {}) => {
       projectContext
     })
     allCandidates.push(...candidates)
-    for (const cd of concept_definitions) {
+    concept_definitions.forEach(cd => {
       const existing = defsByKey.get(cd.key)
       // Prefer richer definitions: never overwrite a 'full' with a 'pending'.
       if (!existing || lookupStatusRank(cd.lookup_status) > lookupStatusRank(existing.lookup_status)) {
         defsByKey.set(cd.key, cd)
       }
-    }
-    for (const cr of concept_rows) {
+    })
+    concept_rows.forEach(cr => {
       if (!rowsByKey.has(cr.concept_key)) {
         rowsByKey.set(cr.concept_key, cr)
       }
-    }
-  }
+    })
+  })
 
   return {
     algorithm_response: algorithmResponse,

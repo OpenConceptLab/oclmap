@@ -288,13 +288,13 @@ const MapProject = () => {
       concept_rows: { ...prevRow.concept_rows },
     }
 
-    for(const cr of concept_rows) {
+    concept_rows.forEach(cr => {
       const existing = nextRow.concept_rows[cr.concept_url]
       // Preserve any existing rerank_score; otherwise take the new entry.
       nextRow.concept_rows[cr.concept_url] = existing && existing.rerank_score !== undefined
         ? existing
         : cr
-    }
+    })
 
     rowMatchStateRef.current = { ...prevAll, [rowIndex]: nextRow }
     setRowMatchState(rowMatchStateRef.current)
@@ -303,15 +303,35 @@ const MapProject = () => {
     // richer (lookup_status='full') over stubs ('pending'/'partial').
     setConceptCache(prev => {
       const next = { ...prev }
-      for(const def of concept_definitions) {
+      concept_definitions.forEach(def => {
         const existing = next[def.url]
         if(!existing || lookupStatusRank(def.lookup_status) > lookupStatusRank(existing.lookup_status)) {
           next[def.url] = def
         }
-      }
+      })
       return next
     })
   }, [])
+
+  // Build projectContext for the unified-model normalizer.
+  // Target repo canonical URL is read from repo metadata; if absent, derive
+  // 'https://ns.openconceptlab.org' + relative URL (per OCL canonical
+  // conventions — see plans/unified-mapper-model.md).
+  const buildProjectContext = React.useCallback(() => {
+    if(!repo?.url) return null
+    const targetCanonical = repo.canonical_url || `https://ns.openconceptlab.org${repo.url}`
+    return {
+      namespace: get(project, 'owner_url') || owner,
+      target_repo: {
+        relative_url: repo.url,
+        canonical_url: targetCanonical,
+        canonical_url_source: repo.canonical_url ? 'repo' : 'derived',
+        version: repoVersion?.id || repo.version
+      }
+      // bridge_repo is set per-invocation when the algo is a bridge algo
+      // (bridge path doesn't flow through this onResponse handler in PR 1).
+    }
+  }, [project, owner, repo, repoVersion])
 
   const allCandidatesRef = React.useRef({})
 
@@ -2210,27 +2230,8 @@ const MapProject = () => {
       }
       markAlgo(__row.__index, algoId, 0)
       setIsLoadingInDecisionView(true)
-      // Build projectContext for the unified-model normalizer.
-      // Target repo canonical URL is read from repo metadata; if absent, derive
-      // 'https://ns.openconceptlab.org' + relative URL (per OCL canonical
-      // conventions — see plans/unified-mapper-model.md).
-      const buildProjectContext = () => {
-        if(!repo?.url) return null
-        const targetCanonical = repo.canonical_url || `https://ns.openconceptlab.org${repo.url}`
-        return {
-          namespace: get(project, 'owner_url') || owner,
-          target_repo: {
-            relative_url: repo.url,
-            canonical_url: targetCanonical,
-            canonical_url_source: repo.canonical_url ? 'repo' : 'derived',
-            version: repoVersion?.id || repo.version
-          }
-          // bridge_repo is set per-invocation when the algo is a bridge algo
-          // (bridge path doesn't flow through this onResponse handler in PR 1).
-        }
-      }
-
       const onResponse = (response, payload) => {
+        const projectContext = UNIFIED_MODEL_ENABLED ? buildProjectContext() : null
         if(response?.detail) {
           markAlgo(__row.__index, algoId, -2)
           log({action: 'algo_failed', extras: {algo: algoId}}, __row.__index)
@@ -2239,7 +2240,7 @@ const MapProject = () => {
             mergeIntoRowMatchState(__row.__index, normalizeAlgorithmInvocation(null, {
               algorithmId: algoId,
               algorithmConfig: algoDef,
-              projectContext: buildProjectContext(),
+              projectContext,
               rowIndex: __row.__index,
               status: 'failed',
               error: response.detail,
@@ -2264,7 +2265,7 @@ const MapProject = () => {
               mergeIntoRowMatchState(__row.__index, normalizeAlgorithmInvocation(rowPayload, {
                 algorithmId: algoId,
                 algorithmConfig: algoDef,
-                projectContext: buildProjectContext(),
+                projectContext,
                 rowIndex: __row.__index,
                 rawResponse: response
               }))
