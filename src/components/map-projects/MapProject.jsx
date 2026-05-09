@@ -104,9 +104,21 @@ import ProjectLogs from './ProjectLogs';
 import { useAlgos } from './algorithms'
 import AutoMatchDialog from './AutoMatchDialog'
 import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
+import { normalizeAlgorithmInvocation, lookupStatusRank } from './normalizers'
 
 import './MapProject.scss'
 import '../common/ResizablePanel.scss'
+
+/**
+ * Feature flag for the unified candidate/concept data model
+ * (plans/unified-mapper-model.md, ocl_issues#2337). When OFF (default), this
+ * file behaves exactly as before. When ON, algorithm responses are *also*
+ * normalized into the new RowMatchState shape (in parallel with the legacy
+ * allCandidates state). PR 2 will flip reads to consume the new state and
+ * remove the legacy path. PR 1 deliberately keeps reads on the legacy state
+ * so behavior is unchanged.
+ */
+const UNIFIED_MODEL_ENABLED = false
 
 // const LOG = {
 //   action: '',
@@ -147,6 +159,17 @@ const MapProject = () => {
 
   // Algo Candidates
   const [allCandidates, setAllCandidates] = React.useState({}); // ocl-scispacy-loinc
+
+  // Unified candidate/concept model (plans/unified-mapper-model.md). Populated
+  // in parallel with allCandidates when UNIFIED_MODEL_ENABLED is true. Shape:
+  //   { [rowIndex]: {
+  //       algorithm_responses: { [id]: AlgorithmResponse },
+  //       candidates:          { [id]: Candidate },
+  //       concept_rows:        { [concept_url]: ConceptRow },
+  //   } }
+  // ConceptDefinitions live in the project-wide conceptCache (already URL-keyed).
+  const [, setRowMatchState] = React.useState({})
+  const rowMatchStateRef = React.useRef({})
 
   const [searchedConcepts, setSearchedConcepts] = React.useState({});
   const [fetchedFacets, setFetchedFacets] = React.useState({});
@@ -235,6 +258,80 @@ const MapProject = () => {
     rowStageRef.current = next;
     _setRowStage(next);
   }, []);
+
+  /**
+   * Merge a normalized invocation into the row's RowMatchState (in-place on
+   * the ref, then setState to trigger renders once read paths are flipped).
+   * Concept definitions are merged into conceptCache (project-wide). Concept
+   * rows are merged per-row, preferring existing rerank_score over undefined.
+   */
+  const mergeIntoRowMatchState = React.useCallback((rowIndex, normalized) => {
+    if(!normalized) return
+    const { algorithm_response, candidates, concept_definitions, concept_rows } = normalized
+
+    const prevAll = rowMatchStateRef.current
+    const prevRow = prevAll[rowIndex] || {
+      algorithm_responses: {},
+      candidates: {},
+      concept_rows: {},
+    }
+
+    const nextRow = {
+      algorithm_responses: {
+        ...prevRow.algorithm_responses,
+        [algorithm_response.id]: algorithm_response,
+      },
+      candidates: {
+        ...prevRow.candidates,
+        ...candidates.reduce((acc, c) => { acc[c.id] = c; return acc }, {}),
+      },
+      concept_rows: { ...prevRow.concept_rows },
+    }
+
+    concept_rows.forEach(cr => {
+      const existing = nextRow.concept_rows[cr.concept_url]
+      // Preserve any existing rerank_score; otherwise take the new entry.
+      nextRow.concept_rows[cr.concept_url] = existing && existing.rerank_score !== undefined
+        ? existing
+        : cr
+    })
+
+    rowMatchStateRef.current = { ...prevAll, [rowIndex]: nextRow }
+    setRowMatchState(rowMatchStateRef.current)
+
+    // Merge ConceptDefinitions into the project-wide conceptCache. Prefer
+    // richer (lookup_status='full') over stubs ('pending'/'partial').
+    setConceptCache(prev => {
+      const next = { ...prev }
+      concept_definitions.forEach(def => {
+        const existing = next[def.url]
+        if(!existing || lookupStatusRank(def.lookup_status) > lookupStatusRank(existing.lookup_status)) {
+          next[def.url] = def
+        }
+      })
+      return next
+    })
+  }, [])
+
+  // Build projectContext for the unified-model normalizer.
+  // Target repo canonical URL is read from repo metadata; if absent, derive
+  // 'https://ns.openconceptlab.org' + relative URL (per OCL canonical
+  // conventions — see plans/unified-mapper-model.md).
+  const buildProjectContext = React.useCallback(() => {
+    if(!repo?.url) return null
+    const targetCanonical = repo.canonical_url || `https://ns.openconceptlab.org${repo.url}`
+    return {
+      namespace: get(project, 'owner_url') || owner,
+      target_repo: {
+        relative_url: repo.url,
+        canonical_url: targetCanonical,
+        canonical_url_source: repo.canonical_url ? 'repo' : 'derived',
+        version: repoVersion?.id || repo.version
+      }
+      // bridge_repo is set per-invocation when the algo is a bridge algo
+      // (bridge path doesn't flow through this onResponse handler in PR 1).
+    }
+  }, [project, owner, repo, repoVersion])
 
   const allCandidatesRef = React.useRef({})
 
@@ -2134,10 +2231,22 @@ const MapProject = () => {
       markAlgo(__row.__index, algoId, 0)
       setIsLoadingInDecisionView(true)
       const onResponse = (response, payload) => {
+        const projectContext = UNIFIED_MODEL_ENABLED ? buildProjectContext() : null
         if(response?.detail) {
           markAlgo(__row.__index, algoId, -2)
           log({action: 'algo_failed', extras: {algo: algoId}}, __row.__index)
           setAlert({message: response.detail, severity: 'error'})
+          if(UNIFIED_MODEL_ENABLED) {
+            mergeIntoRowMatchState(__row.__index, normalizeAlgorithmInvocation(null, {
+              algorithmId: algoId,
+              algorithmConfig: algoDef,
+              projectContext,
+              rowIndex: __row.__index,
+              status: 'failed',
+              error: response.detail,
+              rawResponse: response
+            }))
+          }
           return
         }
         log({action: 'algo_finished', extras: {algo: algoId}}, __row.__index)
@@ -2147,12 +2256,28 @@ const MapProject = () => {
           const results = algoId === 'ocl-scispacy-loinc' ? [{row: __row, results: fromScispacyResultsToConcepts(get(response.data, __row.__index) || [])}] : data
           nextCandidates = {...allCandidatesRef.current, [algoId]: [...reject(allCandidatesRef.current[algoId], c => c.row.__index === __row.__index), ...(results || [])]}
           lookupCandidates(algoId, get(results, '0.results'))
+          if(UNIFIED_MODEL_ENABLED) {
+            // Normalize the invocation for this row and merge into the new
+            // RowMatchState. Reads still come from allCandidates — flipping
+            // reads is PR 2.
+            const rowPayload = find(results, r => r?.row?.__index === __row.__index)
+            if(rowPayload) {
+              mergeIntoRowMatchState(__row.__index, normalizeAlgorithmInvocation(rowPayload, {
+                algorithmId: algoId,
+                algorithmConfig: algoDef,
+                projectContext,
+                rowIndex: __row.__index,
+                rawResponse: response
+              }))
+            }
+          }
         } else {
           const newMatches = [...(allCandidatesRef.current[algoId] || [])]
           const index = findIndex(newMatches, match => match.row.__index === __row.__index)
           newMatches[index].results = [...newMatches[index].results, ...(get(data, '0.results') || [])]
           lookupCandidates(algoId, get(data, '0.results'))
           nextCandidates = {...allCandidatesRef.current, [algoId]: newMatches}
+          // TODO(unified-model): pagination append path. PR 2 work.
         }
         allCandidatesRef.current = nextCandidates
         setAllCandidates(nextCandidates)

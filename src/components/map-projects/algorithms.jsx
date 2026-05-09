@@ -17,7 +17,15 @@ export const useAlgos = (t, toggles) => {
       },
       'disabled': !toggles.SEMANTIC_SEARCH_TOGGLE,
       'allow_multiple': false,
-      'lookup_required': false
+      'lookup_required': false,
+      // Canonical concept identity (plans/unified-mapper-model.md). Concepts
+      // returned by ocl-semantic come from the project's target repo, so the
+      // canonical URL of each concept is the target repo's canonical URL.
+      'concept_identity': {
+        'reference_source': 'target_repo',
+        'code_field': 'id',
+        'ocl_url_field': 'url'
+      }
     },
     {
       'id': 'ocl-search',
@@ -30,7 +38,12 @@ export const useAlgos = (t, toggles) => {
       'concurrent_requests': 2,
       'disabled': false,
       'allow_multiple': false,
-      'lookup_required': false
+      'lookup_required': false,
+      'concept_identity': {
+        'reference_source': 'target_repo',
+        'code_field': 'id',
+        'ocl_url_field': 'url'
+      }
     },
   ]
   return algos
