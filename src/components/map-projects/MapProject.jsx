@@ -1460,15 +1460,29 @@ const MapProject = () => {
       setLoadingMatches(true)
       await fetchScispacyCandidates(_rows[index], false, false, true, (response => {
         const _index = _rows[index].__index
+        const results = [{row: _rows[index], results: fromScispacyResultsToConcepts(get(response.data, index) || [])}]
         log({action: 'algo_finished', extras: {algo: algo.id}}, _index)
         markAlgo(_index, algo.id, 1)
-        setAllCandidates(prev => {
-          const newCandidates = {...prev}
-          const results = [{row: _rows[index], results: fromScispacyResultsToConcepts(get(response.data, index) || [])}]
-          newCandidates[algo.id] = [...reject(prev[algo.id], c => c.row.__index === _index), ...(results || [])]
-          lookupCandidates(algo.id, results)
-          return newCandidates
-        })
+        setAllCandidates(prev => ({
+          ...prev,
+          [algo.id]: [...reject(prev[algo.id], c => c.row.__index === _index), ...(results || [])]
+        }))
+        lookupCandidates(algo.id, results)
+        if(UNIFIED_MODEL_ENABLED) {
+          // Mirror the bulk-bridge wiring — the per-row scispacy path goes via
+          // onResponse, but the bulk path lives here.
+          const algoDef = getAlgoDef(algo.id)
+          const rowPayload = results[0]
+          if(rowPayload && algoDef) {
+            mergeIntoRowMatchState(_index, normalizeAlgorithmInvocation(rowPayload, {
+              algorithmId: algo.id,
+              algorithmConfig: algoDef,
+              projectContext: buildProjectContext(),
+              rowIndex: _index,
+              rawResponse: response
+            }))
+          }
+        }
       })); // wait for completion
       await new Promise(resolve => setTimeout(resolve, 500)); // 1s delay
     }

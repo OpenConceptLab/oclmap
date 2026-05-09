@@ -36,6 +36,14 @@ export const CONCEPT_IDENTITY_BY_TYPE = {
       'code_field': 'cascade_target_concept_code',
       'ocl_url_field': 'cascade_target_concept_url'
     }
+  },
+  // Scispacy returns LOINC codes only — fixed canonical, no OCL URL on the
+  // result. fromScispacyResultsToConcepts in MapProject.jsx maps LOINC_NUM
+  // into `id` before normalization, so code_field='id' resolves correctly.
+  'ocl-scispacy': {
+    'reference_source': 'fixed',
+    'canonical_url': 'http://loinc.org',
+    'code_field': 'id'
   }
 }
 
