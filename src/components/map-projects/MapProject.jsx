@@ -1884,7 +1884,8 @@ const MapProject = () => {
       let _repo = concept?.repo
       const aiRecommendation = get(analysis, index)?.output || get(analysis, index)
       const aiCandidate = get(aiRecommendation, 'primary_candidate')
-      const aiCandidateID = aiCandidate?.concept_id
+      // v2 response prefers canonical_reference.code; legacy shape used concept_id.
+      const aiCandidateID = aiCandidate?.canonical_reference?.code || aiCandidate?.concept_id
       const aiScore = compact([aiCandidate?.confidence_level, aiCandidate?.match_strength]).join(':')
       let  candidates = getRowCandidatesForDownload(index)
       const getOutOfScopeSuggestions = () => {
@@ -2740,6 +2741,103 @@ const MapProject = () => {
     }
   }
 
+  // Build the v2 AI Assistant payload sections (recommendable_concepts +
+  // bridge_context + target_repo) by running the unified-model normalizer
+  // over the legacy allCandidates for the row. Sourcing from allCandidates
+  // (rather than rowMatchState) means this works regardless of the
+  // UNIFIED_MODEL_ENABLED flag — the bridge-recommendation bug fix can ship
+  // with PR2a even though reads are still on legacy state.
+  // See plans/unified-mapper-model.md "AI Assistant payload (match-recommend)".
+  const buildV2RecommendationPayload = (rowIndex) => {
+    const projectContext = buildProjectContext()
+    if(!projectContext?.target_repo?.canonical_url) return null
+
+    const allNormCandidates = []
+    const defsByKey = new Map()
+
+    selectedAlgoIds.forEach(algoId => {
+      const algoDef = getAlgoDef(algoId)
+      if(!algoDef?.concept_identity) return
+      const rowEntry = find(allCandidatesRef.current[algoId], c => c.row?.__index === rowIndex)
+      if(!rowEntry?.results?.length) return
+
+      const normalized = normalizeAlgorithmInvocation(
+        {row: rowEntry.row, results: rowEntry.results},
+        {algorithmId: algoId, algorithmConfig: algoDef, projectContext, rowIndex}
+      )
+
+      allNormCandidates.push(...normalized.candidates)
+      normalized.concept_definitions.forEach(def => {
+        const existing = defsByKey.get(def.key)
+        // Prefer richer definitions (full > partial > pending), matching the
+        // mergeIntoRowMatchState rule.
+        if(!existing || lookupStatusRank(def.lookup_status) > lookupStatusRank(existing.lookup_status))
+          defsByKey.set(def.key, def)
+      })
+    })
+
+    const targetCanonical = projectContext.target_repo.canonical_url
+    const recommendable_concepts = []
+    const bridge_context = []
+
+    defsByKey.forEach((def, key) => {
+      const isBridgeIntermediary = allNormCandidates.some(c => c.concept_key === key && c.type === 'bridge')
+
+      if(isBridgeIntermediary) {
+        // Bridges are CONTEXT only — never recommendable. Their target_concept_keys
+        // tell the AI which recommendable_concepts they justify.
+        const bridgeCandidate = allNormCandidates.find(c => c.concept_key === key && c.type === 'bridge')
+        const target_concept_keys = [...new Set(
+          allNormCandidates
+            .filter(c => c.type === 'bridge_child' && c.bridge_concept_key === key)
+            .map(c => c.concept_key)
+        )]
+        bridge_context.push({
+          concept_key: key,
+          canonical_reference: def.reference,
+          display_name: def.display_name,
+          score: bridgeCandidate?.score,
+          target_concept_keys
+        })
+      } else if(def.reference?.url === targetCanonical) {
+        // Target-repo concepts only. Evidence shows which algorithms surfaced
+        // this concept (and via which bridge, if applicable).
+        const evidence = allNormCandidates
+          .filter(c => c.concept_key === key)
+          .map(c => {
+            const e = {
+              algorithm_id: c.algorithm_id,
+              candidate_type: c.type,
+              score: c.score,
+              highlights: c.highlights
+            }
+            if(c.type === 'bridge_child' && c.bridge_concept_key)
+              e.via = {bridge_concept_key: c.bridge_concept_key, map_type: c.map_type}
+            return e
+          })
+        recommendable_concepts.push({
+          concept_key: key,
+          canonical_reference: def.reference,
+          ocl_url: def.ocl_url,
+          display_name: def.display_name,
+          names: def.names,
+          descriptions: def.descriptions,
+          concept_class: def.concept_class,
+          datatype: def.datatype,
+          properties: def.properties,
+          evidence
+        })
+      }
+      // Else: concept from a non-target, non-bridge source — skip
+    })
+
+    return {
+      target_repo: projectContext.target_repo,
+      recommendable_concepts,
+      bridge_context
+    }
+  }
+
   const fetchRecommendation = async (_row) => {
     let __row = row;
     let __index = rowIndex;
@@ -2762,12 +2860,24 @@ const MapProject = () => {
 
       markAlgo(__index, 'recommend', 0)
       let rowData = prepareRow(__row, true, true)
+      // Option A: additive. Keep the legacy `candidates` field for the
+      // current prompt template; spread v2 fields alongside for the next
+      // prompt-template revision (which will read recommendable_concepts +
+      // bridge_context and structurally exclude bridges from the
+      // recommendation pool, fixing the bridge-recommendation bug).
+      const v2 = buildV2RecommendationPayload(__index)
       const payload = {
         variables: {
           project: getProjectMetadata(),
           row: rowData.row,
           metadata: rowData.metadata,
           candidates: [..._candidates.map(c => omit(c, '_source'))],
+          ...(v2 ? {
+            payload_version: 'v2',
+            target_repo: v2.target_repo,
+            recommendable_concepts: v2.recommendable_concepts,
+            bridge_context: v2.bridge_context
+          } : {})
         }
       }
       const service = APIService.new()
