@@ -17,14 +17,11 @@ import IconButton from '@mui/material/IconButton'
 import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
 import Chip from '@mui/material/Chip';
-import FormControlLabel from '@mui/material/FormControlLabel';
 import FormControl from '@mui/material/FormControl';
-import Switch from '@mui/material/Switch';
 import Tooltip from '@mui/material/Tooltip';
 import Alert from '@mui/material/Alert';
 import Collapse from '@mui/material/Collapse';
 import Divider from '@mui/material/Divider';
-import Badge from '@mui/material/Badge';
 import { DataGrid } from '@mui/x-data-grid';
 
 
@@ -48,8 +45,6 @@ import without from 'lodash/without'
 import has from 'lodash/has'
 import chunk from 'lodash/chunk'
 import get from 'lodash/get'
-import countBy from 'lodash/countBy'
-import sum from 'lodash/sum'
 import omit from 'lodash/omit'
 import omitBy from 'lodash/omitBy'
 import reject from 'lodash/reject'
@@ -154,7 +149,6 @@ const MapProject = () => {
   const [rowStatuses, setRowStatuses] = React.useState({reviewed: [], readyForReview: [], unmapped: []})
   const [decisions, setDecisions] = React.useState({})
   const [decisionFilters, setDecisionFilters] = React.useState([])
-  const [matchTypes, setMatchTypes] = React.useState({very_high: 0, high: 0, medium: 0, low: 0, no_match: 0})
   const [matchedConcepts, setMatchedConcepts] = React.useState([]);
 
   // Algo Candidates
@@ -203,7 +197,6 @@ const MapProject = () => {
   const [edit, setEdit] = React.useState([]);
   const [configure, setConfigure] = React.useState(!params.projectId);
   const [selectedRowStatus, setSelectedRowStatus] = React.useState('all')
-  const [selectedMatchBucket, setSelectedMatchBucket] = React.useState(false)
   const [decisionTab, setDecisionTab] = React.useState('candidates')
   const [searchText, setSearchText] = React.useState('')  // csv row search
   const [selectedCandidatesScoreBucket, setSelectedCandidatesScoreBucket] = React.useState(false)
@@ -724,7 +717,6 @@ const MapProject = () => {
     setRowStatuses({reviewed: [], readyForReview: [], unmapped: []})
     setDecisions({})
     setDecisionFilters([])
-    setMatchTypes({very_high: 0, high: 0, medium: 0, low: 0, no_match: 0})
     setMatchedConcepts([])
     setAllCandidates({})
     setSearchedConcepts({})
@@ -1139,18 +1131,10 @@ const MapProject = () => {
   }
 
   const setStateViews = (data, _repo) => {
-    let matchTypes = map(data, 'results.0.search_meta.match_type')
-    let counts = countBy(matchTypes)
-    setMatchTypes(prev => ({
-      very_high: prev.very_high + (counts?.very_high || 0),
-      high: prev.high + (counts?.high || 0),
-      medium: prev.medium + (counts?.medium || 0),
-      low: prev.low + (counts?.low || 0),
-      no_match: prev.no_match + (sum(values(omit(counts, ['very_high', 'high', 'medium', 'low']))) || 0)
-    }));
     setRowStatuses(prev => {
       forEach(data, concept => {
-        if(get(concept, 'results.0.search_meta.match_type') === 'very_high') {
+        const topScore = get(concept, 'results.0.search_meta.search_normalized_score')
+        if(isNumber(topScore) && topScore >= candidatesScore.recommended) {
           let _concept = {...concept.results[0], repo: {..._repo, version: repoVersion?.id || _repo.version, version_url: repoVersion?.version_url || _repo.version_url}}
           setMapSelected(_prev => {
             _prev[concept.row.__index] = _concept
@@ -1192,7 +1176,6 @@ const MapProject = () => {
               search_meta: {...topCandidate.search_meta, map_type: mapping.map_type || topCandidate.search_meta.map_type },
             }
         }
-        setMatchTypes(prev => prev.very_high + 1)
         setRowStatuses(prev => {
           let newStatuses = {...prev}
           let _concept = {...conceptToMap, repo: {...repo, version: repoVersion?.id || repo.version, version_url: repoVersion?.version_url || repo.version_url}}
@@ -1591,8 +1574,6 @@ const MapProject = () => {
     setMatchDialog(false)
   }
 
-  const showMatchSummary = Boolean(data?.length && (loadingMatches || matchedConcepts?.length))
-
   const [_now, set_Now] = React.useState(() => moment());
 
   React.useEffect(() => {
@@ -1651,21 +1632,10 @@ const MapProject = () => {
     return t('map_project.ai_analysis')
   }
 
-  const onMatchTypeChange = bucket => setSelectedMatchBucket(prev => prev === bucket ? false : bucket)
-
   const getRows = () => {
     let rows = data?.length ? [...data] : []
     if(selectedRowStatus !== 'all')
       rows = filter(rows, r => rowStatuses[selectedRowStatus].includes(r.__index))
-    if(selectedMatchBucket) {
-      let getIndex = concept => {
-        if(selectedMatchBucket === 'no_match')
-          return (!concept?.results?.length || !['very_high', 'high', 'medium', 'low'].includes(concept.results[0].search_meta.match_type)) ? concept.row.__index : null
-        return (concept?.results?.length && concept.results[0].search_meta.match_type === selectedMatchBucket) ? concept.row.__index : null
-      }
-      const rowIndexes = map(matchedConcepts, getIndex)
-      rows = filter(rows, r => rowIndexes.includes(r.__index))
-    }
     if(searchText)
       rows = filter(rows, row =>
         find(values(row), v =>
@@ -1998,7 +1968,6 @@ const MapProject = () => {
         setMapTypes({...mapTypes, [rowIndex]: mapType})
         setTimeout(() => highlightTexts([concept], null, false), 100)
       }
-      updateMatchTypeCounts(null, prev)
       if(closeConcept)
         setShowItem(false)
       return prev
@@ -2017,7 +1986,6 @@ const MapProject = () => {
   const onReviewDone = (next = false) => {
     const newRowStatuses = {...rowStatuses, reviewed: uniq([...rowStatuses.reviewed, rowIndex]), readyForReview: without(rowStatuses.readyForReview, rowIndex), unmapped: without(rowStatuses.unmapped, rowIndex)}
     setRowStatuses(newRowStatuses)
-    updateMatchTypeCounts('reviewed', newRowStatuses)
     log({'action': 'approved'})
     if(next){
       const nextRow = data[selectedRowStatus === 'all' ? rowIndex + 1 : find(rowStatuses[selectedRowStatus], idx => idx > rowIndex)]
@@ -2044,24 +2012,7 @@ const MapProject = () => {
 
   const onStateTabChange = newValue => {
     setSelectedRowStatus(newValue)
-    updateMatchTypeCounts(newValue)
     setDecisionFilters([])
-    if(newValue === 'unmapped')
-      setSelectedMatchBucket(false)
-  }
-
-  const updateMatchTypeCounts = (newRowStatus, newRowStatuses) => {
-    let rowStatus = newRowStatus || selectedRowStatus
-    let rows = rowStatus === 'all' ? matchedConcepts : filter(matchedConcepts, concept => (newRowStatuses || rowStatuses)[rowStatus].includes(concept.row.__index));
-    let matchTypes = map(rows, 'results.0.search_meta.match_type')
-    let counts = countBy(matchTypes)
-    setMatchTypes({
-      very_high: (counts?.very_high || 0),
-      high: (counts?.high || 0),
-      medium: (counts?.medium || 0),
-      low: (counts?.low || 0),
-      no_match: sum(values(omit(counts, ['very_high', 'high', 'medium', 'low']))) || 0
-    });
   }
 
   const onDecisionTabChange = (event, newValue) => {
@@ -2115,7 +2066,6 @@ const MapProject = () => {
         prev.readyForReview = without(prev.readyForReview, rowIndex)
         prev.unmapped = uniq([...prev.unmapped, rowIndex])
       }
-      updateMatchTypeCounts(null, prev)
       return prev
     })
     if(newValue !== 'map' && !logged)
@@ -3034,7 +2984,7 @@ const MapProject = () => {
           </div>
         </Paper>
         {
-          (Boolean(rows?.length) || selectedMatchBucket || ROW_STATES.includes(selectedRowStatus) || searchText) &&
+          (Boolean(rows?.length) || ROW_STATES.includes(selectedRowStatus) || searchText) &&
             <div className='col-xs-12' style={{padding: '0', width: '100%', height: 'calc(100vh - 170px)', minWidth: '665px'}}>
               <div className='col-xs-12' style={{padding: '0 12px', display: 'flex', backgroundColor: SURFACE_COLORS.main, overflowX: 'auto'}}>
                 {
@@ -3072,17 +3022,6 @@ const MapProject = () => {
                 <FormControl sx={{minWidth: '16px'}}>
                   <SearchField onChange={debounce(val => setSearchText(val || ''))} />
                 </FormControl>
-                <Badge badgeContent={matchTypes.very_high || 0} max={999} color='primary'>
-                <FormControlLabel
-                  sx={{
-                    marginLeft: '4px',
-                    marginRight: '8px',
-                    '.MuiFormControlLabel-label': {fontSize: '0.8125rem'}
-                  }}
-                  control={<Switch disabled={!showMatchSummary || selectedRowStatus === 'unmapped'} size="small" checked={selectedMatchBucket === 'very_high'} onChange={() => onMatchTypeChange('very_high')} />}
-                  label={t('map_project.auto_match')}
-                />
-                  </Badge>
                 <ScoreBucketButton
                   selected={selectedCandidatesScoreBucket}
                   onSort={() => setScoreBucketSortBy(scoreBucketSortBy === 'desc' ? 'asc' : 'desc')}
