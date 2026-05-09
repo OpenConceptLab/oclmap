@@ -1,6 +1,44 @@
 import React from 'react'
 import MatchingIcon from '@mui/icons-material/DeviceHub';
 
+// Canonical concept-identity config per algorithm type
+// (plans/unified-mapper-model.md). Single source of truth shared between
+// algorithms defined here (ocl-semantic, ocl-search) and algorithms loaded
+// from the OCL Online API (ocl-bridge, ocl-ciel-bridge, ocl-scispacy);
+// MapProject's getAlgoDef merges the missing concept_identity at lookup time.
+export const CONCEPT_IDENTITY_BY_TYPE = {
+  'ocl-semantic': {
+    'reference_source': 'target_repo',
+    'code_field': 'id',
+    'ocl_url_field': 'url'
+  },
+  'ocl-search': {
+    'reference_source': 'target_repo',
+    'code_field': 'id',
+    'ocl_url_field': 'url'
+  },
+  'ocl-bridge': {
+    'reference_source': 'bridge_repo',
+    'code_field': 'id',
+    'ocl_url_field': 'url',
+    'cascade_target': {
+      'reference_source': 'target_repo',
+      'code_field': 'cascade_target_concept_code',
+      'ocl_url_field': 'cascade_target_concept_url'
+    }
+  },
+  'ocl-ciel-bridge': {
+    'reference_source': 'bridge_repo',
+    'code_field': 'id',
+    'ocl_url_field': 'url',
+    'cascade_target': {
+      'reference_source': 'target_repo',
+      'code_field': 'cascade_target_concept_code',
+      'ocl_url_field': 'cascade_target_concept_url'
+    }
+  }
+}
+
 export const useAlgos = (t, toggles) => {
   const algos = [
     {
@@ -18,14 +56,7 @@ export const useAlgos = (t, toggles) => {
       'disabled': !toggles.SEMANTIC_SEARCH_TOGGLE,
       'allow_multiple': false,
       'lookup_required': false,
-      // Canonical concept identity (plans/unified-mapper-model.md). Concepts
-      // returned by ocl-semantic come from the project's target repo, so the
-      // canonical URL of each concept is the target repo's canonical URL.
-      'concept_identity': {
-        'reference_source': 'target_repo',
-        'code_field': 'id',
-        'ocl_url_field': 'url'
-      }
+      'concept_identity': CONCEPT_IDENTITY_BY_TYPE['ocl-semantic']
     },
     {
       'id': 'ocl-search',
@@ -39,11 +70,7 @@ export const useAlgos = (t, toggles) => {
       'disabled': false,
       'allow_multiple': false,
       'lookup_required': false,
-      'concept_identity': {
-        'reference_source': 'target_repo',
-        'code_field': 'id',
-        'ocl_url_field': 'url'
-      }
+      'concept_identity': CONCEPT_IDENTITY_BY_TYPE['ocl-search']
     },
   ]
   return algos

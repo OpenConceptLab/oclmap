@@ -96,7 +96,7 @@ import ScoreBucketButton from './ScoreBucketButton'
 import Concept from './Concept'
 import ImportToCollection from './ImportToCollection'
 import ProjectLogs from './ProjectLogs';
-import { useAlgos } from './algorithms'
+import { useAlgos, CONCEPT_IDENTITY_BY_TYPE } from './algorithms'
 import AutoMatchDialog from './AutoMatchDialog'
 import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
 import { normalizeAlgorithmInvocation, lookupStatusRank } from './normalizers'
@@ -306,26 +306,6 @@ const MapProject = () => {
     })
   }, [])
 
-  // Build projectContext for the unified-model normalizer.
-  // Target repo canonical URL is read from repo metadata; if absent, derive
-  // 'https://ns.openconceptlab.org' + relative URL (per OCL canonical
-  // conventions — see plans/unified-mapper-model.md).
-  const buildProjectContext = React.useCallback(() => {
-    if(!repo?.url) return null
-    const targetCanonical = repo.canonical_url || `https://ns.openconceptlab.org${repo.url}`
-    return {
-      namespace: get(project, 'owner_url') || owner,
-      target_repo: {
-        relative_url: repo.url,
-        canonical_url: targetCanonical,
-        canonical_url_source: repo.canonical_url ? 'repo' : 'derived',
-        version: repoVersion?.id || repo.version
-      }
-      // bridge_repo is set per-invocation when the algo is a bridge algo
-      // (bridge path doesn't flow through this onResponse handler in PR 1).
-    }
-  }, [project, owner, repo, repoVersion])
-
   const allCandidatesRef = React.useRef({})
 
   /*eslint no-undef: 0*/
@@ -341,6 +321,38 @@ const MapProject = () => {
   const scispacyEnabled = find(algosSelected, {type: 'ocl-scispacy'})
   const bridgeAlgo = find(algosSelected, a => ['ocl-bridge', 'ocl-ciel-bridge'].includes(a.type))
   const bridgeEnabled = Boolean(bridgeAlgo)
+
+  // Build projectContext for the unified-model normalizer. Reads target repo
+  // canonical_url from repo metadata; if absent, derives
+  // 'https://ns.openconceptlab.org' + relative URL (per OCL canonical
+  // conventions — see plans/unified-mapper-model.md). When a bridge algo is
+  // selected, includes bridge_repo derived from algo.target_repo_url.
+  const buildProjectContext = React.useCallback(() => {
+    if(!repo?.url) return null
+    const targetCanonical = repo.canonical_url || `https://ns.openconceptlab.org${repo.url}`
+    const ctx = {
+      namespace: get(project, 'owner_url') || owner,
+      target_repo: {
+        relative_url: repo.url,
+        canonical_url: targetCanonical,
+        canonical_url_source: repo.canonical_url ? 'repo' : 'derived',
+        version: repoVersion?.id || repo.version
+      }
+    }
+    // bridge_repo when a bridge algo is in use. The bridge repo's relative URL
+    // lives on the algo as `target_repo_url` (legacy naming — the bridge repo
+    // is the *source* of the bridge mappings, e.g. CIEL). PR2a derives the
+    // canonical URL from the relative URL; PR2b will read explicit canonical
+    // from bridge repo metadata once ConfigurationForm carries it.
+    if(bridgeAlgo?.target_repo_url) {
+      ctx.bridge_repo = {
+        relative_url: bridgeAlgo.target_repo_url,
+        canonical_url: `https://ns.openconceptlab.org${bridgeAlgo.target_repo_url}`,
+        canonical_url_source: 'derived'
+      }
+    }
+    return ctx
+  }, [project, owner, repo, repoVersion, bridgeAlgo])
 
   const baseAlgos = useAlgos(t, toggles)
   const [apiAlgos, setApiAlgos] = React.useState([]);
@@ -1404,15 +1416,29 @@ const MapProject = () => {
 
       await fetchBridgeCandidates(_rows[index], 0, undefined, undefined, undefined, false, true, ((response, payload) => {
         const index = payload.rows[0].__index
+        const results = (isArray(response) ? response : response?.data)
         log({action: 'algo_finished', extras: {algo: algo.id}}, index)
         markAlgo(index, algo.id, 1)
-        setAllCandidates(prev => {
-          const newCandidates = {...prev}
-          const results = (isArray(response) ? response : response?.data)
-          newCandidates[algo.id] = [...reject(prev[algo.id], c => c.row.__index === index), ...(results || [])]
-          lookupCandidates(algo.id, results)
-          return newCandidates
-        })
+        setAllCandidates(prev => ({
+          ...prev,
+          [algo.id]: [...reject(prev[algo.id], c => c.row.__index === index), ...(results || [])]
+        }))
+        lookupCandidates(algo.id, results)
+        if(UNIFIED_MODEL_ENABLED) {
+          // Route the bridge invocation through the normalizer (the per-row
+          // path goes via onResponse, but the bulk path lives here).
+          const algoDef = getAlgoDef(algo.id)
+          const rowPayload = find(results, r => r?.row?.__index === index)
+          if(rowPayload && algoDef) {
+            mergeIntoRowMatchState(index, normalizeAlgorithmInvocation(rowPayload, {
+              algorithmId: algo.id,
+              algorithmConfig: algoDef,
+              projectContext: buildProjectContext(),
+              rowIndex: index,
+              rawResponse: response
+            }))
+          }
+        }
       })); // wait for completion
       await new Promise(resolve => setTimeout(resolve, 200)); // 1s delay
     }
@@ -2097,7 +2123,16 @@ const MapProject = () => {
     });
   };
 
-  const getAlgoDef = algoId => find(algosSelected, {id: algoId})
+  const getAlgoDef = algoId => {
+    const algo = find(algosSelected, {id: algoId})
+    if(!algo) return algo
+    // Inject concept_identity for known algo types when missing. Algorithms
+    // sourced from the OCL Online API (bridge variants) don't carry it, so
+    // we merge from the canonical map (plans/unified-mapper-model.md).
+    if(!algo.concept_identity && CONCEPT_IDENTITY_BY_TYPE[algo.type])
+      return { ...algo, concept_identity: CONCEPT_IDENTITY_BY_TYPE[algo.type] }
+    return algo
+  }
   const getNextAlgoDef = (algoId) => {
     const algoDef = getAlgoDef(algoId);
     if (!algoDef) return;
