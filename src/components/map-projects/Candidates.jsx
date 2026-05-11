@@ -312,7 +312,7 @@ const Candidates = ({rowIndex, alert, setAlert, candidates, setShowItem, showIte
   const { label } = getRowProgressLabel(rowStage, algosSelected);
 
   const byScore = sortBy.includes('score')
-  const noCandidatesFound = !isLoading && !isNoneLoaded && allCandidates.length === 0
+  const noCandidatesFound = !isLoading && !isNoneLoaded && allCandidates.length === 0 && !label
   const algoScoreFirst = sortBy === 'search_meta.search_score'
   let props = {
     rowIndex: rowIndex,
