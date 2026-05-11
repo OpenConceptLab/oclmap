@@ -2169,7 +2169,7 @@ const MapProject = () => {
 
   const markAlgo = (rowId, algoId, value) => {
     setRowStage(prev => {
-      const needsRerank = isMultiAlgo || find(algosSelected, { type: "custom" });
+      const needsRerank = isMultiAlgo || find(algosSelected, { type: "custom" }) || find(algosSelected, { type: "ocl-scispacy" });
       const row = ensureRow(prev, rowId, selectedAlgoIds, needsRerank);
 
       row[algoId] = value;
@@ -2334,7 +2334,7 @@ const MapProject = () => {
           fetchAllCandidatesForRow(nextAlgo.id, __row, offset, _retired, scrollToBottom, _filters, forceReload)
         } else {
           const currentAlgo = algoId ? getAlgoDef(algoId) : null
-          if(!isMultiAlgo && currentAlgo?.provider === 'ocl')
+          if(!isMultiAlgo && (currentAlgo?.provider === 'ocl' && currentAlgo?.type !== 'ocl-scispacy'))
             markAlgo(__row.__index, 'rerank', 1)
           else {
             markAlgo(__row.__index, 'rerank', -1)
@@ -2896,7 +2896,7 @@ const MapProject = () => {
       target_repo: repo
     }
   }
-  
+
   // Build the v2 AI Assistant payload sections (recommendable_concepts +
   // bridge_context + target_repo) by running the unified-model normalizer
   // over the legacy allCandidates for the row. Sourcing from allCandidates
