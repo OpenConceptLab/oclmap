@@ -294,7 +294,7 @@ test('Candidate.concept_key matches ConceptDefinition.key', () => {
   assert.equal(out.candidates[0].concept_key, out.concept_definitions[0].key)
 })
 
-test('ConceptRow is created with rerank_score=undefined for the matched concept', () => {
+test('ConceptRow picks up search_normalized_score as rerank_score (single-algo reranker:true path)', () => {
   const out = normalizeAlgoResult(oclSearchResult_LOINC_glucose_full, {
     algorithmId: 'ocl-search',
     algorithmConfig: oclSearchAlgo,
@@ -303,7 +303,24 @@ test('ConceptRow is created with rerank_score=undefined for the matched concept'
   })
   const [row] = out.concept_rows
   assert.equal(row.concept_key, out.concept_definitions[0].key)
-  assert.equal(row.rerank_score, undefined)
+  // The fixture has search_normalized_score=85 (set by $match's
+  // reranker:true). The normalizer carries that onto the ConceptRow so no
+  // separate $rerank round-trip is needed for the single-algo OCL path.
+  assert.equal(row.rerank_score, 85)
+})
+
+test('ConceptRow.rerank_score is undefined when the algorithm did not provide search_normalized_score', () => {
+  const noScoreResult = {
+    ...oclSearchResult_LOINC_glucose_full,
+    search_meta: { ...oclSearchResult_LOINC_glucose_full.search_meta, search_normalized_score: undefined }
+  }
+  const out = normalizeAlgoResult(noScoreResult, {
+    algorithmId: 'ocl-search',
+    algorithmConfig: oclSearchAlgo,
+    algorithmResponseId: 'ar-1b',
+    projectContext
+  })
+  assert.equal(out.concept_rows[0].rerank_score, undefined)
 })
 
 // ---------- normalizeAlgoResult: scispacy (no url, no ocl_url) ----------
@@ -447,9 +464,15 @@ test('bridge result creates ConceptRows for BOTH intermediary and target', () =>
   })
 
   assert.equal(out.concept_rows.length, 2)
-  for (const row of out.concept_rows) {
-    assert.equal(row.rerank_score, undefined)
-  }
+  // Bridge intermediary carries the bridge response's
+  // search_normalized_score (the algo did score the intermediary).
+  // Cascade target gets no rerank_score yet — the bridge response only
+  // scores the bridge concept; the debounced rerank pass fills the target
+  // once the row is eligible.
+  const bridgeRow = out.concept_rows.find(r => r.concept_key === out.concept_definitions.find(d => d.reference.url === 'https://CIELterminology.org').key)
+  const targetRow = out.concept_rows.find(r => r.concept_key === out.concept_definitions.find(d => d.reference.url === 'http://loinc.org').key)
+  assert.equal(bridgeRow.rerank_score, 92)
+  assert.equal(targetRow.rerank_score, undefined)
 })
 
 test('bridge result with multiple cascade targets fans out 1 + N candidates', () => {

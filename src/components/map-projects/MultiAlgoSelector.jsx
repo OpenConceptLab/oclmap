@@ -17,8 +17,7 @@ import {
   ListItemText,
   ListItemIcon,
   ListItemButton,
-  FormControlLabel,
-  Checkbox
+  Chip
 } from "@mui/material";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
@@ -196,7 +195,6 @@ export default function MultiAlgoSelector({
       name: name,
       batch_size: algo.batch_size ?? 10,
       concurrent_requests: algo.concurrent_requests ?? 1,
-      lookup_required: algo.lookup_required,
       __key: Math.random(100).toString()
     };
 
@@ -466,6 +464,16 @@ export default function MultiAlgoSelector({
                               updateSelected(sel.__key, { description: e.target.value || '' })
                             }
                           />
+                          <TextField
+                            fullWidth
+                            required
+                            label={t('map_project.algo_canonical_url') || 'Canonical URL'}
+                            value={sel.canonical_url || ''}
+                            onChange={(e) => updateSelected(sel.__key, { canonical_url: e.target.value || '' })}
+                            placeholder="http://loinc.org"
+                            helperText={t('map_project.algo_canonical_url_description') || 'Canonical URL of the code system this algorithm matches against (e.g. http://loinc.org).'}
+                            error={Boolean(sel.canonical_url && !isLikelyCanonicalUrl(sel.canonical_url))}
+                          />
                           <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
                             <TextField
                               label={t('map_project.batch_size')}
@@ -491,7 +499,6 @@ export default function MultiAlgoSelector({
                                 })
                               }
                             />
-                            <FormControlLabel sx={{'.MuiTypography-root': {fontSize: '14px'}}} control={<Checkbox size='small' checked={sel.lookup_required || false} />} label={t('map_project.lookup_required')} onChange={e => updateSelected(sel.__key, {lookup_required: e.target.checked})} />
                           </Stack>
 
                           <Stack direction="row" spacing={1} justifyContent="flex-end">
@@ -507,14 +514,33 @@ export default function MultiAlgoSelector({
                     ) : algo.type?.includes('bridge') ? (
                       <Stack spacing={1.5}>
                         {isCoreUser && (
-                          <TextField
-                            fullWidth
-                            label={t('map_project.bridge_source_url') || 'Bridge Source URL'}
-                            value={sel.target_repo_url ?? algo.target_repo_url ?? '/orgs/CIEL/sources/CIEL/'}
-                            onChange={(e) => updateSelected(sel.__key, { target_repo_url: e.target.value })}
-                            placeholder="/orgs/CIEL/sources/CIEL/"
-                            helperText={t('map_project.bridge_source_url_description') || 'The interface terminology to search through for bridge matching'}
-                          />
+                          <>
+                            <TextField
+                              fullWidth
+                              label={t('map_project.bridge_source_url') || 'Bridge Source URL'}
+                              value={sel.target_repo_url ?? algo.target_repo_url ?? '/orgs/CIEL/sources/CIEL/'}
+                              onChange={(e) => updateSelected(sel.__key, { target_repo_url: e.target.value })}
+                              placeholder="/orgs/CIEL/sources/CIEL/"
+                              helperText={t('map_project.bridge_source_url_description') || 'The interface terminology to search through for bridge matching'}
+                            />
+                            <TextField
+                              fullWidth
+                              label={t('map_project.bridge_canonical_url') || 'Bridge Canonical URL'}
+                              value={sel.bridge_repo?.canonical_url || ''}
+                              onChange={(e) => updateSelected(sel.__key, {
+                                bridge_repo: {
+                                  ...(sel.bridge_repo || {}),
+                                  canonical_url: e.target.value || '',
+                                  canonical_url_source: e.target.value ? 'repo' : 'derived'
+                                }
+                              })}
+                              placeholder="https://CIELterminology.org"
+                              helperText={t('map_project.bridge_canonical_url_description') || 'Canonical URL of the bridge code system (leave blank to derive from the relative URL).'}
+                            />
+                            {!sel.bridge_repo?.canonical_url && (
+                              <Chip size='small' label={t('map_project.canonical_auto_derived') || 'Auto-derived'} sx={{alignSelf: 'flex-start'}} />
+                            )}
+                          </>
                         )}
                         <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
                           <TextField
@@ -566,7 +592,6 @@ export default function MultiAlgoSelector({
                             })
                           }
                         />
-                        <FormControlLabel sx={{'.MuiTypography-root': {fontSize: '14px'}}} control={<Checkbox size='small' disabled={algo.provider === 'ocl'} checked={sel.lookup_required || false} />} label={t('map_project.lookup_required')} onChange={e => updateSelected(sel.__key, {lookup_required: e.target.checked})} />
                       </Stack>
                     )}
                   </Stack>
@@ -639,4 +664,9 @@ function clampInt(value, min, max) {
 
 function eHasValue(value) {
   return Boolean(value && String(value).trim());
+}
+
+function isLikelyCanonicalUrl(value) {
+  if(!value || typeof value !== 'string') return false;
+  return /^https?:\/\/[^\s]+$/i.test(value.trim());
 }

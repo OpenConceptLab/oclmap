@@ -169,9 +169,15 @@ const cascadeTargetToConceptDefinition = (mapping, cascadeIdentity, projectConte
   }
 }
 
-const newConceptRow = (conceptKey) => ({
+// rerank_score on ConceptRow comes from the result's search_normalized_score
+// when present (set by $match's reranker:true single-algo path) — no
+// separate $rerank round-trip needed for that case. Otherwise undefined;
+// it gets filled in by the debounced rerank pipeline.
+const newConceptRow = (conceptKey, result) => ({
   concept_key: conceptKey,
-  rerank_score: undefined
+  rerank_score: typeof result?.search_meta?.search_normalized_score === 'number'
+    ? result.search_meta.search_normalized_score
+    : undefined
 })
 
 const isBridgeResult = (identityConfig) =>
@@ -209,7 +215,7 @@ export const normalizeAlgoResult = (result, ctx = {}) => {
 
   const primaryDef = toConceptDefinition(result, primaryReference, identityConfig, { algorithmId })
   conceptDefinitions.push(primaryDef)
-  conceptRows.push(newConceptRow(primaryDef.key))
+  conceptRows.push(newConceptRow(primaryDef.key, result))
 
   const primaryCandidate = {
     id: newId(),
@@ -235,6 +241,9 @@ export const normalizeAlgoResult = (result, ctx = {}) => {
       // Avoid duplicate ConceptDefinition entries within the same result.
       if (!conceptDefinitions.some(cd => cd.key === targetDef.key)) {
         conceptDefinitions.push(targetDef)
+        // Cascade target's row carries no rerank_score yet — the bridge
+        // response doesn't score targets, so the debounced rerank pass
+        // will fill it once the row is eligible.
         conceptRows.push(newConceptRow(targetDef.key))
       }
 
@@ -330,3 +339,94 @@ export const normalizeAlgorithmInvocation = (rawPayload, ctx = {}) => {
 
 const LOOKUP_RANK = { pending: 0, failed: 0, partial: 1, full: 2 }
 export const lookupStatusRank = (status) => LOOKUP_RANK[status] ?? 0
+
+/**
+ * Backfill rowMatchState + ConceptDefinitions from the legacy
+ * `allCandidates` shape (a saved-project artifact: `{ [algoId]: [{row,
+ * results}, ...] }`). Called on project load so that v1-saved projects
+ * render correctly under UNIFIED_MODEL_ENABLED=true. A precursor to
+ * PR3's `normalizeLegacy.js`.
+ *
+ * Pure function: no React, no APIService, no mutation of inputs.
+ *
+ * @param {Object} allCandidates       { [algoId]: [{row, results}, ...] }
+ * @param {Object} projectContext      {namespace, target_repo, bridge_repo?}
+ * @param {Array}  algorithms          algo defs (may carry concept_identity)
+ * @param {Object} [conceptIdentityByType] optional fallback map for algos
+ *                                     missing concept_identity (e.g. API-
+ *                                     loaded bridge/scispacy variants).
+ * @returns {{
+ *   rowMatchState: Object,            keyed by row __index
+ *   conceptDefinitionsByKey: Map<string, ConceptDefinition>
+ * }}
+ */
+export const normalizeLegacyAllCandidates = (
+  allCandidates,
+  projectContext,
+  algorithms,
+  conceptIdentityByType = {}
+) => {
+  const rowMatchState = {}
+  const conceptDefinitionsByKey = new Map()
+  if(!allCandidates || !projectContext) return { rowMatchState, conceptDefinitionsByKey }
+
+  const algoById = new Map((algorithms || []).map(a => [a.id, a]))
+
+  Object.entries(allCandidates).forEach(([algoId, rowEntries]) => {
+    const algoDef = algoById.get(algoId)
+    if(!algoDef) return
+    const algoConfig = algoDef.concept_identity
+      ? algoDef
+      : (conceptIdentityByType[algoDef.type]
+        ? { ...algoDef, concept_identity: conceptIdentityByType[algoDef.type] }
+        : null)
+    if(!algoConfig) return
+
+    ;(rowEntries || []).forEach(rowEntry => {
+      const idx = rowEntry?.row?.__index
+      if(idx === undefined || idx === null) return
+
+      const normalized = normalizeAlgorithmInvocation(
+        { row: rowEntry.row, results: rowEntry.results || [] },
+        {
+          algorithmId: algoId,
+          algorithmConfig: algoConfig,
+          projectContext,
+          rowIndex: idx
+        }
+      )
+
+      const prevRow = rowMatchState[idx] || {
+        algorithm_responses: {},
+        candidates: {},
+        concept_rows: {}
+      }
+      const nextRow = {
+        algorithm_responses: {
+          ...prevRow.algorithm_responses,
+          [normalized.algorithm_response.id]: normalized.algorithm_response
+        },
+        candidates: { ...prevRow.candidates },
+        concept_rows: { ...prevRow.concept_rows }
+      }
+      normalized.candidates.forEach(c => { nextRow.candidates[c.id] = c })
+      normalized.concept_rows.forEach(cr => {
+        const existing = nextRow.concept_rows[cr.concept_key]
+        // Existing entry keeps its rerank_score (richer wins); new arrivals
+        // are taken only when no entry exists yet.
+        if(!existing) nextRow.concept_rows[cr.concept_key] = cr
+        else if(existing.rerank_score === undefined && cr.rerank_score !== undefined)
+          nextRow.concept_rows[cr.concept_key] = cr
+      })
+      rowMatchState[idx] = nextRow
+
+      normalized.concept_definitions.forEach(def => {
+        const existing = conceptDefinitionsByKey.get(def.key)
+        if(!existing || lookupStatusRank(def.lookup_status) > lookupStatusRank(existing.lookup_status))
+          conceptDefinitionsByKey.set(def.key, def)
+      })
+    })
+  })
+
+  return { rowMatchState, conceptDefinitionsByKey }
+}

@@ -6,13 +6,12 @@ import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import isString from 'lodash/isString'
 import map from 'lodash/map'
-import find from 'lodash/find'
-import keys from 'lodash/keys'
 
 import Retired from '../common/Retired'
 import Score from './Score'
 import MapButton from './MapButton'
 import ConceptSummaryProperties from '../concepts/ConceptSummaryProperties'
+import { conceptForMapping } from './viewBuilders.js'
 
 
 const getBestSynonym = (synonyms = []) => {
@@ -41,39 +40,17 @@ const getBestSynonym = (synonyms = []) => {
 };
 
 
-const Item = ({concept, setShowHighlights, onMap, isSelectedForMap, noScore, repoVersion, synonymPrefix, isAIRecommended, bridge, bridgeChild, mapping, showAlgo, candidatesScore, algoScoreFirst, placeholderMap, conceptCache}) => {
-  const isValidBridge = Boolean(bridge && mapping.cascade_target_concept_code)
-  const findConceptInCache = resource => {
-    let id = resource?.id || resource?.code
-    if(id) {
-      let url = find(keys(conceptCache), url => url.endsWith(`/concepts/${id}/`))
-      if(url)
-        return conceptCache[url]
-    }
-    return null
-  }
-  const conceptToMap = isValidBridge ?
-        {
-          id: mapping.cascade_target_concept_code,
-          name: mapping.cascade_target_concept_name,
-          display_name: mapping.cascade_target_concept_name,
-          url: mapping.cascade_target_concept_url,
-          source: mapping.cascade_target_source_name,
-          type: 'Concept',
-          search_meta: concept.search_meta
-        } : concept
-  const cached = findConceptInCache(conceptToMap)
-  if(cached)
-    isValidBridge ? conceptToMap.target_concept = cached : conceptToMap._source = cached
-  const getConceptDisplay = () => {
-    if(bridge) {
-      if(conceptToMap?.target_concept?.id)
-        return `${conceptToMap.source || conceptToMap.target_concept.source}:${conceptToMap.target_concept.id} ${conceptToMap.target_concept.display_name}`
-      return `${conceptToMap.source}:${conceptToMap.id} ${conceptToMap.display_name || ''}`
-    }
-  }
-  let bridgeMappingPrefix = bridge && mapping.cascade_target_concept_code ? `${mapping.cascade_target_source_name}:${mapping.cascade_target_concept_code} ${mapping.cascade_target_concept_name || ''}` : false
-  const mapTypeToApply = isValidBridge ? mapping?.map_type || concept?.search_meta?.map_type : concept?.search_meta?.map_type
+const Item = ({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition, setShowHighlights, onMap, isSelectedForMap, noScore, repoVersion, synonymPrefix, isAIRecommended, showAlgo, candidatesScore, algoScoreFirst, placeholderMap, bridgeChild}) => {
+  const conceptToMap = conceptForMapping({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition})
+  const idLabel = conceptDefinition?.id || conceptDefinition?.reference?.code
+  const sourceLabel = conceptDefinition?.source
+  const mapTypeToApply = candidate?.map_type
+  const bridgeMappingPrefix = bridgeConceptDefinition
+    ? `${bridgeConceptDefinition.source || ''}:${bridgeConceptDefinition.id || bridgeConceptDefinition.reference?.code} ${bridgeConceptDefinition.display_name || ''}`
+    : false
+  const showHighlightsPayload = setShowHighlights
+    ? () => setShowHighlights({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition})
+    : null
   return (
     <>
       <ListItemText
@@ -82,19 +59,19 @@ const Item = ({concept, setShowHighlights, onMap, isSelectedForMap, noScore, rep
             <span>
               {
                 !bridgeChild &&
-                  <span className='searchable'>{`${concept?.source || concept?.repo?.short_code || concept?.repo?.id || concept?.search_meta?.source}:${concept?.id}`}</span>
+                  <span className='searchable'>{`${sourceLabel || ''}:${idLabel}`}</span>
               }
               {
-              !bridgeChild &&
+                !bridgeChild &&
                   <span style={{marginLeft: '4px'}} className='searchable'>
                     {
-                      !bridge && synonymPrefix &&
+                      !bridgeConceptDefinition && synonymPrefix &&
                         <span className='searchable'>
                           <span dangerouslySetInnerHTML={{__html: synonymPrefix}}/>
                           <span style={{margin: '0 5px'}}>&rarr;</span>
                         </span>
                     }
-                    {concept?.display_name}
+                    {conceptDefinition?.display_name}
                   </span>
               }
               {
@@ -103,18 +80,27 @@ const Item = ({concept, setShowHighlights, onMap, isSelectedForMap, noScore, rep
                     {!bridgeChild && <span style={{margin: '0 5px'}}>&rarr;</span>}
                     <span style={bridgeChild ? {marginRight: '8px'} : {}}>
                       {
-                        bridgeChild ?
-                          <Chip size='small' label={mapping.map_type} /> :
-                        (`[${mapping.map_type}]`)
+                        bridgeChild && candidate?.map_type ?
+                          <Chip size='small' label={candidate.map_type} /> :
+                        (candidate?.map_type ? `[${candidate.map_type}]` : '')
                       }
                     </span>
                     {!bridgeChild && <span style={{margin: '0 5px'}}>&rarr;</span>}
-                    <span className='searchable'>{getConceptDisplay()}</span>
+                    <span className='searchable'>
+                      {bridgeChild
+                        ? `${sourceLabel || ''}:${idLabel} ${conceptDefinition?.display_name || ''}`
+                        : (
+                          conceptDefinition?.display_name
+                            ? `${sourceLabel || ''}:${idLabel} ${conceptDefinition.display_name}`
+                            : ''
+                        )
+                      }
+                    </span>
                   </span>
               }
             </span>
             {
-              concept?.retired &&
+              conceptDefinition?.retired &&
                 <Retired size='small' style={{margin: '0 12px'}} />
             }
           </span>
@@ -122,12 +108,12 @@ const Item = ({concept, setShowHighlights, onMap, isSelectedForMap, noScore, rep
         secondary={
           <div className='col-xs-12 padding-0'>
             <div className='col-xs-12 padding-0'>
-              <ConceptSummaryProperties concept={concept} repoVersion={repoVersion} />
+              <ConceptSummaryProperties concept={conceptDefinition} repoVersion={repoVersion} />
             </div>
             {
-              showAlgo && concept?.search_meta?.algorithm ?
+              showAlgo && candidate?.algorithm_id ?
                 <div className='col-xs-12 padding-0' style={{marginTop: '4px'}}>
-                  <Chip size='small' label={concept.search_meta.algorithm} variant='outlined' color='warning' />
+                  <Chip size='small' label={candidate.algorithm_id} variant='outlined' color='warning' />
               </div> : null
             }
           </div>
@@ -137,14 +123,23 @@ const Item = ({concept, setShowHighlights, onMap, isSelectedForMap, noScore, rep
       <span style={{display: 'flex', alignItems: 'flex-start'}}>
         {
           !noScore &&
-            <Score size='small' concept={concept} setShowHighlights={setShowHighlights} isAIRecommended={isAIRecommended} candidatesScore={candidatesScore} algoScoreFirst={algoScoreFirst} />
+            <Score
+              size='small'
+              candidate={candidate}
+              conceptRow={conceptRow}
+              setShowHighlights={setShowHighlights}
+              isAIRecommended={isAIRecommended}
+              candidatesScore={candidatesScore}
+              algoScoreFirst={algoScoreFirst}
+              onHighlightClick={showHighlightsPayload}
+            />
         }
         {
-        isSelectedForMap &&
+          isSelectedForMap && conceptToMap &&
             <MapButton
               simple
               selected={mapTypeToApply}
-              onClick={(event, applied, mapType) => onMap(event, conceptToMap, !applied, mapping?.map_type || mapType)}
+              onClick={(event, applied, mapType) => onMap(event, conceptToMap, !applied, candidate?.map_type || mapType)}
               isMapped={isSelectedForMap(conceptToMap)}
               sx={{marginLeft: '8px'}}
             />
@@ -183,119 +178,135 @@ const ConceptItem = ({_id, notClickable, isSelectedToShow, firstChild, lastChild
 }
 
 
-const Concept = ({_id, firstChild, lastChild, concept, setShowHighlights, isShown, onCardClick, onMap, isSelectedForMap, noScore, repoVersion, isAIRecommended, AIRecommendedCandidateId, sx, notClickable, noSynonymPrefix, locales, showAlgo, candidatesScore, algoScoreFirst, asTarget, conceptCache}) => {
-  const bridge = concept?.search_meta?.algorithm?.includes('bridge')
-  const scispacy = concept?.search_meta?.algorithm === 'ocl-scispacy-loinc'
-  const id = concept?.version_url || concept?.url || concept?.id
-  const isSelectedToShow = isShown ? isShown(id) : false
+// `concept` here is a row view object built by Candidates.jsx from
+// rowMatchState + conceptCache. Shape:
+//   {
+//     type: 'standard' | 'bridge' | 'bridge_child',
+//     candidate, conceptDefinition, conceptRow,
+//     bridgeConceptDefinition?,   // when type='bridge_child'
+//     bridgeChildren?             // when type='bridge' (algo view nested rendering)
+//   }
+const Concept = ({_id, firstChild, lastChild, concept, setShowHighlights, isShown, onCardClick, onMap, isSelectedForMap, noScore, repoVersion, isAIRecommended, sx, notClickable, noSynonymPrefix, locales, showAlgo, candidatesScore, algoScoreFirst, asTarget, AIRecommendedCandidateId}) => {
+  if(!concept?.conceptDefinition) return null
+  const { type, candidate, conceptDefinition, conceptRow, bridgeConceptDefinition, bridgeChildren } = concept
+  const idForUI = conceptDefinition.ocl_url || conceptDefinition.id || conceptDefinition.reference?.code
+  const isSelectedToShow = isShown ? isShown(idForUI) : false
 
   let synonymPrefix = ''
-  const highlights = concept?.search_meta?.search_highlight
+  const highlights = candidate?.highlights
   const synonymHighlight = highlights?.synonyms
   const nameHighlight = highlights?.name
   if(!nameHighlight?.length && synonymHighlight?.length && !noSynonymPrefix) {
     let bestMatch = getBestSynonym(synonymHighlight) || synonymHighlight[0]
-    if(locales && bestMatch) {
+    if(locales && bestMatch && conceptDefinition?.names) {
       let raw = bestMatch.replaceAll("<em>", "").replaceAll("</em>", "")
       let _locales = isString(locales) ? locales.split(',') : locales
-      if(_locales?.length > 0 && !_locales.includes(concept.names.find(name => name.name.startsWith(raw))?.locale))
+      if(_locales?.length > 0 && !_locales.includes(conceptDefinition.names.find(name => name.name.startsWith(raw))?.locale))
         bestMatch = ''
     }
-    synonymPrefix = bestMatch.replaceAll('<em>', "<b className='searchable'>").replaceAll('</em>', '</b>')
+    synonymPrefix = (bestMatch || '').replaceAll('<em>', "<b className='searchable'>").replaceAll('</em>', '</b>')
   }
 
-  const props = {
-    id: id,
+  const baseProps = {
+    id: idForUI,
     _id: _id,
     notClickable: notClickable,
     firstChild: firstChild,
     lastChild: lastChild,
     isSelectedToShow: isSelectedToShow,
     sx: sx,
-    onCardClick: onCardClick,
-    conceptCache: conceptCache
+    onCardClick: onCardClick
   }
 
-  if(bridge) {
+  if(type === 'bridge') {
+    const isBridgeAIRecommended = AIRecommendedCandidateId && conceptDefinition.reference?.code === AIRecommendedCandidateId
     return (
       <>
-      {
-        algoScoreFirst &&
-          <ConceptItem
-            {...props}
-            concept={concept}
-            repoVersion={repoVersion}
-            synonymPrefix={synonymPrefix}
-            setShowHighlights={setShowHighlights}
-            isSelectedForMap={false}
-            placeholderMap
-            onMap={onMap}
-            noScore={noScore}
-            showAlgo={showAlgo}
-            candidatesScore={candidatesScore}
-            algoScoreFirst={algoScoreFirst}
-          />
-      }
+        {
+          algoScoreFirst &&
+            <ConceptItem
+              {...baseProps}
+              candidate={candidate}
+              conceptDefinition={conceptDefinition}
+              conceptRow={conceptRow}
+              repoVersion={repoVersion}
+              synonymPrefix={synonymPrefix}
+              setShowHighlights={setShowHighlights}
+              isSelectedForMap={false}
+              placeholderMap
+              onMap={onMap}
+              noScore={noScore}
+              showAlgo={showAlgo}
+              candidatesScore={candidatesScore}
+              algoScoreFirst={algoScoreFirst}
+              isAIRecommended={isBridgeAIRecommended}
+            />
+        }
         {
           asTarget ?
             <ConceptItem
-              {...props}
-              concept={concept}
+              {...baseProps}
+              candidate={candidate}
+              conceptDefinition={conceptDefinition}
+              conceptRow={conceptRow}
               repoVersion={repoVersion}
               isSelectedForMap={false}
               placeholderMap
               noScore
               showAlgo={false}
             /> :
-
-        <div className='col-xs-12' style={{paddingRight: 0, paddingLeft: algoScoreFirst ? '12px' : 0}}>
-        {
-          map(concept?.mappings, (mapping, index) => {
-            return <ConceptItem
-                     key={`${index}-${crypto.randomUUID()}`}
-                     {...props}
-                     concept={concept}
-                     repoVersion={repoVersion}
-                     synonymPrefix={synonymPrefix}
-                     setShowHighlights={setShowHighlights}
-                     isAIRecommended={
-                       !isAIRecommended &&
-                         AIRecommendedCandidateId === mapping?.cascade_target_concept_code
-                     }
-                     isSelectedForMap={isSelectedForMap}
-                     onMap={onMap}
-                     noScore={noScore}
-                     bridge={bridge}
-                     mapping={mapping}
-                     showAlgo={showAlgo}
-                     candidatesScore={candidatesScore}
-                     algoScoreFirst={algoScoreFirst}
-                     bridgeChild={algoScoreFirst}
-                   />
-          })
-        }
-        </div>
+          <div className='col-xs-12' style={{paddingRight: 0, paddingLeft: algoScoreFirst ? '12px' : 0}}>
+            {
+              map(bridgeChildren || [], (child, index) => {
+                const childAIRecommended = AIRecommendedCandidateId && child.conceptDefinition?.reference?.code === AIRecommendedCandidateId
+                return <ConceptItem
+                  key={`${index}-${child.candidate?.id}`}
+                  {...baseProps}
+                  candidate={child.candidate}
+                  conceptDefinition={child.conceptDefinition}
+                  conceptRow={child.conceptRow}
+                  bridgeConceptDefinition={conceptDefinition}
+                  repoVersion={repoVersion}
+                  synonymPrefix={synonymPrefix}
+                  setShowHighlights={setShowHighlights}
+                  isSelectedForMap={isSelectedForMap}
+                  onMap={onMap}
+                  noScore={algoScoreFirst}
+                  bridgeChild
+                  showAlgo={showAlgo}
+                  candidatesScore={candidatesScore}
+                  algoScoreFirst={algoScoreFirst}
+                  isAIRecommended={childAIRecommended}
+                />
+              })
+            }
+          </div>
         }
       </>
     )
   }
 
+  // type === 'standard' or 'bridge_child' (the latter only when rendered
+  // directly, i.e. in the score-grouped view as the target concept).
+  const isAIMatch = AIRecommendedCandidateId && conceptDefinition.reference?.code === AIRecommendedCandidateId
   return <ConceptItem
-           {...props}
-           concept={concept}
-           repoVersion={repoVersion}
-           synonymPrefix={synonymPrefix}
-           setShowHighlights={setShowHighlights}
-           isAIRecommended={isAIRecommended}
-           isSelectedForMap={isSelectedForMap}
-           onMap={onMap}
-           noScore={noScore}
-           bridge={bridge}
-           scispacy={scispacy}
-           showAlgo={showAlgo}
-           candidatesScore={candidatesScore}
-           algoScoreFirst={algoScoreFirst}
-         />
+    {...baseProps}
+    candidate={candidate}
+    conceptDefinition={conceptDefinition}
+    conceptRow={conceptRow}
+    bridgeConceptDefinition={bridgeConceptDefinition}
+    repoVersion={repoVersion}
+    synonymPrefix={synonymPrefix}
+    setShowHighlights={setShowHighlights}
+    isAIRecommended={isAIRecommended || isAIMatch}
+    isSelectedForMap={isSelectedForMap}
+    onMap={onMap}
+    noScore={noScore}
+    bridgeChild={type === 'bridge_child' && Boolean(bridgeConceptDefinition)}
+    showAlgo={showAlgo}
+    candidatesScore={candidatesScore}
+    algoScoreFirst={algoScoreFirst}
+  />
 }
 
 export default Concept;

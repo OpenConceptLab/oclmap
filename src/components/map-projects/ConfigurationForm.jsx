@@ -18,8 +18,16 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import SaveIcon from '@mui/icons-material/Save';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 
+import Accordion from '@mui/material/Accordion'
+import AccordionSummary from '@mui/material/AccordionSummary'
+import AccordionDetails from '@mui/material/AccordionDetails'
+import Chip from '@mui/material/Chip'
+import Stack from '@mui/material/Stack'
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
+
 import isEmpty from 'lodash/isEmpty'
 import omit from 'lodash/omit'
+import filter from 'lodash/filter'
 
 import { toV3URL } from '../../common/utils'
 import NamespaceDropdown from '../common/NamespaceDropdown'
@@ -48,10 +56,18 @@ const VisuallyHiddenInput = styled('input')({
 });
 
 
-const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, name, setName, description, setDescription, repo, onRepoChange, repoVersion, setRepoVersion, versions, mappedSources, targetSourcesFromRows, algosSelected, setAlgosSelected, sx, algos, validColumns, columns, isValidColumnValue, updateColumn, configure, setConfigure, columnVisibilityModel, setColumnVisibilityModel, onSave, isSaving, candidatesScore, onScoreChange, includeDefaultFilter, setIncludeDefaultFilter, filters, setFilters, locales, isLoadingLocales, setAIAssistantColumns, AIAssistantColumns, inAIAssistantGroup, lookupConfig, setLookupConfig, encoderModel, setEncoderModel, isCoreUser, canBridge, canScispacy, promptTemplates, promptTemplate, onPromptTemplateChange, AIModels, AIModel, setAIModel }) => {
+const deriveCanonicalUrl = relativeUrl => relativeUrl ? `https://ns.openconceptlab.org${relativeUrl}` : ''
+
+const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, name, setName, description, setDescription, repo, onRepoChange, repoVersion, setRepoVersion, versions, mappedSources, targetSourcesFromRows, algosSelected, setAlgosSelected, sx, algos, validColumns, columns, isValidColumnValue, updateColumn, configure, setConfigure, columnVisibilityModel, setColumnVisibilityModel, onSave, isSaving, candidatesScore, onScoreChange, includeDefaultFilter, setIncludeDefaultFilter, filters, setFilters, locales, isLoadingLocales, setAIAssistantColumns, AIAssistantColumns, inAIAssistantGroup, lookupConfig, setLookupConfig, encoderModel, setEncoderModel, isCoreUser, canBridge, canScispacy, promptTemplates, promptTemplate, onPromptTemplateChange, AIModels, AIModel, setAIModel, namespace, setNamespace }) => {
   const { t } = useTranslation();
   const isLLMAlgoNotAllowed = !repoVersion?.match_algorithms?.includes('llm')
   const appliedLocales = filters?.locale ? filters?.locale?.split(',') : []
+  const targetCanonicalFromRepo = repo?.canonical_url
+  const targetCanonicalDerived = !targetCanonicalFromRepo && repo?.url ? deriveCanonicalUrl(repo.url) : ''
+  const effectiveTargetCanonical = targetCanonicalFromRepo || targetCanonicalDerived
+  const bridgeAlgos = filter(algosSelected || [], a => a?.type && a.type.includes('bridge'))
+  const defaultNamespace = owner || ''
+  const namespaceValue = namespace || ''
   const getAlgos = () => {
     return algos.map(algo => {
       if(algo.type === 'ocl-semantic')
@@ -152,6 +168,49 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
       <RepoSearchAutocomplete label={t('map_project.repository')} size='small' onChange={(id, item) => onRepoChange(item)} value={repo}  sx={{marginTop: '12px'}}/>
       <RepoVersionSearchAutocomplete versions={versions} label={t('common.version')} size='small' onChange={(id, item) => setRepoVersion(item)} value={repoVersion} sx={{marginTop: '12px'}} />
       {
+        effectiveTargetCanonical &&
+          <Stack direction='row' spacing={1} alignItems='center' sx={{marginTop: '8px', marginLeft: '8px'}}>
+            <Typography component='span' sx={{fontSize: '12px', color: 'text.secondary'}}>
+              {t('map_project.target_canonical_url') || 'Canonical URL:'}
+            </Typography>
+            <Typography component='code' sx={{fontSize: '12px', fontFamily: 'monospace'}}>
+              {effectiveTargetCanonical}
+            </Typography>
+            {
+              !targetCanonicalFromRepo &&
+                <Chip size='small' label={t('map_project.canonical_auto_derived') || 'Auto-derived'} color='warning' variant='outlined' />
+            }
+          </Stack>
+      }
+      {
+        bridgeAlgos.length > 0 &&
+          <Stack spacing={0.5} sx={{marginTop: '8px', marginLeft: '8px'}}>
+            <Typography component='span' sx={{fontSize: '12px', color: 'text.secondary'}}>
+              {t('map_project.bridge_repos') || 'Bridge repos:'}
+            </Typography>
+            {
+              bridgeAlgos.map(b => {
+                const bridgeCanonical = b?.bridge_repo?.canonical_url || deriveCanonicalUrl(b?.target_repo_url)
+                return (
+                  <Stack key={b.__key || b.id} direction='row' spacing={1} alignItems='center'>
+                    <Typography component='code' sx={{fontSize: '12px', fontFamily: 'monospace'}}>
+                      {b.target_repo_url || '—'}
+                    </Typography>
+                    <Typography component='span' sx={{fontSize: '12px', color: 'text.secondary'}}>→</Typography>
+                    <Typography component='code' sx={{fontSize: '12px', fontFamily: 'monospace'}}>
+                      {bridgeCanonical}
+                    </Typography>
+                    {
+                      !b?.bridge_repo?.canonical_url &&
+                        <Chip size='small' label={t('map_project.canonical_auto_derived') || 'Auto-derived'} color='warning' variant='outlined' />
+                    }
+                  </Stack>
+                )
+              })
+            }
+          </Stack>
+      }
+      {
         isLLMAlgoNotAllowed && repoVersion?.version_url &&
           <FormHelperText sx={{marginTop: '4px', marginLeft: '8px', color: 'warning.main'}}>
             {t('map_project.semantic_search_not_configured', {owner: repo?.owner, repo: repo?.short_code || repo?.id, version: repoVersion?.id || repo?.version || repo?.id})}
@@ -211,6 +270,29 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
       }
 
       <LookupConfig value={lookupConfig} onChange={setLookupConfig}/>
+
+      {
+        setNamespace &&
+          <Accordion disableGutters elevation={0} sx={{marginTop: '12px', backgroundColor: 'transparent', '&:before': {display: 'none'}}}>
+            <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{padding: 0, minHeight: 'auto', '.MuiAccordionSummary-content': {margin: '4px 0'}}}>
+              <Typography component='span' sx={{fontSize: '13px', color: 'text.secondary'}}>
+                {t('map_project.advanced_settings') || 'Advanced settings'}
+              </Typography>
+            </AccordionSummary>
+            <AccordionDetails sx={{padding: 0}}>
+              <TextField
+                fullWidth
+                size='small'
+                sx={{marginTop: '4px'}}
+                label={t('map_project.resolution_namespace') || 'Resolution Namespace'}
+                value={namespaceValue}
+                onChange={event => setNamespace(event.target.value || '')}
+                placeholder={defaultNamespace}
+                helperText={t('map_project.resolution_namespace_description') || 'Namespace passed to $resolveReference (defaults to the project owner). Drives which URL Registry entries apply when resolving canonical URLs.'}
+              />
+            </AccordionDetails>
+          </Accordion>
+      }
 
       {
         inAIAssistantGroup && isCoreUser && promptTemplates?.length > 0 &&

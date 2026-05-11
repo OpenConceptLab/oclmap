@@ -9,41 +9,17 @@ import Tooltip from '@mui/material/Tooltip'
 import Chip from '@mui/material/Chip'
 import Box from '@mui/material/Box'
 import AssistantIcon from '@mui/icons-material/Assistant';
-import isNumber from 'lodash/isNumber'
-import isNaN from 'lodash/isNaN'
 
 import ConceptIcon from '../concepts/ConceptIcon'
+import { getScoreDetails as pureGetScoreDetails } from './viewBuilders.js'
 
 
-export const getScoreDetails = (concept, candidatesScore) => {
-  let percentile = concept?.search_meta?.search_normalized_score || ((concept?.search_meta?.search_rerank_score || concept?.search_meta?.search_score) * 100)
-  if(percentile && !isNumber(percentile))
-    percentile = parseFloat(percentile)
-
-  const score = concept?.search_meta?.search_score
-  const hasPercentile = isNumber(percentile)
-  const recommendedScore = candidatesScore?.recommended
-  const availableScore = candidatesScore?.available
-
-  let qualityBucket;
-  if(hasPercentile) {
-    if (percentile >= recommendedScore)
-      qualityBucket = 'recommended'
-    else if (percentile >= availableScore)
-      qualityBucket = 'available'
-    else
-      qualityBucket = 'low_ranked'
-  }
-
-  return {
-    score,
-    percentile,
-    hasPercentile,
-    qualityBucket,
-    bucketColor: qualityBucket ? SCORES_COLOR[qualityBucket] : false,
-    rerankScore: `${parseFloat(hasPercentile ? percentile : score).toFixed(2)}%`,
-    algoScore: `${parseFloat(score).toFixed(2)}`
-  }
+// Wrap the pure getScoreDetails (from viewBuilders.js) with the
+// SCORES_COLOR mapping. The pure function is testable without React/JSX
+// imports; this wrapper layers on the UI color affordance.
+export const getScoreDetails = (input, candidatesScore) => {
+  const details = pureGetScoreDetails(input, candidatesScore)
+  return { ...details, bucketColor: details.qualityBucket ? SCORES_COLOR[details.qualityBucket] : false }
 }
 
 export const ScoreValueChip = ({ bucketColor, label, size='medium', showIndicator=true, sx }) => (
@@ -66,7 +42,7 @@ export const ScoreValueChip = ({ bucketColor, label, size='medium', showIndicato
   />
 )
 
-const Score = ({concept, setShowHighlights, sx, isAIRecommended, candidatesScore, algoScoreFirst, size}) => {
+const Score = ({candidate, conceptRow, setShowHighlights, sx, isAIRecommended, candidatesScore, algoScoreFirst, size, onHighlightClick}) => {
   const { t } = useTranslation();
   const {
     score,
@@ -74,18 +50,23 @@ const Score = ({concept, setShowHighlights, sx, isAIRecommended, candidatesScore
     bucketColor,
     rerankScore,
     algoScore
-  } = getScoreDetails(concept, candidatesScore)
+  } = getScoreDetails({candidate, conceptRow}, candidatesScore)
+  const hasRawScore = algoScore !== '' && score !== null
 
   return (
     <ListItem disablePadding sx={{display: 'inline-flex', width: 'auto'}}>
       <ListItemButton
         sx={{color: bucketColor || 'rgba(0, 0, 0, 0.5)', padding: '0px', ...sx}}
         size='small'
-        disabled={!score && !hasPercentile}
+        disabled={!hasRawScore && !hasPercentile}
         onClick={setShowHighlights ? (event) => {
           event.preventDefault()
           event.stopPropagation()
-          setShowHighlights(concept)
+          // Caller (Concept.jsx) decides what payload to surface to the
+          // highlights dialog; pass through onHighlightClick if provided,
+          // otherwise default to no-op.
+          if(onHighlightClick) onHighlightClick(event)
+          else setShowHighlights({candidate, conceptRow})
           return false
         } : undefined}
       >
@@ -105,11 +86,11 @@ const Score = ({concept, setShowHighlights, sx, isAIRecommended, candidatesScore
               bucketColor={bucketColor}
               label={
                 <span style={{display: 'flex', alignItems: 'center'}}>
-                  <span>{algoScoreFirst ? algoScore : rerankScore}</span>
+                  <span>{algoScoreFirst && hasRawScore ? algoScore : rerankScore}</span>
                   {
-                    hasPercentile && !isNaN(score) && score ?
+                    hasPercentile && hasRawScore ?
                       <span style={{fontSize: '12px', color: 'rgba(0, 0, 0, 0.6)', marginLeft: '4px', fontStyle: 'italic'}}>
-                        {`(${algoScoreFirst ? rerankScore : algoScore})`}
+                        {`(${algoScoreFirst && hasRawScore ? rerankScore : algoScore})`}
                       </span> :
                     ''
                   }
