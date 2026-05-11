@@ -17,14 +17,11 @@ import IconButton from '@mui/material/IconButton'
 import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
 import Chip from '@mui/material/Chip';
-import FormControlLabel from '@mui/material/FormControlLabel';
 import FormControl from '@mui/material/FormControl';
-import Switch from '@mui/material/Switch';
 import Tooltip from '@mui/material/Tooltip';
 import Alert from '@mui/material/Alert';
 import Collapse from '@mui/material/Collapse';
 import Divider from '@mui/material/Divider';
-import Badge from '@mui/material/Badge';
 import { DataGrid } from '@mui/x-data-grid';
 
 
@@ -48,8 +45,6 @@ import without from 'lodash/without'
 import has from 'lodash/has'
 import chunk from 'lodash/chunk'
 import get from 'lodash/get'
-import countBy from 'lodash/countBy'
-import sum from 'lodash/sum'
 import omit from 'lodash/omit'
 import omitBy from 'lodash/omitBy'
 import reject from 'lodash/reject'
@@ -101,7 +96,7 @@ import ScoreBucketButton from './ScoreBucketButton'
 import Concept from './Concept'
 import ImportToCollection from './ImportToCollection'
 import ProjectLogs from './ProjectLogs';
-import { useAlgos } from './algorithms'
+import { useAlgos, CONCEPT_IDENTITY_BY_TYPE } from './algorithms'
 import AutoMatchDialog from './AutoMatchDialog'
 import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
 import { normalizeAlgorithmInvocation, lookupStatusRank } from './normalizers'
@@ -154,7 +149,6 @@ const MapProject = () => {
   const [rowStatuses, setRowStatuses] = React.useState({reviewed: [], readyForReview: [], unmapped: []})
   const [decisions, setDecisions] = React.useState({})
   const [decisionFilters, setDecisionFilters] = React.useState([])
-  const [matchTypes, setMatchTypes] = React.useState({very_high: 0, high: 0, medium: 0, low: 0, no_match: 0})
   const [matchedConcepts, setMatchedConcepts] = React.useState([]);
 
   // Algo Candidates
@@ -203,7 +197,6 @@ const MapProject = () => {
   const [edit, setEdit] = React.useState([]);
   const [configure, setConfigure] = React.useState(!params.projectId);
   const [selectedRowStatus, setSelectedRowStatus] = React.useState('all')
-  const [selectedMatchBucket, setSelectedMatchBucket] = React.useState(false)
   const [decisionTab, setDecisionTab] = React.useState('candidates')
   const [searchText, setSearchText] = React.useState('')  // csv row search
   const [selectedCandidatesScoreBucket, setSelectedCandidatesScoreBucket] = React.useState(false)
@@ -313,26 +306,6 @@ const MapProject = () => {
     })
   }, [])
 
-  // Build projectContext for the unified-model normalizer.
-  // Target repo canonical URL is read from repo metadata; if absent, derive
-  // 'https://ns.openconceptlab.org' + relative URL (per OCL canonical
-  // conventions — see plans/unified-mapper-model.md).
-  const buildProjectContext = React.useCallback(() => {
-    if(!repo?.url) return null
-    const targetCanonical = repo.canonical_url || `https://ns.openconceptlab.org${repo.url}`
-    return {
-      namespace: get(project, 'owner_url') || owner,
-      target_repo: {
-        relative_url: repo.url,
-        canonical_url: targetCanonical,
-        canonical_url_source: repo.canonical_url ? 'repo' : 'derived',
-        version: repoVersion?.id || repo.version
-      }
-      // bridge_repo is set per-invocation when the algo is a bridge algo
-      // (bridge path doesn't flow through this onResponse handler in PR 1).
-    }
-  }, [project, owner, repo, repoVersion])
-
   const allCandidatesRef = React.useRef({})
 
   /*eslint no-undef: 0*/
@@ -348,6 +321,38 @@ const MapProject = () => {
   const scispacyEnabled = find(algosSelected, {type: 'ocl-scispacy'})
   const bridgeAlgo = find(algosSelected, a => ['ocl-bridge', 'ocl-ciel-bridge'].includes(a.type))
   const bridgeEnabled = Boolean(bridgeAlgo)
+
+  // Build projectContext for the unified-model normalizer. Reads target repo
+  // canonical_url from repo metadata; if absent, derives
+  // 'https://ns.openconceptlab.org' + relative URL (per OCL canonical
+  // conventions — see plans/unified-mapper-model.md). When a bridge algo is
+  // selected, includes bridge_repo derived from algo.target_repo_url.
+  const buildProjectContext = React.useCallback(() => {
+    if(!repo?.url) return null
+    const targetCanonical = repo.canonical_url || `https://ns.openconceptlab.org${repo.url}`
+    const ctx = {
+      namespace: get(project, 'owner_url') || owner,
+      target_repo: {
+        relative_url: repo.url,
+        canonical_url: targetCanonical,
+        canonical_url_source: repo.canonical_url ? 'repo' : 'derived',
+        version: repoVersion?.id || repo.version
+      }
+    }
+    // bridge_repo when a bridge algo is in use. The bridge repo's relative URL
+    // lives on the algo as `target_repo_url` (legacy naming — the bridge repo
+    // is the *source* of the bridge mappings, e.g. CIEL). PR2a derives the
+    // canonical URL from the relative URL; PR2b will read explicit canonical
+    // from bridge repo metadata once ConfigurationForm carries it.
+    if(bridgeAlgo?.target_repo_url) {
+      ctx.bridge_repo = {
+        relative_url: bridgeAlgo.target_repo_url,
+        canonical_url: `https://ns.openconceptlab.org${bridgeAlgo.target_repo_url}`,
+        canonical_url_source: 'derived'
+      }
+    }
+    return ctx
+  }, [project, owner, repo, repoVersion, bridgeAlgo])
 
   const baseAlgos = useAlgos(t, toggles)
   const [apiAlgos, setApiAlgos] = React.useState([]);
@@ -724,7 +729,6 @@ const MapProject = () => {
     setRowStatuses({reviewed: [], readyForReview: [], unmapped: []})
     setDecisions({})
     setDecisionFilters([])
-    setMatchTypes({very_high: 0, high: 0, medium: 0, low: 0, no_match: 0})
     setMatchedConcepts([])
     setAllCandidates({})
     setSearchedConcepts({})
@@ -1139,18 +1143,10 @@ const MapProject = () => {
   }
 
   const setStateViews = (data, _repo) => {
-    let matchTypes = map(data, 'results.0.search_meta.match_type')
-    let counts = countBy(matchTypes)
-    setMatchTypes(prev => ({
-      very_high: prev.very_high + (counts?.very_high || 0),
-      high: prev.high + (counts?.high || 0),
-      medium: prev.medium + (counts?.medium || 0),
-      low: prev.low + (counts?.low || 0),
-      no_match: prev.no_match + (sum(values(omit(counts, ['very_high', 'high', 'medium', 'low']))) || 0)
-    }));
     setRowStatuses(prev => {
       forEach(data, concept => {
-        if(get(concept, 'results.0.search_meta.match_type') === 'very_high') {
+        const topScore = get(concept, 'results.0.search_meta.search_normalized_score')
+        if(isNumber(topScore) && topScore >= candidatesScore.recommended) {
           let _concept = {...concept.results[0], repo: {..._repo, version: repoVersion?.id || _repo.version, version_url: repoVersion?.version_url || _repo.version_url}}
           setMapSelected(_prev => {
             _prev[concept.row.__index] = _concept
@@ -1192,7 +1188,6 @@ const MapProject = () => {
               search_meta: {...topCandidate.search_meta, map_type: mapping.map_type || topCandidate.search_meta.map_type },
             }
         }
-        setMatchTypes(prev => prev.very_high + 1)
         setRowStatuses(prev => {
           let newStatuses = {...prev}
           let _concept = {...conceptToMap, repo: {...repo, version: repoVersion?.id || repo.version, version_url: repoVersion?.version_url || repo.version_url}}
@@ -1421,15 +1416,29 @@ const MapProject = () => {
 
       await fetchBridgeCandidates(_rows[index], 0, undefined, undefined, undefined, false, true, ((response, payload) => {
         const index = payload.rows[0].__index
+        const results = (isArray(response) ? response : response?.data)
         log({action: 'algo_finished', extras: {algo: algo.id}}, index)
         markAlgo(index, algo.id, 1)
-        setAllCandidates(prev => {
-          const newCandidates = {...prev}
-          const results = (isArray(response) ? response : response?.data)
-          newCandidates[algo.id] = [...reject(prev[algo.id], c => c.row.__index === index), ...(results || [])]
-          lookupCandidates(algo.id, results)
-          return newCandidates
-        })
+        setAllCandidates(prev => ({
+          ...prev,
+          [algo.id]: [...reject(prev[algo.id], c => c.row.__index === index), ...(results || [])]
+        }))
+        lookupCandidates(algo.id, results)
+        if(UNIFIED_MODEL_ENABLED) {
+          // Route the bridge invocation through the normalizer (the per-row
+          // path goes via onResponse, but the bulk path lives here).
+          const algoDef = getAlgoDef(algo.id)
+          const rowPayload = find(results, r => r?.row?.__index === index)
+          if(rowPayload && algoDef) {
+            mergeIntoRowMatchState(index, normalizeAlgorithmInvocation(rowPayload, {
+              algorithmId: algo.id,
+              algorithmConfig: algoDef,
+              projectContext: buildProjectContext(),
+              rowIndex: index,
+              rawResponse: response
+            }))
+          }
+        }
       })); // wait for completion
       await new Promise(resolve => setTimeout(resolve, 200)); // 1s delay
     }
@@ -1451,15 +1460,29 @@ const MapProject = () => {
       setLoadingMatches(true)
       await fetchScispacyCandidates(_rows[index], false, false, true, (response => {
         const _index = _rows[index].__index
+        const results = [{row: _rows[index], results: fromScispacyResultsToConcepts(get(response.data, index) || [])}]
         log({action: 'algo_finished', extras: {algo: algo.id}}, _index)
         markAlgo(_index, algo.id, 1)
-        setAllCandidates(prev => {
-          const newCandidates = {...prev}
-          const results = [{row: _rows[index], results: fromScispacyResultsToConcepts(get(response.data, index) || [])}]
-          newCandidates[algo.id] = [...reject(prev[algo.id], c => c.row.__index === _index), ...(results || [])]
-          lookupCandidates(algo.id, results)
-          return newCandidates
-        })
+        setAllCandidates(prev => ({
+          ...prev,
+          [algo.id]: [...reject(prev[algo.id], c => c.row.__index === _index), ...(results || [])]
+        }))
+        lookupCandidates(algo.id, results)
+        if(UNIFIED_MODEL_ENABLED) {
+          // Mirror the bulk-bridge wiring — the per-row scispacy path goes via
+          // onResponse, but the bulk path lives here.
+          const algoDef = getAlgoDef(algo.id)
+          const rowPayload = results[0]
+          if(rowPayload && algoDef) {
+            mergeIntoRowMatchState(_index, normalizeAlgorithmInvocation(rowPayload, {
+              algorithmId: algo.id,
+              algorithmConfig: algoDef,
+              projectContext: buildProjectContext(),
+              rowIndex: _index,
+              rawResponse: response
+            }))
+          }
+        }
       })); // wait for completion
       await new Promise(resolve => setTimeout(resolve, 500)); // 1s delay
     }
@@ -1591,8 +1614,6 @@ const MapProject = () => {
     setMatchDialog(false)
   }
 
-  const showMatchSummary = Boolean(data?.length && (loadingMatches || matchedConcepts?.length))
-
   const [_now, set_Now] = React.useState(() => moment());
 
   React.useEffect(() => {
@@ -1651,21 +1672,10 @@ const MapProject = () => {
     return t('map_project.ai_analysis')
   }
 
-  const onMatchTypeChange = bucket => setSelectedMatchBucket(prev => prev === bucket ? false : bucket)
-
   const getRows = () => {
     let rows = data?.length ? [...data] : []
     if(selectedRowStatus !== 'all')
       rows = filter(rows, r => rowStatuses[selectedRowStatus].includes(r.__index))
-    if(selectedMatchBucket) {
-      let getIndex = concept => {
-        if(selectedMatchBucket === 'no_match')
-          return (!concept?.results?.length || !['very_high', 'high', 'medium', 'low'].includes(concept.results[0].search_meta.match_type)) ? concept.row.__index : null
-        return (concept?.results?.length && concept.results[0].search_meta.match_type === selectedMatchBucket) ? concept.row.__index : null
-      }
-      const rowIndexes = map(matchedConcepts, getIndex)
-      rows = filter(rows, r => rowIndexes.includes(r.__index))
-    }
     if(searchText)
       rows = filter(rows, row =>
         find(values(row), v =>
@@ -1874,7 +1884,8 @@ const MapProject = () => {
       let _repo = concept?.repo
       const aiRecommendation = get(analysis, index)?.output || get(analysis, index)
       const aiCandidate = get(aiRecommendation, 'primary_candidate')
-      const aiCandidateID = aiCandidate?.concept_id
+      // v2 response prefers canonical_reference.code; legacy shape used concept_id.
+      const aiCandidateID = aiCandidate?.canonical_reference?.code || aiCandidate?.concept_id
       const aiScore = compact([aiCandidate?.confidence_level, aiCandidate?.match_strength]).join(':')
       let  candidates = getRowCandidatesForDownload(index)
       const getOutOfScopeSuggestions = () => {
@@ -1998,7 +2009,6 @@ const MapProject = () => {
         setMapTypes({...mapTypes, [rowIndex]: mapType})
         setTimeout(() => highlightTexts([concept], null, false), 100)
       }
-      updateMatchTypeCounts(null, prev)
       if(closeConcept)
         setShowItem(false)
       return prev
@@ -2017,7 +2027,6 @@ const MapProject = () => {
   const onReviewDone = (next = false) => {
     const newRowStatuses = {...rowStatuses, reviewed: uniq([...rowStatuses.reviewed, rowIndex]), readyForReview: without(rowStatuses.readyForReview, rowIndex), unmapped: without(rowStatuses.unmapped, rowIndex)}
     setRowStatuses(newRowStatuses)
-    updateMatchTypeCounts('reviewed', newRowStatuses)
     log({'action': 'approved'})
     if(next){
       const nextRow = data[selectedRowStatus === 'all' ? rowIndex + 1 : find(rowStatuses[selectedRowStatus], idx => idx > rowIndex)]
@@ -2044,24 +2053,7 @@ const MapProject = () => {
 
   const onStateTabChange = newValue => {
     setSelectedRowStatus(newValue)
-    updateMatchTypeCounts(newValue)
     setDecisionFilters([])
-    if(newValue === 'unmapped')
-      setSelectedMatchBucket(false)
-  }
-
-  const updateMatchTypeCounts = (newRowStatus, newRowStatuses) => {
-    let rowStatus = newRowStatus || selectedRowStatus
-    let rows = rowStatus === 'all' ? matchedConcepts : filter(matchedConcepts, concept => (newRowStatuses || rowStatuses)[rowStatus].includes(concept.row.__index));
-    let matchTypes = map(rows, 'results.0.search_meta.match_type')
-    let counts = countBy(matchTypes)
-    setMatchTypes({
-      very_high: (counts?.very_high || 0),
-      high: (counts?.high || 0),
-      medium: (counts?.medium || 0),
-      low: (counts?.low || 0),
-      no_match: sum(values(omit(counts, ['very_high', 'high', 'medium', 'low']))) || 0
-    });
   }
 
   const onDecisionTabChange = (event, newValue) => {
@@ -2115,7 +2107,6 @@ const MapProject = () => {
         prev.readyForReview = without(prev.readyForReview, rowIndex)
         prev.unmapped = uniq([...prev.unmapped, rowIndex])
       }
-      updateMatchTypeCounts(null, prev)
       return prev
     })
     if(newValue !== 'map' && !logged)
@@ -2147,7 +2138,16 @@ const MapProject = () => {
     });
   };
 
-  const getAlgoDef = algoId => find(algosSelected, {id: algoId})
+  const getAlgoDef = algoId => {
+    const algo = find(algosSelected, {id: algoId})
+    if(!algo) return algo
+    // Inject concept_identity for known algo types when missing. Algorithms
+    // sourced from the OCL Online API (bridge variants) don't carry it, so
+    // we merge from the canonical map (plans/unified-mapper-model.md).
+    if(!algo.concept_identity && CONCEPT_IDENTITY_BY_TYPE[algo.type])
+      return { ...algo, concept_identity: CONCEPT_IDENTITY_BY_TYPE[algo.type] }
+    return algo
+  }
   const getNextAlgoDef = (algoId) => {
     const algoDef = getAlgoDef(algoId);
     if (!algoDef) return;
@@ -2741,6 +2741,103 @@ const MapProject = () => {
     }
   }
 
+  // Build the v2 AI Assistant payload sections (recommendable_concepts +
+  // bridge_context + target_repo) by running the unified-model normalizer
+  // over the legacy allCandidates for the row. Sourcing from allCandidates
+  // (rather than rowMatchState) means this works regardless of the
+  // UNIFIED_MODEL_ENABLED flag — the bridge-recommendation bug fix can ship
+  // with PR2a even though reads are still on legacy state.
+  // See plans/unified-mapper-model.md "AI Assistant payload (match-recommend)".
+  const buildV2RecommendationPayload = (rowIndex) => {
+    const projectContext = buildProjectContext()
+    if(!projectContext?.target_repo?.canonical_url) return null
+
+    const allNormCandidates = []
+    const defsByKey = new Map()
+
+    selectedAlgoIds.forEach(algoId => {
+      const algoDef = getAlgoDef(algoId)
+      if(!algoDef?.concept_identity) return
+      const rowEntry = find(allCandidatesRef.current[algoId], c => c.row?.__index === rowIndex)
+      if(!rowEntry?.results?.length) return
+
+      const normalized = normalizeAlgorithmInvocation(
+        {row: rowEntry.row, results: rowEntry.results},
+        {algorithmId: algoId, algorithmConfig: algoDef, projectContext, rowIndex}
+      )
+
+      allNormCandidates.push(...normalized.candidates)
+      normalized.concept_definitions.forEach(def => {
+        const existing = defsByKey.get(def.key)
+        // Prefer richer definitions (full > partial > pending), matching the
+        // mergeIntoRowMatchState rule.
+        if(!existing || lookupStatusRank(def.lookup_status) > lookupStatusRank(existing.lookup_status))
+          defsByKey.set(def.key, def)
+      })
+    })
+
+    const targetCanonical = projectContext.target_repo.canonical_url
+    const recommendable_concepts = []
+    const bridge_context = []
+
+    defsByKey.forEach((def, key) => {
+      const isBridgeIntermediary = allNormCandidates.some(c => c.concept_key === key && c.type === 'bridge')
+
+      if(isBridgeIntermediary) {
+        // Bridges are CONTEXT only — never recommendable. Their target_concept_keys
+        // tell the AI which recommendable_concepts they justify.
+        const bridgeCandidate = allNormCandidates.find(c => c.concept_key === key && c.type === 'bridge')
+        const target_concept_keys = [...new Set(
+          allNormCandidates
+            .filter(c => c.type === 'bridge_child' && c.bridge_concept_key === key)
+            .map(c => c.concept_key)
+        )]
+        bridge_context.push({
+          concept_key: key,
+          canonical_reference: def.reference,
+          display_name: def.display_name,
+          score: bridgeCandidate?.score,
+          target_concept_keys
+        })
+      } else if(def.reference?.url === targetCanonical) {
+        // Target-repo concepts only. Evidence shows which algorithms surfaced
+        // this concept (and via which bridge, if applicable).
+        const evidence = allNormCandidates
+          .filter(c => c.concept_key === key)
+          .map(c => {
+            const e = {
+              algorithm_id: c.algorithm_id,
+              candidate_type: c.type,
+              score: c.score,
+              highlights: c.highlights
+            }
+            if(c.type === 'bridge_child' && c.bridge_concept_key)
+              e.via = {bridge_concept_key: c.bridge_concept_key, map_type: c.map_type}
+            return e
+          })
+        recommendable_concepts.push({
+          concept_key: key,
+          canonical_reference: def.reference,
+          ocl_url: def.ocl_url,
+          display_name: def.display_name,
+          names: def.names,
+          descriptions: def.descriptions,
+          concept_class: def.concept_class,
+          datatype: def.datatype,
+          properties: def.properties,
+          evidence
+        })
+      }
+      // Else: concept from a non-target, non-bridge source — skip
+    })
+
+    return {
+      target_repo: projectContext.target_repo,
+      recommendable_concepts,
+      bridge_context
+    }
+  }
+
   const fetchRecommendation = async (_row) => {
     let __row = row;
     let __index = rowIndex;
@@ -2763,12 +2860,24 @@ const MapProject = () => {
 
       markAlgo(__index, 'recommend', 0)
       let rowData = prepareRow(__row, true, true)
+      // Option A: additive. Keep the legacy `candidates` field for the
+      // current prompt template; spread v2 fields alongside for the next
+      // prompt-template revision (which will read recommendable_concepts +
+      // bridge_context and structurally exclude bridges from the
+      // recommendation pool, fixing the bridge-recommendation bug).
+      const v2 = buildV2RecommendationPayload(__index)
       const payload = {
         variables: {
           project: getProjectMetadata(),
           row: rowData.row,
           metadata: rowData.metadata,
           candidates: [..._candidates.map(c => omit(c, '_source'))],
+          ...(v2 ? {
+            payload_version: 'v2',
+            target_repo: v2.target_repo,
+            recommendable_concepts: v2.recommendable_concepts,
+            bridge_context: v2.bridge_context
+          } : {})
         }
       }
       const service = APIService.new()
@@ -3034,7 +3143,7 @@ const MapProject = () => {
           </div>
         </Paper>
         {
-          (Boolean(rows?.length) || selectedMatchBucket || ROW_STATES.includes(selectedRowStatus) || searchText) &&
+          (Boolean(rows?.length) || ROW_STATES.includes(selectedRowStatus) || searchText) &&
             <div className='col-xs-12' style={{padding: '0', width: '100%', height: 'calc(100vh - 170px)', minWidth: '665px'}}>
               <div className='col-xs-12' style={{padding: '0 12px', display: 'flex', backgroundColor: SURFACE_COLORS.main, overflowX: 'auto'}}>
                 {
@@ -3072,17 +3181,6 @@ const MapProject = () => {
                 <FormControl sx={{minWidth: '16px'}}>
                   <SearchField onChange={debounce(val => setSearchText(val || ''))} />
                 </FormControl>
-                <Badge badgeContent={matchTypes.very_high || 0} max={999} color='primary'>
-                <FormControlLabel
-                  sx={{
-                    marginLeft: '4px',
-                    marginRight: '8px',
-                    '.MuiFormControlLabel-label': {fontSize: '0.8125rem'}
-                  }}
-                  control={<Switch disabled={!showMatchSummary || selectedRowStatus === 'unmapped'} size="small" checked={selectedMatchBucket === 'very_high'} onChange={() => onMatchTypeChange('very_high')} />}
-                  label={t('map_project.auto_match')}
-                />
-                  </Badge>
                 <ScoreBucketButton
                   selected={selectedCandidatesScoreBucket}
                   onSort={() => setScoreBucketSortBy(scoreBucketSortBy === 'desc' ? 'asc' : 'desc')}
