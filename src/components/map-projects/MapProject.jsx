@@ -79,7 +79,7 @@ import ConceptHome from '../concepts/ConceptHome'
 import DraggablePaperComponent from '../common/DraggablePaperComponent'
 import LoaderDialog from '../common/LoaderDialog'
 import Error403 from '../errors/Error403'
-import { HEADERS, SEMANTIC_SEARCH_HEADERS, ROW_STATES, VIEWS, DECISION_TABS, ROW_STAGES } from './constants'
+import { HEADERS, SEMANTIC_SEARCH_HEADERS, ROW_STATES, VIEWS, DECISION_TABS, ROW_STAGES, PROMPTS_KEY_DEFAULT } from './constants'
 import MapProjectDeleteConfirmDialog from './MapProjectDeleteConfirmDialog';
 import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
@@ -188,6 +188,8 @@ const MapProject = () => {
   const [filters, setFilters] = React.useState({})
   const [AIModel, setAIModel] = React.useState('')
   const [promptTemplate, setPromptTemplate] = React.useState(false)
+  const [promptTemplates, setPromptTemplates] = React.useState(false)
+  const [projectPromptTemplateKey, setProjectPromptTemplateKey] = React.useState('')
 
   const abortRef = React.useRef(false);
 
@@ -443,6 +445,7 @@ const MapProject = () => {
     APIService.new().overrideURL(templateFromProjectURL).appendToUrl('configurations/').get().then(response => {
       const copiedProject = response.data
       setProject(null)
+      setProjectPromptTemplateKey(copiedProject.prompt_template_key || '')
       setName(copiedProject.name ? t('map_project.create_similar_name', {name: copiedProject.name}) : '')
       setFilters(copiedProject.filters || {})
       setLookupConfig(copiedProject.lookup_config || {})
@@ -567,6 +570,7 @@ const MapProject = () => {
       setCandidatesScore(response.data?.score_configuration)
       setLookupConfig(response.data?.lookup_config)
       setEncoderModel(response.data?.encoder_model || DEFAULT_ENCODER_MODEL)
+      setProjectPromptTemplateKey(response.data?.prompt_template_key || '')
       setAnalysis(response.data?.analysis || {})
       setProject(response.data)
       setConfigure(false)
@@ -1016,6 +1020,7 @@ const MapProject = () => {
     formData.append('encoder_model', encoderModel || DEFAULT_ENCODER_MODEL)
     formData.append('include_retired', retired)
     formData.append('filters', JSON.stringify(getFilters()))
+    formData.append('prompt_template_key', getProjectPromptTemplateKey())
     const isUpdate = Boolean(project?.id)
     let service = APIService.new().overrideURL(owner).appendToUrl('map-projects/')
     if(isUpdate)
@@ -1028,6 +1033,7 @@ const MapProject = () => {
       if(response?.data?.id) {
         projectLog({action: isUpdate ? 'Updated' : 'Created', extras: isUpdate ? undefined : {project: response.data}})
         setConfigure(false)
+        setProjectPromptTemplateKey(response.data?.prompt_template_key || getProjectPromptTemplateKey())
         setProject(response.data)
         if(response.data.url)
           history.push(response.data.url)
@@ -1350,7 +1356,18 @@ const MapProject = () => {
     if(inAIAssistantGroup && autoRunAIAnalysis)
       subActions.push('with_ai_analysis')
 
-    projectLog({action: 'auto_match_started', extras: {sub_actions: subActions}})
+    projectLog({
+      action: 'auto_match_started',
+      extras: {
+        sub_actions: subActions,
+        ...(inAIAssistantGroup && autoRunAIAnalysis ? {
+          ai_assistant: {
+            model: getSelectedAIModel(),
+            prompt_template: getPromptTemplateRef()
+          }
+        } : {})
+      }
+    })
 
     if(!autoMatchUnmappedOnly)
       setRowStatuses(prev => ({...prev, readyForReview: []}))
@@ -1381,7 +1398,18 @@ const MapProject = () => {
         setEndMatchingAt(moment())
       }
       if(!abortRef.current)
-        projectLog({action: 'auto_match_finished', extras: {sub_actions: subActions}})
+        projectLog({
+          action: 'auto_match_finished',
+          extras: {
+            sub_actions: subActions,
+            ...(inAIAssistantGroup && autoRunAIAnalysis ? {
+              ai_assistant: {
+                model: getSelectedAIModel(),
+                prompt_template: getPromptTemplateRef()
+              }
+            } : {})
+          }
+        })
     }, 1000)
   };
 
@@ -1392,10 +1420,22 @@ const MapProject = () => {
   const runBulkAIAnalysis = async (_rows) => {
     setLoadingMatches(true)
     setBulkAIAnalysisStartedAt(moment())
+    let resolvedPromptTemplate
+    try {
+      resolvedPromptTemplate = await resolvePromptTemplateForInvocation()
+    } catch (err) {
+      const now = moment()
+      setBulkAIAnalysisEndedAt(now)
+      setEndMatchingAt(now)
+      setLoadingMatches(false)
+      setIsLoadingInDecisionView(false)
+      setAlert({message: err?.message || t('unknown_error'), severity: 'error'})
+      return
+    }
     for (let index = 0; index < _rows.length; index++) {
       if (abortRef.current) break;
 
-      await fetchRecommendation(_rows[index]);
+      await fetchRecommendation(_rows[index], resolvedPromptTemplate);
     }
     const now = moment()
     setBulkAIAnalysisEndedAt(now)
@@ -2683,6 +2723,42 @@ const MapProject = () => {
     return 'low_ranked'
   }
 
+  const getPromptTemplateVersionFromURL = React.useCallback((url) => {
+    if(!url)
+      return ''
+    const match = url.match(/\/prompts\/[^/]+\/([^/]+)\//)
+    const version = match?.[1] || ''
+    return version && version !== 'invoke' ? version : ''
+  }, [])
+
+  const getProjectPromptTemplateKey = React.useCallback((template = promptTemplate) => (
+    template?.key || projectPromptTemplateKey || ''
+  ), [projectPromptTemplateKey, promptTemplate])
+
+  const getDefaultAIModelId = React.useCallback((template, models = AIModels) => (
+    find(models, {id: template?.default_model})?.id || find(models, {is_default: true})?.id || ''
+  ), [AIModels])
+
+  const getResolvedPromptTemplateURI = React.useCallback((template, key) => {
+    const uri = template?.prompt_template_uri || template?.uri || template?.url
+    if(uri)
+      return uri.endsWith('/') ? uri : `${uri}/`
+    if(template?.version)
+      return `/prompts/${key}/${template.version}/`
+    return key ? `/prompts/${key}/` : ''
+  }, [])
+
+  const getPromptTemplateInvokeURL = React.useCallback((template, key) => {
+    const resolvedURI = getResolvedPromptTemplateURI(template, key)
+    if(!resolvedURI)
+      return ''
+    const invokeURI = `${resolvedURI}invoke/`
+    return /^https?:\/\//.test(invokeURI) ? invokeURI : new URL(invokeURI, AI_ASSISTANT_API_URL).toString()
+  }, [AI_ASSISTANT_API_URL, getResolvedPromptTemplateURI])
+
+  const getConfiguredPromptTemplateKey = React.useCallback(() => (
+    projectPromptTemplateKey || PROMPTS_KEY_DEFAULT
+  ), [projectPromptTemplateKey])
 
   const fetchAIModels = () => {
     if(!AIModels.length) {
@@ -2696,29 +2772,109 @@ const MapProject = () => {
           return
         }
         setAIModels(response.data)
-        fetchAIPromptTemplate(response.data)
       })
     }
   }
 
-  const fetchAIPromptTemplate = models => {
-    if(AIModel || !AI_ASSISTANT_API_URL) {
-      return
+  const getPromptTemplateRef = React.useCallback((template = promptTemplate) => {
+    const key = template?.key || getConfiguredPromptTemplateKey()
+    if(!key)
+      return undefined
+
+    const uri = template?.uri || template?.prompt_template_uri || template?.url || `/prompts/${key}/`
+
+    return {
+      key,
+      version: template?.version || getPromptTemplateVersionFromURL(uri) || null,
+      uri: uri || null
     }
+  }, [getConfiguredPromptTemplateKey, getPromptTemplateVersionFromURL, promptTemplate])
+
+  const getSelectedAIModel = React.useCallback((modelId = AIModel) => (
+    find(AIModels, {id: modelId})
+  ), [AIModel, AIModels])
+
+  const onPromptTemplateChange = React.useCallback((template) => {
+    setPromptTemplate(template || null)
+    const nextModelId = getDefaultAIModelId(template, AIModels)
+    if(nextModelId)
+      setAIModel(nextModelId)
+  }, [AIModels, getDefaultAIModelId])
+
+  const fetchPromptTemplates = React.useCallback((models = AIModels) => {
+    if(!AI_ASSISTANT_API_URL || !isCoreUser)
+      return
+
     const service = APIService.new()
     service.URL = AI_ASSISTANT_API_URL
+    service.appendToUrl('/prompts/').get(null, null, {action_type: PROMPTS_KEY_DEFAULT}).then(response => {
+      if(response?.detail) {
+        setAIModel(find(models, {is_default: true})?.id || '')
+        return
+      }
+      setPromptTemplates(response.data || [])
+    })
+  }, [AIModels, AI_ASSISTANT_API_URL, isCoreUser])
 
-    let _models = models?.length ? models : AIModels
-    const defaultModel = find(_models, {is_default: true})
-    service.appendToUrl('/prompts/match-recommend/').get().then(response => {
-      if(response?.detail || !response?.data?.default_model) {
-        setAIModel(defaultModel?.id)
+  const fetchPromptTemplateByKey = React.useCallback((key, models = AIModels) => {
+    if(!AI_ASSISTANT_API_URL || !key)
+      return
+
+    const service = APIService.new()
+    service.URL = AI_ASSISTANT_API_URL
+    service.appendToUrl(`/prompts/${key}/`).get().then(response => {
+      if(response?.detail) {
+        setAIModel(find(models, {is_default: true})?.id || '')
         return
       }
       setPromptTemplate(response.data)
-      setAIModel(find(_models, {id: response.data.default_model})?.id || defaultModel?.id)
+      setAIModel(getDefaultAIModelId(response.data, models))
     })
-  }
+  }, [AIModels, AI_ASSISTANT_API_URL, getDefaultAIModelId])
+
+  React.useEffect(() => {
+    if(!AIModels.length || !AI_ASSISTANT_API_URL)
+      return
+
+    if(isCoreUser)
+      fetchPromptTemplates(AIModels)
+    else
+      fetchPromptTemplateByKey(getConfiguredPromptTemplateKey(), AIModels)
+  }, [AIModels, AI_ASSISTANT_API_URL, fetchPromptTemplateByKey, fetchPromptTemplates, getConfiguredPromptTemplateKey, isCoreUser])
+
+  React.useEffect(() => {
+    if(!isCoreUser || !promptTemplates?.length)
+      return
+
+    const configuredKey = getConfiguredPromptTemplateKey()
+    const nextTemplate = find(promptTemplates, {key: configuredKey}) || find(promptTemplates, {key: PROMPTS_KEY_DEFAULT}) || promptTemplates[0]
+    if(!nextTemplate)
+      return
+
+    setPromptTemplate(nextTemplate)
+    setAIModel(getDefaultAIModelId(nextTemplate))
+  }, [getConfiguredPromptTemplateKey, getDefaultAIModelId, isCoreUser, promptTemplates])
+
+  const resolvePromptTemplateForInvocation = React.useCallback(async (template = promptTemplate) => {
+    const key = template?.key || getConfiguredPromptTemplateKey()
+    if(!key || !AI_ASSISTANT_API_URL)
+      throw new Error('AI Assistant prompt template is not available')
+
+    const service = APIService.new()
+    service.URL = AI_ASSISTANT_API_URL
+    const response = await service.appendToUrl(`/prompts/${key}/`).get()
+    if(response?.detail) {
+      throw new Error(response.detail)
+    }
+
+    const resolvedTemplate = response?.data || {}
+    return {
+      ...resolvedTemplate,
+      key,
+      uri: getResolvedPromptTemplateURI(resolvedTemplate, key),
+      version: resolvedTemplate?.version || getPromptTemplateVersionFromURL(getResolvedPromptTemplateURI(resolvedTemplate, key)) || null
+    }
+  }, [AI_ASSISTANT_API_URL, getConfiguredPromptTemplateKey, getPromptTemplateVersionFromURL, getResolvedPromptTemplateURI, promptTemplate])
 
 
   const getProjectMetadata = () => {
@@ -2740,7 +2896,7 @@ const MapProject = () => {
       target_repo: repo
     }
   }
-
+  
   // Build the v2 AI Assistant payload sections (recommendable_concepts +
   // bridge_context + target_repo) by running the unified-model normalizer
   // over the legacy allCandidates for the row. Sourcing from allCandidates
@@ -2838,7 +2994,7 @@ const MapProject = () => {
     }
   }
 
-  const fetchRecommendation = async (_row) => {
+  const fetchRecommendation = async (_row, resolvedPromptTemplate = null) => {
     let __row = row;
     let __index = rowIndex;
     if(isNumber(_row?.__index)){
@@ -2866,6 +3022,20 @@ const MapProject = () => {
       // bridge_context and structurally exclude bridges from the
       // recommendation pool, fixing the bridge-recommendation bug).
       const v2 = buildV2RecommendationPayload(__index)
+
+      const selectedModel = getSelectedAIModel()
+      let activePromptTemplate
+      try {
+        activePromptTemplate = resolvedPromptTemplate || await resolvePromptTemplateForInvocation()
+      } catch (err) {
+        markAlgo(__index, 'recommend', -2)
+        const errorMessage = err?.message || t('unknown_error')
+        let timestamp = moment().toDate()
+        log({created_at: timestamp, action: 'AIRecommendation', description: errorMessage, extras: {error: errorMessage, model: selectedModel, prompt_template: getPromptTemplateRef(), prompt_template_uri: getPromptTemplateRef()?.uri}}, __index)
+        setAlert({message: errorMessage, severity: 'error'})
+        return false
+      }
+      const promptTemplateRef = getPromptTemplateRef(activePromptTemplate)
       const payload = {
         variables: {
           project: getProjectMetadata(),
@@ -2881,26 +3051,26 @@ const MapProject = () => {
         }
       }
       const service = APIService.new()
-      service.URL = AI_ASSISTANT_API_URL
+      service.URL = getPromptTemplateInvokeURL(activePromptTemplate, promptTemplateRef?.key)
       try {
-        const response = await service.appendToUrl(`/prompts/${promptTemplate.key}/invoke/`).post(payload)
+        const response = await service.post(payload)
         let timestamp = moment().toDate()
         if(response?.detail) {
           markAlgo(__index, 'recommend', -2)
-          log({created_at: timestamp, action: 'AIRecommendation', description: response.detail, extras: {error: response.detail, model: find(AIModels, {id: AIModel})}})
+          log({created_at: timestamp, action: 'AIRecommendation', description: response.detail, extras: {error: response.detail, model: selectedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}})
           setAlert({message: response.detail, severity: 'error'})
           return false
         }
 
         markAlgo(__index, 'recommend', 1)
-        log({created_at: timestamp, action: 'AIRecommendation', description: get(response.data, 'output.rationale') || get(response.data, 'rationale'), extras: {...response.data, model: find(AIModels, {id: AIModel})}}, __index)
-        setAnalysis(prev => ({...prev, [__index]: {...response.data, model: AIModel, timestamp: timestamp, user: user.username || user.id}}))
+        log({created_at: timestamp, action: 'AIRecommendation', description: get(response.data, 'output.rationale') || get(response.data, 'rationale'), extras: {...response.data, model: selectedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}}, __index)
+        setAnalysis(prev => ({...prev, [__index]: {...response.data, model: selectedModel?.id || AIModel, model_name: selectedModel?.name, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri, timestamp: timestamp, user: user.username || user.id}}))
         return true
       } catch (err) {
         markAlgo(__index, 'recommend', -2)
         const errorMessage = err?.detail || err?.response?.data?.detail || err?.message || t('unknown_error')
         let timestamp = moment().toDate()
-        log({created_at: timestamp, action: 'AIRecommendation', description: errorMessage, extras: {error: errorMessage, model: find(AIModels, {id: AIModel})}}, __index)
+        log({created_at: timestamp, action: 'AIRecommendation', description: errorMessage, extras: {error: errorMessage, model: selectedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}}, __index)
         setAlert({message: errorMessage, severity: 'error'})
         return false
       }
@@ -2972,6 +3142,12 @@ const MapProject = () => {
       setLookupConfig={setLookupConfig}
       encoderModel={encoderModel}
       setEncoderModel={setEncoderModel}
+      promptTemplates={promptTemplates}
+      promptTemplate={promptTemplate}
+      onPromptTemplateChange={onPromptTemplateChange}
+      AIModels={AIModels}
+      AIModel={AIModel}
+      setAIModel={setAIModel}
     />
   )
 
@@ -3350,9 +3526,13 @@ const MapProject = () => {
               AIModels,
               AIModel,
               setAIModel,
+              promptTemplates,
+              promptTemplate,
+              setPromptTemplate: onPromptTemplateChange,
               repoVersion,
               inAIAssistantGroup,
-              algosSelected
+              algosSelected,
+              isCoreUser
             }}
           />
       </Paper>
@@ -3479,6 +3659,9 @@ const MapProject = () => {
                       models={AIModels}
                       selectedModel={AIModel}
                       onModelChange={setAIModel}
+                      promptTemplates={promptTemplates}
+                      promptTemplate={promptTemplate}
+                      onPromptTemplateChange={onPromptTemplateChange}
                       onRefreshClick={onRefreshClick}
                       inAIAssistantGroup={inAIAssistantGroup}
                       algosSelected={algosSelected}

@@ -22,9 +22,29 @@ import map from 'lodash/map'
 import CloseIconButton from '../common/CloseIconButton'
 import RepoChip from '../repos/RepoVersionChip'
 import AIAssistantButton from './AIAssistantButton'
+import AIAssistantSelectorPanel from './AIAssistantSelectorPanel'
 
 
-const AutoMatchDialog = ({open, onClose, autoMatchUnmappedOnly, setAutoMatchUnmappedOnly, rowStatuses, autoRunAIAnalysis, setAutoRunAIAnalysis, AIModels, AIModel, setAIModel, repoVersion, onSubmit, inAIAssistantGroup, algosSelected}) => {
+const AutoMatchDialog = ({
+  open,
+  onClose,
+  autoMatchUnmappedOnly,
+  setAutoMatchUnmappedOnly,
+  rowStatuses,
+  autoRunAIAnalysis,
+  setAutoRunAIAnalysis,
+  AIModels,
+  AIModel,
+  setAIModel,
+  promptTemplates,
+  promptTemplate,
+  setPromptTemplate,
+  repoVersion,
+  onSubmit,
+  inAIAssistantGroup,
+  algosSelected,
+  isCoreUser
+}) => {
   const { t } = useTranslation()
   const [algos, setAlgos] = React.useState(true)
   const selectedRows = autoMatchUnmappedOnly ? rowStatuses.unmapped.length : (rowStatuses.unmapped.length + rowStatuses.readyForReview.length)
@@ -131,25 +151,36 @@ const AutoMatchDialog = ({open, onClose, autoMatchUnmappedOnly, setAutoMatchUnma
                   />
                 }
                 label={
-                  <span style={{display: 'flex', alignItems: 'center'}}>
-                    <span>{t('map_project.run_ai_analysis')}</span>
-                    <AIAssistantButton
-                      models={AIModels}
-                      selected={AIModel}
-                      onClick={() => {}}
-                      sx={{margin: '0 16px'}}
-                      onModelChange={setAIModel}
-                      popperProps={{
-                        sx: {zIndex: 1500}
-                      }}
-                      disabled={!autoRunAIAnalysis}
-                    />
-                  </span>
+                  <span>{t('map_project.run_ai_analysis')}</span>
                 }
               />
               <FormHelperText sx={{marginTop: '-4px'}}>
                 {t('map_project.run_ai_analysis_note')}
               </FormHelperText>
+              {
+                autoRunAIAnalysis && (
+                  isCoreUser ?
+                    <AIAssistantSelectorPanel
+                      promptTemplates={promptTemplates}
+                      promptTemplate={promptTemplate}
+                      onPromptTemplateChange={setPromptTemplate}
+                      models={AIModels}
+                      selectedModel={AIModel}
+                      onModelChange={setAIModel}
+                      sx={{marginTop: '12px'}}
+                    /> :
+                    <AIAssistantButton
+                      models={AIModels}
+                      selected={AIModel}
+                      onClick={() => {}}
+                      sx={{marginTop: '12px'}}
+                      onModelChange={setAIModel}
+                      popperProps={{
+                        sx: {zIndex: 1500}
+                      }}
+                    />
+                )
+              }
             </>
         }
       </DialogContent>

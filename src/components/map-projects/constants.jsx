@@ -71,3 +71,4 @@ export const ROW_STAGES = {
   '0': 'in_progress',
   '1': 'completed'
 }
+export const PROMPTS_KEY_DEFAULT = 'match-recommend'
