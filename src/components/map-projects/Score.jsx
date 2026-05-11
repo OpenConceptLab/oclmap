@@ -1,6 +1,6 @@
 import React from 'react'
 import { useTranslation } from 'react-i18next';
-import { MATCH_TYPES, SCORES_COLOR } from './constants'
+import { SCORES_COLOR } from './constants'
 import ListItem from '@mui/material/ListItem'
 import ListItemButton from '@mui/material/ListItemButton'
 import ListItemIcon from '@mui/material/ListItemIcon'
@@ -75,13 +75,11 @@ const Score = ({concept, setShowHighlights, sx, isAIRecommended, candidatesScore
     rerankScore,
     algoScore
   } = getScoreDetails(concept, candidatesScore)
-  const { color } = MATCH_TYPES[concept?.search_meta?.match_type || 'no_match']
 
   return (
     <ListItem disablePadding sx={{display: 'inline-flex', width: 'auto'}}>
       <ListItemButton
-        sx={{color: color, padding: '0px', ...sx}}
-        color={color}
+        sx={{color: bucketColor || 'rgba(0, 0, 0, 0.5)', padding: '0px', ...sx}}
         size='small'
         disabled={!score && !hasPercentile}
         onClick={setShowHighlights ? (event) => {

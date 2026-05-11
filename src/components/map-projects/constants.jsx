@@ -3,10 +3,6 @@ import ListIcon from '@mui/icons-material/FormatListNumbered';
 import UnMappedIcon from '@mui/icons-material/LinkOff';
 import MappedIcon from '@mui/icons-material/Link';
 import ReviewedIcon from '@mui/icons-material/FactCheckOutlined';
-import AutoMatchIcon from '@mui/icons-material/MotionPhotosAutoOutlined';
-import MediumMatchIcon from '@mui/icons-material/Rule';
-import LowMatchIcon from '@mui/icons-material/DynamicForm';
-import NoMatchIcon from '@mui/icons-material/RemoveRoad';
 import { RECOMMEND_COLOR, AVAILABLE_COLOR, UNRANKED_COLOR } from '../../common/colors'
 
 const ID_HEADER = {id: 'id', label: 'ID', description: 'Exact match on concept ID'}
@@ -53,34 +49,6 @@ export const VIEWS = {
     label: 'Approved',
     icon: <ReviewedIcon fontSize='small' />,
     color: 'primary',
-  },
-}
-
-export const MATCH_TYPES = {
-  very_high: {
-    label: 'Auto Match',
-    icon: <AutoMatchIcon fontSize='small' color='primary' />,
-    color: 'primary',
-  },
-  high: {
-    label: 'High Match',
-    icon: <MediumMatchIcon fontSize='small' color='warning' />,
-    color: 'warning',
-  },
-  medium: {
-    label: 'Medium Match',
-    icon: <LowMatchIcon fontSize='small' color='warning' />,
-    color: 'warning',
-  },
-  low: {
-    label: 'Low Match',
-    icon: <LowMatchIcon fontSize='small' color='secondary' />,
-    color: 'secondary',
-  },
-  no_match: {
-    label: 'No Match',
-    icon: <NoMatchIcon fontSize='small' color='error' />,
-    color: 'error',
   },
 }
 

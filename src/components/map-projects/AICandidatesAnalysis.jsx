@@ -35,7 +35,8 @@ const AICandidatesAnalysis = ({ analysis, onClose, sx, isCoreUser }) => {
 
   const getAlternateIds = () => {
     const alternates = output?.alternative_candidates || []
-    return compact(map(alternates, a => a?.concept_id || a?.id)).join(', ')
+    // v2 response prefers canonical_reference.code; legacy shape used concept_id/id.
+    return compact(map(alternates, a => a?.canonical_reference?.code || a?.concept_id || a?.id)).join(', ')
   }
 
   return (
@@ -83,7 +84,7 @@ const AICandidatesAnalysis = ({ analysis, onClose, sx, isCoreUser }) => {
                   {t('map_project.primary')}:
                 </Typography>
                 <Typography gutterBottom sx={{ color: 'text.primary', fontSize: 12, mb: 0 }} component='span'>
-                  {output?.primary_candidate?.concept_id || output?.primary_candidate?.id || '-'}
+                  {output?.primary_candidate?.canonical_reference?.code || output?.primary_candidate?.concept_id || output?.primary_candidate?.id || '-'}
                 </Typography>
               </span>
               <span style={{marginRight: '4px', display: 'inline-flex'}}>
