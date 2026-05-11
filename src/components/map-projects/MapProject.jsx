@@ -2417,7 +2417,11 @@ const MapProject = () => {
           const newCandidates = {...prev}
           forEach(keys(prev), algoId => {
             const existingCandidates = [...(prev[algoId] || [])]
-            const ranked = filter(response.data, result => result.search_meta.algorithm === algoId)
+            const ranked = filter(response.data, result => {
+              if(algoId === 'ocl-ciel-bridge' && result.search_meta.algorithm === 'ocl-bridge')
+                return result.owner_url === '/orgs/CIEL/'
+              return result.search_meta.algorithm === algoId
+            })
             if(ranked.length > 0) {
               const matchIndex = findIndex(existingCandidates, match => match.row.__index === index)
               if(matchIndex > -1) {
@@ -2505,8 +2509,19 @@ const MapProject = () => {
       __offset,
       isBoolean(_retired) ? _retired : retired,
       (candidates) => {
-        if(callback)
-          callback(candidates, payload)
+        if(callback) {
+          const newCandidates = candidates?.map(candidate => ({
+            ...candidate,
+            results: candidate?.results?.map(result => ({
+              ...result,
+              search_meta: {
+                ...result?.search_meta,
+                algorithm: bridgeAlgoId
+              }
+            }))
+          }));
+          callback(newCandidates, payload)
+        }
       },
       (response, errorMsg) => {
         markAlgo(__row.__index, bridgeAlgoId, -2)
