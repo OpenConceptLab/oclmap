@@ -2334,7 +2334,7 @@ const MapProject = () => {
           fetchAllCandidatesForRow(nextAlgo.id, __row, offset, _retired, scrollToBottom, _filters, forceReload)
         } else {
           const currentAlgo = algoId ? getAlgoDef(algoId) : null
-          if(!isMultiAlgo && (currentAlgo?.provider === 'ocl' && currentAlgo?.type !== 'ocl-scispacy'))
+          if(!isMultiAlgo && (currentAlgo?.provider === 'ocl' && !['ocl-bridge', 'ocl-ciel-bridge', 'ocl-scispacy'].includes(currentAlgo.type)))
             markAlgo(__row.__index, 'rerank', 1)
           else {
             markAlgo(__row.__index, 'rerank', -1)
