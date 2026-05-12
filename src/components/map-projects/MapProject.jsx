@@ -2862,8 +2862,17 @@ const MapProject = () => {
   const fromScispacyResultsToConcepts = results => {
     let formatted = []
     forEach(results, (result) => {
+      // Don't synthesize search_normalized_score from composite_score * 100.
+      // The normalizer reads search_normalized_score straight into
+      // ConceptRow.rerank_score (normalizers.js:178), so the synthesized
+      // value masqueraded as a real rerank score — unified chips for
+      // scispacy candidates were just (raw * 100) until the debounced
+      // $rerank/ pass would have overwritten them (and didn't, since the
+      // field was already populated). Leave normalized_score off; the
+      // rerank pipeline fills rerank_score on these rows just like the
+      // other algos.
       if(result?.LOINC_NUM)
-        formatted.push({id: result.LOINC_NUM, display_name: result.LONG_COMMON_NAME, search_meta: {search_normalized_score: result.composite_score * 100, search_score: result.composite_score, algorithm: 'ocl-scispacy-loinc'}, extras: result, source: 'LOINC'})
+        formatted.push({id: result.LOINC_NUM, display_name: result.LONG_COMMON_NAME, search_meta: {search_score: result.composite_score, algorithm: 'ocl-scispacy-loinc'}, extras: result, source: 'LOINC'})
     })
     return formatted
   }
