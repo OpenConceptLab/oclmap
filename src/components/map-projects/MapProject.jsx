@@ -238,6 +238,7 @@ const MapProject = () => {
   const [AIModels, setAIModels] = React.useState([])
   const [lookupConfig, setLookupConfig] = React.useState({})
   const [encoderModel, setEncoderModel] = React.useState(DEFAULT_ENCODER_MODEL)
+  const [promptOutputLocale, setPromptOutputLocale] = React.useState(null)
 
   // import
   const [openImportToCollection, setOpenImportToCollection] = React.useState(false)
@@ -571,6 +572,7 @@ const MapProject = () => {
       setLookupConfig(response.data?.lookup_config)
       setEncoderModel(response.data?.encoder_model || DEFAULT_ENCODER_MODEL)
       setProjectPromptTemplateKey(response.data?.prompt_template_key || '')
+      setPromptOutputLocale(response.data?.prompt_output_locale || null)
       setAnalysis(response.data?.analysis || {})
       setProject(response.data)
       setConfigure(false)
@@ -1021,6 +1023,7 @@ const MapProject = () => {
     formData.append('include_retired', retired)
     formData.append('filters', JSON.stringify(getFilters()))
     formData.append('prompt_template_key', getProjectPromptTemplateKey())
+    formData.append('prompt_output_locale', promptOutputLocale || '')
     const isUpdate = Boolean(project?.id)
     let service = APIService.new().overrideURL(owner).appendToUrl('map-projects/')
     if(isUpdate)
@@ -3065,6 +3068,10 @@ const MapProject = () => {
           } : {})
         }
       }
+
+      if(promptOutputLocale && isCoreUser)
+        payload.variables.output_locale = promptOutputLocale
+
       const service = APIService.new()
       service.URL = getPromptTemplateInvokeURL(activePromptTemplate, promptTemplateRef?.key)
       try {
@@ -3163,6 +3170,8 @@ const MapProject = () => {
       AIModels={AIModels}
       AIModel={AIModel}
       setAIModel={setAIModel}
+      promptOutputLocale={promptOutputLocale}
+      setPromptOutputLocale={setPromptOutputLocale}
     />
   )
 

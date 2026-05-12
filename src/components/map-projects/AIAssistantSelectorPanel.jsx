@@ -8,6 +8,8 @@ import FormHelperText from '@mui/material/FormHelperText'
 import ListItemText from '@mui/material/ListItemText'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
+import FormControlLabel from '@mui/material/FormControlLabel';
+import Checkbox from '@mui/material/Checkbox';
 
 import find from 'lodash/find'
 
@@ -22,26 +24,65 @@ const AIAssistantSelectorPanel = ({
   onModelChange,
   onSubmit,
   submitLabel,
+  promptOutputLocale,
+  setPromptOutputLocale,
   showSubmit = false,
   disabled = false,
+  showLocale = false,
   sx = {}
 }) => {
   const { t } = useTranslation()
+  const locales = [
+    {id: 'auto', name: 'auto (experimental)'},
+    { id: 'en',    name: 'English' },
+    { id: 'es',    name: 'español' },
+    { id: 'es-MX', name: 'español (México)' },
+    { id: 'pt',    name: 'português' },
+    { id: 'pt-BR', name: 'português (Brasil)' },
+    { id: 'pt-PT', name: 'português (Portugal)' },
+    { id: 'fr',    name: 'français' },
+    { id: 'fr-CA', name: 'français (Canada)' },
+    { id: 'de',    name: 'Deutsch' },
+    { id: 'it',    name: 'italiano' },
+  ]
+  const [checkLocale, setCheckLocale] = React.useState(false)
 
   if (!promptTemplates?.length) {
     return null
   }
 
   const selectedModelOption = find(models, { id: selectedModel }) || null
+  const selectedLocaleOption = find(locales, { id: promptOutputLocale }) || null
+
+  const getLocaleOptionLabel = option => {
+    if (typeof option === 'string') {
+      return option
+    }
+
+    if (!option?.id) {
+      return ''
+    }
+
+    return option.id === 'auto' ? option.name : `[${option.id}] ${option.name}`
+  }
+
+  const onCheckLocale = event => {
+    const newValue = event.target.checked
+    setCheckLocale(newValue)
+    if(!newValue)
+      setPromptOutputLocale(null)
+  }
+
+  React.useEffect(() => {
+    if (showLocale && promptOutputLocale && !checkLocale) {
+      setCheckLocale(true)
+    }
+  }, [showLocale, promptOutputLocale, checkLocale])
 
   return (
     <Box
       sx={{
-        border: '1px solid',
-        borderColor: 'divider',
-        borderRadius: '12px',
         backgroundColor: 'background.paper',
-        padding: '12px',
         minWidth: '320px',
         ...sx
       }}
@@ -124,9 +165,76 @@ const AIAssistantSelectorPanel = ({
       />
       {
         promptTemplate &&
-          <FormHelperText sx={{ marginTop: '8px', marginBottom: 0 }}>
+          <FormHelperText sx={{ margin: '4px 0 0 14px' }}>
             {t('common.version')}: {promptTemplate.version || 'N/A'}
           </FormHelperText>
+      }
+      {
+        showLocale &&
+          <>
+            <FormControlLabel
+              label={t('map_project.set_ai_assistant_output_language')}
+              control={
+                <Checkbox
+                  onChange={onCheckLocale}
+                  checked={checkLocale} />
+              }
+            />
+            {
+              checkLocale &&
+                <Autocomplete
+                  sx={{marginTop: '12px'}}
+                  id="promptTemplateLocale"
+                  freeSolo
+                  blurOnSelect
+                  options={locales}
+                  value={selectedLocaleOption}
+                  inputValue={selectedLocaleOption ? getLocaleOptionLabel(selectedLocaleOption) : (promptOutputLocale || '')}
+                  onInputChange={(event, newInputValue, reason) => {
+                    if (reason === 'input') {
+                      setPromptOutputLocale(newInputValue || null)
+                    }
+
+                    if (reason === 'clear') {
+                      setPromptOutputLocale(null)
+                    }
+                  }}
+                  onChange={(event, newValue, reason) => {
+                    if (reason === 'clear' || newValue === null || newValue === '') {
+                      setPromptOutputLocale(null)
+                      return
+                    }
+
+                    if (typeof newValue === 'string') {
+                      return
+                    }
+
+                    setPromptOutputLocale(newValue?.id || null)
+                  }}
+                  isOptionEqualToValue={(option, current) => {
+                    if (typeof current === 'string') {
+                      return option?.id === current
+                    }
+
+                    return option?.id === current?.id
+                  }}
+                  getOptionLabel={getLocaleOptionLabel}
+                  renderOption={(props, option) => (
+                    <li {...props} key={option.id}>
+                      {
+                        option.id === 'auto' ?
+                          <span style={{fontStyle: 'italic'}}>{option.name}</span> :
+                          <span style={{display: 'flex', alignItems: 'center'}}>
+                            <span style={{marginRight: '6px', fontSize: '14px', color: 'rgba(0, 0, 0, 0.6)'}}>[{option.id}]</span>
+                            <span>{option.name}</span>
+                          </span>
+                      }
+                    </li>
+                  )}
+                  renderInput={(params) => <TextField {...params} label={t('map_project.ai_assistant_output_locale')} />}
+                />
+            }
+          </>
       }
       {
         showSubmit &&
