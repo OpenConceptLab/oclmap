@@ -327,7 +327,6 @@ const Concept = ({_id, firstChild, lastChild, concept, setShowHighlights, isShow
                   setShowHighlights={setShowHighlights}
                   isSelectedForMap={isSelectedForMap}
                   onMap={onMap}
-                  noScore={algoScoreFirst}
                   bridgeChild
                   showAlgo={showAlgo}
                   candidatesScore={candidatesScore}
