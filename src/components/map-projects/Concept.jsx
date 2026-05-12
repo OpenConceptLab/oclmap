@@ -48,8 +48,12 @@ const Item = ({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition
   const bridgeMappingPrefix = bridgeConceptDefinition
     ? `${bridgeConceptDefinition.source || ''}:${bridgeConceptDefinition.id || bridgeConceptDefinition.reference?.code} ${bridgeConceptDefinition.display_name || ''}`
     : false
+  // SearchHighlightsDialog reads concept.search_meta.search_highlight and
+  // calls getScoreDetails on the same shape. Project the tuple through
+  // conceptForMapping so the dialog gets the legacy concept shape it
+  // expects (search_meta.search_highlight comes from candidate.highlights).
   const showHighlightsPayload = setShowHighlights
-    ? () => setShowHighlights({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition})
+    ? () => setShowHighlights(conceptToMap)
     : null
   return (
     <>

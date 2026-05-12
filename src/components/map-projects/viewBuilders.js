@@ -168,11 +168,24 @@ export const conceptForMapping = (rowView) => {
  * Compute the unified score (0-100 percentile) and the raw algorithm score
  * for a candidate+row. Unified score = per-(row, concept) rerank score
  * from the ConceptRow. Raw score = per-algorithm score on the Candidate.
+ *
+ * Accepts either shape:
+ *   - {candidate, conceptRow} — the unified-model tuple
+ *   - {search_meta: {search_normalized_score, search_score}} — the legacy
+ *     concept shape (also produced by conceptForMapping projection).
+ * Both shapes coexist while PR3-era cleanup is pending; the dialog passing
+ * `conceptForMapping(tuple)` to setShowHighlights needs the legacy path.
+ *
  * Pure — caller maps qualityBucket -> bucketColor via SCORES_COLOR.
  */
-export const getScoreDetails = ({candidate, conceptRow} = {}, candidatesScore = {}) => {
-  const rerankFloat = isNumber(conceptRow?.rerank_score) ? conceptRow.rerank_score : null
-  const score = isNumber(candidate?.score) ? candidate.score : null
+export const getScoreDetails = (input = {}, candidatesScore = {}) => {
+  const {candidate, conceptRow, search_meta: searchMeta} = input || {}
+  const rerankFloat = isNumber(conceptRow?.rerank_score)
+    ? conceptRow.rerank_score
+    : (isNumber(searchMeta?.search_normalized_score) ? searchMeta.search_normalized_score : null)
+  const score = isNumber(candidate?.score)
+    ? candidate.score
+    : (isNumber(searchMeta?.search_score) ? searchMeta.search_score : null)
   // ConceptRow.rerank_score is already on the 0-100 scale (the rerank API
   // returns search_normalized_score in that range). Display directly;
   // when unavailable, scale the candidate's raw score from 0-1 to 0-100.

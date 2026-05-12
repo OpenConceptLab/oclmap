@@ -185,7 +185,17 @@ const SubHeader = ({count, onClick, isCollapsed, header, indicatorColor, isFirst
 
 
 const CandidateList = ({rowViews, header, rowIndex, sortBy, order, setShowItem, showItem, setShowHighlights, isSelectedForMap, onMap, onFetchMore, bgColor, bucketId, display, onDisplayChange, noToolbar, toolbarControl, repoVersion, alignToolbarLeft, rightControl, analysis, showAnalysis, openAnalysis, onCloseAnalysis, AIRecommendedCandidateId, locales, scispacy, showAlgo, collapsed, onCollapse, candidatesScore, algoScoreFirst, byAlgorithm, isFirst, isCoreUser}) => {
-  const results = {total: onFetchMore ? rowViews?.length : 1, results: rowViews || []}
+  // Decorate rowViews with top-level id/url/version_url so SearchResults'
+  // handleRowClick (which looks up rows by `row.version_url || row.url ||
+  // row.id`) can resolve the click back to the rowView. Without this the
+  // table click never fires onShowItemSelect because rowView fields live
+  // on view.conceptDefinition, not at top level.
+  const rowsForTable = (rowViews || []).map(view => {
+    const def = view?.conceptDefinition
+    const idForLookup = def?.ocl_url || def?.id || def?.reference?.code
+    return { ...view, id: idForLookup, url: def?.ocl_url, version_url: def?.ocl_url }
+  })
+  const results = {total: onFetchMore ? rowsForTable.length : 1, results: rowsForTable}
   const isCollapsed = collapsed.includes(bucketId)
   const onCollapseToggle = () => {
     onCollapse(isCollapsed ? without(collapsed, bucketId): [...collapsed, bucketId])

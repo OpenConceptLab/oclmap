@@ -33,6 +33,7 @@ import orderBy from 'lodash/orderBy'
 
 
 import ConceptIcon from '../concepts/ConceptIcon'
+import { isLikelyCanonicalUrl } from './algorithms'
 import APIService from '../../services/APIService';
 
 /**
@@ -467,12 +468,18 @@ export default function MultiAlgoSelector({
                           <TextField
                             fullWidth
                             required
-                            label={t('map_project.algo_canonical_url') || 'Canonical URL'}
+                            label={t('map_project.algo_canonical_url', 'Canonical URL')}
                             value={sel.canonical_url || ''}
                             onChange={(e) => updateSelected(sel.__key, { canonical_url: e.target.value || '' })}
                             placeholder="http://loinc.org"
-                            helperText={t('map_project.algo_canonical_url_description') || 'Canonical URL of the code system this algorithm matches against (e.g. http://loinc.org).'}
-                            error={Boolean(sel.canonical_url && !isLikelyCanonicalUrl(sel.canonical_url))}
+                            helperText={
+                              !sel.canonical_url
+                                ? t('map_project.algo_canonical_url_required', 'Canonical URL is required for custom algorithms (e.g. http://loinc.org).')
+                                : !isLikelyCanonicalUrl(sel.canonical_url)
+                                  ? t('map_project.algo_canonical_url_invalid', 'Enter a full URL starting with http:// or https://')
+                                  : t('map_project.algo_canonical_url_description', 'Canonical URL of the code system this algorithm matches against (e.g. http://loinc.org).')
+                            }
+                            error={!isLikelyCanonicalUrl(sel.canonical_url)}
                           />
                           <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
                             <TextField
@@ -517,15 +524,15 @@ export default function MultiAlgoSelector({
                           <>
                             <TextField
                               fullWidth
-                              label={t('map_project.bridge_source_url') || 'Bridge Source URL'}
+                              label={t('map_project.bridge_source_url', 'Bridge Source URL')}
                               value={sel.target_repo_url ?? algo.target_repo_url ?? '/orgs/CIEL/sources/CIEL/'}
                               onChange={(e) => updateSelected(sel.__key, { target_repo_url: e.target.value })}
                               placeholder="/orgs/CIEL/sources/CIEL/"
-                              helperText={t('map_project.bridge_source_url_description') || 'The interface terminology to search through for bridge matching'}
+                              helperText={t('map_project.bridge_source_url_description', 'The interface terminology to search through for bridge matching')}
                             />
                             <TextField
                               fullWidth
-                              label={t('map_project.bridge_canonical_url') || 'Bridge Canonical URL'}
+                              label={t('map_project.bridge_canonical_url', 'Bridge Canonical URL')}
                               value={sel.bridge_repo?.canonical_url || ''}
                               onChange={(e) => updateSelected(sel.__key, {
                                 bridge_repo: {
@@ -535,10 +542,10 @@ export default function MultiAlgoSelector({
                                 }
                               })}
                               placeholder="https://CIELterminology.org"
-                              helperText={t('map_project.bridge_canonical_url_description') || 'Canonical URL of the bridge code system (leave blank to derive from the relative URL).'}
+                              helperText={t('map_project.bridge_canonical_url_description', 'Canonical URL of the bridge code system (leave blank to derive from the relative URL).')}
                             />
                             {!sel.bridge_repo?.canonical_url && (
-                              <Chip size='small' label={t('map_project.canonical_auto_derived') || 'Auto-derived'} sx={{alignSelf: 'flex-start'}} />
+                              <Chip size='small' label={t('map_project.canonical_auto_derived', 'Auto-derived')} sx={{alignSelf: 'flex-start'}} />
                             )}
                           </>
                         )}
@@ -666,7 +673,3 @@ function eHasValue(value) {
   return Boolean(value && String(value).trim());
 }
 
-function isLikelyCanonicalUrl(value) {
-  if(!value || typeof value !== 'string') return false;
-  return /^https?:\/\/[^\s]+$/i.test(value.trim());
-}

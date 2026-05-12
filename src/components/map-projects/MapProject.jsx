@@ -96,7 +96,7 @@ import ScoreBucketButton from './ScoreBucketButton'
 import Concept from './Concept'
 import ImportToCollection from './ImportToCollection'
 import ProjectLogs from './ProjectLogs';
-import { useAlgos, CONCEPT_IDENTITY_BY_TYPE } from './algorithms'
+import { useAlgos, CONCEPT_IDENTITY_BY_TYPE, ensureConceptIdentity } from './algorithms'
 import AutoMatchDialog from './AutoMatchDialog'
 import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
 import { normalizeAlgorithmInvocation, lookupStatusRank, normalizeLegacyAllCandidates } from './normalizers'
@@ -327,6 +327,19 @@ const MapProject = () => {
       setConceptCache(nextCache)
     }
 
+    // Auto-trigger ensureLoaded for any newly-arrived ConceptDefinitions
+    // that aren't yet 'full' (bridge cascade targets land as 'pending';
+    // sparse algorithm results land as 'partial'). The plan calls $lookup
+    // "state-driven on ConceptDefinition" — this is the trigger point.
+    // ensureLoaded is idempotent + in-flight-deduped so an extra call is
+    // free. Forward-ref pattern because ensureLoaded is declared later.
+    if(ensureLoadedRef.current) {
+      const keysToLoad = concept_definitions
+        .filter(d => d && d.lookup_status !== 'full')
+        .map(d => d.key)
+      if(keysToLoad.length) ensureLoadedRef.current(keysToLoad)
+    }
+
     // Trigger a rerank if any newly-arrived ConceptRow lacks a rerank_score
     // (plans/unified-mapper-model.md — rerank trigger is debounce +
     // in-flight check, not "wait for all algos").
@@ -356,6 +369,10 @@ const MapProject = () => {
   // the component) to call scheduleRerank (declared later). The ref is
   // wired up via useEffect once scheduleRerank exists.
   const scheduleRerankRef = React.useRef(null)
+  // Same forward-ref pattern for ensureLoaded — mergeIntoRowMatchState
+  // calls it to auto-fill 'pending'/'partial' ConceptDefinitions as they
+  // arrive, but ensureLoaded is defined later in the component.
+  const ensureLoadedRef = React.useRef(null)
 
   /*eslint no-undef: 0*/
   const AI_ASSISTANT_API_URL = window.AI_ASSISTANT_API_URL || process.env.AI_ASSISTANT_API_URL
@@ -641,8 +658,13 @@ const MapProject = () => {
       } : null
 
       if(loadProjectContext) {
+        // Enrich loadedAlgos with concept_identity (built-ins, API-loaded
+        // bridge/scispacy, custom). The normalizer reads algo.concept_identity
+        // directly; algos that can't be enriched fall through unchanged and
+        // the normalizer skips them.
+        const enrichedAlgos = loadedAlgos.map(a => ensureConceptIdentity(a) || a)
         const { rowMatchState: loadedRowMatchState, conceptDefinitionsByKey: loadedDefsByKey } =
-          normalizeLegacyAllCandidates(_allCandidates, loadProjectContext, loadedAlgos, CONCEPT_IDENTITY_BY_TYPE)
+          normalizeLegacyAllCandidates(_allCandidates, loadProjectContext, enrichedAlgos, CONCEPT_IDENTITY_BY_TYPE)
         rowMatchStateRef.current = loadedRowMatchState
         setRowMatchState(loadedRowMatchState)
         if(loadedDefsByKey.size > 0) {
@@ -659,6 +681,24 @@ const MapProject = () => {
         }
       } else {
         conceptCacheRef.current = _cache
+        // No target canonical means the saved project is missing the
+        // load-bearing target_repo configuration. Under UNIFIED_MODEL_ENABLED
+        // the read path needs this canonical to resolve candidates, so the
+        // candidate list will be empty until the user fixes it. Block-and-
+        // banner: surface an error alert and pop the configuration drawer
+        // open. Only warn when there's actually saved match data — a
+        // brand-new project loading with empty allCandidates is normal.
+        if(!isEmpty(_allCandidates)) {
+          setAlert({
+            message: t(
+              'map_project.target_repo_required_on_load',
+              'This project is missing a target repository. Configure the target repository to see saved candidates.'
+            ),
+            severity: 'error',
+            duration: 10
+          })
+          setConfigure(true)
+        }
       }
 
       setName(response.data?.name || '')
@@ -1252,12 +1292,18 @@ const MapProject = () => {
   // Pick the highest-scoring target-repo ConceptRow for a given rowIndex
   // from the unified-model state. Returns a RowView ({candidate,
   // conceptDefinition, conceptRow, bridgeConceptDefinition?}) or null.
+  // The target canonical comes from buildProjectContext — the SAME source
+  // the normalizer used to stamp ConceptDefinition.reference.url, so the
+  // filter is guaranteed to agree with the data. Reading canonical from
+  // the caller's `_repo` would risk the derived-vs-explicit mismatch the
+  // unified-model spec exists to avoid.
   // (plans/unified-mapper-model.md — score-grouped view's bucketing rule.)
-  const pickTopRowView = (rowIndex, _repo) => {
+  const pickTopRowView = (rowIndex) => {
     const rowState = rowMatchStateRef.current[rowIndex]
     if(!rowState) return null
+    const targetCanonical = buildProjectContext()?.target_repo?.canonical_url
+    if(!targetCanonical) return null
     const views = buildQualityRowViews(rowState, conceptCacheRef.current)
-    const targetCanonical = _repo?.canonical_url || (_repo?.url ? `https://ns.openconceptlab.org${_repo.url}` : null)
     // Auto-match must land on a target-repo concept. Bridge intermediaries
     // are excluded — even if their rerank_score is high, they're not
     // mappable. Score view already places bridge_child rows under the
@@ -1273,7 +1319,7 @@ const MapProject = () => {
       forEach(data, concept => {
         const rowIdx = concept?.row?.__index
         if(!isNumber(rowIdx)) return
-        const top = pickTopRowView(rowIdx, _repo)
+        const top = pickTopRowView(rowIdx)
         const topScore = top?.conceptRow?.rerank_score
         if(isNumber(topScore) && topScore >= candidatesScore.recommended) {
           const _concept = {...conceptForMapping(top), repo: {..._repo, version: repoVersion?.id || _repo.version, version_url: repoVersion?.version_url || _repo.version_url}}
@@ -1296,7 +1342,7 @@ const MapProject = () => {
 
   const setAutoMatched = (indexes) => {
     forEach(indexes, index => {
-      const top = pickTopRowView(index, repo)
+      const top = pickTopRowView(index)
       const topScore = top?.conceptRow?.rerank_score
       if(isNumber(topScore) && topScore >= candidatesScore.recommended) {
         setRowStatuses(prev => {
@@ -1406,11 +1452,7 @@ const MapProject = () => {
             if(UNIFIED_MODEL_ENABLED && Array.isArray(data) && data.length) {
               const projectCtx = buildProjectContext()
               if(projectCtx) {
-                const algoCfg = algo.concept_identity
-                  ? algo
-                  : (CONCEPT_IDENTITY_BY_TYPE[algo.type]
-                    ? { ...algo, concept_identity: CONCEPT_IDENTITY_BY_TYPE[algo.type] }
-                    : null)
+                const algoCfg = ensureConceptIdentity(algo)
                 if(algoCfg) {
                   data.forEach(rowEntry => {
                     const idx = rowEntry?.row?.__index
@@ -2083,8 +2125,11 @@ const MapProject = () => {
         '__row_map_status__': rowStateLabel,
         '__row_decision__': decisions[index] || 'None',
         ...rowAlgoStatuses,
-        '__map_repo_url__': _repo?.version_url || repoVersion?.version_url || _repo?.url || repo?.version_url || repo?.url,
-        '__map_repo_id__': _repo?.short_code || _repo?.id,
+        // __map_* columns describe the mapped concept; leave blank when
+        // the row isn't mapped (concept is undefined) so the namespace is
+        // internally consistent with __map_concept_id__ / __map_concept_name__.
+        '__map_repo_url__': concept ? (_repo?.version_url || _repo?.url) : null,
+        '__map_repo_id__': concept ? (_repo?.short_code || _repo?.id) : null,
         '__map_concept_id__': concept?.id,
         '__map_concept_name__': concept?.display_name,
         '__map_concept_url__': concept?.url,
@@ -2319,12 +2364,13 @@ const MapProject = () => {
   const getAlgoDef = algoId => {
     const algo = find(algosSelected, {id: algoId})
     if(!algo) return algo
-    // Inject concept_identity for known algo types when missing. Algorithms
-    // sourced from the OCL Online API (bridge variants) don't carry it, so
-    // we merge from the canonical map (plans/unified-mapper-model.md).
-    if(!algo.concept_identity && CONCEPT_IDENTITY_BY_TYPE[algo.type])
-      return { ...algo, concept_identity: CONCEPT_IDENTITY_BY_TYPE[algo.type] }
-    return algo
+    // Inject concept_identity for known algo types when missing (algorithms
+    // sourced from the OCL Online API don't carry it) and for custom algos
+    // (derived from user-entered canonical_url). When ensureConceptIdentity
+    // can't produce one, return the raw algo so callers that don't need
+    // concept_identity (e.g. fetching) still work; the normalizer path
+    // performs its own null-guard.
+    return ensureConceptIdentity(algo) || algo
   }
   const getNextAlgoDef = (algoId) => {
     const algoDef = getAlgoDef(algoId);
@@ -2564,23 +2610,19 @@ const MapProject = () => {
     return rows
   }
 
-  // Match a rerank response item back to a ConceptRow concept_key.
-  // Preference order: concept_key passthrough -> ocl_url -> (id, source).
+  // Match a rerank response item back to a ConceptRow concept_key by the
+  // canonical concept_key passthrough that buildRerankRowsForRow sent up.
+  // Throws on miss — fuzzy fallbacks (ocl_url, id+source) are deliberately
+  // gone because the unified-model spec relies on canonical identity. A
+  // miss here means either (a) the server stripped concept_key from the
+  // response, or (b) project config is incomplete so the cache never saw
+  // the key. Both are operator-visible bugs, not silent-skip cases.
   const matchRerankResultToKey = (result) => {
-    if(result?.concept_key && conceptCacheRef.current[result.concept_key])
-      return result.concept_key
-    if(result?.url) {
-      const byOclUrl = Object.entries(conceptCacheRef.current).find(([, def]) => def?.ocl_url === result.url)
-      if(byOclUrl) return byOclUrl[0]
-    }
-    if(result?.id) {
-      const byCode = Object.entries(conceptCacheRef.current).find(([, def]) => (
-        (def?.id === result.id || def?.reference?.code === result.id) &&
-          (!result.source || def?.source === result.source)
-      ))
-      if(byCode) return byCode[0]
-    }
-    return null
+    if(!result?.concept_key)
+      throw new Error('rerank response missing concept_key passthrough')
+    if(!conceptCacheRef.current[result.concept_key])
+      throw new Error(`rerank result references unknown concept_key: ${result.concept_key}`)
+    return result.concept_key
   }
 
   const rerank = async (_index, isBulk=false) => {
@@ -2605,15 +2647,28 @@ const MapProject = () => {
         ...(encoderModel ? { encoder_model: encoderModel } : {})
       })
 
-      // Write rerank_score into the row's ConceptRows.
+      // Write rerank_score into the row's ConceptRows. matchRerankResultToKey
+      // throws on canonical-identity miss; surface to the alert state so a
+      // misconfigured project / server doesn't fail silently.
       const resultsByKey = new Map()
+      const matchErrors = []
       forEach(response?.data || [], result => {
-        const key = matchRerankResultToKey(result)
-        if(!key) return
+        let key
+        try {
+          key = matchRerankResultToKey(result)
+        } catch (matchErr) {
+          matchErrors.push(matchErr.message)
+          return
+        }
         const score = result?.search_meta?.search_normalized_score
         const rawScore = result?.search_meta?.search_rerank_score
         resultsByKey.set(key, { rerank_score: isNumber(score) ? score : (isNumber(rawScore) ? rawScore * 100 : undefined) })
       })
+      if(matchErrors.length) {
+        const summary = `Rerank: ${matchErrors.length} of ${response?.data?.length || 0} results could not be matched to a candidate. Check project configuration (canonical URLs) and server response.`
+        log({action: 'rerank_match_failure', description: summary, extras: {samples: matchErrors.slice(0, 3)}}, index)
+        setAlert({message: summary, severity: 'error', duration: 8})
+      }
       const prevRow = rowMatchStateRef.current[index]
       if(prevRow) {
         const nextConceptRows = { ...prevRow.concept_rows }
@@ -2925,6 +2980,14 @@ const MapProject = () => {
     await Promise.all([directPromise, resolvePromise, ...pending])
   }, [buildProjectContext, writeConceptCachePatch, writeLookupFailure])
 
+  // Wire the forward-ref consumed by mergeIntoRowMatchState. useEffect
+  // so the ref always points at the latest closure (ensureLoaded captures
+  // buildProjectContext which can change). Effect is cheap — just a ref
+  // pointer update.
+  React.useEffect(() => {
+    ensureLoadedRef.current = ensureLoaded
+  }, [ensureLoaded])
+
   // Thin convenience wrapper preserved at the legacy call sites: derive
   // concept_keys for the just-arrived results via the algo's
   // concept_identity, then delegate to ensureLoaded. Replaces the legacy
@@ -2934,13 +2997,7 @@ const MapProject = () => {
     if(!algoId || !Array.isArray(candidates) || candidates.length === 0) return
     const ctx = buildProjectContext()
     if(!ctx?.target_repo?.canonical_url) return
-    const algo = getAlgoDef(algoId)
-    if(!algo) return
-    const algoConfig = algo.concept_identity
-      ? algo
-      : (CONCEPT_IDENTITY_BY_TYPE[algo.type]
-        ? { ...algo, concept_identity: CONCEPT_IDENTITY_BY_TYPE[algo.type] }
-        : null)
+    const algoConfig = ensureConceptIdentity(getAlgoDef(algoId))
     if(!algoConfig) return
     const normalized = normalizeAlgorithmInvocation(
       {row: {__index: -1}, results: candidates},

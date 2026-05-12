@@ -21,15 +21,18 @@ import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import Accordion from '@mui/material/Accordion'
 import AccordionSummary from '@mui/material/AccordionSummary'
 import AccordionDetails from '@mui/material/AccordionDetails'
-import Chip from '@mui/material/Chip'
 import Stack from '@mui/material/Stack'
+import Alert from '@mui/material/Alert'
+import Tooltip from '@mui/material/Tooltip'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 
 import isEmpty from 'lodash/isEmpty'
 import omit from 'lodash/omit'
 import filter from 'lodash/filter'
 
 import { toV3URL } from '../../common/utils'
+import { getProjectConfigErrors } from './algorithms'
 import NamespaceDropdown from '../common/NamespaceDropdown'
 import RepoSearchAutocomplete from '../repos/RepoSearchAutocomplete'
 import RepoVersionSearchAutocomplete from '../repos/RepoVersionSearchAutocomplete'
@@ -68,6 +71,12 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
   const bridgeAlgos = filter(algosSelected || [], a => a?.type && a.type.includes('bridge'))
   const defaultNamespace = owner || ''
   const namespaceValue = namespace || ''
+
+  // Project-config validation. Currently flags custom algos with missing /
+  // malformed canonical_url. Returned as a structured list so the banner
+  // can name the specific algorithms.
+  const configErrors = getProjectConfigErrors(algosSelected)
+  const hasConfigErrors = configErrors.length > 0
   const getAlgos = () => {
     return algos.map(algo => {
       if(algo.type === 'ocl-semantic')
@@ -169,40 +178,70 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
       <RepoVersionSearchAutocomplete versions={versions} label={t('common.version')} size='small' onChange={(id, item) => setRepoVersion(item)} value={repoVersion} sx={{marginTop: '12px'}} />
       {
         effectiveTargetCanonical &&
-          <Stack direction='row' spacing={1} alignItems='center' sx={{marginTop: '8px', marginLeft: '8px'}}>
-            <Typography component='span' sx={{fontSize: '12px', color: 'text.secondary'}}>
-              {t('map_project.target_canonical_url') || 'Canonical URL:'}
+          <Stack direction='row' spacing={0.75} alignItems='center' sx={{marginTop: '6px', marginLeft: '8px', minWidth: 0}}>
+            <InfoOutlinedIcon sx={{fontSize: '14px', color: 'text.secondary', flexShrink: 0}} />
+            <Typography component='span' sx={{fontSize: '12px', color: 'text.secondary', flexShrink: 0}}>
+              {t('map_project.target_canonical_url', 'Canonical:')}
             </Typography>
-            <Typography component='code' sx={{fontSize: '12px', fontFamily: 'monospace'}}>
-              {effectiveTargetCanonical}
-            </Typography>
+            <Tooltip title={effectiveTargetCanonical} placement='top'>
+              <Typography
+                component='code'
+                sx={{
+                  fontSize: '12px',
+                  fontFamily: 'monospace',
+                  color: 'text.primary',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  minWidth: 0
+                }}
+              >
+                {effectiveTargetCanonical}
+              </Typography>
+            </Tooltip>
             {
               !targetCanonicalFromRepo &&
-                <Chip size='small' label={t('map_project.canonical_auto_derived') || 'Auto-derived'} color='warning' variant='outlined' />
+                <Typography component='span' sx={{fontSize: '11px', color: 'text.secondary', fontStyle: 'italic', flexShrink: 0}}>
+                  · {t('map_project.canonical_auto_derived_short', 'derived')}
+                </Typography>
             }
           </Stack>
       }
       {
         bridgeAlgos.length > 0 &&
-          <Stack spacing={0.5} sx={{marginTop: '8px', marginLeft: '8px'}}>
-            <Typography component='span' sx={{fontSize: '12px', color: 'text.secondary'}}>
-              {t('map_project.bridge_repos') || 'Bridge repos:'}
-            </Typography>
+          <Stack spacing={0.25} sx={{marginTop: '4px', marginLeft: '8px', minWidth: 0}}>
             {
               bridgeAlgos.map(b => {
                 const bridgeCanonical = b?.bridge_repo?.canonical_url || deriveCanonicalUrl(b?.target_repo_url)
+                const isDerived = !b?.bridge_repo?.canonical_url
+                const tooltipText = `${b.target_repo_url || ''} → ${bridgeCanonical || ''}`
                 return (
-                  <Stack key={b.__key || b.id} direction='row' spacing={1} alignItems='center'>
-                    <Typography component='code' sx={{fontSize: '12px', fontFamily: 'monospace'}}>
-                      {b.target_repo_url || '—'}
+                  <Stack key={b.__key || b.id} direction='row' spacing={0.75} alignItems='center' sx={{minWidth: 0}}>
+                    <InfoOutlinedIcon sx={{fontSize: '14px', color: 'text.secondary', flexShrink: 0}} />
+                    <Typography component='span' sx={{fontSize: '12px', color: 'text.secondary', flexShrink: 0}}>
+                      {t('map_project.bridge_canonical_short', 'Bridge:')}
                     </Typography>
-                    <Typography component='span' sx={{fontSize: '12px', color: 'text.secondary'}}>→</Typography>
-                    <Typography component='code' sx={{fontSize: '12px', fontFamily: 'monospace'}}>
-                      {bridgeCanonical}
-                    </Typography>
+                    <Tooltip title={tooltipText} placement='top'>
+                      <Typography
+                        component='code'
+                        sx={{
+                          fontSize: '12px',
+                          fontFamily: 'monospace',
+                          color: 'text.primary',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          minWidth: 0
+                        }}
+                      >
+                        {b.target_repo_url || '—'} → {bridgeCanonical}
+                      </Typography>
+                    </Tooltip>
                     {
-                      !b?.bridge_repo?.canonical_url &&
-                        <Chip size='small' label={t('map_project.canonical_auto_derived') || 'Auto-derived'} color='warning' variant='outlined' />
+                      isDerived &&
+                        <Typography component='span' sx={{fontSize: '11px', color: 'text.secondary', fontStyle: 'italic', flexShrink: 0}}>
+                          · {t('map_project.canonical_auto_derived_short', 'derived')}
+                        </Typography>
                     }
                   </Stack>
                 )
@@ -276,7 +315,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
           <Accordion disableGutters elevation={0} sx={{marginTop: '12px', backgroundColor: 'transparent', '&:before': {display: 'none'}}}>
             <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{padding: 0, minHeight: 'auto', '.MuiAccordionSummary-content': {margin: '4px 0'}}}>
               <Typography component='span' sx={{fontSize: '13px', color: 'text.secondary'}}>
-                {t('map_project.advanced_settings') || 'Advanced settings'}
+                {t('map_project.advanced_settings', 'Advanced settings')}
               </Typography>
             </AccordionSummary>
             <AccordionDetails sx={{padding: 0}}>
@@ -284,11 +323,14 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
                 fullWidth
                 size='small'
                 sx={{marginTop: '4px'}}
-                label={t('map_project.resolution_namespace') || 'Resolution Namespace'}
+                label={t('map_project.resolution_namespace', 'Resolution Namespace')}
                 value={namespaceValue}
                 onChange={event => setNamespace(event.target.value || '')}
                 placeholder={defaultNamespace}
-                helperText={t('map_project.resolution_namespace_description') || 'Namespace passed to $resolveReference (defaults to the project owner). Drives which URL Registry entries apply when resolving canonical URLs.'}
+                helperText={t('map_project.resolution_namespace_description', {
+                  owner: defaultNamespace || 'the project owner',
+                  defaultValue: 'Namespace passed to $resolveReference. When blank, defaults to {{owner}}. Drives which URL Registry entries apply when resolving canonical URLs.'
+                })}
               />
             </AccordionDetails>
           </Accordion>
@@ -377,6 +419,29 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
             />
           </>
       }
+      {
+        hasConfigErrors &&
+          <Alert severity='error' sx={{marginTop: '16px'}}>
+            <Typography component='div' sx={{fontSize: '13px', fontWeight: 500, marginBottom: '4px'}}>
+              {t('map_project.config_errors_title', 'Project configuration is incomplete')}
+            </Typography>
+            <ul style={{margin: 0, paddingLeft: '20px', fontSize: '12px'}}>
+              {
+                configErrors.map(({algo, reason}) => (
+                  <li key={algo.__key || algo.id}>
+                    {reason === 'missing_canonical_url'
+                      ? t('map_project.config_error_missing_canonical', {
+                          name: algo.name || algo.id,
+                          defaultValue: `Custom algorithm "${algo.name || algo.id}" is missing a valid canonical URL.`
+                        })
+                      : reason
+                    }
+                  </li>
+                ))
+              }
+            </ul>
+          </Alert>
+      }
       <div className='col-xs-12 padding-0' style={{textAlign: 'right'}}>
       <Button
         variant='contained'
@@ -385,7 +450,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
         sx={{textTransform: 'none', margin: '20px 5px 5px 0px'}}
         startIcon={<SaveIcon />}
         onClick={onSave}
-        disabled={!name || !file?.name || !owner}
+        disabled={!name || !file?.name || !owner || hasConfigErrors}
         loading={isSaving}
         loadingPosition="start"
       >
