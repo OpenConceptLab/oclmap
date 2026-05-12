@@ -274,9 +274,11 @@ const MapProject = () => {
    * Concept definitions are merged into conceptCache (project-wide). Concept
    * rows are merged per-row, preferring existing rerank_score over undefined.
    */
-  const mergeIntoRowMatchState = React.useCallback((rowIndex, normalized) => {
+  const mergeIntoRowMatchState = React.useCallback((rowIndex, normalized, options = {}) => {
     if(!normalized) return
+    const { append = false } = options
     const { algorithm_response, candidates, concept_definitions, concept_rows } = normalized
+    const incomingAlgoId = algorithm_response?.algorithm_id
 
     const prevAll = rowMatchStateRef.current
     const prevRow = prevAll[rowIndex] || {
@@ -285,16 +287,43 @@ const MapProject = () => {
       concept_rows: {},
     }
 
+    // For fresh invocations (offset===0), drop existing candidates from
+    // THIS algorithm before merging incoming ones — a re-run replaces the
+    // previous results for the same (rowIndex, algorithmId). The legacy
+    // onResponse path does the same via `reject(...)` on allCandidates.
+    // Without this guard, repeated invocations stack candidates with
+    // fresh UUIDs but identical concept_keys (same concept appears N
+    // times in algorithm view).
+    //
+    // For pagination append (offset>0), pass append=true to preserve the
+    // earlier page's candidates and just stack the new ones on top.
+    const survivingCandidates = {}
+    Object.entries(prevRow.candidates || {}).forEach(([id, c]) => {
+      if(append || c?.algorithm_id !== incomingAlgoId) survivingCandidates[id] = c
+    })
+
     const nextRow = {
       algorithm_responses: {
         ...prevRow.algorithm_responses,
         [algorithm_response.id]: algorithm_response,
       },
       candidates: {
-        ...prevRow.candidates,
+        ...survivingCandidates,
         ...candidates.reduce((acc, c) => { acc[c.id] = c; return acc }, {}),
       },
       concept_rows: { ...prevRow.concept_rows },
+    }
+
+    // Prune concept_rows whose concept_key is no longer referenced by any
+    // surviving candidate (only meaningful for the replace path; append
+    // keeps everything). Without this, stale concept_rows from the prior
+    // run keep appearing in quality view even though their candidates
+    // were dropped.
+    if(!append) {
+      const referencedKeys = new Set(Object.values(nextRow.candidates).map(c => c?.concept_key))
+      Object.keys(nextRow.concept_rows).forEach(k => {
+        if(!referencedKeys.has(k)) delete nextRow.concept_rows[k]
+      })
     }
 
     concept_rows.forEach(cr => {
@@ -2242,8 +2271,12 @@ const MapProject = () => {
   const _onMap = (concept, unmap=false, mapType='SAME-AS') => {
     setMapSelected(prev => ({...prev, [rowIndex]: unmap ? null : {...concept, repo: {...repo, version: repoVersion?.id || repo.version, version_url: repoVersion?.version_url || repo.version_url}}}))
     setDecisions(prev => ({...prev, [rowIndex]: unmap ? null : 'map'}))
-    if(concept?.url)
-      log({action: unmap ? 'unmapped' : 'mapped', extras: {object_url: concept?.url, map_type: mapType, name: getConceptLabel(concept), algorithm: concept?.search_meta?.algorithm}})
+    // Always log (don't gate on concept?.url) — bridge cascade targets may
+    // arrive without an ocl_url until $resolveReference resolves them,
+    // and dropping the log silently hides the mapping action from the
+    // project history. Fall back to concept.id when url is absent.
+    if(concept?.url || concept?.id)
+      log({action: unmap ? 'unmapped' : 'mapped', extras: {object_url: concept?.url || null, object_id: concept?.id || null, map_type: mapType, name: getConceptLabel(concept), algorithm: concept?.search_meta?.algorithm}})
 
   }
 
@@ -2495,12 +2528,27 @@ const MapProject = () => {
             }
           }
         } else {
+          const appendedResults = get(data, '0.results') || []
           const newMatches = [...(allCandidatesRef.current[algoId] || [])]
           const index = findIndex(newMatches, match => match.row.__index === __row.__index)
-          newMatches[index].results = [...newMatches[index].results, ...(get(data, '0.results') || [])]
-          lookupCandidates(algoId, get(data, '0.results'))
+          newMatches[index].results = [...newMatches[index].results, ...appendedResults]
+          lookupCandidates(algoId, appendedResults)
           nextCandidates = {...allCandidatesRef.current, [algoId]: newMatches}
-          // TODO(unified-model): pagination append path. PR 2 work.
+          // Pagination append: feed just the new page's results into the
+          // unified state with append=true so existing candidates from
+          // previous pages stay put. Without this, Fetch More fires the
+          // request but the unified read path (Candidates.jsx) never sees
+          // the new results.
+          if(UNIFIED_MODEL_ENABLED) {
+            const appendPayload = {row: __row, results: appendedResults}
+            mergeIntoRowMatchState(__row.__index, normalizeAlgorithmInvocation(appendPayload, {
+              algorithmId: algoId,
+              algorithmConfig: algoDef,
+              projectContext,
+              rowIndex: __row.__index,
+              rawResponse: response
+            }), {append: true})
+          }
         }
         allCandidatesRef.current = nextCandidates
         setAllCandidates(nextCandidates)
@@ -2595,6 +2643,15 @@ const MapProject = () => {
       if(seen.has(key)) return
       const def = conceptCacheRef.current[key]
       if(!def) return
+      // Skip concepts whose ConceptDefinition has no usable display_name —
+      // typically bridge cascade targets still in 'pending' status before
+      // ensureLoaded fills them. The reranker scores name-less entries as
+      // -100000 sentinel, which renders as garbage in the candidate list.
+      // scheduleRerank will re-fire after ensureLoaded completes (any
+      // ConceptRow with rerank_score===undefined keeps the row eligible).
+      const hasName = (typeof def.display_name === 'string' && def.display_name.trim().length > 0)
+        || (Array.isArray(def.names) && def.names.some(n => n?.name))
+      if(!hasName) return
       seen.add(key)
       rows.push({
         concept_key: key,

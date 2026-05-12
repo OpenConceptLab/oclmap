@@ -182,17 +182,58 @@ const ConceptItem = ({_id, notClickable, isSelectedToShow, firstChild, lastChild
 }
 
 
-// `concept` here is a row view object built by Candidates.jsx from
-// rowMatchState + conceptCache. Shape:
+// Wrap a legacy concept-shape object (id/display_name/url/search_meta) into
+// a synthetic rowView so Concept renders identically whether it gets a
+// unified-model tuple from Candidates or a mapSelected/searchedConcepts
+// projection from the Target Code column / decision tables. The legacy
+// callers don't have candidate/conceptRow context, so we synthesize
+// minimal stand-ins from search_meta.
+const legacyToRowView = (legacy) => {
+  if(!legacy || typeof legacy !== 'object') return null
+  const meta = legacy.search_meta || {}
+  return {
+    type: 'standard',
+    candidate: {
+      algorithm_id: meta.algorithm,
+      score: meta.search_score,
+      highlights: meta.search_highlight,
+      map_type: meta.map_type
+    },
+    conceptDefinition: {
+      reference: legacy.reference,
+      ocl_url: legacy.url || legacy.ocl_url,
+      id: legacy.id,
+      display_name: legacy.display_name,
+      source: legacy.source || legacy.repo?.short_code || legacy.repo?.id,
+      owner: legacy.owner,
+      names: legacy.names,
+      descriptions: legacy.descriptions,
+      concept_class: legacy.concept_class,
+      datatype: legacy.datatype,
+      retired: legacy.retired,
+      properties: legacy.properties
+    },
+    conceptRow: {
+      rerank_score: meta.search_normalized_score
+    }
+  }
+}
+
+// `concept` here is normally a row view object built by Candidates.jsx from
+// rowMatchState + conceptCache:
 //   {
 //     type: 'standard' | 'bridge' | 'bridge_child',
 //     candidate, conceptDefinition, conceptRow,
 //     bridgeConceptDefinition?,   // when type='bridge_child'
 //     bridgeChildren?             // when type='bridge' (algo view nested rendering)
 //   }
+// Legacy callers (Target Code column, decision tables, search results)
+// pass a flat concept-shape object instead — legacyToRowView wraps those
+// so a single render path covers both worlds while PR3 cleanup is pending.
 const Concept = ({_id, firstChild, lastChild, concept, setShowHighlights, isShown, onCardClick, onMap, isSelectedForMap, noScore, repoVersion, isAIRecommended, sx, notClickable, noSynonymPrefix, locales, showAlgo, candidatesScore, algoScoreFirst, asTarget, AIRecommendedCandidateId}) => {
-  if(!concept?.conceptDefinition) return null
-  const { type, candidate, conceptDefinition, conceptRow, bridgeConceptDefinition, bridgeChildren } = concept
+  const rowView = concept?.conceptDefinition ? concept : legacyToRowView(concept)
+  if(!rowView?.conceptDefinition) return null
+  const { type, candidate, conceptDefinition, conceptRow, bridgeConceptDefinition, bridgeChildren } = rowView
   const idForUI = conceptDefinition.ocl_url || conceptDefinition.id || conceptDefinition.reference?.code
   const isSelectedToShow = isShown ? isShown(idForUI) : false
 
@@ -236,8 +277,12 @@ const Concept = ({_id, firstChild, lastChild, concept, setShowHighlights, isShow
               repoVersion={repoVersion}
               synonymPrefix={synonymPrefix}
               setShowHighlights={setShowHighlights}
-              isSelectedForMap={false}
-              placeholderMap
+              // Pass the real isSelectedForMap function (not false) so the
+              // bridge intermediary's row shows the "Mapped" indicator when
+              // the user mapped it from Unified view. placeholderMap is
+              // dropped: the intermediary IS mappable per the spec (its
+              // ConceptRow gets its own rerank_score and bucket).
+              isSelectedForMap={isSelectedForMap}
               onMap={onMap}
               noScore={noScore}
               showAlgo={showAlgo}
