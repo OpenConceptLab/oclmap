@@ -238,6 +238,30 @@ test('buildQualityRowViews dedupes multi-algo convergence (one ConceptRow, multi
     views[0].contributingCandidates.map(c => c.algorithm_id).sort(),
     ['ocl-search', 'ocl-semantic']
   )
+  // Primary is the highest-scoring standard candidate (ocl-search at 0.85),
+  // not whichever shows up first in Object.values() iteration order. Without
+  // the score-desc sort the choice depended on insertion order and the UI's
+  // "primary algorithm" chip flipped between renders.
+  assert.equal(views[0].candidate.id, 'c1')
+  assert.equal(views[0].candidate.algorithm_id, 'ocl-search')
+})
+
+test('buildQualityRowViews: multi-algo convergence — primary is the higher-scoring standard candidate regardless of insertion order', () => {
+  // Same as the dedup test, but with the lower-scoring candidate inserted
+  // FIRST. Pre-fix, find() returned whichever came first; post-fix, the
+  // score-desc sort picks ocl-semantic (0.92) over ocl-search (0.71).
+  const cache = { [KEY_LOINC_GLUCOSE]: defLOINCGlucose }
+  const rowState = {
+    candidates: {
+      c1: { id: 'c1', algorithm_id: 'ocl-search',   concept_key: KEY_LOINC_GLUCOSE, type: 'standard', score: 0.71 },
+      c2: { id: 'c2', algorithm_id: 'ocl-semantic', concept_key: KEY_LOINC_GLUCOSE, type: 'standard', score: 0.92 }
+    },
+    concept_rows: {
+      [KEY_LOINC_GLUCOSE]: { concept_key: KEY_LOINC_GLUCOSE, rerank_score: 87 }
+    }
+  }
+  const views = buildQualityRowViews(rowState, cache)
+  assert.equal(views[0].candidate.algorithm_id, 'ocl-semantic')
 })
 
 test('buildQualityRowViews: bridge cascade target converges with direct match into ONE ConceptRow', () => {

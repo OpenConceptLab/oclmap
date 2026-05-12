@@ -80,8 +80,15 @@ export const buildQualityRowViews = (rowState, conceptCache) => {
     const contributing = allCandidates.filter(c => c.concept_key === conceptRow.concept_key)
     // Prefer a 'standard' candidate as the primary; else any bridge_child
     // (with its bridge intermediary attached); else whatever's there.
-    const primary = contributing.find(c => c.type === 'standard')
-      || contributing.find(c => c.type === 'bridge_child')
+    // Within each type group, pick the highest-scoring candidate so the
+    // primary is deterministic — without this, multi-algo convergence
+    // (e.g. both ocl-search and ocl-semantic returning the same concept)
+    // selected by Object.values() iteration order and the "primary algorithm"
+    // chip flipped between renders. Falls back to -Infinity for unscored
+    // candidates (notably bridge_child, which has no own score).
+    const byScoreDesc = (a, b) => (b?.score ?? -Infinity) - (a?.score ?? -Infinity)
+    const primary = [...contributing.filter(c => c.type === 'standard')].sort(byScoreDesc)[0]
+      || [...contributing.filter(c => c.type === 'bridge_child')].sort(byScoreDesc)[0]
       || contributing[0]
     if(!primary) return null
     let bridgeConceptDefinition

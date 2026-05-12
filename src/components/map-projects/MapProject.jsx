@@ -1205,8 +1205,11 @@ const MapProject = () => {
     formData.append('algorithms', JSON.stringify(map(algosSelected, algo => omit(algo, ['__key']))))
     formData.append('score_configuration', JSON.stringify(candidatesScore))
     formData.append('lookup_config', JSON.stringify(lookupConfig))
-    if(namespace)
-      formData.append('namespace', namespace)
+    // Always send `namespace` (including empty string) so clearing the field
+    // in the UI actually propagates to the server. The server reads empty
+    // as "use the project owner default"; gating the append on truthiness
+    // silently dropped the clear and kept the stale value in storage.
+    formData.append('namespace', namespace || '')
     formData.append('encoder_model', encoderModel || DEFAULT_ENCODER_MODEL)
     formData.append('include_retired', retired)
     formData.append('filters', JSON.stringify(getFilters()))
@@ -3100,6 +3103,13 @@ const MapProject = () => {
     const ctx = buildProjectContext()
     const resolveNamespace = ctx?.namespace
     const cache = conceptCacheRef.current
+    // Honor the user-configured lookup token when present (LookupConfig in
+    // the project settings drawer). Falls back to the session's user token
+    // for projects that don't override. Without this gate, the legacy
+    // Search-tab fetches respected the user's token but the new unified
+    // ensureLoaded path silently used the session token instead — leaving
+    // the LookupConfig widget half-decorative.
+    const authToken = lookupConfig?.token || currentUserToken()
 
     const directFetches = []
     const toResolve = []
@@ -3141,7 +3151,7 @@ const MapProject = () => {
       try {
         const response = await APIService.new()
           .overrideURL(oclUrl)
-          .get(currentUserToken(), null, {includeMappings: true, mappingBrief: true, mapTypes: 'SAME-AS,SAME AS,SAME_AS', verbose: true})
+          .get(authToken, null, {includeMappings: true, mappingBrief: true, mapTypes: 'SAME-AS,SAME AS,SAME_AS', verbose: true})
         const data = response?.data
         if(data?.id) {
           const existing = conceptCacheRef.current[key] || {}
@@ -3172,7 +3182,7 @@ const MapProject = () => {
         : {url: reference.url})
       resolvePromise = APIService.new()
         .overrideURL('/$resolveReference/')
-        .post(body, currentUserToken(), null, resolveNamespace ? {namespace: resolveNamespace} : undefined)
+        .post(body, authToken, null, resolveNamespace ? {namespace: resolveNamespace} : undefined)
         .then(async response => {
           const items = Array.isArray(response?.data) ? response.data : []
           await Promise.all(toResolve.map(async ({key, reference}, i) => {
@@ -3197,7 +3207,7 @@ const MapProject = () => {
     }
 
     await Promise.all([directPromise, resolvePromise, ...pending])
-  }, [buildProjectContext, writeConceptCachePatch, writeLookupFailure])
+  }, [buildProjectContext, writeConceptCachePatch, writeLookupFailure, lookupConfig?.token])
 
   // Wire the forward-ref consumed by mergeIntoRowMatchState. useEffect
   // so the ref always points at the latest closure (ensureLoaded captures
