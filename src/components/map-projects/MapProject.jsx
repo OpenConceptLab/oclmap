@@ -2475,10 +2475,18 @@ const MapProject = () => {
       let __row = isEmpty(_row) ? row : _row
 
       const existingCandidates = find(allCandidatesRef.current[algoId], c => c.row.__index === __row.__index)
+      // Reuse when the algo's invocation completed for this row, regardless
+      // of whether it returned matches. Gating on results.length > 0 made
+      // any algo that legitimately returned zero matches (e.g. scispacy on
+      // a row with no in-vocabulary terms) look like it had never run —
+      // fetchAllCandidatesForRow would then re-dispatch and the inner
+      // fetcher (which DOES short-circuit on entry presence) would skip
+      // silently without firing onResponse, leaving the "Running: …"
+      // indicator pinned forever.
       const canReuseExistingCandidates = !forceReload &&
         offset === 0 &&
         !_retired &&
-        existingCandidates?.results?.length > 0
+        existingCandidates !== undefined
 
       if(canReuseExistingCandidates) {
         markAlgo(__row.__index, algoId, 1)
