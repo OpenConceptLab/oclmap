@@ -25,6 +25,22 @@ const formatBridgeContributor = (entry) => {
   return entry.map_type ? `${head} — ${entry.map_type}` : head
 }
 
+// Inline map-type chip — sized to fit the surrounding text line-height so
+// it doesn't disrupt vertical flow when embedded mid-sentence (e.g.
+// "CIEL:1234 ... [SAME-AS] LOINC:52767-1 ...").
+const MAP_TYPE_CHIP_SX = {
+  height: '18px',
+  borderRadius: '4px',
+  margin: '0 6px',
+  verticalAlign: 'baseline',
+  '.MuiChip-label': {
+    padding: '0 6px',
+    fontSize: '11px',
+    fontWeight: 500,
+    letterSpacing: '0.02em'
+  }
+}
+
 
 const getBestSynonym = (synonyms = []) => {
   return synonyms
@@ -78,15 +94,21 @@ const Item = ({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition
             <span>
               {
                 bridgeChild ? (
-                  // Quality view, bridge-only convergence: render the bridge
-                  // intermediary inline so the user sees both ends of the
-                  // cascade (CIEL:1234 [SAME-AS] LOINC:52767-1 ...).
+                  // Two cases:
+                  //   - Quality view (algoScoreFirst=false): render full cascade
+                  //     inline so the user sees both ends (CIEL:1234 [SAME-AS]
+                  //     LOINC:52767-1 ...). bridgePrefixLabel carries the
+                  //     intermediary's source:id name.
+                  //   - Algo view (algoScoreFirst=true): the parent bridge
+                  //     intermediary is already rendered as the ConceptItem
+                  //     above this nested child, so repeating its source:id
+                  //     name on every child line is noise. Suppress the prefix.
                   <>
-                    {bridgePrefixLabel && (
+                    {!algoScoreFirst && bridgePrefixLabel && (
                       <span className='searchable'>{bridgePrefixLabel}</span>
                     )}
                     {candidate?.map_type && (
-                      <Chip size='small' label={candidate.map_type} sx={{margin: '0 8px'}} />
+                      <Chip size='small' label={candidate.map_type} sx={MAP_TYPE_CHIP_SX} />
                     )}
                     <span className='searchable'>
                       {`${sourceLabel || ''}:${idLabel} ${conceptDefinition?.display_name || ''}`.trim()}
@@ -347,6 +369,12 @@ const Concept = ({_id, firstChild, lastChild, concept, setShowHighlights, isShow
                 return <ConceptItem
                   key={`${index}-${child.candidate?.id}`}
                   {...baseProps}
+                  // baseProps inherits the outer card's firstChild flag, which
+                  // suppresses borderTop on the first nested child — leaves a
+                  // visual gap between the bridge intermediary and its first
+                  // cascade target. Bridge children always have a row above
+                  // them (the intermediary), so always render the divider.
+                  firstChild={false}
                   candidate={child.candidate}
                   conceptDefinition={child.conceptDefinition}
                   conceptRow={child.conceptRow}
