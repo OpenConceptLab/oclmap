@@ -2327,9 +2327,24 @@ const MapProject = () => {
   const onDecisionTabChange = (event, newValue) => {
     setShowItem(false)
     setDecisionTab(newValue)
-    const firstAlgo = getFirstAlgoDef()?.id
-    if(newValue === 'candidates' && repo?.id && !find(allCandidatesRef.current[firstAlgo?.id], c => c.row.__index === rowIndex)?.results?.length) {
-      fetchAllCandidatesForRow(firstAlgo.id)
+    if(newValue === 'candidates' && repo?.id) {
+      // Two prior bugs in this guard:
+      //   1. `firstAlgo` was getFirstAlgoDef()?.id (already a string), but the
+      //      condition then did `allCandidatesRef.current[firstAlgo?.id]` —
+      //      string?.id is undefined, so the cache lookup always missed and
+      //      the refetch always fired even when candidates were cached.
+      //   2. No in-flight guard. If the user clicked the row, switched to
+      //      Discuss before semantic finished, and switched back, the chain
+      //      re-fired concurrently with the still-running first chain →
+      //      duplicate algo_finished logs + double rerank.
+      const firstAlgoId = getFirstAlgoDef()?.id
+      const rowStageForRow = rowStageRef.current?.[rowIndex] || {}
+      const anyAlgoInFlight = selectedAlgoIds?.some(id => rowStageForRow[id] === 0)
+      const hasCandidates = Boolean(
+        find(allCandidatesRef.current[firstAlgoId], c => c.row.__index === rowIndex)
+      )
+      if(firstAlgoId && !anyAlgoInFlight && !hasCandidates)
+        fetchAllCandidatesForRow(firstAlgoId)
     }
     if(['candidates', 'search'].includes(newValue) && isEmpty(getFacetsForRow(rowIndex)))
       getFacets(true)
