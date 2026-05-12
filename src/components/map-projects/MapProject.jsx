@@ -2657,6 +2657,12 @@ const MapProject = () => {
   // their ConceptDefinitions. Each row carries concept_key as a passthrough
   // anchor so we can match scored results back unambiguously, plus the
   // legacy concept-shaped fields the server expects.
+  //
+  // Only ConceptRows whose rerank_score is undefined are eligible — already-
+  // scored rows are skipped so a late-arriving algo (e.g. scispacy 2+ min
+  // after semantic+bridge) doesn't trigger a full re-rerank of every
+  // candidate. The cross-encoder reranker is per-(query, candidate) so
+  // scores from successive partial batches stay on the same scale.
   const buildRerankRowsForRow = (rowIndex) => {
     const rowState = rowMatchStateRef.current[rowIndex]
     if(!rowState) return []
@@ -2665,6 +2671,12 @@ const MapProject = () => {
     Object.values(rowState.concept_rows || {}).forEach(conceptRow => {
       const key = conceptRow.concept_key
       if(seen.has(key)) return
+      // Skip ConceptRows that already have a rerank_score. The debounced
+      // scheduler can fire multiple times as algos complete at different
+      // wall-clock times; sending already-scored rows back to $rerank/ is
+      // wasted compute (and network bandwidth — a row's candidate list can
+      // be hundreds of entries).
+      if(typeof conceptRow.rerank_score === 'number') return
       const def = conceptCacheRef.current[key]
       if(!def) return
       // Skip concepts whose ConceptDefinition has no usable display_name —
