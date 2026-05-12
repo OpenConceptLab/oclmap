@@ -2752,7 +2752,17 @@ const MapProject = () => {
     const rerankRows = buildRerankRowsForRow(index)
     const row = data[index]
     const query = get(prepareRow(row), 'name')
-    if(!rerankRows.length || !query) return null
+    if(!rerankRows.length || !query) {
+      // Nothing to rerank, but bulk auto-match still needs its side effect.
+      // After the Bug 9 filter (skip already-scored rows), this branch fires
+      // every time bulk processRerankWithConcurrency races a debounced
+      // scheduleRerank that already scored the row from algo onResponse.
+      // Without the setAutoMatched trigger, auto-match would never propose
+      // a mapping even for rows with a clearly-recommended top candidate.
+      if(isBulk && isNumber(index))
+        setTimeout(() => setAutoMatched([index]), 1000)
+      return null
+    }
     inFlightRerankRef.current.add(index)
     markAlgo(index, 'rerank', 0)
     const service = APIService.concepts().appendToUrl('$rerank/')
