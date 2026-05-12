@@ -4,6 +4,8 @@ import ListItem from '@mui/material/ListItem'
 import ListItemText from '@mui/material/ListItemText'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
+import Tooltip from '@mui/material/Tooltip'
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import isString from 'lodash/isString'
 import map from 'lodash/map'
 
@@ -12,6 +14,16 @@ import Score from './Score'
 import MapButton from './MapButton'
 import ConceptSummaryProperties from '../concepts/ConceptSummaryProperties'
 import { conceptForMapping } from './viewBuilders.js'
+
+// Format a contributor descriptor for the convergence tooltip:
+//   "via CIEL:1234 Activated partial thromboplastin time — SAME-AS"
+const formatBridgeContributor = (entry) => {
+  const def = entry?.bridgeConceptDefinition
+  if(!def) return ''
+  const code = def.id || def.reference?.code || ''
+  const head = `via ${def.source || ''}:${code} ${def.display_name || ''}`.trim()
+  return entry.map_type ? `${head} — ${entry.map_type}` : head
+}
 
 
 const getBestSynonym = (synonyms = []) => {
@@ -40,14 +52,14 @@ const getBestSynonym = (synonyms = []) => {
 };
 
 
-const Item = ({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition, setShowHighlights, onMap, isSelectedForMap, noScore, repoVersion, synonymPrefix, isAIRecommended, showAlgo, candidatesScore, algoScoreFirst, placeholderMap, bridgeChild}) => {
+const Item = ({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition, bridgeContributors, setShowHighlights, onMap, isSelectedForMap, noScore, repoVersion, synonymPrefix, isAIRecommended, showAlgo, candidatesScore, algoScoreFirst, placeholderMap, bridgeChild}) => {
   const conceptToMap = conceptForMapping({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition})
   const idLabel = conceptDefinition?.id || conceptDefinition?.reference?.code
   const sourceLabel = conceptDefinition?.source
   const mapTypeToApply = candidate?.map_type
-  const bridgeMappingPrefix = bridgeConceptDefinition
-    ? `${bridgeConceptDefinition.source || ''}:${bridgeConceptDefinition.id || bridgeConceptDefinition.reference?.code} ${bridgeConceptDefinition.display_name || ''}`
-    : false
+  const bridgePrefixLabel = bridgeConceptDefinition
+    ? `${bridgeConceptDefinition.source || ''}:${bridgeConceptDefinition.id || bridgeConceptDefinition.reference?.code} ${bridgeConceptDefinition.display_name || ''}`.trim()
+    : ''
   // SearchHighlightsDialog reads concept.search_meta.search_highlight and
   // calls getScoreDetails on the same shape. Project the tuple through
   // conceptForMapping so the dialog gets the legacy concept shape it
@@ -55,6 +67,9 @@ const Item = ({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition
   const showHighlightsPayload = setShowHighlights
     ? () => setShowHighlights(conceptToMap)
     : null
+  const convergenceTooltip = (bridgeContributors || []).length
+    ? bridgeContributors.map(formatBridgeContributor).filter(Boolean).join('\n')
+    : ''
   return (
     <>
       <ListItemText
@@ -62,45 +77,53 @@ const Item = ({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition
           <span>
             <span>
               {
-                !bridgeChild &&
-                  <span className='searchable'>{`${sourceLabel || ''}:${idLabel}`}</span>
-              }
-              {
-                !bridgeChild &&
-                  <span style={{marginLeft: '4px'}} className='searchable'>
+                bridgeChild ? (
+                  // Quality view, bridge-only convergence: render the bridge
+                  // intermediary inline so the user sees both ends of the
+                  // cascade (CIEL:1234 [SAME-AS] LOINC:52767-1 ...).
+                  <>
+                    {bridgePrefixLabel && (
+                      <span className='searchable'>{bridgePrefixLabel}</span>
+                    )}
+                    {candidate?.map_type && (
+                      <Chip size='small' label={candidate.map_type} sx={{margin: '0 8px'}} />
+                    )}
+                    <span className='searchable'>
+                      {`${sourceLabel || ''}:${idLabel} ${conceptDefinition?.display_name || ''}`.trim()}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className='searchable'>{`${sourceLabel || ''}:${idLabel}`}</span>
+                    <span style={{marginLeft: '4px'}} className='searchable'>
+                      {
+                        !bridgeConceptDefinition && synonymPrefix &&
+                          <span className='searchable'>
+                            <span dangerouslySetInnerHTML={{__html: synonymPrefix}}/>
+                            <span style={{margin: '0 5px'}}>&rarr;</span>
+                          </span>
+                      }
+                      {conceptDefinition?.display_name}
+                    </span>
                     {
-                      !bridgeConceptDefinition && synonymPrefix &&
-                        <span className='searchable'>
-                          <span dangerouslySetInnerHTML={{__html: synonymPrefix}}/>
+                      // Legacy algo-view path: a target row with bridge
+                      // metadata attached. Renders target → [maptype] → target
+                      // (the duplication is preserved from the prior render —
+                      // touched-up here only structurally).
+                      bridgePrefixLabel &&
+                        <span>
                           <span style={{margin: '0 5px'}}>&rarr;</span>
+                          {candidate?.map_type ? `[${candidate.map_type}]` : ''}
+                          <span style={{margin: '0 5px'}}>&rarr;</span>
+                          <span className='searchable'>
+                            {conceptDefinition?.display_name
+                              ? `${sourceLabel || ''}:${idLabel} ${conceptDefinition.display_name}`
+                              : ''}
+                          </span>
                         </span>
                     }
-                    {conceptDefinition?.display_name}
-                  </span>
-              }
-              {
-                bridgeMappingPrefix &&
-                  <span>
-                    {!bridgeChild && <span style={{margin: '0 5px'}}>&rarr;</span>}
-                    <span style={bridgeChild ? {marginRight: '8px'} : {}}>
-                      {
-                        bridgeChild && candidate?.map_type ?
-                          <Chip size='small' label={candidate.map_type} /> :
-                        (candidate?.map_type ? `[${candidate.map_type}]` : '')
-                      }
-                    </span>
-                    {!bridgeChild && <span style={{margin: '0 5px'}}>&rarr;</span>}
-                    <span className='searchable'>
-                      {bridgeChild
-                        ? `${sourceLabel || ''}:${idLabel} ${conceptDefinition?.display_name || ''}`
-                        : (
-                          conceptDefinition?.display_name
-                            ? `${sourceLabel || ''}:${idLabel} ${conceptDefinition.display_name}`
-                            : ''
-                        )
-                      }
-                    </span>
-                  </span>
+                  </>
+                )
               }
             </span>
             {
@@ -116,8 +139,14 @@ const Item = ({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition
             </div>
             {
               showAlgo && candidate?.algorithm_id ?
-                <div className='col-xs-12 padding-0' style={{marginTop: '4px'}}>
+                <div className='col-xs-12 padding-0' style={{marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px'}}>
                   <Chip size='small' label={candidate.algorithm_id} variant='outlined' color='warning' />
+                  {
+                    convergenceTooltip &&
+                      <Tooltip title={<span style={{whiteSpace: 'pre-line'}}>{convergenceTooltip}</span>} placement='top'>
+                        <InfoOutlinedIcon sx={{fontSize: '14px', color: 'text.secondary', cursor: 'help'}} />
+                      </Tooltip>
+                  }
               </div> : null
             }
           </div>
@@ -233,7 +262,7 @@ const legacyToRowView = (legacy) => {
 const Concept = ({_id, firstChild, lastChild, concept, setShowHighlights, isShown, onCardClick, onMap, isSelectedForMap, noScore, repoVersion, isAIRecommended, sx, notClickable, noSynonymPrefix, locales, showAlgo, candidatesScore, algoScoreFirst, asTarget, AIRecommendedCandidateId, targetCanonical}) => {
   const rowView = concept?.conceptDefinition ? concept : legacyToRowView(concept)
   if(!rowView?.conceptDefinition) return null
-  const { type, candidate, conceptDefinition, conceptRow, bridgeConceptDefinition, bridgeChildren } = rowView
+  const { type, candidate, conceptDefinition, conceptRow, bridgeConceptDefinition, bridgeChildren, bridgeContributors } = rowView
   // Map action is gated on canonical alignment with the project's target
   // repo. Bridge intermediaries (e.g. CIEL when target is ICD) aren't
   // mappable themselves — they're reference metadata about the cascade.
@@ -350,6 +379,7 @@ const Concept = ({_id, firstChild, lastChild, concept, setShowHighlights, isShow
     conceptDefinition={conceptDefinition}
     conceptRow={conceptRow}
     bridgeConceptDefinition={bridgeConceptDefinition}
+    bridgeContributors={bridgeContributors}
     repoVersion={repoVersion}
     synonymPrefix={synonymPrefix}
     setShowHighlights={setShowHighlights}

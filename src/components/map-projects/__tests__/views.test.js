@@ -308,6 +308,55 @@ test('buildQualityRowViews: bridge_child becomes the primary when no standard ca
   assert.equal(loincView.bridgeConceptDefinition, defCIELBridge)
 })
 
+test('buildQualityRowViews: convergence — bridgeContributors lists non-primary bridge candidates', () => {
+  // When a target is reached by BOTH a standard algo (primary) AND a bridge,
+  // the rowView carries a bridgeContributors entry so the UI can render an
+  // [i] indicator next to the algo chip with bridge intermediary + map_type.
+  const cache = {
+    [KEY_LOINC_GLUCOSE]: defLOINCGlucose,
+    [KEY_CIEL_BRIDGE]: defCIELBridge
+  }
+  const rowState = {
+    candidates: {
+      direct: { id: 'direct', algorithm_id: 'ocl-search', concept_key: KEY_LOINC_GLUCOSE, type: 'standard', score: 0.85 },
+      bridge: { id: 'bridge', algorithm_id: 'ocl-ciel-bridge', concept_key: KEY_CIEL_BRIDGE, type: 'bridge', score: 0.92 },
+      child:  { id: 'child', algorithm_id: 'ocl-ciel-bridge', concept_key: KEY_LOINC_GLUCOSE, type: 'bridge_child', parent_candidate_id: 'bridge', bridge_concept_key: KEY_CIEL_BRIDGE, map_type: 'SAME-AS' }
+    },
+    concept_rows: {
+      [KEY_LOINC_GLUCOSE]: { concept_key: KEY_LOINC_GLUCOSE, rerank_score: 88 },
+      [KEY_CIEL_BRIDGE]:   { concept_key: KEY_CIEL_BRIDGE,   rerank_score: 91 }
+    }
+  }
+  const views = buildQualityRowViews(rowState, cache)
+  const loincView = views.find(v => v.conceptDefinition.key === KEY_LOINC_GLUCOSE)
+  assert.equal(loincView.type, 'standard')
+  assert.equal(loincView.bridgeContributors.length, 1)
+  assert.equal(loincView.bridgeContributors[0].bridgeConceptDefinition, defCIELBridge)
+  assert.equal(loincView.bridgeContributors[0].map_type, 'SAME-AS')
+  assert.equal(loincView.bridgeContributors[0].algorithm_id, 'ocl-ciel-bridge')
+})
+
+test('buildQualityRowViews: bridge-only target has empty bridgeContributors (primary excluded)', () => {
+  // Bridge-only case: the primary IS a bridge_child, so it's NOT also in
+  // bridgeContributors. Inline framing in Concept.jsx already shows the
+  // bridge intermediary; a duplicate [i] indicator would be noise.
+  const cache = { [KEY_LOINC_GLUCOSE]: defLOINCGlucose, [KEY_CIEL_BRIDGE]: defCIELBridge }
+  const rowState = {
+    candidates: {
+      bridge: { id: 'bridge', algorithm_id: 'ocl-ciel-bridge', concept_key: KEY_CIEL_BRIDGE, type: 'bridge', score: 0.92 },
+      child:  { id: 'child',  algorithm_id: 'ocl-ciel-bridge', concept_key: KEY_LOINC_GLUCOSE, type: 'bridge_child', parent_candidate_id: 'bridge', bridge_concept_key: KEY_CIEL_BRIDGE, map_type: 'SAME-AS' }
+    },
+    concept_rows: {
+      [KEY_LOINC_GLUCOSE]: { concept_key: KEY_LOINC_GLUCOSE, rerank_score: 84 },
+      [KEY_CIEL_BRIDGE]:   { concept_key: KEY_CIEL_BRIDGE,   rerank_score: 91 }
+    }
+  }
+  const views = buildQualityRowViews(rowState, cache)
+  const loincView = views.find(v => v.conceptDefinition.key === KEY_LOINC_GLUCOSE)
+  assert.equal(loincView.type, 'bridge_child')
+  assert.equal(loincView.bridgeContributors.length, 0)
+})
+
 test('buildQualityRowViews: multi-bridge case — distinct bridge intermediaries do not collide', () => {
   // CIEL + SNOMED-CT both bridge to the same LOINC target. Quality view:
   // ONE LOINC ConceptRow, TWO bridge ConceptRows (one per namespace).

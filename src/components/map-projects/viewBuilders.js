@@ -87,12 +87,27 @@ export const buildQualityRowViews = (rowState, conceptCache) => {
     let bridgeConceptDefinition
     if(primary.type === 'bridge_child' && primary.bridge_concept_key)
       bridgeConceptDefinition = conceptCache[primary.bridge_concept_key]
+    // Collect bridge contributors OTHER than the primary so the convergence
+    // case (target reached by both a standard algo AND one or more bridges)
+    // can surface the bridge story on the algo-chip line via [i] tooltip
+    // without taking over the row's primary framing.
+    const bridgeContributors = compact(contributing
+      .filter(c => c.type === 'bridge_child' && c !== primary)
+      .map(c => {
+        const bridgeDef = c.bridge_concept_key ? conceptCache?.[c.bridge_concept_key] : null
+        return bridgeDef ? {
+          bridgeConceptDefinition: bridgeDef,
+          map_type: c.map_type,
+          algorithm_id: c.algorithm_id
+        } : null
+      }))
     return {
       type: primary.type === 'bridge_child' ? 'bridge_child' : 'standard',
       candidate: primary,
       conceptDefinition,
       conceptRow,
       bridgeConceptDefinition,
+      bridgeContributors,
       contributingCandidates: contributing
     }
   }))
