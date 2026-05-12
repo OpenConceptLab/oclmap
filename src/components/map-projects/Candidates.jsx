@@ -184,17 +184,38 @@ const SubHeader = ({count, onClick, isCollapsed, header, indicatorColor, isFirst
 }
 
 
-const CandidateList = ({rowViews, header, rowIndex, sortBy, order, setShowItem, showItem, setShowHighlights, isSelectedForMap, onMap, onFetchMore, bgColor, bucketId, display, onDisplayChange, noToolbar, toolbarControl, repoVersion, alignToolbarLeft, rightControl, analysis, showAnalysis, openAnalysis, onCloseAnalysis, AIRecommendedCandidateId, locales, scispacy, showAlgo, collapsed, onCollapse, candidatesScore, algoScoreFirst, byAlgorithm, isFirst, isCoreUser}) => {
-  // Decorate rowViews with top-level id/url/version_url so SearchResults'
-  // handleRowClick (which looks up rows by `row.version_url || row.url ||
-  // row.id`) can resolve the click back to the rowView. Without this the
-  // table click never fires onShowItemSelect because rowView fields live
-  // on view.conceptDefinition, not at top level.
+const CandidateList = ({rowViews, header, rowIndex, sortBy, order, setShowItem, showItem, setShowHighlights, isSelectedForMap, onMap, onFetchMore, bgColor, bucketId, display, onDisplayChange, noToolbar, toolbarControl, repoVersion, alignToolbarLeft, rightControl, analysis, showAnalysis, openAnalysis, onCloseAnalysis, AIRecommendedCandidateId, locales, scispacy, showAlgo, collapsed, onCollapse, candidatesScore, algoScoreFirst, byAlgorithm, isFirst, isCoreUser, targetCanonical}) => {
+  // Decorate rowViews so they work for BOTH renderers:
+  //   - Table view: SearchResults/TableResults reads legacy concept fields
+  //     (id, url, names, descriptions, source, search_meta, ...) via the
+  //     ALL_COLUMNS['concepts'] paths. Spread conceptForMapping first so
+  //     those fields exist at top level.
+  //   - Card view: the renderer reads candidate/conceptDefinition/conceptRow.
+  //     Spread the rowView after legacy so the tuple fields survive.
+  //   - Click lookup: SearchResults.handleRowClick uses
+  //     `row.version_url || row.url || row.id`. Set those explicitly at the
+  //     end so neither earlier spread can clobber them.
   const rowsForTable = (rowViews || []).map(view => {
+    const legacy = conceptForMapping(view) || {}
     const def = view?.conceptDefinition
-    const idForLookup = def?.ocl_url || def?.id || def?.reference?.code
-    return { ...view, id: idForLookup, url: def?.ocl_url, version_url: def?.ocl_url }
+    const idForLookup = legacy.id || def?.ocl_url || def?.reference?.code
+    return {
+      ...legacy,
+      ...view,
+      id: idForLookup,
+      url: legacy.url || def?.ocl_url,
+      version_url: legacy.url || def?.ocl_url
+    }
   })
+  // Helper: a rowView is mappable only when its concept belongs to the
+  // project's target repo (cascade targets in bridge flows DO; bridge
+  // intermediaries don't). targetCanonical comes from buildProjectContext
+  // in MapProject — the same canonical the normalizer used to stamp the
+  // ConceptDefinition.reference.url, so the comparison is exact.
+  const isTargetRepoView = (view) => {
+    if(!targetCanonical) return true
+    return view?.conceptDefinition?.reference?.url === targetCanonical
+  }
   const results = {total: onFetchMore ? rowsForTable.length : 1, results: rowsForTable}
   const isCollapsed = collapsed.includes(bucketId)
   const onCollapseToggle = () => {
@@ -209,6 +230,10 @@ const CandidateList = ({rowViews, header, rowIndex, sortBy, order, setShowItem, 
         labelKey: 'common.action',
         align: 'center',
         renderer: rowView => {
+          // Map action only renders for target-repo concepts. Bridge
+          // intermediaries (CIEL when target is ICD/LOINC) are reference
+          // metadata about the cascade — they're not mappable themselves.
+          if(!isTargetRepoView(rowView)) return null
           const conceptToMap = conceptForMapping(rowView)
           return (
             <MapButton
@@ -303,6 +328,7 @@ const CandidateList = ({rowViews, header, rowIndex, sortBy, order, setShowItem, 
             showAlgo={showAlgo}
             candidatesScore={candidatesScore}
             algoScoreFirst={algoScoreFirst}
+            targetCanonical={targetCanonical}
           />
         }}
         display={display}
@@ -343,7 +369,7 @@ const CandidateList = ({rowViews, header, rowIndex, sortBy, order, setShowItem, 
 //   conceptCache — project-wide ConceptDefinition store, keyed by concept_key.
 //   algosSelected — algorithm definitions (for headers/grouping).
 // (plans/unified-mapper-model.md "How the views map onto this model".)
-const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, setShowItem, showItem, setShowHighlights, isSelectedForMap, onMap, onFetchMore, isLoading, candidatesScore, repoVersion, analysis, onFetchRecommendation, appliedFacets, setAppliedFacets, filters, facets, columns, defaultFilters, locales, models, selectedModel, onModelChange, promptTemplates, promptTemplate, onPromptTemplateChange, onRefreshClick, rowStage, inAIAssistantGroup, algosSelected, isCoreUser}) => {
+const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCanonical, setShowItem, showItem, setShowHighlights, isSelectedForMap, onMap, onFetchMore, isLoading, candidatesScore, repoVersion, analysis, onFetchRecommendation, appliedFacets, setAppliedFacets, filters, facets, columns, defaultFilters, locales, models, selectedModel, onModelChange, promptTemplates, promptTemplate, onPromptTemplateChange, onRefreshClick, rowStage, inAIAssistantGroup, algosSelected, isCoreUser}) => {
   const { t } = useTranslation();
   const [sortBy, setSortBy] = React.useState('rerank_score')
   const [groupBy, setGroupBy] = React.useState('quality')
@@ -360,7 +386,16 @@ const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, setShowI
   const primary = analysis?.output?.primary_candidate || analysis?.primary_candidate
   const AIRecommendedCandidateId = resolveAICandidateID(primary, conceptCache)
 
-  const qualityRowViews = React.useMemo(() => buildQualityRowViews(rowState, conceptCache), [rowState, conceptCache])
+  // Quality (score-grouped) view shows ONLY target-repo concepts. Bridge
+  // intermediaries live in algorithm view as metadata-about-the-target;
+  // surfacing them in Quality view double-counts and confuses the bucketing.
+  // Algorithm view (buildAlgorithmRowViews) keeps the full mix for
+  // by-algorithm browsing.
+  const qualityRowViews = React.useMemo(() => {
+    const views = buildQualityRowViews(rowState, conceptCache)
+    if(!targetCanonical) return views
+    return views.filter(v => v.conceptDefinition?.reference?.url === targetCanonical)
+  }, [rowState, conceptCache, targetCanonical])
   const hasAnyView = qualityRowViews.length > 0
   const isNoneLoaded = !rowState || (isEmpty(rowState.candidates) && isEmpty(rowState.algorithm_responses))
   const canFetchMore = hasAnyView
@@ -391,7 +426,8 @@ const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, setShowI
     locales: locales,
     candidatesScore: candidatesScore,
     algoScoreFirst: algoScoreFirst,
-    isCoreUser: isCoreUser
+    isCoreUser: isCoreUser,
+    targetCanonical: targetCanonical
   }
 
   const onSort = option => {

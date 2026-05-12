@@ -438,12 +438,19 @@ const MapProject = () => {
     // URL captured on the algo's bridge_repo metadata (set via the
     // MultiAlgoSelector bridge canonical_url field, PR2b); fall back to the
     // derived form (https://ns.openconceptlab.org + relative_url) when only
-    // the relative URL is known.
-    if(bridgeAlgo?.target_repo_url) {
+    // the relative URL is known. If target_repo_url is missing entirely —
+    // the algo was added without ever editing the bridge source URL field —
+    // fall back to the type's well-known default (matches the placeholder
+    // shown in MultiAlgoSelector). Without this fallback, normalization
+    // silently produces zero candidates for bridge-only flows.
+    const BRIDGE_DEFAULT_RELATIVE_URL = { 'ocl-ciel-bridge': '/orgs/CIEL/sources/CIEL/' }
+    const bridgeRelativeUrl = bridgeAlgo?.target_repo_url
+      || BRIDGE_DEFAULT_RELATIVE_URL[bridgeAlgo?.type]
+    if(bridgeAlgo && bridgeRelativeUrl) {
       const explicitBridgeCanonical = bridgeAlgo?.bridge_repo?.canonical_url
       ctx.bridge_repo = {
-        relative_url: bridgeAlgo.target_repo_url,
-        canonical_url: explicitBridgeCanonical || `https://ns.openconceptlab.org${bridgeAlgo.target_repo_url}`,
+        relative_url: bridgeRelativeUrl,
+        canonical_url: explicitBridgeCanonical || `https://ns.openconceptlab.org${bridgeRelativeUrl}`,
         canonical_url_source: explicitBridgeCanonical ? 'repo' : 'derived'
       }
     }
@@ -2785,15 +2792,30 @@ const MapProject = () => {
 
   // scheduleRerank — debounced trigger. Coalesces rapid algo-completion
   // events for a given row into a single rerank call. The "all algos done"
-  // implicit batch goes away; instead, any new ConceptRow with
-  // rerank_score === undefined eventually drives a rerank.
+  // implicit batch goes away; instead, any new ConceptRow that is BOTH
+  // rerank-eligible (its ConceptDefinition has a usable display_name —
+  // see buildRerankRowsForRow's filter) AND unscored drives a rerank.
+  // Gating on display_name avoids an infinite loop where rows that get
+  // dropped from the rerank payload (pending bridge cascade targets)
+  // never receive a score and keep re-triggering this scheduler. Once
+  // ensureLoaded fills the name, writeConceptCachePatch re-fires
+  // scheduleRerank for affected rows.
   const RERANK_DEBOUNCE_MS = 300
+  const conceptDefHasUsableName = (def) =>
+    Boolean(
+      (typeof def?.display_name === 'string' && def.display_name.trim().length > 0)
+      || (Array.isArray(def?.names) && def.names.some(n => n?.name))
+    )
   const scheduleRerank = (rowIndex) => {
     if(!isNumber(rowIndex)) return
     const rowState = rowMatchStateRef.current[rowIndex]
     if(!rowState) return
-    const hasPending = Object.values(rowState.concept_rows || {}).some(cr => !isNumber(cr.rerank_score))
-    if(!hasPending) return
+    const hasEligiblePending = Object.values(rowState.concept_rows || {}).some(cr => {
+      if(isNumber(cr.rerank_score)) return false
+      const def = conceptCacheRef.current[cr.concept_key]
+      return conceptDefHasUsableName(def)
+    })
+    if(!hasEligiblePending) return
     if(rerankDebounceRef.current[rowIndex])
       clearTimeout(rerankDebounceRef.current[rowIndex])
     rerankDebounceRef.current[rowIndex] = setTimeout(() => {
@@ -2923,9 +2945,23 @@ const MapProject = () => {
   // React rerenders). Used by ensureLoaded.
   const writeConceptCachePatch = React.useCallback((key, def) => {
     if(!key || !def) return
+    const prev = conceptCacheRef.current[key]
     const next = { ...conceptCacheRef.current, [key]: def }
     conceptCacheRef.current = next
     setConceptCache(next)
+    // If this patch transitioned the concept's lookup_status to 'full' (or
+    // any state where display_name is now usable when previously it wasn't),
+    // re-fire scheduleRerank for every row that references this key. Those
+    // rows became rerank-eligible at this moment and need a score.
+    const wasUsable = (typeof prev?.display_name === 'string' && prev.display_name.trim().length > 0)
+      || (Array.isArray(prev?.names) && prev.names.some(n => n?.name))
+    const nowUsable = (typeof def?.display_name === 'string' && def.display_name.trim().length > 0)
+      || (Array.isArray(def?.names) && def.names.some(n => n?.name))
+    if(!wasUsable && nowUsable && scheduleRerankRef.current) {
+      Object.entries(rowMatchStateRef.current).forEach(([idx, rowState]) => {
+        if(rowState?.concept_rows?.[key]) scheduleRerankRef.current(Number(idx))
+      })
+    }
   }, [])
   const writeLookupFailure = React.useCallback((key) => {
     const existing = conceptCacheRef.current[key]
@@ -4132,6 +4168,7 @@ const MapProject = () => {
                       setAlert={setAlert}
                       rowState={rowMatchStateRef.current[rowIndex]}
                       conceptCache={conceptCache}
+                      targetCanonical={buildProjectContext()?.target_repo?.canonical_url}
                       setShowItem={setShowItem}
                       showItem={showItem}
                       setShowHighlights={setShowHighlights}

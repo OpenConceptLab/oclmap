@@ -230,10 +230,17 @@ const legacyToRowView = (legacy) => {
 // Legacy callers (Target Code column, decision tables, search results)
 // pass a flat concept-shape object instead — legacyToRowView wraps those
 // so a single render path covers both worlds while PR3 cleanup is pending.
-const Concept = ({_id, firstChild, lastChild, concept, setShowHighlights, isShown, onCardClick, onMap, isSelectedForMap, noScore, repoVersion, isAIRecommended, sx, notClickable, noSynonymPrefix, locales, showAlgo, candidatesScore, algoScoreFirst, asTarget, AIRecommendedCandidateId}) => {
+const Concept = ({_id, firstChild, lastChild, concept, setShowHighlights, isShown, onCardClick, onMap, isSelectedForMap, noScore, repoVersion, isAIRecommended, sx, notClickable, noSynonymPrefix, locales, showAlgo, candidatesScore, algoScoreFirst, asTarget, AIRecommendedCandidateId, targetCanonical}) => {
   const rowView = concept?.conceptDefinition ? concept : legacyToRowView(concept)
   if(!rowView?.conceptDefinition) return null
   const { type, candidate, conceptDefinition, conceptRow, bridgeConceptDefinition, bridgeChildren } = rowView
+  // Map action is gated on canonical alignment with the project's target
+  // repo. Bridge intermediaries (e.g. CIEL when target is ICD) aren't
+  // mappable themselves — they're reference metadata about the cascade.
+  // Pass isSelectedForMap=false to Item so it renders the placeholder
+  // spacer instead of a MapButton.
+  const isMappable = !targetCanonical || conceptDefinition?.reference?.url === targetCanonical
+  const effectiveIsSelectedForMap = isMappable ? isSelectedForMap : false
   const idForUI = conceptDefinition.ocl_url || conceptDefinition.id || conceptDefinition.reference?.code
   const isSelectedToShow = isShown ? isShown(idForUI) : false
 
@@ -277,12 +284,12 @@ const Concept = ({_id, firstChild, lastChild, concept, setShowHighlights, isShow
               repoVersion={repoVersion}
               synonymPrefix={synonymPrefix}
               setShowHighlights={setShowHighlights}
-              // Pass the real isSelectedForMap function (not false) so the
-              // bridge intermediary's row shows the "Mapped" indicator when
-              // the user mapped it from Unified view. placeholderMap is
-              // dropped: the intermediary IS mappable per the spec (its
-              // ConceptRow gets its own rerank_score and bucket).
-              isSelectedForMap={isSelectedForMap}
+              // Bridge intermediary itself is NOT a target-repo concept and
+              // can't be mapped — render a spacer instead of a MapButton.
+              // Children below (cascade targets, which ARE in target_repo)
+              // get the real Map action.
+              isSelectedForMap={false}
+              placeholderMap
               onMap={onMap}
               noScore={noScore}
               showAlgo={showAlgo}
@@ -348,7 +355,8 @@ const Concept = ({_id, firstChild, lastChild, concept, setShowHighlights, isShow
     synonymPrefix={synonymPrefix}
     setShowHighlights={setShowHighlights}
     isAIRecommended={isAIRecommended || isAIMatch}
-    isSelectedForMap={isSelectedForMap}
+    isSelectedForMap={effectiveIsSelectedForMap}
+    placeholderMap={!isMappable}
     onMap={onMap}
     noScore={noScore}
     bridgeChild={type === 'bridge_child' && Boolean(bridgeConceptDefinition)}

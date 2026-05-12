@@ -204,13 +204,21 @@ export const getScoreDetails = (input = {}, candidatesScore = {}) => {
     else qualityBucket = 'low_ranked'
   }
 
+  // Format scores as strings, but only when there's a real numeric value
+  // behind them. parseFloat(null|undefined).toFixed(2) returns 'NaN', which
+  // shipped as a visible 'NaN%' chip in the Target Code panel — return ''
+  // so callers can render nothing instead.
+  const rerankSource = hasPercentile ? percentile : score
+  const rerankScore = isNumber(rerankSource) ? `${parseFloat(rerankSource).toFixed(2)}%` : ''
+  const algoScore = isNumber(score) ? `${parseFloat(score).toFixed(2)}` : ''
+
   return {
     score,
     percentile,
     hasPercentile,
     qualityBucket,
-    rerankScore: `${parseFloat(hasPercentile ? percentile : score).toFixed(2)}%`,
-    algoScore: score === null ? '' : `${parseFloat(score).toFixed(2)}`
+    rerankScore,
+    algoScore
   }
 }
 
