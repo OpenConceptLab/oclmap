@@ -86,15 +86,8 @@ const Item = ({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition
   const convergenceTooltip = (bridgeContributors || []).length
     ? bridgeContributors.map(formatBridgeContributor).filter(Boolean).join('\n')
     : ''
-  // Bridge_child cards: extract the [SAME-AS] map-type chip into its own
-  // flex column so primary + secondary text both align to the chip's right
-  // edge. Previously the chip lived inline inside the primary span, which
-  // meant secondary text (LOINC schema chips: COMPONENT/PROPERTY/...) flowed
-  // flush-left and rendered visually LEFT of the chip — the artifact
-  // @paynejd flagged. The flex layout fixes the alignment regardless of
-  // chip label width (SAME-AS vs BROADER-THAN vs longer map_types).
-  const useFlexLayout = bridgeChild && candidate?.map_type
-  const listItemText = (
+  return (
+    <>
       <ListItemText
         primary={
           <span>
@@ -114,10 +107,7 @@ const Item = ({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition
                     {!algoScoreFirst && bridgePrefixLabel && (
                       <span className='searchable'>{bridgePrefixLabel}</span>
                     )}
-                    {/* When useFlexLayout, the chip is rendered as a sibling
-                        flex column below (so primary + secondary align). In
-                        the legacy non-flex path the chip stayed inline here. */}
-                    {!useFlexLayout && candidate?.map_type && (
+                    {candidate?.map_type && (
                       <Chip size='small' label={candidate.map_type} sx={MAP_TYPE_CHIP_SX} />
                     )}
                     <span className='searchable'>
@@ -165,17 +155,7 @@ const Item = ({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition
           </span>
         }
         secondary={
-          // overflowWrap/wordBreak prevent LOINC's `^` and `/` separators
-          // (and stretches like "peptide.B" with embedded periods) from
-          // word-breaking even when there's whitespace to spare. Bridge_child
-          // alignment is handled by the outer flex layout (useFlexLayout
-          // branch above) — the chip lives in its own column so primary +
-          // secondary both align to the right of it, no manual padding
-          // needed here.
-          <div
-            className='col-xs-12 padding-0'
-            style={{overflowWrap: 'break-word', wordBreak: 'normal'}}
-          >
+          <div className='col-xs-12 padding-0'>
             <div className='col-xs-12 padding-0'>
               <ConceptSummaryProperties concept={conceptDefinition} repoVersion={repoVersion} />
             </div>
@@ -195,21 +175,6 @@ const Item = ({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition
         }
         sx={{margin: '2px 0', '.MuiListItemText-primary': {fontSize: '14px'}, '.MuiListItemText-secondary': {fontSize: '12px', overflow: 'scroll'}}}
       />
-  )
-  return (
-    <>
-      {useFlexLayout ? (
-        <div style={{display: 'flex', alignItems: 'flex-start', flex: 1, minWidth: 0, gap: '6px'}}>
-          <Chip
-            size='small'
-            label={candidate.map_type}
-            sx={{...MAP_TYPE_CHIP_SX, margin: '6px 0 0 0', flexShrink: 0}}
-          />
-          <div style={{flex: 1, minWidth: 0}}>
-            {listItemText}
-          </div>
-        </div>
-      ) : listItemText}
       <span style={{display: 'flex', alignItems: 'flex-start'}}>
         {
           !noScore &&
