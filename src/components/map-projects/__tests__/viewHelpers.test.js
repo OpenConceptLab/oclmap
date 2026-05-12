@@ -49,13 +49,20 @@ test('getScoreDetails: rerank_score in low_ranked bucket', () => {
   assert.equal(out.qualityBucket, 'low_ranked')
 })
 
-test('getScoreDetails: no rerank_score falls back to candidate.score scaled to 0-100', () => {
+test('getScoreDetails: no rerank_score leaves percentile undefined (no score*100 fallback)', () => {
+  // Interim state: an algo (e.g. ocl-semantic) returned candidates with a
+  // raw score but the debounced $rerank/ pass hasn't landed yet. Scaling
+  // raw to a 0-100 percentile would mislead (semantic raw scores cluster
+  // near 1.0); leave it undefined so the UI shows a placeholder.
   const out = getScoreDetails(
     { candidate: { score: 0.85 }, conceptRow: {} },
     candidatesScore
   )
-  assert.equal(out.percentile, 85)
-  assert.equal(out.qualityBucket, 'recommended')
+  assert.equal(out.percentile, undefined)
+  assert.equal(out.hasPercentile, false)
+  assert.equal(out.qualityBucket, undefined)
+  assert.equal(out.algoScore, '0.85', 'raw score still surfaces for the algo-score chip')
+  assert.equal(out.rerankScore, '', 'no unified score string when rerank is pending')
 })
 
 test('getScoreDetails: no scores at all yields hasPercentile=false and no bucket', () => {

@@ -86,7 +86,13 @@ const Score = ({candidate, conceptRow, setShowHighlights, sx, isAIRecommended, c
               bucketColor={bucketColor}
               label={
                 <span style={{display: 'flex', alignItems: 'center'}}>
-                  <span>{algoScoreFirst && hasRawScore ? algoScore : rerankScore}</span>
+                  <span>
+                    {
+                      algoScoreFirst && hasRawScore
+                        ? algoScore
+                        : (rerankScore || <span style={{opacity: 0.4}}>—</span>)
+                    }
+                  </span>
                   {
                     hasPercentile && hasRawScore ?
                       <span style={{fontSize: '12px', color: 'rgba(0, 0, 0, 0.6)', marginLeft: '4px', fontStyle: 'italic'}}>

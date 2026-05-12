@@ -187,11 +187,12 @@ export const getScoreDetails = (input = {}, candidatesScore = {}) => {
     ? candidate.score
     : (isNumber(searchMeta?.search_score) ? searchMeta.search_score : null)
   // ConceptRow.rerank_score is already on the 0-100 scale (the rerank API
-  // returns search_normalized_score in that range). Display directly;
-  // when unavailable, scale the candidate's raw score from 0-1 to 0-100.
-  let percentile
-  if(rerankFloat !== null) percentile = rerankFloat
-  else if(score !== null) percentile = score * 100
+  // returns search_normalized_score in that range). Display directly.
+  // No fallback to `score * 100`: an interim semantic-search candidate has
+  // candidate.score ≈ 1.0 and a pending rerank — scaling that produces a
+  // misleading 100% chip until rerank lands. Leave percentile undefined so
+  // the UI can render a placeholder.
+  const percentile = rerankFloat !== null ? rerankFloat : undefined
 
   const hasPercentile = isNumber(percentile)
   const recommendedScore = candidatesScore?.recommended
@@ -204,12 +205,7 @@ export const getScoreDetails = (input = {}, candidatesScore = {}) => {
     else qualityBucket = 'low_ranked'
   }
 
-  // Format scores as strings, but only when there's a real numeric value
-  // behind them. parseFloat(null|undefined).toFixed(2) returns 'NaN', which
-  // shipped as a visible 'NaN%' chip in the Target Code panel — return ''
-  // so callers can render nothing instead.
-  const rerankSource = hasPercentile ? percentile : score
-  const rerankScore = isNumber(rerankSource) ? `${parseFloat(rerankSource).toFixed(2)}%` : ''
+  const rerankScore = hasPercentile ? `${parseFloat(percentile).toFixed(2)}%` : ''
   const algoScore = isNumber(score) ? `${parseFloat(score).toFixed(2)}` : ''
 
   return {
