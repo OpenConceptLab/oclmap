@@ -189,13 +189,18 @@ const cascadeTargetToConceptDefinition = (mapping, cascadeIdentity, projectConte
   }
 }
 
-// rerank_score on ConceptRow comes from the result's search_normalized_score
-// when present (set by $match's reranker:true single-algo path) — no
-// separate $rerank round-trip needed for that case. Otherwise undefined;
-// it gets filled in by the debounced rerank pipeline.
-const newConceptRow = (conceptKey, result) => ({
+// rerank_score on ConceptRow comes from search_normalized_score ONLY when
+// the caller signals it came from a reranker-true single-algo $match path
+// — that's the path where the server-side scores ARE the unified rerank.
+// In all other paths (multi-algo, bridge, scispacy, custom) the response's
+// search_normalized_score is just the per-algo native score (e.g. FAISS
+// similarity × 100), which the OCL server emits unconditionally. Treating
+// that as a unified rerank score yields chip values like "100.00%" for
+// every top semantic candidate until the debounced $rerank/ pipeline runs
+// and overwrites it — misleading during the interim window.
+const newConceptRow = (conceptKey, result, trustServerRerank = false) => ({
   concept_key: conceptKey,
-  rerank_score: typeof result?.search_meta?.search_normalized_score === 'number'
+  rerank_score: trustServerRerank && typeof result?.search_meta?.search_normalized_score === 'number'
     ? result.search_meta.search_normalized_score
     : undefined
 })
@@ -218,7 +223,7 @@ export const normalizeAlgoResult = (result, ctx = {}) => {
   const empty = { candidates: [], concept_definitions: [], concept_rows: [] }
   if (!result) return empty
 
-  const { algorithmId, algorithmConfig, algorithmResponseId, projectContext } = ctx
+  const { algorithmId, algorithmConfig, algorithmResponseId, projectContext, trustServerRerank } = ctx
   const identityConfig = algorithmConfig?.concept_identity
   if (!identityConfig) return empty
 
@@ -235,7 +240,7 @@ export const normalizeAlgoResult = (result, ctx = {}) => {
 
   const primaryDef = toConceptDefinition(result, primaryReference, identityConfig, { algorithmId })
   conceptDefinitions.push(primaryDef)
-  conceptRows.push(newConceptRow(primaryDef.key, result))
+  conceptRows.push(newConceptRow(primaryDef.key, result, trustServerRerank))
 
   const primaryCandidate = {
     id: newId(),
@@ -312,7 +317,8 @@ export const normalizeAlgorithmInvocation = (rawPayload, ctx = {}) => {
     rowIndex,
     status = 'success',
     error,
-    rawResponse
+    rawResponse,
+    trustServerRerank
   } = ctx
 
   const algorithmResponse = createAlgorithmResponse(
@@ -332,7 +338,8 @@ export const normalizeAlgorithmInvocation = (rawPayload, ctx = {}) => {
       algorithmId,
       algorithmConfig,
       algorithmResponseId: algorithmResponse.id,
-      projectContext
+      projectContext,
+      trustServerRerank
     })
     allCandidates.push(...candidates)
     concept_definitions.forEach(cd => {
@@ -412,7 +419,12 @@ export const normalizeLegacyAllCandidates = (
           algorithmId: algoId,
           algorithmConfig: algoConfig,
           projectContext,
-          rowIndex: idx
+          rowIndex: idx,
+          // Saved-project legacy data: search_normalized_score was persisted
+          // from a prior session's $rerank/ output, so it IS the canonical
+          // rerank score. Honor it (no client-side rerank will fire for
+          // already-loaded rows).
+          trustServerRerank: true
         }
       )
 

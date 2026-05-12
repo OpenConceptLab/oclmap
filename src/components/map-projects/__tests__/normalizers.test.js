@@ -299,7 +299,10 @@ test('ConceptRow picks up search_normalized_score as rerank_score (single-algo r
     algorithmId: 'ocl-search',
     algorithmConfig: oclSearchAlgo,
     algorithmResponseId: 'ar-1',
-    projectContext
+    projectContext,
+    // The caller must opt in: only trust the server's normalized score when
+    // it was produced by reranker:true (single-algo native OCL path).
+    trustServerRerank: true
   })
   const [row] = out.concept_rows
   assert.equal(row.concept_key, out.concept_definitions[0].key)
@@ -307,6 +310,24 @@ test('ConceptRow picks up search_normalized_score as rerank_score (single-algo r
   // reranker:true). The normalizer carries that onto the ConceptRow so no
   // separate $rerank round-trip is needed for the single-algo OCL path.
   assert.equal(row.rerank_score, 85)
+})
+
+test('ConceptRow.rerank_score ignored when the caller did not opt in (multi-algo path)', () => {
+  // OCL $match emits search_normalized_score unconditionally — for top
+  // FAISS hits the value is ~100. Without the trustServerRerank opt-in
+  // (multi-algo, bridge, scispacy, custom paths) the normalizer must NOT
+  // propagate it: the value isn't a unified rerank score, just a per-algo
+  // native score, and treating it as rerank produces a misleading "100%"
+  // chip until the debounced $rerank/ pass runs.
+  const out = normalizeAlgoResult(oclSearchResult_LOINC_glucose_full, {
+    algorithmId: 'ocl-search',
+    algorithmConfig: oclSearchAlgo,
+    algorithmResponseId: 'ar-multi',
+    projectContext
+    // trustServerRerank omitted — defaults to falsy
+  })
+  assert.equal(out.concept_rows[0].rerank_score, undefined,
+    'response had search_normalized_score=85 but caller did not opt in → ignored')
 })
 
 test('ConceptRow.rerank_score is undefined when the algorithm did not provide search_normalized_score', () => {
@@ -318,7 +339,8 @@ test('ConceptRow.rerank_score is undefined when the algorithm did not provide se
     algorithmId: 'ocl-search',
     algorithmConfig: oclSearchAlgo,
     algorithmResponseId: 'ar-1b',
-    projectContext
+    projectContext,
+    trustServerRerank: true
   })
   assert.equal(out.concept_rows[0].rerank_score, undefined)
 })
@@ -541,17 +563,21 @@ test('bridge result creates ConceptRows for BOTH intermediary and target', () =>
     algorithmConfig: oclBridgeAlgo,
     algorithmResponseId: 'ar-3',
     projectContext
+    // No trustServerRerank — bridge scores are unreliable as unified rerank
+    // (the bridge endpoint scores intermediaries against a vector index that
+    // doesn't speak the project's query semantics). Client-side $rerank/
+    // fills both ConceptRows once they're eligible.
   })
 
   assert.equal(out.concept_rows.length, 2)
-  // Bridge intermediary carries the bridge response's
-  // search_normalized_score (the algo did score the intermediary).
-  // Cascade target gets no rerank_score yet — the bridge response only
-  // scores the bridge concept; the debounced rerank pass fills the target
-  // once the row is eligible.
+  // Bridge intermediary's row stays unscored: even though the response
+  // carries search_normalized_score, the bridge path doesn't opt into
+  // trustServerRerank so it's ignored. Cascade target was already unscored
+  // (bridge response doesn't score cascade targets at all). Both fill in
+  // when $rerank/ lands.
   const bridgeRow = out.concept_rows.find(r => r.concept_key === out.concept_definitions.find(d => d.reference.url === 'https://CIELterminology.org').key)
   const targetRow = out.concept_rows.find(r => r.concept_key === out.concept_definitions.find(d => d.reference.url === 'http://loinc.org').key)
-  assert.equal(bridgeRow.rerank_score, 92)
+  assert.equal(bridgeRow.rerank_score, undefined)
   assert.equal(targetRow.rerank_score, undefined)
 })
 

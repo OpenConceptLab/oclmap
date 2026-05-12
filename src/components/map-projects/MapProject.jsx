@@ -1497,7 +1497,12 @@ const MapProject = () => {
                       algorithmId: algo.id,
                       algorithmConfig: algoCfg,
                       projectContext: projectCtx,
-                      rowIndex: idx
+                      rowIndex: idx,
+                      // Bulk auto-match's $match request sends reranker=!isMultiAlgo
+                      // (line 1433). Trust the server's normalized score only when
+                      // that flag was true — otherwise it's a per-algo native score
+                      // (e.g. FAISS similarity × 100) masquerading as a rerank.
+                      trustServerRerank: !isMultiAlgo
                     }))
                   })
                 }
@@ -2530,7 +2535,11 @@ const MapProject = () => {
                 algorithmConfig: algoDef,
                 projectContext,
                 rowIndex: __row.__index,
-                rawResponse: response
+                rawResponse: response,
+                // Mirrors the line 2452 reranker flag on the $match request.
+                // Only trust when single-algo native OCL — same condition that
+                // markAlgo('rerank', 1)s without firing a separate $rerank/.
+                trustServerRerank: !isMultiAlgo && algoDef.provider === 'ocl'
               }))
             }
           }
@@ -2553,7 +2562,8 @@ const MapProject = () => {
               algorithmConfig: algoDef,
               projectContext,
               rowIndex: __row.__index,
-              rawResponse: response
+              rawResponse: response,
+              trustServerRerank: !isMultiAlgo && algoDef.provider === 'ocl'
             }), {append: true})
           }
         }
