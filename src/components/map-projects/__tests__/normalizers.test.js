@@ -362,6 +362,86 @@ test('scispacy result merges with ocl-search result on the same canonical refere
     'same canonical reference => same key, regardless of algorithm')
 })
 
+// ---------- normalizeAlgoResult: schema-specific property capture ----------
+
+test('verbose response (with `property` array) → ConceptDefinition captures it and lookup_status=full', () => {
+  // OCL ConceptDetailSerializer (?verbose=true on $match) emits `property`
+  // sourced from the model's `properties` getter — schema-specific dict for
+  // sources like LOINC: [{code: 'COMPONENT', valueString: 'X'}, ...]. The
+  // UI's ConceptSummaryProperties reads `concept.property` directly.
+  const verboseResult = {
+    id: '49494-3',
+    display_name: 'Glucose [Mass/volume] in Blood',
+    url: '/orgs/Regenstrief/sources/LOINC/concepts/49494-3/',
+    source: 'LOINC',
+    names: [{ name: 'Glucose [Mass/volume] in Blood', locale: 'en', preferred: true }],
+    // no descriptions — many LOINC concepts have none
+    property: [
+      { code: 'COMPONENT', valueString: 'Glucose' },
+      { code: 'PROPERTY', valueString: 'MCnc' },
+      { code: 'TIME_ASPCT', valueString: 'Pt' }
+    ],
+    extras: { LOINC_NUM: '49494-3' },
+    search_meta: { search_score: 0.85, algorithm: 'ocl-semantic' }
+  }
+  const out = normalizeAlgoResult(verboseResult, {
+    algorithmId: 'ocl-semantic',
+    algorithmConfig: oclSemanticAlgo,
+    algorithmResponseId: 'ar-verbose',
+    projectContext
+  })
+  const [def] = out.concept_definitions
+  assert.equal(def.lookup_status, 'full',
+    'response carries `property` array → full, even without descriptions')
+  assert.equal(def.property.length, 3, 'property array survives normalization')
+  assert.equal(def.property[0].code, 'COMPONENT')
+  assert.deepEqual(def.extras, { LOINC_NUM: '49494-3' }, 'extras survives normalization')
+})
+
+test('verbose response with empty `property` array still promotes to lookup_status=full', () => {
+  // A source with no schema-property definitions returns `property: []`.
+  // We still have full payload data — ensureLoaded shouldn't refetch.
+  const result = {
+    id: 'X-1',
+    display_name: 'No-Schema Concept',
+    url: '/orgs/Test/sources/Plain/concepts/X-1/',
+    source: 'Plain',
+    property: [],
+    search_meta: { search_score: 0.7, algorithm: 'ocl-search' }
+  }
+  const out = normalizeAlgoResult(result, {
+    algorithmId: 'ocl-search',
+    algorithmConfig: oclSearchAlgo,
+    algorithmResponseId: 'ar-verbose-empty',
+    projectContext
+  })
+  assert.equal(out.concept_definitions[0].lookup_status, 'full',
+    'verbose payload marker is property field presence, not its length')
+})
+
+test('brief response (no `property`, no `names`) stays at lookup_status=partial', () => {
+  // ConceptMinimalSerializer omits `property` entirely. We have id +
+  // display_name but no schema data — ensureLoaded should fire.
+  const briefResult = {
+    id: '49494-3',
+    display_name: 'Glucose [Mass/volume] in Blood',
+    url: '/orgs/Regenstrief/sources/LOINC/concepts/49494-3/',
+    source: 'LOINC',
+    // no property, no names, no descriptions
+    search_meta: { search_score: 0.85, algorithm: 'ocl-search' }
+  }
+  const out = normalizeAlgoResult(briefResult, {
+    algorithmId: 'ocl-search',
+    algorithmConfig: oclSearchAlgo,
+    algorithmResponseId: 'ar-brief',
+    projectContext
+  })
+  assert.equal(out.concept_definitions[0].lookup_status, 'partial',
+    'no verbose-payload marker, no names → still partial → ensureLoaded eligible')
+  assert.equal(out.concept_definitions[0].property, undefined,
+    'no property in response → field stays undefined on the ConceptDefinition')
+})
+
 // ---------- normalizeAlgoResult: missing data ----------
 
 test('result without id (missing code field) returns empty entities', () => {

@@ -49,13 +49,23 @@ export const createAlgorithmResponse = (rawResponse, algorithmId, options = {}) 
 
 /**
  * Decide a concept's lookup_status based on which fields the algorithm response
- * populated.
+ * populated. 'full' means the response carries enough data for the UI:
+ *   - `property` field present (the verbose-payload marker — OCL's
+ *      ConceptDetailSerializer always emits it, even as an empty array), OR
+ *   - a populated `names` array (the list-serializer signal — names are
+ *      enough to render the row's display).
+ * Many concepts (LOINC especially) have no separate `descriptions`, so
+ * requiring descriptions for 'full' stranded verbose-loaded concepts at
+ * 'partial' and made the UI's summary chips disappear. We don't check
+ * `extras` because scispacy synthesizes that field with internal metadata
+ * (LOINC_NUM, composite_score) — not the OCL schema property dict.
  */
 const inferLookupStatus = (result) => {
   if (!result) return 'pending'
   const hasNames = Array.isArray(result.names) && result.names.length > 0
-  const hasDescriptions = Array.isArray(result.descriptions) && result.descriptions.length > 0
-  if (hasNames && hasDescriptions) return 'full'
+  const hasVerbosePayload = Array.isArray(result.property)
+    || (Array.isArray(result.properties) && result.properties.length > 0)
+  if (result.id && result.display_name && (hasVerbosePayload || hasNames)) return 'full'
   if (result.id && result.display_name) return 'partial'
   return 'pending'
 }
@@ -120,6 +130,14 @@ const toConceptDefinition = (result, reference, identityConfig, { algorithmId } 
     datatype: result?.datatype,
     retired: result?.retired,
     properties: result?.properties,
+    // `property` (singular) is the schema-specific property dict OCL returns
+    // for sources like LOINC (COMPONENT/PROPERTY/TIME_ASPCT/etc.) sourced from
+    // ConceptDetailSerializer.property = JSONField(source='properties').
+    // ConceptSummaryProperties.jsx reads this field directly. Without it the
+    // verbose payload's schema chips never reach the UI even when $match
+    // returns them.
+    property: result?.property,
+    extras: result?.extras,
     lookup_status: inferLookupStatus(result),
     lookup_source_type: 'algorithm',
     lookup_source: algorithmId
@@ -163,6 +181,8 @@ const cascadeTargetToConceptDefinition = (mapping, cascadeIdentity, projectConte
     datatype: undefined,
     retired: undefined,
     properties: undefined,
+    property: undefined,
+    extras: undefined,
     lookup_status: 'pending',
     lookup_source_type: undefined,
     lookup_source: undefined
