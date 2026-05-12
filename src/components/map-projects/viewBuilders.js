@@ -47,6 +47,25 @@ export const candidateToRowView = (candidate, conceptCache, rowState) => {
  * rendering. bridge_child candidates do NOT appear at the top level —
  * they are nested under their parent bridge.
  */
+// Deterministic order for bridge_children under a bridge intermediary:
+// primary key is rerank_score desc (when both have one), secondary is the
+// concept code/id ascending. Without this, children appeared in
+// Object.values() insertion order, which flipped between renders and made
+// the same project look different each refresh.
+const sortBridgeChildren = (rowViews) => {
+  const codeOf = (v) => v?.conceptDefinition?.id || v?.conceptDefinition?.reference?.code || ''
+  return [...(rowViews || [])].sort((a, b) => {
+    const sa = a?.conceptRow?.rerank_score
+    const sb = b?.conceptRow?.rerank_score
+    const haveA = typeof sa === 'number' && !Number.isNaN(sa)
+    const haveB = typeof sb === 'number' && !Number.isNaN(sb)
+    if(haveA && haveB && sa !== sb) return sb - sa
+    if(haveA && !haveB) return -1
+    if(!haveA && haveB) return 1
+    return codeOf(a).localeCompare(codeOf(b))
+  })
+}
+
 export const buildAlgorithmRowViews = (rowState, conceptCache, algoId) => {
   if(!rowState) return []
   const all = values(rowState.candidates || {}).filter(c => c.algorithm_id === algoId)
@@ -56,7 +75,7 @@ export const buildAlgorithmRowViews = (rowState, conceptCache, algoId) => {
     if(!view) return null
     if(view.type === 'bridge') {
       const children = all.filter(c => c.type === 'bridge_child' && c.parent_candidate_id === candidate.id)
-      view.bridgeChildren = compact(children.map(c => candidateToRowView(c, conceptCache, rowState)))
+      view.bridgeChildren = sortBridgeChildren(compact(children.map(c => candidateToRowView(c, conceptCache, rowState))))
     }
     return view
   }))
@@ -169,6 +188,13 @@ export const conceptForMapping = (rowView) => {
     datatype: conceptDefinition.datatype,
     retired: conceptDefinition.retired,
     properties: conceptDefinition.properties,
+    // `property` (singular) is the schema-specific dict — LOINC's
+    // COMPONENT/PROPERTY/TIME_ASPCT/etc. ConceptSummaryProperties reads
+    // this directly. Without it in the projection, table view rows render
+    // without the schema chips (the card view works because it gets the
+    // ConceptDefinition directly).
+    property: conceptDefinition.property,
+    extras: conceptDefinition.extras,
     type: 'Concept',
     search_meta: {
       algorithm: candidate?.algorithm_id,

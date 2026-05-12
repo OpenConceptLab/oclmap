@@ -1840,6 +1840,33 @@ const MapProject = () => {
     }
   }
 
+  // Fetch the target repo's canonical_url when it isn't already present.
+  // RepoSearchAutocomplete returns brief metadata that may omit it, and
+  // saved-project loads may pre-date the canonical persistence in onSave.
+  // Without this fetch, buildProjectContext falls back to a derived
+  // ns.openconceptlab.org URL, the unified-model normalizer stamps every
+  // ConceptDefinition.reference.url with the derived form, and any
+  // fixed-canonical algorithm (scispacy → http://loinc.org) ends up with a
+  // reference.url that doesn't match the live target canonical — so the
+  // Quality view filter excludes the candidates even though they were
+  // fetched successfully. Mirrors the bridge_repo canonical fetch in
+  // MultiAlgoSelector.jsx (commit fdc60b8).
+  const fetchedRepoCanonicalUrlRef = React.useRef(new Set())
+  React.useEffect(() => {
+    if(!repo?.url) return
+    if(repo.canonical_url) return
+    if(fetchedRepoCanonicalUrlRef.current.has(repo.url)) return
+    fetchedRepoCanonicalUrlRef.current.add(repo.url)
+    APIService.new()
+      .overrideURL(repo.url)
+      .get()
+      .then(response => {
+        const canonical = response?.data?.canonical_url
+        if(canonical) setRepo(prev => prev?.url === repo.url ? {...prev, canonical_url: canonical} : prev)
+      })
+      .catch(() => {})
+  }, [repo?.url, repo?.canonical_url])
+
   const prepareRow = (csvRow, additional=false, forRecommendation=false) => {
     let row = {}
     let metadata = {}
@@ -3573,29 +3600,50 @@ const MapProject = () => {
     const projectContext = buildProjectContext()
     if(!projectContext?.target_repo?.canonical_url) return null
 
-    const allNormCandidates = []
+    let allNormCandidates = []
     const defsByKey = new Map()
 
-    selectedAlgoIds.forEach(algoId => {
-      const algoDef = getAlgoDef(algoId)
-      if(!algoDef?.concept_identity) return
-      const rowEntry = find(allCandidatesRef.current[algoId], c => c.row?.__index === rowIndex)
-      if(!rowEntry?.results?.length) return
-
-      const normalized = normalizeAlgorithmInvocation(
-        {row: rowEntry.row, results: rowEntry.results},
-        {algorithmId: algoId, algorithmConfig: algoDef, projectContext, rowIndex}
-      )
-
-      allNormCandidates.push(...normalized.candidates)
-      normalized.concept_definitions.forEach(def => {
+    // Prefer reading directly from unified rowMatchState + conceptCache when
+    // it's populated (the authoritative source under UNIFIED_MODEL_ENABLED).
+    // Falls back to re-normalizing allCandidates only if the unified state
+    // is empty — keeps the PR2a path alive for any pre-flag flows.
+    const rowState = rowMatchStateRef.current?.[rowIndex]
+    const haveUnified = rowState && Object.keys(rowState.candidates || {}).length > 0
+    if(haveUnified) {
+      allNormCandidates = Object.values(rowState.candidates)
+      Object.values(rowState.candidates).forEach(cand => {
+        const def = conceptCacheRef.current[cand.concept_key]
+        if(!def) return
         const existing = defsByKey.get(def.key)
-        // Prefer richer definitions (full > partial > pending), matching the
-        // mergeIntoRowMatchState rule.
         if(!existing || lookupStatusRank(def.lookup_status) > lookupStatusRank(existing.lookup_status))
           defsByKey.set(def.key, def)
+        if(cand.bridge_concept_key) {
+          const bridgeDef = conceptCacheRef.current[cand.bridge_concept_key]
+          if(bridgeDef && !defsByKey.has(bridgeDef.key)) defsByKey.set(bridgeDef.key, bridgeDef)
+        }
       })
-    })
+    } else {
+      selectedAlgoIds.forEach(algoId => {
+        const algoDef = getAlgoDef(algoId)
+        if(!algoDef?.concept_identity) return
+        const rowEntry = find(allCandidatesRef.current[algoId], c => c.row?.__index === rowIndex)
+        if(!rowEntry?.results?.length) return
+
+        const normalized = normalizeAlgorithmInvocation(
+          {row: rowEntry.row, results: rowEntry.results},
+          {algorithmId: algoId, algorithmConfig: algoDef, projectContext, rowIndex}
+        )
+
+        allNormCandidates.push(...normalized.candidates)
+        normalized.concept_definitions.forEach(def => {
+          const existing = defsByKey.get(def.key)
+          // Prefer richer definitions (full > partial > pending), matching the
+          // mergeIntoRowMatchState rule.
+          if(!existing || lookupStatusRank(def.lookup_status) > lookupStatusRank(existing.lookup_status))
+            defsByKey.set(def.key, def)
+        })
+      })
+    }
 
     const targetCanonical = projectContext.target_repo.canonical_url
     const recommendable_concepts = []
@@ -3671,7 +3719,26 @@ const MapProject = () => {
       console.error('AI ASSISTANT is not enabled for you.')
       return false
     }
+    // Source the legacy `candidates[]` array first from allCandidates (the
+    // PR2a path), and fall back to projecting from the unified rowMatchState
+    // when legacy is empty. Without the fallback, any flow that ends with
+    // populated rowMatchState but empty allCandidates (e.g. flag-on saved-
+    // project load races, or future paths that skip the parallel legacy
+    // write) bails before the POST fires — user sees no AI Assistant
+    // response even though the row clearly has candidates on screen.
     let _candidates = flatten(map(selectedAlgoIds, algoId => find(allCandidatesRef.current[algoId], c => c.row?.__index === __index)?.results || []))
+    if(_candidates.length === 0 && rowMatchStateRef.current?.[__index]) {
+      const rowState = rowMatchStateRef.current[__index]
+      _candidates = compact(
+        Object.values(rowState.candidates || {}).map(cand => {
+          const def = conceptCacheRef.current[cand.concept_key]
+          if(!def) return null
+          const conceptRow = rowState.concept_rows?.[cand.concept_key]
+          const bridgeDef = cand.bridge_concept_key ? conceptCacheRef.current[cand.bridge_concept_key] : undefined
+          return conceptForMapping({candidate: cand, conceptDefinition: def, conceptRow, bridgeConceptDefinition: bridgeDef})
+        })
+      )
+    }
     if(isNumber(__index) && repoVersion && !analysis[__index] && _candidates?.length > 0) {
       if(!promptTemplate?.key) {
         setAlert({message: 'AI Assistant prompt template is not available', severity: 'error'})
