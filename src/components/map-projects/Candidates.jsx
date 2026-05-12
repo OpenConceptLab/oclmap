@@ -485,20 +485,27 @@ const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCa
     let recommended = []
     let available = []
     let lowRanked = []
+    let pendingRerank = []
     sortRowViews(qualityRowViews, sortBy, order).forEach(view => {
-      let score = view.conceptRow?.rerank_score || 0
+      const score = view.conceptRow?.rerank_score
       if(byScore) {
-        if(score >= recommendedScore) recommended.push(view)
+        // Bucket on score presence first: unscored rows belong in their
+        // own "pending rerank" group — not in low_ranked. Falling them
+        // into low_ranked (the prior `score || 0` behavior) mis-implied
+        // they were poor matches; they're simply not ranked yet. Rerank
+        // landing will re-bucket them naturally on the next render.
+        if(typeof score !== 'number') pendingRerank.push(view)
+        else if(score >= recommendedScore) recommended.push(view)
         else if(score >= availableScore) available.push(view)
         else lowRanked.push(view)
       } else {
         available.push(view)
       }
     })
-    return { recommended, available, lowRanked }
+    return { recommended, available, lowRanked, pendingRerank }
   }
 
-  const { byAlgoCandidates, recommended, available, lowRanked } = getCandidates()
+  const { byAlgoCandidates, recommended, available, lowRanked, pendingRerank } = getCandidates()
 
   const getRightControls = () => {
       return (
@@ -672,6 +679,30 @@ const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCa
                 candidatesScore={candidatesScore}
                 isFirst={recommended.length === 0 && available.length === 0 && lowRanked.length > 0}
               />
+            }
+          </li>
+          <li>
+            {
+              // Transient bucket for candidates whose rerank hasn't landed
+              // yet. They reorganize into recommended/available/low_ranked
+              // automatically once a numeric rerank_score arrives on their
+              // ConceptRow. Neutral gray indicator so it visually reads as
+              // "in progress" rather than "poor match".
+              pendingRerank.length > 0 &&
+                <CandidateList
+                  {...baseProps}
+                  rowViews={pendingRerank}
+                  header={t('map_project.unranked_candidates', 'Unranked Candidates')}
+                  onFetchMore={onFetchMore}
+                  bgColor={SCORES_COLOR.pending_rerank}
+                  bucketId={`${rowIndex}-pending-rerank`}
+                  noToolbar
+                  showAlgo
+                  collapsed={collapsed}
+                  onCollapse={setCollapsed}
+                  candidatesScore={candidatesScore}
+                  isFirst={recommended.length === 0 && available.length === 0 && lowRanked.length === 0}
+                />
             }
           </li>
               </>

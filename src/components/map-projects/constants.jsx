@@ -3,7 +3,7 @@ import ListIcon from '@mui/icons-material/FormatListNumbered';
 import UnMappedIcon from '@mui/icons-material/LinkOff';
 import MappedIcon from '@mui/icons-material/Link';
 import ReviewedIcon from '@mui/icons-material/FactCheckOutlined';
-import { RECOMMEND_COLOR, AVAILABLE_COLOR, UNRANKED_COLOR } from '../../common/colors'
+import { RECOMMEND_COLOR, AVAILABLE_COLOR, UNRANKED_COLOR, PENDING_RERANK_COLOR } from '../../common/colors'
 
 const ID_HEADER = {id: 'id', label: 'ID', description: 'Exact match on concept ID'}
 const COMMON_HEADERS = [
@@ -57,7 +57,8 @@ export const DECISION_TABS = ['candidates', 'search', 'propose', 'discuss']
 export const SCORES_COLOR = {
   recommended: RECOMMEND_COLOR,
   available: AVAILABLE_COLOR,
-  low_ranked: UNRANKED_COLOR
+  low_ranked: UNRANKED_COLOR,
+  pending_rerank: PENDING_RERANK_COLOR
 }
 
 export const SEMANTIC_BATCH_SIZE = 10
