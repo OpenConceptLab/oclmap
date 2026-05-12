@@ -36,6 +36,19 @@ import ConceptIcon from '../concepts/ConceptIcon'
 import { isLikelyCanonicalUrl } from './algorithms'
 import APIService from '../../services/APIService';
 
+// Cached lookup of a bridge source repo's canonical_url. Canonical URLs are
+// stable, so a single fetch per relative URL is sufficient for the session.
+const bridgeCanonicalCache = new Map()
+const fetchBridgeCanonical = (url) => {
+  if(!url) return Promise.resolve(null)
+  if(bridgeCanonicalCache.has(url)) return bridgeCanonicalCache.get(url)
+  const promise = APIService.new().overrideURL(url).get()
+    .then(r => r?.data?.canonical_url || null)
+    .catch(() => null)
+  bridgeCanonicalCache.set(url, promise)
+  return promise
+}
+
 /**
  * MultiAlgoSelector (MUI5)
  *
@@ -151,6 +164,30 @@ export default function MultiAlgoSelector({
         setErrors(prev => ({...prev, [key]: {...omit(prev[key], 'name')}}))
     }
   };
+
+  // For each selected bridge algo, fetch the source repo's canonical_url from
+  // the OCL API and populate `bridge_repo.canonical_url`. Without this, the
+  // downstream derivation falls back to https://ns.openconceptlab.org{relurl}
+  // even when the repo has a real canonical (e.g. CIEL -> CIELterminology.org).
+  // User-typed values are preserved: the sync only runs once per (key, url),
+  // so editing the canonical field afterwards is sticky until the source URL
+  // changes.
+  const syncedBridgeUrlRef = React.useRef(new Map())
+  React.useEffect(() => {
+    for (const sel of value || []) {
+      if(!sel?.type?.includes('bridge')) continue
+      const url = sel.target_repo_url
+      if(!url) continue
+      if(syncedBridgeUrlRef.current.get(sel.__key) === url) continue
+      syncedBridgeUrlRef.current.set(sel.__key, url)
+      fetchBridgeCanonical(url).then(canonical => {
+        if(!canonical) return
+        updateSelected(sel.__key, {
+          bridge_repo: { canonical_url: canonical, canonical_url_source: 'repo' }
+        })
+      })
+    }
+  }, [value])
 
   const removeSelected = (key) => {
     const next = (value || []).filter((v) => v.__key !== key);

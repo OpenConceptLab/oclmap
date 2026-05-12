@@ -19,7 +19,8 @@ i18n.use(initReactI18next).init({
     }
   },
   ns: ['translations'],
-  defaultNS: 'translations'
+  defaultNS: 'translations',
+  interpolation: { escapeValue: false }
 });
 
 i18n.languages = ['en', 'es', 'zh'];
