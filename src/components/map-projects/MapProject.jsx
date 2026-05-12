@@ -2605,9 +2605,16 @@ const MapProject = () => {
 
   const fetchScispacyCandidates = async (_row, scrollToBottom, forceReload=false, isBulk=false, callback) => {
     let __row = isEmpty(_row) ? row : _row
-    const existingCandidates = find(allCandidatesRef.current['ocl-scispacy-loinc'], c => c.row.__index === __row.__index)?.results
-    if(!isBulk && !forceReload && existingCandidates?.length> 0) {
-      setTimeout(() => highlightTexts(existingCandidates, null, false), 100)
+    // Gate on entry presence, not results.length: a successful invocation
+    // that returned zero matches still writes {row, results:[]} into
+    // allCandidates, and we shouldn't re-run on every tab visit just because
+    // the array is empty. Failures don't write an entry (the catch below
+    // markAlgo(-2)s without persisting), so undefined-entry correctly retries.
+    const existingEntry = find(allCandidatesRef.current['ocl-scispacy-loinc'], c => c.row.__index === __row.__index)
+    if(!isBulk && !forceReload && existingEntry !== undefined) {
+      const existingCandidates = existingEntry.results
+      if(existingCandidates?.length > 0)
+        setTimeout(() => highlightTexts(existingCandidates, null, false), 100)
       return { skipped: true }
     }
     if(!scispacyEnabled)
