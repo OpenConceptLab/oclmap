@@ -2765,7 +2765,7 @@ const MapProject = () => {
           markAlgo(__row.__index, 'ocl-scispacy-loinc', -2)
           log({action: 'algo_failed', extras: {algo: 'ocl-scispacy-loinc', status: response?.status, detail: response?.detail}}, __row.__index)
           setAlert({
-            message: response?.detail || `Scispacy service unavailable (HTTP ${response?.status || '???'}). The service can take 2–5 min to start up after sleep — click Refresh on this row to retry.`,
+            message: response?.detail || "OCL's scispacy matching service is starting up. This may take a couple minutes. You can safely leave this row and come back. Click Refresh if results aren't here in a couple of minutes.",
             severity: 'warning'
           })
           setIsLoadingInDecisionView(false)
@@ -2779,7 +2779,7 @@ const MapProject = () => {
         markAlgo(__row.__index, 'ocl-scispacy-loinc', -2)
         log({action: 'algo_failed', extras: {algo: 'ocl-scispacy-loinc', error: err?.message}}, __row.__index)
         setAlert({
-          message: `Scispacy service unavailable. The service can take 2–5 min to start up after sleep — click Refresh on this row to retry.`,
+          message: "OCL's scispacy matching service is starting up. This may take a couple minutes. You can safely leave this row and come back. Click Refresh if results aren't here in a couple of minutes.",
           severity: 'warning'
         })
         setIsLoadingInDecisionView(false)
@@ -3812,12 +3812,27 @@ const MapProject = () => {
         return false
       }
       const promptTemplateRef = getPromptTemplateRef(activePromptTemplate)
+      // Strip heavy fields before sending to the LLM. These are useful for
+      // the in-app UI (Table view chips, hover details) but burn tokens
+      // without adding signal for matching judgments. Keep the things the
+      // legacy prompt template actually reads (id, display_name, source,
+      // search_meta, url, concept_class, datatype, retired, mappings,
+      // property), drop the bulky ones.
+      //   extras       - LOINC source-specific JSON; very large per concept
+      //   names        - multiple locales, redundant with display_name
+      //   descriptions - multiple, often long; not used for matching
+      // The v2 `recommendable_concepts` already omits these (see
+      // buildV2RecommendationPayload). NB: if you see a literal "max_tokens"
+      // error from the model, that's the server-side prompt template's
+      // output budget — check ocl-ai-assistant's template config, not this
+      // file.
+      const stripHeavyFields = (c) => omit(c, ['_source', 'extras', 'names', 'descriptions'])
       const payload = {
         variables: {
           project: getProjectMetadata(),
           row: rowData.row,
           metadata: rowData.metadata,
-          candidates: [..._candidates.map(c => omit(c, '_source'))],
+          candidates: [..._candidates.map(stripHeavyFields)],
           ...(v2 ? {
             payload_version: 'v2',
             target_repo: v2.target_repo,
