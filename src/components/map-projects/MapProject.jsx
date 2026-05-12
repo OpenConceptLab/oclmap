@@ -1189,6 +1189,19 @@ const MapProject = () => {
     formData.append('columns', JSON.stringify(map(columns, col => ({...col, hidden: columnVisibilityModel[col.dataKey] === false, width: columnWidth[col.dataKey] || undefined, ai_assistant_hidden: AIAssistantColumns[col.dataKey] === false}))))
     if(repoVersion?.version_url)
       formData.append('target_repo_url', repoVersion.version_url)
+    // Persist the live target_repo canonical so reload doesn't need to wait
+    // for fetchRepo. Without this the load path falls back to a derived
+    // canonical (https://ns.openconceptlab.org/...) that doesn't match the
+    // real repo canonical (e.g. http://loinc.org), causing the Quality-view
+    // filter on conceptDefinition.reference.url to reject all candidates.
+    if(repo?.canonical_url)
+      formData.append('target_repo', JSON.stringify({
+        canonical_url: repo.canonical_url,
+        owner: repo.owner,
+        owner_type: repo.owner_type,
+        source: repo.short_code || repo.id,
+        source_version: repoVersion?.id || repo.version || repo.id
+      }))
     formData.append('algorithms', JSON.stringify(map(algosSelected, algo => omit(algo, ['__key']))))
     formData.append('score_configuration', JSON.stringify(candidatesScore))
     formData.append('lookup_config', JSON.stringify(lookupConfig))
@@ -1635,6 +1648,48 @@ const MapProject = () => {
   React.useEffect(() => {
     conceptCacheRef.current = conceptCache;
   }, [conceptCache]);
+
+  // Re-normalize legacy allCandidates when the target repo's real canonical
+  // URL arrives. fetchAndSetProject runs synchronously and falls back to a
+  // derived canonical (https://ns.openconceptlab.org{relurl}) because the
+  // save format never persisted target_repo.canonical_url. Once fetchRepo
+  // resolves and `repo.canonical_url` lands (e.g. 'http://loinc.org' for
+  // LOINC), the ConceptDefinitions on rowMatchState are still stamped with
+  // the derived URL — and Candidates.jsx's Quality view filters by
+  // `view.conceptDefinition.reference.url === targetCanonical` (the live
+  // value), so nothing matches and the panel renders empty. Re-running
+  // normalizeLegacyAllCandidates with the live projectContext re-stamps the
+  // references to match.
+  const lastNormalizedCanonicalRef = React.useRef(null)
+  React.useEffect(() => {
+    const ctx = buildProjectContext()
+    const liveCanonical = ctx?.target_repo?.canonical_url
+    if(!liveCanonical) return
+    if(lastNormalizedCanonicalRef.current === liveCanonical) return
+    const allCands = allCandidatesRef.current
+    if(!allCands || isEmpty(allCands)) {
+      // No legacy data yet — record the canonical and exit. The initial
+      // load path will normalize once data arrives.
+      lastNormalizedCanonicalRef.current = liveCanonical
+      return
+    }
+    const enrichedAlgos = (algosSelected || []).map(a => ensureConceptIdentity(a) || a)
+    const { rowMatchState: newRowMatchState, conceptDefinitionsByKey: newDefsByKey } =
+      normalizeLegacyAllCandidates(allCands, ctx, enrichedAlgos, CONCEPT_IDENTITY_BY_TYPE)
+    rowMatchStateRef.current = newRowMatchState
+    setRowMatchState(newRowMatchState)
+    if(newDefsByKey.size > 0) {
+      const next = { ...conceptCacheRef.current }
+      newDefsByKey.forEach((def, key) => {
+        const existing = next[key]
+        if(!existing || lookupStatusRank(def.lookup_status) > lookupStatusRank(existing.lookup_status))
+          next[key] = def
+      })
+      conceptCacheRef.current = next
+      setConceptCache(next)
+    }
+    lastNormalizedCanonicalRef.current = liveCanonical
+  }, [buildProjectContext, algosSelected])
 
   const runBulkAIAnalysis = async (_rows) => {
     setLoadingMatches(true)
