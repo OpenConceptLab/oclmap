@@ -515,15 +515,22 @@ const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCa
               <Chip icon={<CircularProgress sx={{width: '14px !important', height: '14px !important', marginLeft: '6px !important', marginRight: '0px !important'}} />} variant='outlined' color='warning' size='small' label={label} sx={{margin: '0 8px'}} />
           }
           {
+            // Refresh stays visible even when there are zero candidates so
+            // the user can retry an algorithm that errored out (e.g. scispacy
+            // returns 503 during its 2-5 min cold-start; previously the
+            // toolbar disappeared and the row had no recovery path).
+            // Group/Sort only render when there are candidates to organize.
+          }
+          <Tooltip title={t('map_project.refresh_candidates_tooltip')}>
+            <span>
+              <IconButton color='secondary' onClick={onRefreshClick} disabled={!areAlgoRun} size='small' sx={{margin: '0 4px'}}>
+                <RefreshIcon />
+              </IconButton>
+            </span>
+          </Tooltip>
+          {
             !noCandidatesFound &&
               <>
-                <Tooltip title={t('map_project.refresh_candidates_tooltip')}>
-                  <span>
-                    <IconButton color='secondary' onClick={onRefreshClick} disabled={!areAlgoRun} size='small' sx={{margin: '0 4px'}}>
-                      <RefreshIcon />
-                    </IconButton>
-                  </span>
-                </Tooltip>
                 <Group onGroup={onGroup} selected={groupBy} />
                 <Sort onSort={onSort} selected={sortBy} />
               </>

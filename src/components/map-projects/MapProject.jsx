@@ -2746,19 +2746,44 @@ const MapProject = () => {
     const payload = {rows: [{label: inputRow.name, itemid: __row.__index}]}
     const service = APIService.new()
     service.URL = SCISPACY_API_URL
-    try {
-      service.appendToUrl('/$match-scispacy-loinc/').post(payload).then(response => {
-        if(callback)
-          callback(response, payload)
+    // Note: the previous shape had `setIsLoadingInDecisionView(false)` inside
+    // a `finally` block that fired synchronously *before* the POST resolved
+    // (the .then was detached, not awaited). Result: isLoading flipped back
+    // to false immediately, the Candidates panel rendered "no candidates"
+    // before any response arrived. Now the loading flag is cleared inside
+    // the response handler instead, after the actual response (success OR
+    // error) arrives. 5xx responses (the scispacy service taking 2-5 min
+    // to wake up returns 503) no longer get written as `results: []` —
+    // we mark the algo as failed without persisting the empty entry, so
+    // the next row visit retries.
+    service.appendToUrl('/$match-scispacy-loinc/').post(payload)
+      .then(response => {
+        const isError = response?.detail
+          || response?.status >= 400
+          || (response && response.data === undefined && response.status !== 200)
+        if(isError) {
+          markAlgo(__row.__index, 'ocl-scispacy-loinc', -2)
+          log({action: 'algo_failed', extras: {algo: 'ocl-scispacy-loinc', status: response?.status, detail: response?.detail}}, __row.__index)
+          setAlert({
+            message: response?.detail || `Scispacy service unavailable (HTTP ${response?.status || '???'}). The service can take 2–5 min to start up after sleep — click Refresh on this row to retry.`,
+            severity: 'warning'
+          })
+          setIsLoadingInDecisionView(false)
+          return response
+        }
+        if(callback) callback(response, payload)
+        setIsLoadingInDecisionView(false)
         return response
       })
-    } catch (err) {
-      markAlgo(__row.__index, 'ocl-scispacy-loinc', -2)
-      log({action: 'algo_failed', extras: {algo: 'ocl-scispacy-loinc'}}, __row.__index)
-      throw err;
-    } finally {
-      setIsLoadingInDecisionView(false);
-    }
+      .catch(err => {
+        markAlgo(__row.__index, 'ocl-scispacy-loinc', -2)
+        log({action: 'algo_failed', extras: {algo: 'ocl-scispacy-loinc', error: err?.message}}, __row.__index)
+        setAlert({
+          message: `Scispacy service unavailable. The service can take 2–5 min to start up after sleep — click Refresh on this row to retry.`,
+          severity: 'warning'
+        })
+        setIsLoadingInDecisionView(false)
+      })
   }
 
   // Build the deduplicated rerank request body from the row's ConceptRows +
@@ -3759,6 +3784,25 @@ const MapProject = () => {
       let activePromptTemplate
       try {
         activePromptTemplate = resolvedPromptTemplate || await resolvePromptTemplateForInvocation()
+        // Single-row invocations (no caller-supplied resolvedPromptTemplate)
+        // should always hit the latest prompt template, NOT a pinned version.
+        // Version pinning matters for bulk auto-match runs (the resolved
+        // template is captured once at the start and reused for every row so
+        // a mid-run template publish can't shift behavior). For single-row
+        // there's no such consistency requirement; pinning made the invoke
+        // URL '/prompts/<key>/<version>/invoke/' which 404s when the server
+        // doesn't host that specific version path. Clear `version` and the
+        // already-version-bearing `uri`/`url`/`prompt_template_uri` so
+        // getResolvedPromptTemplateURI falls through to '/prompts/<key>/'.
+        if(!resolvedPromptTemplate && activePromptTemplate) {
+          activePromptTemplate = {
+            ...activePromptTemplate,
+            version: null,
+            uri: null,
+            url: null,
+            prompt_template_uri: null
+          }
+        }
       } catch (err) {
         markAlgo(__index, 'recommend', -2)
         const errorMessage = err?.message || t('unknown_error')

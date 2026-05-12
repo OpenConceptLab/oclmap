@@ -155,7 +155,20 @@ const Item = ({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition
           </span>
         }
         secondary={
-          <div className='col-xs-12 padding-0'>
+          // For bridge_child rows the primary line starts with a leading
+          // [SAME-AS] chip (margin 0 6px). Without a matching left indent,
+          // the secondary text aligns flush left and renders *to the left*
+          // of the chip, producing the visual artifact reported in PR2b
+          // testing. The chip has 6px left margin + ~50px label width, so
+          // a 6px left padding under bridgeChild keeps the secondary text
+          // aligned with the chip's left edge. overflowWrap+wordBreak
+          // prevents LOINC's `^` and `/` separators (and stretches like
+          // "peptide.B" with embedded periods) from word-breaking even when
+          // there's whitespace to spare.
+          <div
+            className='col-xs-12 padding-0'
+            style={bridgeChild ? {paddingLeft: '6px', overflowWrap: 'break-word', wordBreak: 'normal'} : {overflowWrap: 'break-word', wordBreak: 'normal'}}
+          >
             <div className='col-xs-12 padding-0'>
               <ConceptSummaryProperties concept={conceptDefinition} repoVersion={repoVersion} />
             </div>
