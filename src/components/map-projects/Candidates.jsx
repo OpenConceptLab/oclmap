@@ -431,14 +431,16 @@ const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCa
   }
 
   const onSort = option => {
-    if(option === sortBy || option === 'rerank_score') {
-      setSortBy('rerank_score')
-    } else if(option === 'algo_score') {
-      setSortBy(option)
+    // Plain "click to select" — no implicit fallbacks. The previous
+    // `option === sortBy` branch silently flipped any same-option click
+    // back to 'rerank_score', so re-clicking Raw in algo view kicked
+    // the user into Unified mode. Picking Raw still implies the algo
+    // view (raw scores aren't comparable across algos in the Quality
+    // grouping), so that side-effect stays.
+    if(!option) return
+    setSortBy(option)
+    if(option === 'algo_score' && groupBy !== 'algorithm')
       setGroupBy('algorithm')
-    } else {
-      setSortBy(option)
-    }
   }
 
   const onRecommend = () => {
@@ -467,7 +469,16 @@ const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCa
       return {
         byAlgoCandidates: sortedAlgos.map(({algo, views}) => ({
           algo,
-          candidates: sortRowViews(views, sortBy, order)
+          // Sort the top-level (bridge intermediaries and standard candidates)
+          // and, for each bridge, sort its nested cascade targets by the same
+          // key/order so the children's order tracks the parent rule. Bridge
+          // children don't have their own raw score; sorting by algo_score
+          // leaves them in insertion order via sortRowViews' -1 sentinel.
+          candidates: sortRowViews(views, sortBy, order).map(view => (
+            view.type === 'bridge' && view.bridgeChildren?.length
+              ? { ...view, bridgeChildren: sortRowViews(view.bridgeChildren, sortBy, order) }
+              : view
+          ))
         }))
       }
     }
