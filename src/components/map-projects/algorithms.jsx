@@ -47,6 +47,47 @@ export const CONCEPT_IDENTITY_BY_TYPE = {
   }
 }
 
+// Cheap structural validator for canonical URLs. The unified mapper model
+// requires every algorithm's concept_identity.canonical_url to be a URL —
+// custom algos rely on user input for this, so the form validates here.
+export const isLikelyCanonicalUrl = (value) => {
+  if(!value || typeof value !== 'string') return false
+  return /^https?:\/\/[^\s]+$/i.test(value.trim())
+}
+
+// Walk algosSelected and return the subset that fails project-config
+// validation. Currently: custom algos must have a valid canonical_url.
+// (plans/unified-mapper-model.md "Algorithm concept_identity configuration —
+// Custom algorithm".) Returns [{algo, reason}] for diagnostic banners.
+export const getProjectConfigErrors = (algosSelected) => {
+  const errors = []
+  ;(algosSelected || []).forEach(algo => {
+    if(algo?.type === 'custom' && !isLikelyCanonicalUrl(algo.canonical_url))
+      errors.push({ algo, reason: 'missing_canonical_url' })
+  })
+  return errors
+}
+
+// Return a copy of `algo` with `concept_identity` populated. Three sources,
+// in priority order:
+//   1. algo.concept_identity already set (native built-in algos define this
+//      inline in useAlgos below)
+//   2. CONCEPT_IDENTITY_BY_TYPE[algo.type] (API-loaded algos: bridge, scispacy)
+//   3. For custom algos: derive from algo.canonical_url (user-entered)
+// Returns null when none of these can produce a usable concept_identity —
+// callers must skip normalization for that algo. This is the single
+// integration point for all read/write paths (getAlgoDef, normalizer load,
+// bulk processBatch, lookupCandidates).
+export const ensureConceptIdentity = (algo) => {
+  if(!algo) return null
+  if(algo.concept_identity) return algo
+  if(CONCEPT_IDENTITY_BY_TYPE[algo.type])
+    return { ...algo, concept_identity: CONCEPT_IDENTITY_BY_TYPE[algo.type] }
+  if(algo.type === 'custom' && algo.canonical_url)
+    return { ...algo, concept_identity: { reference_source: 'fixed', canonical_url: algo.canonical_url, code_field: 'id' } }
+  return null
+}
+
 export const useAlgos = (t, toggles) => {
   const algos = [
     {

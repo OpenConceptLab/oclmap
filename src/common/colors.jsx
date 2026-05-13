@@ -9,6 +9,10 @@ export const VERY_LIGHT_GRAY = '#5e5c71'
 export const RECOMMEND_COLOR = 'rgb(172,212,182)'
 export const AVAILABLE_COLOR = 'rgb(250,224,148)'
 export const UNRANKED_COLOR = 'rgb(235, 162, 150)'
+// Neutral gray for candidates that haven't been ranked yet (rerank pending).
+// Distinct from UNRANKED_COLOR (which is misnamed historically — it's the
+// pink used for the low-ranked / not-recommended bucket).
+export const PENDING_RERANK_COLOR = 'rgb(189, 189, 189)'
 export const PRIMARY_COLORS = {
   main: '#4836ff',
   light: '#4836ff',

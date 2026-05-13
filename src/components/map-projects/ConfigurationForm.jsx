@@ -18,10 +18,17 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import SaveIcon from '@mui/icons-material/Save';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 
+import Stack from '@mui/material/Stack'
+import Alert from '@mui/material/Alert'
+import Tooltip from '@mui/material/Tooltip'
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
+
 import isEmpty from 'lodash/isEmpty'
 import omit from 'lodash/omit'
+import filter from 'lodash/filter'
 
 import { toV3URL } from '../../common/utils'
+import { getProjectConfigErrors } from './algorithms'
 import NamespaceDropdown from '../common/NamespaceDropdown'
 import RepoSearchAutocomplete from '../repos/RepoSearchAutocomplete'
 import RepoVersionSearchAutocomplete from '../repos/RepoVersionSearchAutocomplete'
@@ -32,6 +39,7 @@ import { SCORES_COLOR } from './constants'
 import FilterTable from './FilterTable'
 import MultiAlgoSelector from './MultiAlgoSelector'
 import LookupConfig from './LookupConfig'
+import AdvancedSettings from './AdvancedSettings'
 import RerankerConfig from './RerankerConfig'
 import AIAssistantSelectorPanel from './AIAssistantSelectorPanel'
 
@@ -48,10 +56,24 @@ const VisuallyHiddenInput = styled('input')({
 });
 
 
-const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, name, setName, description, setDescription, repo, onRepoChange, repoVersion, setRepoVersion, versions, mappedSources, targetSourcesFromRows, algosSelected, setAlgosSelected, sx, algos, validColumns, columns, isValidColumnValue, updateColumn, configure, setConfigure, columnVisibilityModel, setColumnVisibilityModel, onSave, isSaving, candidatesScore, onScoreChange, includeDefaultFilter, setIncludeDefaultFilter, filters, setFilters, locales, isLoadingLocales, setAIAssistantColumns, AIAssistantColumns, inAIAssistantGroup, lookupConfig, setLookupConfig, encoderModel, setEncoderModel, isCoreUser, canBridge, canScispacy, promptTemplates, promptTemplate, onPromptTemplateChange, AIModels, AIModel, setAIModel }) => {
+const deriveCanonicalUrl = relativeUrl => relativeUrl ? `https://ns.openconceptlab.org${relativeUrl}` : ''
+
+const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, name, setName, description, setDescription, repo, onRepoChange, repoVersion, setRepoVersion, versions, mappedSources, targetSourcesFromRows, algosSelected, setAlgosSelected, sx, algos, validColumns, columns, isValidColumnValue, updateColumn, configure, setConfigure, columnVisibilityModel, setColumnVisibilityModel, onSave, isSaving, candidatesScore, onScoreChange, includeDefaultFilter, setIncludeDefaultFilter, filters, setFilters, locales, isLoadingLocales, setAIAssistantColumns, AIAssistantColumns, inAIAssistantGroup, lookupConfig, setLookupConfig, encoderModel, setEncoderModel, isCoreUser, canBridge, canScispacy, promptTemplates, promptTemplate, onPromptTemplateChange, AIModels, AIModel, setAIModel, namespace, setNamespace }) => {
   const { t } = useTranslation();
   const isLLMAlgoNotAllowed = !repoVersion?.match_algorithms?.includes('llm')
   const appliedLocales = filters?.locale ? filters?.locale?.split(',') : []
+  const targetCanonicalFromRepo = repo?.canonical_url
+  const targetCanonicalDerived = !targetCanonicalFromRepo && repo?.url ? deriveCanonicalUrl(repo.url) : ''
+  const effectiveTargetCanonical = targetCanonicalFromRepo || targetCanonicalDerived
+  const bridgeAlgos = filter(algosSelected || [], a => a?.type && a.type.includes('bridge'))
+  const defaultNamespace = owner || ''
+  const namespaceValue = namespace || ''
+
+  // Project-config validation. Currently flags custom algos with missing /
+  // malformed canonical_url. Returned as a structured list so the banner
+  // can name the specific algorithms.
+  const configErrors = getProjectConfigErrors(algosSelected)
+  const hasConfigErrors = configErrors.length > 0
   const getAlgos = () => {
     return algos.map(algo => {
       if(algo.type === 'ocl-semantic')
@@ -152,6 +174,79 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
       <RepoSearchAutocomplete label={t('map_project.repository')} size='small' onChange={(id, item) => onRepoChange(item)} value={repo}  sx={{marginTop: '12px'}}/>
       <RepoVersionSearchAutocomplete versions={versions} label={t('common.version')} size='small' onChange={(id, item) => setRepoVersion(item)} value={repoVersion} sx={{marginTop: '12px'}} />
       {
+        effectiveTargetCanonical &&
+          <Stack direction='row' spacing={0.75} alignItems='center' sx={{marginTop: '6px', marginLeft: '8px', minWidth: 0}}>
+            <InfoOutlinedIcon sx={{fontSize: '14px', color: 'text.secondary', flexShrink: 0}} />
+            <Typography component='span' sx={{fontSize: '12px', color: 'text.secondary', flexShrink: 0}}>
+              {t('map_project.target_canonical_url', 'Canonical:')}
+            </Typography>
+            <Tooltip title={effectiveTargetCanonical} placement='top'>
+              <Typography
+                component='code'
+                sx={{
+                  fontSize: '12px',
+                  fontFamily: 'monospace',
+                  color: 'text.primary',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  minWidth: 0
+                }}
+              >
+                {effectiveTargetCanonical}
+              </Typography>
+            </Tooltip>
+            {
+              !targetCanonicalFromRepo &&
+                <Typography component='span' sx={{fontSize: '11px', color: 'text.secondary', fontStyle: 'italic', flexShrink: 0}}>
+                  · {t('map_project.canonical_auto_derived_short', 'derived')}
+                </Typography>
+            }
+          </Stack>
+      }
+      {
+        bridgeAlgos.length > 0 &&
+          <Stack spacing={0.25} sx={{marginTop: '4px', marginLeft: '8px', minWidth: 0}}>
+            {
+              bridgeAlgos.map(b => {
+                const bridgeCanonical = b?.bridge_repo?.canonical_url || deriveCanonicalUrl(b?.target_repo_url)
+                const isDerived = !b?.bridge_repo?.canonical_url
+                const tooltipText = `${b.target_repo_url || ''} → ${bridgeCanonical || ''}`
+                return (
+                  <Stack key={b.__key || b.id} direction='row' spacing={0.75} alignItems='center' sx={{minWidth: 0}}>
+                    <InfoOutlinedIcon sx={{fontSize: '14px', color: 'text.secondary', flexShrink: 0}} />
+                    <Typography component='span' sx={{fontSize: '12px', color: 'text.secondary', flexShrink: 0}}>
+                      {t('map_project.bridge_canonical_short', 'Bridge:')}
+                    </Typography>
+                    <Tooltip title={tooltipText} placement='top'>
+                      <Typography
+                        component='code'
+                        sx={{
+                          fontSize: '12px',
+                          fontFamily: 'monospace',
+                          color: 'text.primary',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          minWidth: 0
+                        }}
+                      >
+                        {b.target_repo_url || '—'} → {bridgeCanonical}
+                      </Typography>
+                    </Tooltip>
+                    {
+                      isDerived &&
+                        <Typography component='span' sx={{fontSize: '11px', color: 'text.secondary', fontStyle: 'italic', flexShrink: 0}}>
+                          · {t('map_project.canonical_auto_derived_short', 'derived')}
+                        </Typography>
+                    }
+                  </Stack>
+                )
+              })
+            }
+          </Stack>
+      }
+      {
         isLLMAlgoNotAllowed && repoVersion?.version_url &&
           <FormHelperText sx={{marginTop: '4px', marginLeft: '8px', color: 'warning.main'}}>
             {t('map_project.semantic_search_not_configured', {owner: repo?.owner, repo: repo?.short_code || repo?.id, version: repoVersion?.id || repo?.version || repo?.id})}
@@ -211,7 +306,10 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
       }
 
       <LookupConfig value={lookupConfig} onChange={setLookupConfig}/>
-
+      {
+        setNamespace &&
+          <AdvancedSettings namespaceValue={namespaceValue} setNamespace={setNamespace} defaultNamespace={defaultNamespace} />
+      }
       {
         inAIAssistantGroup && isCoreUser && promptTemplates?.length > 0 &&
           <>
@@ -295,6 +393,29 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
             />
           </>
       }
+      {
+        hasConfigErrors &&
+          <Alert severity='error' sx={{marginTop: '16px'}}>
+            <Typography component='div' sx={{fontSize: '13px', fontWeight: 500, marginBottom: '4px'}}>
+              {t('map_project.config_errors_title', 'Project configuration is incomplete')}
+            </Typography>
+            <ul style={{margin: 0, paddingLeft: '20px', fontSize: '12px'}}>
+              {
+                configErrors.map(({algo, reason}) => (
+                  <li key={algo.__key || algo.id}>
+                    {reason === 'missing_canonical_url'
+                      ? t('map_project.config_error_missing_canonical', {
+                          name: algo.name || algo.id,
+                          defaultValue: `Custom algorithm "${algo.name || algo.id}" is missing a valid canonical URL.`
+                        })
+                      : reason
+                    }
+                  </li>
+                ))
+              }
+            </ul>
+          </Alert>
+      }
       <div className='col-xs-12 padding-0' style={{textAlign: 'right'}}>
       <Button
         variant='contained'
@@ -303,7 +424,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
         sx={{textTransform: 'none', margin: '20px 5px 5px 0px'}}
         startIcon={<SaveIcon />}
         onClick={onSave}
-        disabled={!name || !file?.name || !owner}
+        disabled={!name || !file?.name || !owner || hasConfigErrors}
         loading={isSaving}
         loadingPosition="start"
       >
