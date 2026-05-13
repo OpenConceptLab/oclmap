@@ -63,7 +63,6 @@ import isArray from 'lodash/isArray'
 import isBoolean from 'lodash/isBoolean'
 import isNumber from 'lodash/isNumber'
 import times from 'lodash/times'
-import some from 'lodash/some'
 import pick from 'lodash/pick'
 
 import { OperationsContext } from '../app/LayoutContext';

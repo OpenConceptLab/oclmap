@@ -49,7 +49,6 @@ import AIAssistantButton from './AIAssistantButton'
 import {
   buildAlgorithmRowViews,
   buildQualityRowViews,
-  candidateToRowView,
   sortRowViews,
   conceptForMapping,
   resolveAICandidateID
@@ -399,7 +398,7 @@ const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCa
   const hasAnyView = qualityRowViews.length > 0
   const isNoneLoaded = !rowState || (isEmpty(rowState.candidates) && isEmpty(rowState.algorithm_responses))
   const canFetchMore = hasAnyView
-  const algoStagesValue = values(rowStage || {}).filter((_, i, arr) => Object.keys(rowStage || {})[i] !== 'recommend')
+  const algoStagesValue = values(rowStage || {}).filter((_, i) => Object.keys(rowStage || {})[i] !== 'recommend')
   const areAlgoRun = algoStagesValue.length > 0 && algoStagesValue.every(v => v === 1)
   const { label } = getRowProgressLabel(rowStage, algosSelected);
 
