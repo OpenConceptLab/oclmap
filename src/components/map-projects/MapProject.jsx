@@ -248,6 +248,7 @@ const MapProject = () => {
   const [lookupConfig, setLookupConfig] = React.useState({})
   const [encoderModel, setEncoderModel] = React.useState(DEFAULT_ENCODER_MODEL)
   const [promptOutputLocale, setPromptOutputLocale] = React.useState(null)
+  const [useLexicalVariants, setUseLexicalVariants] = React.useState(false)
   // Project canonical-resolution context (plans/unified-mapper-model.md
   // "Project configuration: explicit canonical context"). Empty = use the
   // project owner as the default resolution namespace.
@@ -555,6 +556,7 @@ const MapProject = () => {
       setRetired(Boolean(copiedProject.include_retired || false))
       setAlgosSelected(copiedProject.algorithms || [])
       setEncoderModel(copiedProject.encoder_model || DEFAULT_ENCODER_MODEL)
+      setUseLexicalVariants(Boolean(copiedProject.use_lexical_variants))
       if(copiedProject.target_repo_url) {
         const repoParams = URIToParentParams(copiedProject.target_repo_url, true)
         fetchRepo(dropVersion(copiedProject.target_repo_url))
@@ -747,6 +749,7 @@ const MapProject = () => {
       setEncoderModel(response.data?.encoder_model || DEFAULT_ENCODER_MODEL)
       setProjectPromptTemplateKey(response.data?.prompt_template_key || '')
       setPromptOutputLocale(response.data?.prompt_output_locale || null)
+      setUseLexicalVariants(Boolean(response.data?.use_lexical_variants))
       setAnalysis(response.data?.analysis || {})
       setProject(response.data)
       setConfigure(false)
@@ -1216,6 +1219,7 @@ const MapProject = () => {
     formData.append('filters', JSON.stringify(getFilters()))
     formData.append('prompt_template_key', getProjectPromptTemplateKey())
     formData.append('prompt_output_locale', promptOutputLocale || '')
+    formData.append('use_lexical_variants', useLexicalVariants)
     const isUpdate = Boolean(project?.id)
     let service = APIService.new().overrideURL(owner).appendToUrl('map-projects/')
     if(isUpdate)
@@ -1328,7 +1332,8 @@ const MapProject = () => {
         'source': _repo.short_code || _repo.id
       },
       map_config: getMapConfigs(),
-      filter: rows.length > 1 ? getFilters() : getFacetQueryParam(isEmpty(_filters) ? appliedFacets[rows[0].__index] : _filters)
+      filter: rows.length > 1 ? getFilters() : getFacetQueryParam(isEmpty(_filters) ? appliedFacets[rows[0].__index] : _filters),
+      variants: useLexicalVariants
     }
   }
 
@@ -3948,6 +3953,8 @@ const MapProject = () => {
       setPromptOutputLocale={setPromptOutputLocale}
       namespace={namespace}
       setNamespace={setNamespace}
+      useLexicalVariants={useLexicalVariants}
+      setUseLexicalVariants={setUseLexicalVariants}
     />
   )
 

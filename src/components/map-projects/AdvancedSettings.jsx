@@ -3,11 +3,13 @@ import { useTranslation } from 'react-i18next'
 import TextField from '@mui/material/TextField'
 import Collapse from '@mui/material/Collapse'
 import Button from '@mui/material/Button'
+import FormControlLabel from '@mui/material/FormControlLabel'
+import Checkbox from '@mui/material/Checkbox'
 import UpIcon from '@mui/icons-material/ArrowDropUp';
 import DownIcon from '@mui/icons-material/ArrowDropDown';
 
 
-const AdvancedSettings = ({ namespaceValue, setNamespace, defaultNamespace }) => {
+const AdvancedSettings = ({ namespaceValue, setNamespace, defaultNamespace, isCoreUser, useLexicalVariants, setUseLexicalVariants }) => {
   const { t } = useTranslation()
   const [open, setOpen] = React.useState(false)
 
@@ -31,6 +33,20 @@ const AdvancedSettings = ({ namespaceValue, setNamespace, defaultNamespace }) =>
               defaultValue: 'Namespace passed to $resolveReference. When blank, defaults to {{owner}}. Drives which URL Registry entries apply when resolving canonical URLs.'
             })}
           />
+          {
+            isCoreUser &&
+              <FormControlLabel
+                sx={{marginTop: '8px'}}
+                control={
+                  <Checkbox
+                    size='small'
+                    checked={Boolean(useLexicalVariants)}
+                    onChange={event => setUseLexicalVariants(event.target.checked)}
+                  />
+                }
+                label={t('map_project.use_lexical_variants', 'Use Lexical Variants')}
+              />
+          }
         </div>
       </Collapse>
     </div>
