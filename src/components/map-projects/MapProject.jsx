@@ -2059,8 +2059,8 @@ const MapProject = () => {
   const _onMap = (concept, unmap=false, mapType='SAME-AS') => {
     setMapSelected(prev => ({...prev, [rowIndex]: unmap ? null : {...concept, repo: {...repo, version: repoVersion?.id || repo.version, version_url: repoVersion?.version_url || repo.version_url}}}))
     setDecisions(prev => ({...prev, [rowIndex]: unmap ? null : 'map'}))
-    if(concept?.url)
-      log({action: unmap ? 'unmapped' : 'mapped', extras: {object_url: concept?.url, map_type: mapType, name: getConceptLabel(concept), algorithm: concept?.search_meta?.algorithm}})
+    if(concept?.id)
+      log({action: unmap ? 'unmapped' : 'mapped', extras: {object_url: concept?.url, id: concept?.id, map_type: mapType, name: getConceptLabel(concept), algorithm: concept?.search_meta?.algorithm}})
 
   }
 
