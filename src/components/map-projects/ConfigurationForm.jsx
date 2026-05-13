@@ -315,7 +315,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
           <Accordion disableGutters elevation={0} sx={{marginTop: '12px', backgroundColor: 'transparent', '&:before': {display: 'none'}}}>
             <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{padding: 0, minHeight: 'auto', '.MuiAccordionSummary-content': {margin: '4px 0'}}}>
               <Typography component='span' sx={{fontSize: '13px', color: 'text.secondary'}}>
-                {t('map_project.advanced_settings', 'Advanced settings')}
+                {t('map_project.advanced_settings')}
               </Typography>
             </AccordionSummary>
             <AccordionDetails sx={{padding: 0}}>
