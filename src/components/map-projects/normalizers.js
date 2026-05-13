@@ -49,13 +49,23 @@ export const createAlgorithmResponse = (rawResponse, algorithmId, options = {}) 
 
 /**
  * Decide a concept's lookup_status based on which fields the algorithm response
- * populated.
+ * populated. 'full' means the response carries enough data for the UI:
+ *   - `property` field present (the verbose-payload marker — OCL's
+ *      ConceptDetailSerializer always emits it, even as an empty array), OR
+ *   - a populated `names` array (the list-serializer signal — names are
+ *      enough to render the row's display).
+ * Many concepts (LOINC especially) have no separate `descriptions`, so
+ * requiring descriptions for 'full' stranded verbose-loaded concepts at
+ * 'partial' and made the UI's summary chips disappear. We don't check
+ * `extras` because scispacy synthesizes that field with internal metadata
+ * (LOINC_NUM, composite_score) — not the OCL schema property dict.
  */
 const inferLookupStatus = (result) => {
   if (!result) return 'pending'
   const hasNames = Array.isArray(result.names) && result.names.length > 0
-  const hasDescriptions = Array.isArray(result.descriptions) && result.descriptions.length > 0
-  if (hasNames && hasDescriptions) return 'full'
+  const hasVerbosePayload = Array.isArray(result.property)
+    || (Array.isArray(result.properties) && result.properties.length > 0)
+  if (result.id && result.display_name && (hasVerbosePayload || hasNames)) return 'full'
   if (result.id && result.display_name) return 'partial'
   return 'pending'
 }
@@ -120,6 +130,14 @@ const toConceptDefinition = (result, reference, identityConfig, { algorithmId } 
     datatype: result?.datatype,
     retired: result?.retired,
     properties: result?.properties,
+    // `property` (singular) is the schema-specific property dict OCL returns
+    // for sources like LOINC (COMPONENT/PROPERTY/TIME_ASPCT/etc.) sourced from
+    // ConceptDetailSerializer.property = JSONField(source='properties').
+    // ConceptSummaryProperties.jsx reads this field directly. Without it the
+    // verbose payload's schema chips never reach the UI even when $match
+    // returns them.
+    property: result?.property,
+    extras: result?.extras,
     lookup_status: inferLookupStatus(result),
     lookup_source_type: 'algorithm',
     lookup_source: algorithmId
@@ -163,15 +181,28 @@ const cascadeTargetToConceptDefinition = (mapping, cascadeIdentity, projectConte
     datatype: undefined,
     retired: undefined,
     properties: undefined,
+    property: undefined,
+    extras: undefined,
     lookup_status: 'pending',
     lookup_source_type: undefined,
     lookup_source: undefined
   }
 }
 
-const newConceptRow = (conceptKey) => ({
+// rerank_score on ConceptRow comes from search_normalized_score ONLY when
+// the caller signals it came from a reranker-true single-algo $match path
+// — that's the path where the server-side scores ARE the unified rerank.
+// In all other paths (multi-algo, bridge, scispacy, custom) the response's
+// search_normalized_score is just the per-algo native score (e.g. FAISS
+// similarity × 100), which the OCL server emits unconditionally. Treating
+// that as a unified rerank score yields chip values like "100.00%" for
+// every top semantic candidate until the debounced $rerank/ pipeline runs
+// and overwrites it — misleading during the interim window.
+const newConceptRow = (conceptKey, result, trustServerRerank = false) => ({
   concept_key: conceptKey,
-  rerank_score: undefined
+  rerank_score: trustServerRerank && typeof result?.search_meta?.search_normalized_score === 'number'
+    ? result.search_meta.search_normalized_score
+    : undefined
 })
 
 const isBridgeResult = (identityConfig) =>
@@ -192,7 +223,7 @@ export const normalizeAlgoResult = (result, ctx = {}) => {
   const empty = { candidates: [], concept_definitions: [], concept_rows: [] }
   if (!result) return empty
 
-  const { algorithmId, algorithmConfig, algorithmResponseId, projectContext } = ctx
+  const { algorithmId, algorithmConfig, algorithmResponseId, projectContext, trustServerRerank } = ctx
   const identityConfig = algorithmConfig?.concept_identity
   if (!identityConfig) return empty
 
@@ -209,7 +240,7 @@ export const normalizeAlgoResult = (result, ctx = {}) => {
 
   const primaryDef = toConceptDefinition(result, primaryReference, identityConfig, { algorithmId })
   conceptDefinitions.push(primaryDef)
-  conceptRows.push(newConceptRow(primaryDef.key))
+  conceptRows.push(newConceptRow(primaryDef.key, result, trustServerRerank))
 
   const primaryCandidate = {
     id: newId(),
@@ -235,6 +266,9 @@ export const normalizeAlgoResult = (result, ctx = {}) => {
       // Avoid duplicate ConceptDefinition entries within the same result.
       if (!conceptDefinitions.some(cd => cd.key === targetDef.key)) {
         conceptDefinitions.push(targetDef)
+        // Cascade target's row carries no rerank_score yet — the bridge
+        // response doesn't score targets, so the debounced rerank pass
+        // will fill it once the row is eligible.
         conceptRows.push(newConceptRow(targetDef.key))
       }
 
@@ -283,7 +317,8 @@ export const normalizeAlgorithmInvocation = (rawPayload, ctx = {}) => {
     rowIndex,
     status = 'success',
     error,
-    rawResponse
+    rawResponse,
+    trustServerRerank
   } = ctx
 
   const algorithmResponse = createAlgorithmResponse(
@@ -303,7 +338,8 @@ export const normalizeAlgorithmInvocation = (rawPayload, ctx = {}) => {
       algorithmId,
       algorithmConfig,
       algorithmResponseId: algorithmResponse.id,
-      projectContext
+      projectContext,
+      trustServerRerank
     })
     allCandidates.push(...candidates)
     concept_definitions.forEach(cd => {
@@ -330,3 +366,99 @@ export const normalizeAlgorithmInvocation = (rawPayload, ctx = {}) => {
 
 const LOOKUP_RANK = { pending: 0, failed: 0, partial: 1, full: 2 }
 export const lookupStatusRank = (status) => LOOKUP_RANK[status] ?? 0
+
+/**
+ * Backfill rowMatchState + ConceptDefinitions from the legacy
+ * `allCandidates` shape (a saved-project artifact: `{ [algoId]: [{row,
+ * results}, ...] }`). Called on project load so that v1-saved projects
+ * render correctly under UNIFIED_MODEL_ENABLED=true. A precursor to
+ * PR3's `normalizeLegacy.js`.
+ *
+ * Pure function: no React, no APIService, no mutation of inputs.
+ *
+ * @param {Object} allCandidates       { [algoId]: [{row, results}, ...] }
+ * @param {Object} projectContext      {namespace, target_repo, bridge_repo?}
+ * @param {Array}  algorithms          algo defs (may carry concept_identity)
+ * @param {Object} [conceptIdentityByType] optional fallback map for algos
+ *                                     missing concept_identity (e.g. API-
+ *                                     loaded bridge/scispacy variants).
+ * @returns {{
+ *   rowMatchState: Object,            keyed by row __index
+ *   conceptDefinitionsByKey: Map<string, ConceptDefinition>
+ * }}
+ */
+export const normalizeLegacyAllCandidates = (
+  allCandidates,
+  projectContext,
+  algorithms,
+  conceptIdentityByType = {}
+) => {
+  const rowMatchState = {}
+  const conceptDefinitionsByKey = new Map()
+  if(!allCandidates || !projectContext) return { rowMatchState, conceptDefinitionsByKey }
+
+  const algoById = new Map((algorithms || []).map(a => [a.id, a]))
+
+  Object.entries(allCandidates).forEach(([algoId, rowEntries]) => {
+    const algoDef = algoById.get(algoId)
+    if(!algoDef) return
+    const algoConfig = algoDef.concept_identity
+      ? algoDef
+      : (conceptIdentityByType[algoDef.type]
+        ? { ...algoDef, concept_identity: conceptIdentityByType[algoDef.type] }
+        : null)
+    if(!algoConfig) return
+
+    ;(rowEntries || []).forEach(rowEntry => {
+      const idx = rowEntry?.row?.__index
+      if(idx === undefined || idx === null) return
+
+      const normalized = normalizeAlgorithmInvocation(
+        { row: rowEntry.row, results: rowEntry.results || [] },
+        {
+          algorithmId: algoId,
+          algorithmConfig: algoConfig,
+          projectContext,
+          rowIndex: idx,
+          // Saved-project legacy data: search_normalized_score was persisted
+          // from a prior session's $rerank/ output, so it IS the canonical
+          // rerank score. Honor it (no client-side rerank will fire for
+          // already-loaded rows).
+          trustServerRerank: true
+        }
+      )
+
+      const prevRow = rowMatchState[idx] || {
+        algorithm_responses: {},
+        candidates: {},
+        concept_rows: {}
+      }
+      const nextRow = {
+        algorithm_responses: {
+          ...prevRow.algorithm_responses,
+          [normalized.algorithm_response.id]: normalized.algorithm_response
+        },
+        candidates: { ...prevRow.candidates },
+        concept_rows: { ...prevRow.concept_rows }
+      }
+      normalized.candidates.forEach(c => { nextRow.candidates[c.id] = c })
+      normalized.concept_rows.forEach(cr => {
+        const existing = nextRow.concept_rows[cr.concept_key]
+        // Existing entry keeps its rerank_score (richer wins); new arrivals
+        // are taken only when no entry exists yet.
+        if(!existing) nextRow.concept_rows[cr.concept_key] = cr
+        else if(existing.rerank_score === undefined && cr.rerank_score !== undefined)
+          nextRow.concept_rows[cr.concept_key] = cr
+      })
+      rowMatchState[idx] = nextRow
+
+      normalized.concept_definitions.forEach(def => {
+        const existing = conceptDefinitionsByKey.get(def.key)
+        if(!existing || lookupStatusRank(def.lookup_status) > lookupStatusRank(existing.lookup_status))
+          conceptDefinitionsByKey.set(def.key, def)
+      })
+    })
+  })
+
+  return { rowMatchState, conceptDefinitionsByKey }
+}

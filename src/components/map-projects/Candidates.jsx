@@ -26,20 +26,13 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import SortIcon from '@mui/icons-material/Sort';
 import GroupIcon from '@mui/icons-material/Layers';
 
-import find from 'lodash/find'
 import isEmpty from 'lodash/isEmpty'
 import flatten from 'lodash/flatten'
 import values from 'lodash/values'
-import forEach from 'lodash/forEach'
-import uniq from 'lodash/uniq'
 import without from 'lodash/without'
 import orderBy from 'lodash/orderBy'
 import map from 'lodash/map'
-import compact from 'lodash/compact'
-import every from 'lodash/every'
 import times from 'lodash/times'
-import filter from 'lodash/filter'
-import omit from 'lodash/omit'
 
 import { highlightTexts } from '../../common/utils';
 import { PRIMARY_COLORS } from '../../common/colors'
@@ -53,6 +46,13 @@ import ConceptIcon from '../concepts/ConceptIcon'
 import MapButton from './MapButton'
 import AICandidatesAnalysis from './AICandidatesAnalysis'
 import AIAssistantButton from './AIAssistantButton'
+import {
+  buildAlgorithmRowViews,
+  buildQualityRowViews,
+  sortRowViews,
+  conceptForMapping,
+  resolveAICandidateID
+} from './viewBuilders.js'
 
 const getRowProgressLabel = (stageMap, algos) => {
   if(stageMap === undefined)
@@ -108,10 +108,10 @@ const Sort = ({ selected, onSort }) => {
         onClose={() => setAnchorEl(false)}
       sx={{'.MuiPaper-root': {backgroundColor: 'surface.n94'}}}
       >
-        <ListItemButton id='sort_by_raw_score' sx={{padding: '4px 10px', '&:hover': {color: 'inherit'}, '&:focus': {outline: 'none', textDecoration: 'none', color: 'inherit'}}} onClick={() => onClick('search_meta.search_normalized_score')} selected={selected === 'search_meta.search_normalized_score'}>
+        <ListItemButton id='sort_by_unified' sx={{padding: '4px 10px', '&:hover': {color: 'inherit'}, '&:focus': {outline: 'none', textDecoration: 'none', color: 'inherit'}}} onClick={() => onClick('rerank_score')} selected={selected === 'rerank_score'}>
           <ListItemText primary={t('map_project.sort_by_unified_score')} />
         </ListItemButton>
-        <ListItemButton id='sort_by_raw_score' sx={{padding: '4px 10px', '&:hover': {color: 'inherit'}, '&:focus': {outline: 'none', textDecoration: 'none', color: 'inherit'}}} onClick={() => onClick('search_meta.search_score')} selected={selected === 'search_meta.search_score'}>
+        <ListItemButton id='sort_by_raw_score' sx={{padding: '4px 10px', '&:hover': {color: 'inherit'}, '&:focus': {outline: 'none', textDecoration: 'none', color: 'inherit'}}} onClick={() => onClick('algo_score')} selected={selected === 'algo_score'}>
           <ListItemText primary={t('map_project.sort_by_raw_algo_score')} />
         </ListItemButton>
         <Divider />
@@ -183,8 +183,39 @@ const SubHeader = ({count, onClick, isCollapsed, header, indicatorColor, isFirst
 }
 
 
-const CandidateList = ({candidates, header, rowIndex, orderBy, order, setShowItem, showItem, setShowHighlights, isSelectedForMap, onMap, onFetchMore, bgColor, bucketId, display, onDisplayChange, noToolbar, toolbarControl, repoVersion, alignToolbarLeft, rightControl, analysis, showAnalysis, openAnalysis, onCloseAnalysis, AIRecommendedCandidateId, locales, scispacy, showAlgo, collapsed, onCollapse, candidatesScore, algoScoreFirst, conceptCache, byAlgorithm, isFirst, isCoreUser}) => {
-  const results = {total: onFetchMore ? candidates?.length : 1, results: candidates || []}
+const CandidateList = ({rowViews, header, rowIndex, sortBy, order, setShowItem, showItem, setShowHighlights, isSelectedForMap, onMap, onFetchMore, bgColor, bucketId, display, onDisplayChange, noToolbar, toolbarControl, repoVersion, alignToolbarLeft, rightControl, analysis, showAnalysis, openAnalysis, onCloseAnalysis, AIRecommendedCandidateId, locales, scispacy, showAlgo, collapsed, onCollapse, candidatesScore, algoScoreFirst, byAlgorithm, isFirst, isCoreUser, targetCanonical}) => {
+  // Decorate rowViews so they work for BOTH renderers:
+  //   - Table view: SearchResults/TableResults reads legacy concept fields
+  //     (id, url, names, descriptions, source, search_meta, ...) via the
+  //     ALL_COLUMNS['concepts'] paths. Spread conceptForMapping first so
+  //     those fields exist at top level.
+  //   - Card view: the renderer reads candidate/conceptDefinition/conceptRow.
+  //     Spread the rowView after legacy so the tuple fields survive.
+  //   - Click lookup: SearchResults.handleRowClick uses
+  //     `row.version_url || row.url || row.id`. Set those explicitly at the
+  //     end so neither earlier spread can clobber them.
+  const rowsForTable = (rowViews || []).map(view => {
+    const legacy = conceptForMapping(view) || {}
+    const def = view?.conceptDefinition
+    const idForLookup = legacy.id || def?.ocl_url || def?.reference?.code
+    return {
+      ...legacy,
+      ...view,
+      id: idForLookup,
+      url: legacy.url || def?.ocl_url,
+      version_url: legacy.url || def?.ocl_url
+    }
+  })
+  // Helper: a rowView is mappable only when its concept belongs to the
+  // project's target repo (cascade targets in bridge flows DO; bridge
+  // intermediaries don't). targetCanonical comes from buildProjectContext
+  // in MapProject — the same canonical the normalizer used to stamp the
+  // ConceptDefinition.reference.url, so the comparison is exact.
+  const isTargetRepoView = (view) => {
+    if(!targetCanonical) return true
+    return view?.conceptDefinition?.reference?.url === targetCanonical
+  }
+  const results = {total: onFetchMore ? rowsForTable.length : 1, results: rowsForTable}
   const isCollapsed = collapsed.includes(bucketId)
   const onCollapseToggle = () => {
     onCollapse(isCollapsed ? without(collapsed, bucketId): [...collapsed, bucketId])
@@ -197,13 +228,18 @@ const CandidateList = ({candidates, header, rowIndex, orderBy, order, setShowIte
         id: 'mappings',
         labelKey: 'common.action',
         align: 'center',
-        renderer: item => {
+        renderer: rowView => {
+          // Map action only renders for target-repo concepts. Bridge
+          // intermediaries (CIEL when target is ICD/LOINC) are reference
+          // metadata about the cascade — they're not mappable themselves.
+          if(!isTargetRepoView(rowView)) return null
+          const conceptToMap = conceptForMapping(rowView)
           return (
             <MapButton
               simple
-              selected={item?.search_meta?.map_type}
-              onClick={(event, applied, mapType) => onMap(event, item, !applied, mapType)}
-              isMapped={isSelectedForMap(item)}
+              selected={rowView?.candidate?.map_type}
+              onClick={(event, applied, mapType) => onMap(event, conceptToMap, !applied, mapType)}
+              isMapped={isSelectedForMap(conceptToMap)}
               sx={{marginLeft: '8px'}}
             />
           )
@@ -216,13 +252,27 @@ const CandidateList = ({candidates, header, rowIndex, orderBy, order, setShowIte
           sortable: false,
           id: 'mappings',
           labelKey: 'mapping.same_as_mappings',
-          renderer: item => <Mappings item={item} />,
+          renderer: rowView => {
+            // Bridge mappings panel: list bridge_children as cascade-style
+            // mappings. For non-bridge rows the panel is empty.
+            const bridgeChildren = rowView?.bridgeChildren || []
+            if(!bridgeChildren.length) return null
+            const synthetic = {
+              mappings: bridgeChildren.map(child => ({
+                map_type: child.candidate?.map_type,
+                cascade_target_source_name: child.conceptDefinition?.source,
+                cascade_target_concept_name: child.conceptDefinition?.display_name,
+                to_concept_code: child.conceptDefinition?.id || child.conceptDefinition?.reference?.code
+              }))
+            }
+            return <Mappings item={synthetic} />
+          },
         },
         ...cols
       ]
     return cols
   }
-  const count = candidates.length
+  const count = rowViews.length
   const showHeader = byAlgorithm || count > 0
   return (
     <ul>
@@ -260,7 +310,26 @@ const CandidateList = ({candidates, header, rowIndex, orderBy, order, setShowIte
             )
         }
         title=' '
-        renderer={props => <Concept {...props} _id={`${bucketId}-${props?.concept?.uuid || props?.concept?.id}`} key={`${bucketId}-${props?.concept?.uuid || props?.concept?.id}-${Math.random(100).toString()}`} onMap={onMap} isSelectedForMap={isSelectedForMap} setShowHighlights={setShowHighlights} repoVersion={repoVersion} isAIRecommended={AIRecommendedCandidateId === props?.concept?.id} AIRecommendedCandidateId={AIRecommendedCandidateId} locales={locales} notClickable={Boolean(scispacy)} showAlgo={showAlgo} candidatesScore={candidatesScore} algoScoreFirst={algoScoreFirst} conceptCache={conceptCache} />}
+        renderer={props => {
+          const rowView = props?.concept
+          const key = `${bucketId}-${rowView?.candidate?.id || rowView?.conceptDefinition?.key}-${Math.random(100).toString()}`
+          return <Concept
+            {...props}
+            _id={`${bucketId}-${rowView?.candidate?.id || rowView?.conceptDefinition?.key}`}
+            key={key}
+            onMap={onMap}
+            isSelectedForMap={isSelectedForMap}
+            setShowHighlights={setShowHighlights}
+            repoVersion={repoVersion}
+            AIRecommendedCandidateId={AIRecommendedCandidateId}
+            locales={locales}
+            notClickable={Boolean(scispacy)}
+            showAlgo={showAlgo}
+            candidatesScore={candidatesScore}
+            algoScoreFirst={algoScoreFirst}
+            targetCanonical={targetCanonical}
+          />
+        }}
         display={display}
         onDisplayChange={onDisplayChange}
         nested
@@ -273,13 +342,13 @@ const CandidateList = ({candidates, header, rowIndex, orderBy, order, setShowIte
         toolbarControl={toolbarControl}
         alignToolbarLeft={alignToolbarLeft}
         rightControl={rightControl}
-        orderBy={orderBy}
+        orderBy={sortBy}
         order={order}
         resultContainerStyle={{height: 'auto', '.MuiTable-root': {tableLayout: 'fixed'}}}
-        onShowItemSelect={item => {
-          setShowItem(item)
+        onShowItemSelect={rowView => {
+          setShowItem(conceptForMapping(rowView))
           setTimeout(() => {
-            highlightTexts([item], null, false)
+            highlightTexts([rowView?.conceptDefinition], null, false)
           }, 100)
         }}
         selectedToShow={showItem}
@@ -292,9 +361,16 @@ const CandidateList = ({candidates, header, rowIndex, orderBy, order, setShowIte
   )
 }
 
-const Candidates = ({rowIndex, alert, setAlert, candidates, setShowItem, showItem, setShowHighlights, isSelectedForMap, onMap, onFetchMore, isLoading, candidatesScore, repoVersion, analysis, onFetchRecommendation, appliedFacets, setAppliedFacets, filters, facets, columns, defaultFilters, locales, models, selectedModel, onModelChange, promptTemplates, promptTemplate, onPromptTemplateChange, onRefreshClick, rowStage, inAIAssistantGroup, algosSelected, conceptCache, isCoreUser}) => {
+// Candidates reads exclusively from the unified-model state:
+//   rowState     — RowState for `rowIndex` (algorithm_responses, candidates,
+//                  concept_rows). Provided by MapProject via
+//                  rowMatchStateRef.current[rowIndex].
+//   conceptCache — project-wide ConceptDefinition store, keyed by concept_key.
+//   algosSelected — algorithm definitions (for headers/grouping).
+// (plans/unified-mapper-model.md "How the views map onto this model".)
+const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCanonical, setShowItem, showItem, setShowHighlights, isSelectedForMap, onMap, onFetchMore, isLoading, candidatesScore, repoVersion, analysis, onFetchRecommendation, appliedFacets, setAppliedFacets, filters, facets, columns, defaultFilters, locales, models, selectedModel, onModelChange, promptTemplates, promptTemplate, onPromptTemplateChange, onRefreshClick, rowStage, inAIAssistantGroup, algosSelected, isCoreUser}) => {
   const { t } = useTranslation();
-  const [sortBy, setSortBy] = React.useState('search_meta.search_normalized_score')
+  const [sortBy, setSortBy] = React.useState('rerank_score')
   const [groupBy, setGroupBy] = React.useState('quality')
   const [collapsed, setCollapsed] = React.useState([`${rowIndex}-low-ranked`])
   const [openFilters, setOpenFilters] = React.useState(false)
@@ -302,25 +378,44 @@ const Candidates = ({rowIndex, alert, setAlert, candidates, setShowItem, showIte
   const [openAIAnalysis, setOpenAIAnalysis] = React.useState(undefined)
   const recommendedScore = candidatesScore?.recommended
   const availableScore = candidatesScore?.available
-  const rawResults = flatten(map(candidates, _candidates => find(_candidates, c => c.row?.__index === rowIndex)?.results))
-  let allCandidates = compact(rawResults)
-  const isNoneLoaded = every(rawResults, r => r === null)
-  const canFetchMore = allCandidates?.length > 0
-  let AIRecommendedCandidateId = analysis?.output?.primary_candidate?.concept_id || analysis?.primary_candidate?.concept_id
-  const algoStagesValue = values(omit(rowStage, 'recommend'))
-  const areAlgoRun = uniq(algoStagesValue).length === 1 && algoStagesValue[0] === 1
+  // Resolve the AI-recommended candidate against conceptCache: prefer the
+  // v2 concept_key passthrough, then canonical_reference.code (PR2a shim),
+  // then the legacy concept_id/id. The resolved code is matched against
+  // ConceptDefinition.reference.code in Concept.jsx for highlighting.
+  const primary = analysis?.output?.primary_candidate || analysis?.primary_candidate
+  const AIRecommendedCandidateId = resolveAICandidateID(primary, conceptCache)
+
+  // Quality (score-grouped) view shows ONLY target-repo concepts. Bridge
+  // intermediaries live in algorithm view as metadata-about-the-target;
+  // surfacing them in Quality view double-counts and confuses the bucketing.
+  // Algorithm view (buildAlgorithmRowViews) keeps the full mix for
+  // by-algorithm browsing.
+  const qualityRowViews = React.useMemo(() => {
+    const views = buildQualityRowViews(rowState, conceptCache)
+    if(!targetCanonical) return views
+    return views.filter(v => v.conceptDefinition?.reference?.url === targetCanonical)
+  }, [rowState, conceptCache, targetCanonical])
+  const hasAnyView = qualityRowViews.length > 0
+  const isNoneLoaded = !rowState || (isEmpty(rowState.candidates) && isEmpty(rowState.algorithm_responses))
+  const canFetchMore = hasAnyView
+  const algoStagesValue = values(rowStage || {}).filter((_, i) => Object.keys(rowStage || {})[i] !== 'recommend')
+  const areAlgoRun = algoStagesValue.length > 0 && algoStagesValue.every(v => v === 1)
   const { label } = getRowProgressLabel(rowStage, algosSelected);
 
-  const byScore = sortBy.includes('score')
-  const noCandidatesFound = !isLoading && !isNoneLoaded && allCandidates.length === 0 && !label
-  const algoScoreFirst = sortBy === 'search_meta.search_score'
-  let props = {
+  const byAlgoScore = sortBy === 'algo_score'
+  const byRerankScore = sortBy === 'rerank_score'
+  const byScore = byAlgoScore || byRerankScore
+  const noCandidatesFound = !isLoading && !isNoneLoaded && !hasAnyView && !label
+  const algoScoreFirst = byAlgoScore
+  const order = byScore ? 'desc' : 'asc'
+
+  const baseProps = {
     rowIndex: rowIndex,
     onMap: onMap,
     isSelectedForMap: isSelectedForMap,
     setShowHighlights: setShowHighlights,
-    orderBy: sortBy,
-    order: !byScore ? 'asc' : 'desc',
+    sortBy: sortBy,
+    order: order,
     setShowItem: setShowItem,
     showItem: showItem,
     isLoading: isLoading,
@@ -330,19 +425,21 @@ const Candidates = ({rowIndex, alert, setAlert, candidates, setShowItem, showIte
     locales: locales,
     candidatesScore: candidatesScore,
     algoScoreFirst: algoScoreFirst,
-    conceptCache: conceptCache,
-    isCoreUser: isCoreUser
+    isCoreUser: isCoreUser,
+    targetCanonical: targetCanonical
   }
 
   const onSort = option => {
-    if(option === sortBy || option === 'search_meta.search_normalized_score') {
-      setSortBy('search_meta.search_normalized_score')
-    } else if(option === 'search_meta.search_score') {
-      setSortBy(option)
+    // Plain "click to select" — no implicit fallbacks. The previous
+    // `option === sortBy` branch silently flipped any same-option click
+    // back to 'rerank_score', so re-clicking Raw in algo view kicked
+    // the user into Unified mode. Picking Raw still implies the algo
+    // view (raw scores aren't comparable across algos in the Quality
+    // grouping), so that side-effect stays.
+    if(!option) return
+    setSortBy(option)
+    if(option === 'algo_score' && groupBy !== 'algorithm')
       setGroupBy('algorithm')
-    } else {
-      setSortBy(option)
-    }
   }
 
   const onRecommend = () => {
@@ -353,67 +450,62 @@ const Candidates = ({rowIndex, alert, setAlert, candidates, setShowItem, showIte
   const onGroup = option => {
     setGroupBy(option)
     if(option === 'algorithm')
-      setSortBy('search_meta.search_score')
+      setSortBy('algo_score')
     if(!option || option === 'quality')
-      setSortBy('search_meta.search_normalized_score')
+      setSortBy('rerank_score')
   }
+
   const getCandidates = () => {
-    const order = byScore ? 'desc' : 'asc'
     if(groupBy === 'algorithm') {
-      let byAlgoCandidates = []
       const sortedAlgos = orderBy(
         algosSelected.map(algo => {
-          const results = flatten(
-            map(
-              filter(candidates[algo.id] || [], c => c?.row?.__index === rowIndex),
-              'results'
-            )
-          ) || [];
-
-          return {
-            algo,
-            results,
-            hasCandidates: results.length > 0,
-          };
+          const views = buildAlgorithmRowViews(rowState, conceptCache, algo.id)
+          return { algo, views, hasCandidates: views.length > 0 }
         }),
         ['hasCandidates', 'algo.order'],
         ['desc', 'asc']
-      );
-      forEach(sortedAlgos, ({ algo, results }) => {
-        byAlgoCandidates.push({
+      )
+      return {
+        byAlgoCandidates: sortedAlgos.map(({algo, views}) => ({
           algo,
-          candidates: orderBy(results, sortBy, order),
-        });
-      });
-
-      return {
-        byAlgoCandidates
-      }
-    } else {
-      let recommended = []
-      let available = []
-      let lowRanked = []
-      forEach(orderBy(allCandidates, sortBy, order), concept => {
-        let score = concept?.search_meta?.search_normalized_score || 0
-        if(byScore) {
-          if (score >= recommendedScore)
-            recommended.push(concept)
-          else if (score >= availableScore)
-            available.push(concept)
-          else
-            lowRanked.push(concept)
-        } else {
-          available.push(concept)
-        }
-      })
-      return {
-        recommended, available, lowRanked
+          // Sort the top-level (bridge intermediaries and standard candidates)
+          // and, for each bridge, sort its nested cascade targets by the same
+          // key/order so the children's order tracks the parent rule. Bridge
+          // children don't have their own raw score; sorting by algo_score
+          // leaves them in insertion order via sortRowViews' -1 sentinel.
+          candidates: sortRowViews(views, sortBy, order).map(view => (
+            view.type === 'bridge' && view.bridgeChildren?.length
+              ? { ...view, bridgeChildren: sortRowViews(view.bridgeChildren, sortBy, order) }
+              : view
+          ))
+        }))
       }
     }
+    let recommended = []
+    let available = []
+    let lowRanked = []
+    let pendingRerank = []
+    sortRowViews(qualityRowViews, sortBy, order).forEach(view => {
+      const score = view.conceptRow?.rerank_score
+      if(byScore) {
+        // Bucket on score presence first: unscored rows belong in their
+        // own "pending rerank" group — not in low_ranked. Falling them
+        // into low_ranked (the prior `score || 0` behavior) mis-implied
+        // they were poor matches; they're simply not ranked yet. Rerank
+        // landing will re-bucket them naturally on the next render.
+        if(typeof score !== 'number') pendingRerank.push(view)
+        else if(score >= recommendedScore) recommended.push(view)
+        else if(score >= availableScore) available.push(view)
+        else lowRanked.push(view)
+      } else {
+        available.push(view)
+      }
+    })
+    return { recommended, available, lowRanked, pendingRerank }
   }
 
-  const { byAlgoCandidates } = getCandidates()
-  const { recommended, available, lowRanked } = getCandidates()
+  const { byAlgoCandidates, recommended, available, lowRanked, pendingRerank } = getCandidates()
+
   const getRightControls = () => {
       return (
         <span style={{display: 'flex', alignItems: 'center'}}>
@@ -422,15 +514,22 @@ const Candidates = ({rowIndex, alert, setAlert, candidates, setShowItem, showIte
               <Chip icon={<CircularProgress sx={{width: '14px !important', height: '14px !important', marginLeft: '6px !important', marginRight: '0px !important'}} />} variant='outlined' color='warning' size='small' label={label} sx={{margin: '0 8px'}} />
           }
           {
+            // Refresh stays visible even when there are zero candidates so
+            // the user can retry an algorithm that errored out (e.g. scispacy
+            // returns 503 during its 2-5 min cold-start; previously the
+            // toolbar disappeared and the row had no recovery path).
+            // Group/Sort only render when there are candidates to organize.
+          }
+          <Tooltip title={t('map_project.refresh_candidates_tooltip')}>
+            <span>
+              <IconButton color='secondary' onClick={onRefreshClick} disabled={!areAlgoRun} size='small' sx={{margin: '0 4px'}}>
+                <RefreshIcon />
+              </IconButton>
+            </span>
+          </Tooltip>
+          {
             !noCandidatesFound &&
               <>
-                <Tooltip title={t('map_project.refresh_candidates_tooltip')}>
-                  <span>
-                    <IconButton color='secondary' onClick={onRefreshClick} disabled={!areAlgoRun} size='small' sx={{margin: '0 4px'}}>
-                      <RefreshIcon />
-                    </IconButton>
-                  </span>
-                </Tooltip>
                 <Group onGroup={onGroup} selected={groupBy} />
                 <Sort onSort={onSort} selected={sortBy} />
               </>
@@ -520,8 +619,8 @@ const Candidates = ({rowIndex, alert, setAlert, candidates, setShowItem, showIte
               <>
                 <li>
               <CandidateList
-                {...props}
-                candidates={recommended}
+                {...baseProps}
+                rowViews={recommended}
                 header={t('map_project.recommended_candidates')}
                 onFetchMore={onFetchMore}
                 bgColor={SCORES_COLOR.recommended}
@@ -553,8 +652,8 @@ const Candidates = ({rowIndex, alert, setAlert, candidates, setShowItem, showIte
               (isLoading && isNoneLoaded) ?
                 <Skeleton height={60} /> :
               <CandidateList
-                {...props}
-                candidates={available}
+                {...baseProps}
+                rowViews={available}
                 header={byScore ? t('map_project.available_candidates') : t('map_project.all_candidates')}
                 onFetchMore={onFetchMore}
                 bgColor={byScore ? SCORES_COLOR.available : undefined}
@@ -573,8 +672,8 @@ const Candidates = ({rowIndex, alert, setAlert, candidates, setShowItem, showIte
               (isLoading && isNoneLoaded) ?
                 <Skeleton height={60} /> :
               <CandidateList
-                {...props}
-                candidates={lowRanked}
+                {...baseProps}
+                rowViews={lowRanked}
                 header={t('map_project.low_ranked_candidates')}
                 onFetchMore={onFetchMore}
                 bgColor={SCORES_COLOR.low_ranked}
@@ -586,6 +685,30 @@ const Candidates = ({rowIndex, alert, setAlert, candidates, setShowItem, showIte
                 candidatesScore={candidatesScore}
                 isFirst={recommended.length === 0 && available.length === 0 && lowRanked.length > 0}
               />
+            }
+          </li>
+          <li>
+            {
+              // Transient bucket for candidates whose rerank hasn't landed
+              // yet. They reorganize into recommended/available/low_ranked
+              // automatically once a numeric rerank_score arrives on their
+              // ConceptRow. Neutral gray indicator so it visually reads as
+              // "in progress" rather than "poor match".
+              pendingRerank.length > 0 &&
+                <CandidateList
+                  {...baseProps}
+                  rowViews={pendingRerank}
+                  header={t('map_project.unranked_candidates', 'Unranked Candidates')}
+                  onFetchMore={onFetchMore}
+                  bgColor={SCORES_COLOR.pending_rerank}
+                  bucketId={`${rowIndex}-pending-rerank`}
+                  noToolbar
+                  showAlgo
+                  collapsed={collapsed}
+                  onCollapse={setCollapsed}
+                  candidatesScore={candidatesScore}
+                  isFirst={recommended.length === 0 && available.length === 0 && lowRanked.length === 0}
+                />
             }
           </li>
               </>
@@ -608,9 +731,9 @@ const Candidates = ({rowIndex, alert, setAlert, candidates, setShowItem, showIte
                       return (
                         <li key={i}>
               <CandidateList
-                {...props}
+                {...baseProps}
                 byAlgorithm
-                candidates={result.candidates || []}
+                rowViews={result.candidates || []}
                 header={algo.name ? `${algo.name} (${algo.id})` : algo.id}
                 onFetchMore={onFetchMore}
                 bucketId={`${rowIndex}-${algo.id}`}

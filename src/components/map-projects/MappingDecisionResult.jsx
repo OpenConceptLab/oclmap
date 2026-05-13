@@ -170,7 +170,7 @@ const MappingDecisionResult = ({targetConcept, row, rowIndex, mapTypes, allMapTy
                         </span>
                       </div>
                     <div style={{marginTop: '6px'}}>
-                      <Score concept={targetConcept} sx={{padding: '0px'}} candidatesScore={candidatesScore} />
+                      <Score candidate={targetConcept} sx={{padding: '0px'}} candidatesScore={candidatesScore} />
                       {
                         targetConcept?.search_meta?.algorithm &&
                           <Chip sx={{marginLeft: '4px'}} label={targetConcept.search_meta.algorithm} variant='outlined' color='warning' />

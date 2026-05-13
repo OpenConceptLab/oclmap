@@ -17,8 +17,7 @@ import {
   ListItemText,
   ListItemIcon,
   ListItemButton,
-  FormControlLabel,
-  Checkbox
+  Chip
 } from "@mui/material";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
@@ -34,7 +33,21 @@ import orderBy from 'lodash/orderBy'
 
 
 import ConceptIcon from '../concepts/ConceptIcon'
+import { isLikelyCanonicalUrl } from './algorithms'
 import APIService from '../../services/APIService';
+
+// Cached lookup of a bridge source repo's canonical_url. Canonical URLs are
+// stable, so a single fetch per relative URL is sufficient for the session.
+const bridgeCanonicalCache = new Map()
+const fetchBridgeCanonical = (url) => {
+  if(!url) return Promise.resolve(null)
+  if(bridgeCanonicalCache.has(url)) return bridgeCanonicalCache.get(url)
+  const promise = APIService.new().overrideURL(url).get()
+    .then(r => r?.data?.canonical_url || null)
+    .catch(() => null)
+  bridgeCanonicalCache.set(url, promise)
+  return promise
+}
 
 /**
  * MultiAlgoSelector (MUI5)
@@ -152,6 +165,30 @@ export default function MultiAlgoSelector({
     }
   };
 
+  // For each selected bridge algo, fetch the source repo's canonical_url from
+  // the OCL API and populate `bridge_repo.canonical_url`. Without this, the
+  // downstream derivation falls back to https://ns.openconceptlab.org{relurl}
+  // even when the repo has a real canonical (e.g. CIEL -> CIELterminology.org).
+  // User-typed values are preserved: the sync only runs once per (key, url),
+  // so editing the canonical field afterwards is sticky until the source URL
+  // changes.
+  const syncedBridgeUrlRef = React.useRef(new Map())
+  React.useEffect(() => {
+    for (const sel of value || []) {
+      if(!sel?.type?.includes('bridge')) continue
+      const url = sel.target_repo_url
+      if(!url) continue
+      if(syncedBridgeUrlRef.current.get(sel.__key) === url) continue
+      syncedBridgeUrlRef.current.set(sel.__key, url)
+      fetchBridgeCanonical(url).then(canonical => {
+        if(!canonical) return
+        updateSelected(sel.__key, {
+          bridge_repo: { canonical_url: canonical, canonical_url_source: 'repo' }
+        })
+      })
+    }
+  }, [value])
+
   const removeSelected = (key) => {
     const next = (value || []).filter((v) => v.__key !== key);
     onChange(next);
@@ -196,7 +233,6 @@ export default function MultiAlgoSelector({
       name: name,
       batch_size: algo.batch_size ?? 10,
       concurrent_requests: algo.concurrent_requests ?? 1,
-      lookup_required: algo.lookup_required,
       __key: Math.random(100).toString()
     };
 
@@ -466,6 +502,22 @@ export default function MultiAlgoSelector({
                               updateSelected(sel.__key, { description: e.target.value || '' })
                             }
                           />
+                          <TextField
+                            fullWidth
+                            required
+                            label={t('map_project.algo_canonical_url', 'Canonical URL')}
+                            value={sel.canonical_url || ''}
+                            onChange={(e) => updateSelected(sel.__key, { canonical_url: e.target.value || '' })}
+                            placeholder="http://loinc.org"
+                            helperText={
+                              !sel.canonical_url
+                                ? t('map_project.algo_canonical_url_required', 'Canonical URL is required for custom algorithms (e.g. http://loinc.org).')
+                                : !isLikelyCanonicalUrl(sel.canonical_url)
+                                  ? t('map_project.algo_canonical_url_invalid', 'Enter a full URL starting with http:// or https://')
+                                  : t('map_project.algo_canonical_url_description', 'Canonical URL of the code system this algorithm matches against (e.g. http://loinc.org).')
+                            }
+                            error={!isLikelyCanonicalUrl(sel.canonical_url)}
+                          />
                           <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
                             <TextField
                               label={t('map_project.batch_size')}
@@ -491,7 +543,6 @@ export default function MultiAlgoSelector({
                                 })
                               }
                             />
-                            <FormControlLabel sx={{'.MuiTypography-root': {fontSize: '14px'}}} control={<Checkbox size='small' checked={sel.lookup_required || false} />} label={t('map_project.lookup_required')} onChange={e => updateSelected(sel.__key, {lookup_required: e.target.checked})} />
                           </Stack>
 
                           <Stack direction="row" spacing={1} justifyContent="flex-end">
@@ -507,14 +558,33 @@ export default function MultiAlgoSelector({
                     ) : algo.type?.includes('bridge') ? (
                       <Stack spacing={1.5}>
                         {isCoreUser && (
-                          <TextField
-                            fullWidth
-                            label={t('map_project.bridge_source_url') || 'Bridge Source URL'}
-                            value={sel.target_repo_url ?? algo.target_repo_url ?? '/orgs/CIEL/sources/CIEL/'}
-                            onChange={(e) => updateSelected(sel.__key, { target_repo_url: e.target.value })}
-                            placeholder="/orgs/CIEL/sources/CIEL/"
-                            helperText={t('map_project.bridge_source_url_description') || 'The interface terminology to search through for bridge matching'}
-                          />
+                          <>
+                            <TextField
+                              fullWidth
+                              label={t('map_project.bridge_source_url', 'Bridge Source URL')}
+                              value={sel.target_repo_url ?? algo.target_repo_url ?? '/orgs/CIEL/sources/CIEL/'}
+                              onChange={(e) => updateSelected(sel.__key, { target_repo_url: e.target.value })}
+                              placeholder="/orgs/CIEL/sources/CIEL/"
+                              helperText={t('map_project.bridge_source_url_description', 'The interface terminology to search through for bridge matching')}
+                            />
+                            <TextField
+                              fullWidth
+                              label={t('map_project.bridge_canonical_url', 'Bridge Canonical URL')}
+                              value={sel.bridge_repo?.canonical_url || ''}
+                              onChange={(e) => updateSelected(sel.__key, {
+                                bridge_repo: {
+                                  ...(sel.bridge_repo || {}),
+                                  canonical_url: e.target.value || '',
+                                  canonical_url_source: e.target.value ? 'repo' : 'derived'
+                                }
+                              })}
+                              placeholder="https://CIELterminology.org"
+                              helperText={t('map_project.bridge_canonical_url_description', 'Canonical URL of the bridge code system (leave blank to derive from the relative URL).')}
+                            />
+                            {!sel.bridge_repo?.canonical_url && (
+                              <Chip size='small' label={t('map_project.canonical_auto_derived', 'Auto-derived')} sx={{alignSelf: 'flex-start'}} />
+                            )}
+                          </>
                         )}
                         <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
                           <TextField
@@ -566,7 +636,6 @@ export default function MultiAlgoSelector({
                             })
                           }
                         />
-                        <FormControlLabel sx={{'.MuiTypography-root': {fontSize: '14px'}}} control={<Checkbox size='small' disabled={algo.provider === 'ocl'} checked={sel.lookup_required || false} />} label={t('map_project.lookup_required')} onChange={e => updateSelected(sel.__key, {lookup_required: e.target.checked})} />
                       </Stack>
                     )}
                   </Stack>
@@ -640,3 +709,4 @@ function clampInt(value, min, max) {
 function eHasValue(value) {
   return Boolean(value && String(value).trim());
 }
+
