@@ -2373,7 +2373,6 @@ const MapProject = () => {
     // project history. Fall back to concept.id when url is absent.
     if(concept?.url || concept?.id)
       log({action: unmap ? 'unmapped' : 'mapped', extras: {object_url: concept?.url || null, object_id: concept?.id || null, map_type: mapType, name: getConceptLabel(concept), algorithm: concept?.search_meta?.algorithm}})
-
   }
 
   const onReviewDone = (next = false) => {
