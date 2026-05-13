@@ -227,7 +227,12 @@ export const conceptForMapping = (rowView) => {
  * Pure — caller maps qualityBucket -> bucketColor via SCORES_COLOR.
  */
 export const getScoreDetails = (input = {}, candidatesScore = {}) => {
-  const {candidate, conceptRow, search_meta: searchMeta} = input || {}
+  const {candidate, conceptRow} = input || {}
+  if(!input?.search_meta && candidate?.search_meta?.search_score) {
+    candidate.search_meta.search_score = parseFloat(candidate.search_meta.search_score)
+    candidate.search_meta.search_normalized_score = candidate.search_meta.search_normalized_score ? parseFloat(candidate.search_meta.search_normalized_score) : candidate.search_meta.search_normalized_score
+  }
+  const searchMeta = input?.search_meta || candidate?.search_meta
   const rerankFloat = isNumber(conceptRow?.rerank_score)
     ? conceptRow.rerank_score
     : (isNumber(searchMeta?.search_normalized_score) ? searchMeta.search_normalized_score : null)
