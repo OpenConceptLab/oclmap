@@ -18,13 +18,9 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import SaveIcon from '@mui/icons-material/Save';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 
-import Accordion from '@mui/material/Accordion'
-import AccordionSummary from '@mui/material/AccordionSummary'
-import AccordionDetails from '@mui/material/AccordionDetails'
 import Stack from '@mui/material/Stack'
 import Alert from '@mui/material/Alert'
 import Tooltip from '@mui/material/Tooltip'
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 
 import isEmpty from 'lodash/isEmpty'
@@ -43,6 +39,7 @@ import { SCORES_COLOR } from './constants'
 import FilterTable from './FilterTable'
 import MultiAlgoSelector from './MultiAlgoSelector'
 import LookupConfig from './LookupConfig'
+import AdvancedSettings from './AdvancedSettings'
 import RerankerConfig from './RerankerConfig'
 import AIAssistantSelectorPanel from './AIAssistantSelectorPanel'
 
@@ -309,33 +306,10 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
       }
 
       <LookupConfig value={lookupConfig} onChange={setLookupConfig}/>
-
       {
         setNamespace &&
-          <Accordion disableGutters elevation={0} sx={{marginTop: '12px', backgroundColor: 'transparent', '&:before': {display: 'none'}}}>
-            <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{padding: 0, minHeight: 'auto', '.MuiAccordionSummary-content': {margin: '4px 0'}}}>
-              <Typography component='span' sx={{fontSize: '13px', color: 'text.secondary'}}>
-                {t('map_project.advanced_settings')}
-              </Typography>
-            </AccordionSummary>
-            <AccordionDetails sx={{padding: 0}}>
-              <TextField
-                fullWidth
-                size='small'
-                sx={{marginTop: '4px'}}
-                label={t('map_project.resolution_namespace', 'Resolution Namespace')}
-                value={namespaceValue}
-                onChange={event => setNamespace(event.target.value || '')}
-                placeholder={defaultNamespace}
-                helperText={t('map_project.resolution_namespace_description', {
-                  owner: defaultNamespace || 'the project owner',
-                  defaultValue: 'Namespace passed to $resolveReference. When blank, defaults to {{owner}}. Drives which URL Registry entries apply when resolving canonical URLs.'
-                })}
-              />
-            </AccordionDetails>
-          </Accordion>
+          <AdvancedSettings namespaceValue={namespaceValue} setNamespace={setNamespace} defaultNamespace={defaultNamespace} />
       }
-
       {
         inAIAssistantGroup && isCoreUser && promptTemplates?.length > 0 &&
           <>
