@@ -2528,7 +2528,7 @@ const MapProject = () => {
     return idx >= 0 ? sorted[idx + 1] : undefined;
   };
 
-  const getFirstAlgoDef = () => orderBy(algosSelected, 'order')[0]
+  const getFirstAlgoDef = () => getAlgoDef(get(orderBy(algosSelected, 'order')[0], 'id'))
 
   const fetchOCLOrCustomCandidates = (algoDef, _row, offset=0, _retired, _filters, callback) => {
     // can be algo=ocl-search | ocl-semantic | custom
@@ -2680,7 +2680,7 @@ const MapProject = () => {
         setAllCandidates(nextCandidates)
         markAlgo(__row.__index, algoId, 1)
         setIsLoadingInDecisionView(false)
-        let items = get(response?.data, '0.results') || []
+        let items = get(response?.data, '0.results') || (isArray(get(response, '0.results')) ? response[0].results : [])
         if(items.length > 0){
           const synonyms = get(payload, 'rows.0.synonyms')
           setTimeout(() => highlightTexts(items, null, false, compact([get(payload, 'rows.0.name'), ...(isArray(synonyms) ? synonyms : [synonyms])])), 100)
