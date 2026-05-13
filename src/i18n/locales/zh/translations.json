@@ -553,6 +553,7 @@
     "bridge_terminology_search": "Bridge 术语搜索<0>高级版</0>",
     "bridge_terminology_search_description": "包含 <0>CIEL 接口术语</0> 中的映射，以识别更多高质量候选项。仅适用于兼容的目标仓库和匹配算法。",
     "scispacy_loinc_search": "ScispaCy LOINC 搜索<0>高级版</0>",
+    "ocl_ai_assistant": "OCL AI 助手",
     "ocl_ai_candidates_analysis": "OCL AI 助手：候选分析",
     "group_by_match_quality": "匹配质量",
     "ocl_semantic_algorithm": "OCL 语义算法",

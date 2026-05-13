@@ -12,6 +12,8 @@ import Tooltip from '@mui/material/Tooltip'
 import Skeleton from '@mui/material/Skeleton'
 import CloseIcon from '@mui/icons-material/Close'
 import DataObjectIcon from '@mui/icons-material/DataObject';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 
 import get from 'lodash/get'
 import map from 'lodash/map'
@@ -20,9 +22,21 @@ import compact from 'lodash/compact'
 import Comment from './Comment'
 
 
-const AICandidatesAnalysis = ({ analysis, onClose, sx, isCoreUser }) => {
+const AICandidatesAnalysis = ({ analysis: analysisProp, onClose, sx, isCoreUser }) => {
   const { t } = useTranslation();
   const [openDetails, setOpenDetails] = React.useState(false)
+  const [page, setPage] = React.useState(0)
+
+  const analysisArray = Array.isArray(analysisProp) ? analysisProp : (analysisProp ? [analysisProp] : [])
+  const total = analysisArray.length
+
+  // Jump to latest when a new entry is added
+  React.useEffect(() => {
+    if(total > 0)
+      setPage(total - 1)
+  }, [total])
+
+  const analysis = analysisArray[page]
   let output = analysis?.output || analysis
 
   const getRecommendationTitle = () => {
@@ -131,19 +145,29 @@ const AICandidatesAnalysis = ({ analysis, onClose, sx, isCoreUser }) => {
                 </Typography>
               </span>
             </span>
-            <span>
-              <>
-                {
-                  isCoreUser &&
-                    <Tooltip title={t('map_project.view_raw_json')} placement='right'>
-                      <span>
-                        <IconButton color='primary' size='small' disabled={!analysis} sx={{padding: '4px', marginLeft: '4px', marginTop: '-2px'}} onClick={() => setOpenDetails(!openDetails)}>
-                          <DataObjectIcon fontSize='inherit' />
-                        </IconButton>
-                      </span>
-                    </Tooltip>
-                }
-              </>
+            <span style={{display: 'inline-flex', alignItems: 'center'}}>
+              {
+                total > 1 &&
+                  <span style={{display: 'inline-flex', alignItems: 'center', fontSize: '12px', marginRight: '4px'}}>
+                    <IconButton size='small' sx={{padding: '2px', color: 'text.primary'}} onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}>
+                      <ChevronLeftIcon sx={{fontSize: '1rem'}} />
+                    </IconButton>
+                    <b style={{fontSize: '12px'}}>{page + 1}/{total}</b>
+                    <IconButton size='small' sx={{padding: '2px', color: 'text.primary'}} onClick={() => setPage(p => Math.min(total - 1, p + 1))} disabled={page === total - 1}>
+                      <ChevronRightIcon sx={{fontSize: '1rem'}} />
+                    </IconButton>
+                  </span>
+              }
+              {
+                isCoreUser &&
+                  <Tooltip title={t('map_project.view_raw_json')} placement='right'>
+                    <span>
+                      <IconButton color='primary' size='small' disabled={!analysis} sx={{padding: '4px', marginLeft: '4px', marginTop: '-2px'}} onClick={() => setOpenDetails(!openDetails)}>
+                        <DataObjectIcon fontSize='inherit' />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+              }
             </span>
           </div>
         }

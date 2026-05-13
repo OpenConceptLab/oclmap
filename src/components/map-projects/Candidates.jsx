@@ -382,7 +382,8 @@ const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCa
   // v2 concept_key passthrough, then canonical_reference.code (PR2a shim),
   // then the legacy concept_id/id. The resolved code is matched against
   // ConceptDefinition.reference.code in Concept.jsx for highlighting.
-  const primary = analysis?.output?.primary_candidate || analysis?.primary_candidate
+  const latestAnalysis = Array.isArray(analysis) ? analysis[analysis.length - 1] : analysis
+  const primary = latestAnalysis?.output?.primary_candidate || latestAnalysis?.primary_candidate
   const AIRecommendedCandidateId = resolveAICandidateID(primary, conceptCache)
 
   // Quality (score-grouped) view shows ONLY target-repo concepts. Bridge

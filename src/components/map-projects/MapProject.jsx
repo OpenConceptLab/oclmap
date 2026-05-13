@@ -747,7 +747,8 @@ const MapProject = () => {
       setEncoderModel(response.data?.encoder_model || DEFAULT_ENCODER_MODEL)
       setProjectPromptTemplateKey(response.data?.prompt_template_key || '')
       setPromptOutputLocale(response.data?.prompt_output_locale || null)
-      setAnalysis(response.data?.analysis || {})
+      const rawAnalysis = response.data?.analysis || {}
+      setAnalysis(Object.fromEntries(Object.entries(rawAnalysis).map(([k, v]) => [k, Array.isArray(v) ? v : [v]])))
       setProject(response.data)
       setConfigure(false)
     })
@@ -2228,7 +2229,9 @@ const MapProject = () => {
       const rowStateLabel = VIEWS[rowState].label
       let concept = mapSelected[index]
       let _repo = concept?.repo
-      const aiRecommendation = get(analysis, index)?.output || get(analysis, index)
+      const rowAnalyses = get(analysis, index) || []
+      const latestAnalysis = Array.isArray(rowAnalyses) ? rowAnalyses[rowAnalyses.length - 1] : rowAnalyses
+      const aiRecommendation = latestAnalysis?.output || latestAnalysis
       const aiCandidate = get(aiRecommendation, 'primary_candidate')
       // v2 response: prefer concept_key (resolves via conceptCache for an
       // unambiguous match), then canonical_reference.code (the PR2a shim);
@@ -3765,7 +3768,11 @@ const MapProject = () => {
         })
       )
     }
-    if(isNumber(__index) && repoVersion && !analysis[__index] && _candidates?.length > 0) {
+    const existingAnalyses = analysis[__index] || []
+    const selectedModelId = getSelectedAIModel()?.id || AIModel
+    const templateKey = promptTemplate?.key
+    const alreadyAnalyzed = existingAnalyses.some(a => a?.model === selectedModelId && a?.prompt_template?.key === templateKey)
+    if(isNumber(__index) && repoVersion && !alreadyAnalyzed && _candidates?.length > 0) {
       if(!promptTemplate?.key) {
         setAlert({message: 'AI Assistant prompt template is not available', severity: 'error'})
         markAlgo(__index, 'recommend', -3)
@@ -3860,7 +3867,12 @@ const MapProject = () => {
 
         markAlgo(__index, 'recommend', 1)
         log({created_at: timestamp, action: 'AIRecommendation', description: get(response.data, 'output.rationale') || get(response.data, 'rationale'), extras: {...response.data, model: selectedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}}, __index)
-        setAnalysis(prev => ({...prev, [__index]: {...response.data, model: selectedModel?.id || AIModel, model_name: selectedModel?.name, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri, timestamp: timestamp, user: user.username || user.id}}))
+        const newEntry = {...response.data, model: selectedModel?.id || AIModel, model_name: selectedModel?.name, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri, timestamp: timestamp, user: user.username || user.id}
+        setAnalysis(prev => {
+          const existing = prev[__index] || []
+          const filtered = existing.filter(a => !(a?.model === newEntry.model && a?.prompt_template?.key === promptTemplateRef?.key))
+          return {...prev, [__index]: [...filtered, newEntry]}
+        })
         return true
       } catch (err) {
         markAlgo(__index, 'recommend', -2)
@@ -3871,7 +3883,7 @@ const MapProject = () => {
         return false
       }
     } else {
-      markAlgo(__index, 'recommend', analysis[__index] ? 1 : -3)
+      markAlgo(__index, 'recommend', analysis[__index]?.length > 0 ? 1 : -3)
     }
     return false
   }
