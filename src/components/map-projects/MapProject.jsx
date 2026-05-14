@@ -2802,7 +2802,7 @@ const MapProject = () => {
             setIsLoadingInDecisionView(false)
             return response
           }
-          setAlert({message: "OCL's scispacy matching service is warming up. Retrying in 2 minutes…", severity: 'info'})
+          setAlert({message: t('map_project.scispacy_warming_up'), severity: 'info'})
           await new Promise(resolve => setTimeout(resolve, SCISPACY_WARMUP_RETRY_MS))
         } else {
           warmingUp = false

@@ -563,6 +563,7 @@
     "ocl_search_algorithm": "OCL Search Algorithm",
     "ocl_ciel_bridge_algorithm": "OCL CIEL Bridge Terminology",
     "ocl_scispacy_loinc_algorithm": "OCL ScispaCy LOINC Algorithm",
+    "scispacy_warming_up": "OCL's scispacy matching service is warming up. It will automatically retry in 2 minutes.",
     "ocl_custom_algorithm": "OCL Custom Algorithm",
     "algorithm": "Algorithm",
     "algorithms": "Algorithms",

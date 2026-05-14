@@ -541,6 +541,7 @@
     "ocl_search_algorithm": "Algoritmo de búsqueda de OCL",
     "ocl_ciel_bridge_algorithm": "Terminología OCL CIEL Bridge",
     "ocl_scispacy_loinc_algorithm": "Algoritmo OCL ScispaCy LOINC",
+    "scispacy_warming_up": "El servicio de coincidencia scispacy de OCL se está iniciando. Reintentará automáticamente en 2 minutos.",
     "ocl_custom_algorithm": "Algoritmo personalizado de OCL",
     "algorithms": "Algoritmos",
     "algo_conflicting_id": "ID en conflicto",
