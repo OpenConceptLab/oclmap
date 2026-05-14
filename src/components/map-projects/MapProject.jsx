@@ -2819,6 +2819,7 @@ const MapProject = () => {
             setIsLoadingInDecisionView(false)
             return response
           }
+          setAlert(false)
           if(callback) callback(response, payload)
           setIsLoadingInDecisionView(false)
           return response
