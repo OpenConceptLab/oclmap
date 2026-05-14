@@ -567,6 +567,7 @@
     "ocl_search_algorithm": "OCL 搜索算法",
     "ocl_ciel_bridge_algorithm": "OCL CIEL Bridge 术语",
     "ocl_scispacy_loinc_algorithm": "OCL ScispaCy LOINC 算法",
+    "scispacy_warming_up": "OCL的scispacy匹配服务正在启动中，将在2分钟后自动重试。",
     "ocl_custom_algorithm": "OCL 自定义算法",
     "algorithms": "算法",
     "algo_conflicting_id": "冲突 ID",
@@ -628,7 +629,9 @@
     "config_error_missing_canonical": "自定义算法“{{name}}”缺少有效的规范 URL。",
     "target_repo_required_on_load": "此项目缺少目标仓库。请先配置目标仓库，才能查看已保存的候选项。",
     "create_similar": "创建类似项目",
-    "create_similar_name": "{{name}} 的副本"
+    "create_similar_name": "{{name}} 的副本",
+    "use_lexical_variants": "使用词汇变体",
+    "use_lexical_variants_description": "扩展 $match 搜索范围，以在匹配概念名称时包含英语拼写变体（例如 color/colour、leukemia/leukaemia）。"
   },
   "app": {
     "web_version": "Web 版本",

@@ -542,6 +542,7 @@
     "ocl_search_algorithm": "Algoritmo de búsqueda de OCL",
     "ocl_ciel_bridge_algorithm": "Terminología OCL CIEL Bridge",
     "ocl_scispacy_loinc_algorithm": "Algoritmo OCL ScispaCy LOINC",
+    "scispacy_warming_up": "El servicio de coincidencia scispacy de OCL se está iniciando. Reintentará automáticamente en 2 minutos.",
     "ocl_custom_algorithm": "Algoritmo personalizado de OCL",
     "algorithms": "Algoritmos",
     "algo_conflicting_id": "ID en conflicto",
@@ -603,7 +604,9 @@
     "config_error_missing_canonical": "Al algoritmo personalizado \"{{name}}\" le falta una URL canónica válida.",
     "target_repo_required_on_load": "A este proyecto le falta un repositorio de destino. Configure el repositorio de destino para ver los candidatos guardados.",
     "create_similar": "Crear similar",
-    "create_similar_name": "Copia de {{name}}"
+    "create_similar_name": "Copia de {{name}}",
+    "use_lexical_variants": "Usar variantes léxicas",
+    "use_lexical_variants_description": "Amplíe la búsqueda $match para incluir variantes ortográficas en inglés (p. ej. color/colour, leukemia/leukaemia) al comparar nombres de conceptos."
   },
   "app": {
     "web_version": "Versión Web",

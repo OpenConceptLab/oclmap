@@ -201,6 +201,8 @@ const MapProject = () => {
   const [projectPromptTemplateKey, setProjectPromptTemplateKey] = React.useState('')
 
   const abortRef = React.useRef(false);
+  const isBulkMatchRunningRef = React.useRef(false);
+  const bulkMatchAlgoIdsRef = React.useRef([]);
 
   const [row, setRow] = React.useState(false)
   const [loadingMatches, setLoadingMatches] = React.useState(false)
@@ -248,6 +250,7 @@ const MapProject = () => {
   const [lookupConfig, setLookupConfig] = React.useState({})
   const [encoderModel, setEncoderModel] = React.useState(DEFAULT_ENCODER_MODEL)
   const [promptOutputLocale, setPromptOutputLocale] = React.useState(null)
+  const [useLexicalVariants, setUseLexicalVariants] = React.useState(false)
   // Project canonical-resolution context (plans/unified-mapper-model.md
   // "Project configuration: explicit canonical context"). Empty = use the
   // project owner as the default resolution namespace.
@@ -323,12 +326,16 @@ const MapProject = () => {
       const referencedKeys = new Set(Object.values(nextRow.candidates).map(c => c?.concept_key))
       Object.keys(nextRow.concept_rows).forEach(k => {
         if(!referencedKeys.has(k)) delete nextRow.concept_rows[k]
+        else if(nextRow.concept_rows[k]?.rerank_score !== undefined)
+          nextRow.concept_rows[k] = { ...nextRow.concept_rows[k], rerank_score: undefined }
       })
     }
 
     concept_rows.forEach(cr => {
       const existing = nextRow.concept_rows[cr.concept_key]
-      // Preserve any existing rerank_score; otherwise take the new entry.
+      // On a fresh (non-append) run scores are already cleared above; on
+      // append (pagination) preserve any existing rerank_score so partial
+      // pages don't clobber scores from earlier pages.
       nextRow.concept_rows[cr.concept_key] = existing && existing.rerank_score !== undefined
         ? existing
         : cr
@@ -555,6 +562,7 @@ const MapProject = () => {
       setRetired(Boolean(copiedProject.include_retired || false))
       setAlgosSelected(copiedProject.algorithms || [])
       setEncoderModel(copiedProject.encoder_model || DEFAULT_ENCODER_MODEL)
+      setUseLexicalVariants(Boolean(copiedProject.use_lexical_variants))
       if(copiedProject.target_repo_url) {
         const repoParams = URIToParentParams(copiedProject.target_repo_url, true)
         fetchRepo(dropVersion(copiedProject.target_repo_url))
@@ -747,6 +755,7 @@ const MapProject = () => {
       setEncoderModel(response.data?.encoder_model || DEFAULT_ENCODER_MODEL)
       setProjectPromptTemplateKey(response.data?.prompt_template_key || '')
       setPromptOutputLocale(response.data?.prompt_output_locale || null)
+      setUseLexicalVariants(Boolean(response.data?.use_lexical_variants))
       const rawAnalysis = response.data?.analysis || {}
       setAnalysis(Object.fromEntries(Object.entries(rawAnalysis).map(([k, v]) => [k, Array.isArray(v) ? v : [v]])))
       setProject(response.data)
@@ -1217,6 +1226,7 @@ const MapProject = () => {
     formData.append('filters', JSON.stringify(getFilters()))
     formData.append('prompt_template_key', getProjectPromptTemplateKey())
     formData.append('prompt_output_locale', promptOutputLocale || '')
+    formData.append('use_lexical_variants', useLexicalVariants)
     const isUpdate = Boolean(project?.id)
     let service = APIService.new().overrideURL(owner).appendToUrl('map-projects/')
     if(isUpdate)
@@ -1329,7 +1339,8 @@ const MapProject = () => {
         'source': _repo.short_code || _repo.id
       },
       map_config: getMapConfigs(),
-      filter: rows.length > 1 ? getFilters() : getFacetQueryParam(isEmpty(_filters) ? appliedFacets[rows[0].__index] : _filters)
+      filter: rows.length > 1 ? getFilters() : getFacetQueryParam(isEmpty(_filters) ? appliedFacets[rows[0].__index] : _filters),
+      variants: useLexicalVariants
     }
   }
 
@@ -1611,16 +1622,36 @@ const MapProject = () => {
         ? filter(rows, row => rowStatuses.unmapped.includes(row.__index))
         : filter(rows, row => !rowStatuses.reviewed.includes(row.__index))
 
-      const algoPromises = []
-      forEach(_selectedAlgos, algo => {
-        if(['custom', 'ocl-search', 'ocl-semantic'].includes(algo.type))
-          algoPromises.push(processWithConcurrency(repo, algo, rowsToProcess));
-        else if(['ocl-bridge', 'ocl-ciel-bridge'].includes(algo.type) && canBridge)
-          algoPromises.push(fetchBulkBridgeCandidates(rowsToProcess, algo))
-        else if(algo.type === 'ocl-scispacy' && canScispacy)
-          algoPromises.push(fetchBulkScispacyCandidates(rowsToProcess, algo))
+      bulkMatchAlgoIdsRef.current = map(_selectedAlgos, 'id')
+      // Reset all algo stages to -1 for every row before starting so that
+      // stages from a previous run don't make the "all algos done" check
+      // pass prematurely when only the first algo has finished.
+      setRowStage(prev => {
+        const next = { ...prev }
+        rowsToProcess.forEach(row => {
+          const rowId = row.__index
+          const rowState = { ...(next[rowId] || {}) }
+          _selectedAlgos.forEach(algo => { rowState[algo.id] = -1 })
+          next[rowId] = rowState
+        })
+        rowStageRef.current = next
+        return next
       })
-      await Promise.all(algoPromises)
+      isBulkMatchRunningRef.current = true
+      try {
+        for(const algo of _selectedAlgos) {
+          if(abortRef.current) break
+          if(['custom', 'ocl-search', 'ocl-semantic'].includes(algo.type))
+            await processWithConcurrency(repo, algo, rowsToProcess)
+          else if(['ocl-bridge', 'ocl-ciel-bridge'].includes(algo.type) && canBridge)
+            await fetchBulkBridgeCandidates(rowsToProcess, algo)
+          else if(algo.type === 'ocl-scispacy' && canScispacy)
+            await fetchBulkScispacyCandidates(rowsToProcess, algo)
+        }
+      } finally {
+        isBulkMatchRunningRef.current = false
+        bulkMatchAlgoIdsRef.current = []
+      }
       if(_selectedAlgos.length)
         await processRerankWithConcurrency(rowsToProcess, 2)
       if(inAIAssistantGroup && autoRunAIAnalysis) {
@@ -2760,26 +2791,56 @@ const MapProject = () => {
     // to wake up returns 503) no longer get written as `results: []` —
     // we mark the algo as failed without persisting the empty entry, so
     // the next row visit retries.
-    service.appendToUrl('/$match-scispacy-loinc/').post(payload)
-      .then(response => {
-        const isError = response?.detail
-          || response?.status >= 400
-          || (response && response.data === undefined && response.status !== 200)
-        if(isError) {
-          markAlgo(__row.__index, 'ocl-scispacy-loinc', -2)
-          log({action: 'algo_failed', extras: {algo: 'ocl-scispacy-loinc', status: response?.status, detail: response?.detail}}, __row.__index)
-          setAlert({
-            message: response?.detail || "OCL's scispacy matching service is starting up. This may take a couple minutes. You can safely leave this row and come back. Click Refresh if results aren't here in a couple of minutes.",
-            severity: 'warning'
-          })
+    const SCISPACY_WARMUP_RETRY_MS = 2 * 60 * 1000
+    const SCISPACY_WARMUP_MAX_MS = 10 * 60 * 1000
+    const warmupStart = Date.now()
+    let warmingUp = true
+    let seenWarmingUp = false
+
+    while(warmingUp) {
+      if(abortRef.current) { setIsLoadingInDecisionView(false); return }
+      try {
+        const response = await service.appendToUrl('/$match-scispacy-loinc/').post(payload)
+
+        // APIService resolves 5xx errors with error.response.data, so response
+        // is the parsed body object — not the axios response. A 503 warming_up
+        // from the lambda resolves as {status: 'warming_up', message: '...'}.
+        // A 502 (EC2 still booting) resolves as {error: '...'}.
+        const isWarmingUp = response?.status === 'warming_up' || (seenWarmingUp && response?.error)
+        if(isWarmingUp) {
+          seenWarmingUp = true
+          const elapsed = Date.now() - warmupStart
+          if(elapsed + SCISPACY_WARMUP_RETRY_MS > SCISPACY_WARMUP_MAX_MS) {
+            markAlgo(__row.__index, 'ocl-scispacy-loinc', -2)
+            log({action: 'algo_failed', extras: {algo: 'ocl-scispacy-loinc', status: 503, detail: 'warming_up_timeout'}}, __row.__index)
+            setAlert({message: "OCL's scispacy service did not come up within 10 minutes.", severity: 'error'})
+            setIsLoadingInDecisionView(false)
+            return response
+          }
+          setAlert({message: t('map_project.scispacy_warming_up'), severity: 'info'})
+          await new Promise(resolve => setTimeout(resolve, SCISPACY_WARMUP_RETRY_MS))
+        } else {
+          warmingUp = false
+          const isError = response?.detail
+            || response?.status >= 400
+            || (response && response.data === undefined && response.status !== 200)
+          if(isError) {
+            markAlgo(__row.__index, 'ocl-scispacy-loinc', -2)
+            log({action: 'algo_failed', extras: {algo: 'ocl-scispacy-loinc', status: response?.status, detail: response?.detail}}, __row.__index)
+            setAlert({
+              message: response?.detail || "OCL's scispacy matching service is starting up. This may take a couple minutes. You can safely leave this row and come back. Click Refresh if results aren't here in a couple of minutes.",
+              severity: 'warning'
+            })
+            setIsLoadingInDecisionView(false)
+            return response
+          }
+          setAlert(false)
+          if(callback) callback(response, payload)
           setIsLoadingInDecisionView(false)
           return response
         }
-        if(callback) callback(response, payload)
-        setIsLoadingInDecisionView(false)
-        return response
-      })
-      .catch(err => {
+      } catch(err) {
+        warmingUp = false
         markAlgo(__row.__index, 'ocl-scispacy-loinc', -2)
         log({action: 'algo_failed', extras: {algo: 'ocl-scispacy-loinc', error: err?.message}}, __row.__index)
         setAlert({
@@ -2787,7 +2848,8 @@ const MapProject = () => {
           severity: 'warning'
         })
         setIsLoadingInDecisionView(false)
-      })
+      }
+    }
   }
 
   // Build the deduplicated rerank request body from the row's ConceptRows +
@@ -2984,6 +3046,15 @@ const MapProject = () => {
     )
   const scheduleRerank = (rowIndex) => {
     if(!isNumber(rowIndex)) return
+    const stage = rowStageRef.current[rowIndex] || {}
+    if(isBulkMatchRunningRef.current && bulkMatchAlgoIdsRef.current.length > 0) {
+      // Bulk auto-match: wait until all selected algos are done (success or failed) for this row.
+      const allDone = bulkMatchAlgoIdsRef.current.every(id => stage[id] === 1 || stage[id] === -2)
+      if(!allDone) return
+    } else {
+      // Single-row: defer if any configured algo is still in-flight for this row.
+      if(selectedAlgoIds.some(id => stage[id] === 0)) return
+    }
     const rowState = rowMatchStateRef.current[rowIndex]
     if(!rowState) return
     const hasEligiblePending = Object.values(rowState.concept_rows || {}).some(cr => {
@@ -3052,39 +3123,43 @@ const MapProject = () => {
     const existingCandidates = find(allCandidatesRef.current[bridgeAlgoId], c => c.row.__index === __row.__index)?.results
     if(!isBulk && !forceReload && offset === 0 && !_retired && existingCandidates?.length> 0) {
       setTimeout(() => highlightTexts(existingCandidates, null, false), 100)
-      return
+      return Promise.resolve()
     }
     if(!bridgeEnabled)
-      return
+      return Promise.resolve()
     setIsLoadingInDecisionView(true)
     const payload = getPayloadForMatching([__row], repo)
     let __offset = offset || 0
-    bridgeRef.current?.fetchBridgeCandidates(
-      payload,
-      __offset,
-      isBoolean(_retired) ? _retired : retired,
-      (candidates) => {
-        if(callback) {
-          const newCandidates = candidates?.map(candidate => ({
-            ...candidate,
-            results: candidate?.results?.map(result => ({
-              ...result,
-              search_meta: {
-                ...result?.search_meta,
-                algorithm: bridgeAlgoId
-              }
-            }))
-          }));
-          callback(newCandidates, payload)
+    return new Promise(resolve => {
+      bridgeRef.current?.fetchBridgeCandidates(
+        payload,
+        __offset,
+        isBoolean(_retired) ? _retired : retired,
+        (candidates) => {
+          if(callback) {
+            const newCandidates = candidates?.map(candidate => ({
+              ...candidate,
+              results: candidate?.results?.map(result => ({
+                ...result,
+                search_meta: {
+                  ...result?.search_meta,
+                  algorithm: bridgeAlgoId
+                }
+              }))
+            }));
+            callback(newCandidates, payload)
+          }
+          resolve()
+        },
+        (response, errorMsg) => {
+          markAlgo(__row.__index, bridgeAlgoId, -2)
+          log({action: 'algo_failed', extras: {algo: bridgeAlgoId}}, __row.__index)
+          setAlert({message: response?.detail || errorMsg, severity: 'error'})
+          setIsLoadingInDecisionView(false)
+          resolve()
         }
-      },
-      (response, errorMsg) => {
-        markAlgo(__row.__index, bridgeAlgoId, -2)
-        log({action: 'algo_failed', extras: {algo: bridgeAlgoId}}, __row.__index)
-        setAlert({message: response?.detail || errorMsg, severity: 'error'})
-        setIsLoadingInDecisionView(false)
-      }
-    );
+      )
+    })
   }
 
   const findConceptByIdOrURLFromCache = (id) => {
@@ -3965,6 +4040,8 @@ const MapProject = () => {
       setPromptOutputLocale={setPromptOutputLocale}
       namespace={namespace}
       setNamespace={setNamespace}
+      useLexicalVariants={useLexicalVariants}
+      setUseLexicalVariants={setUseLexicalVariants}
     />
   )
 

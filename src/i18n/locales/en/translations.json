@@ -564,6 +564,7 @@
     "ocl_search_algorithm": "OCL Search Algorithm",
     "ocl_ciel_bridge_algorithm": "OCL CIEL Bridge Terminology",
     "ocl_scispacy_loinc_algorithm": "OCL ScispaCy LOINC Algorithm",
+    "scispacy_warming_up": "OCL's scispacy matching service is warming up. It will automatically retry in 2 minutes.",
     "ocl_custom_algorithm": "OCL Custom Algorithm",
     "algorithm": "Algorithm",
     "algorithms": "Algorithms",
@@ -628,7 +629,9 @@
     "create_similar_name": "Copy of {{name}}",
     "set_ai_assistant_output_language": "Set AI Assistant output language",
     "ai_assistant_output_locale": "Output locale",
-    "output_locale": "Output Locale"
+    "output_locale": "Output Locale",
+    "use_lexical_variants": "Use Lexical Variants",
+    "use_lexical_variants_description": "Expand $match search to include English spelling variants (e.g. color/colour, leukemia/leukaemia) when matching concept names."
   },
   "app": {
     "web_version": "Web Version",
