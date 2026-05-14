@@ -92,6 +92,17 @@ const resolveReference = (result, identityConfig, projectContext) => {
   switch (identityConfig.reference_source) {
     case 'fixed':
       url = identityConfig.canonical_url
+      // When a fixed-canonical algo's URL matches the project's target_repo,
+      // it's targeting the same repo as the target_repo-pathway algos and must
+      // key on the same (url, code, version) for dedup. Without this, e.g.
+      // scispacy LOINC (fixed) splits from ocl-search/ocl-semantic LOINC
+      // (target_repo) and from ocl-bridge cascade target (target_repo via
+      // cascade) under any pinned version. The mapping project pins ONE
+      // explicit target repo version; concept identity for dedup must be
+      // anchored to that pin across all algorithm paths.
+      if (url && url === projectContext?.target_repo?.canonical_url) {
+        version = projectContext.target_repo.version
+      }
       break
     case 'target_repo':
       url = projectContext?.target_repo?.canonical_url
