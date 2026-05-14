@@ -610,6 +610,118 @@ test('bridge result with multiple cascade targets fans out 1 + N candidates', ()
   }
 })
 
+// ---------- PR3-X.2: bridge cascade target version-slot dedup ----------
+//
+// Regression guard for OpenConceptLab/ocl_issues#2520. When the project's
+// target_repo carries a `version` field (commonly "HEAD" in production
+// projects pinned at the head of the source), the cascade target previously
+// inherited that version onto its reference. Direct-search matches against
+// the same (url, code) arrive without a version slot, so the two paths
+// produced different concept_keys (`[…,"HEAD"]` vs `[…,null]`) and
+// `defsByKey` / `recommendable_concepts` saw two entries instead of one.
+//
+// Fix: cascadeTargetToConceptDefinition drops the inherited version slot
+// unconditionally. These tests assert that fix at the normalizer layer; the
+// downstream effect (one entry in `recommendable_concepts` with two pieces of
+// evidence) follows from `buildV2RecommendationPayload`'s pre-existing
+// key-based dedup.
+
+test('cascade target reference does not inherit target_repo.version, even when set', () => {
+  const out = normalizeAlgoResult(bridgeResult_CIEL_to_LOINC, {
+    algorithmId: 'ocl-bridge',
+    algorithmConfig: oclBridgeAlgo,
+    algorithmResponseId: 'ar-pinned',
+    projectContext: {
+      ...projectContext,
+      target_repo: { ...projectContext.target_repo, version: 'HEAD' }
+    }
+  })
+
+  const targetDef = out.concept_definitions.find(d => d.reference.code === '49494-3')
+  assert.ok(targetDef, 'cascade target ConceptDefinition was emitted')
+  assert.equal(targetDef.reference.version, undefined,
+    'cascade-target reference must NOT carry the inherited target_repo.version sentinel')
+  assert.deepEqual(targetDef.reference, { url: 'http://loinc.org', code: '49494-3' })
+})
+
+test('bridge cascade target key matches direct fixed-canonical match key under pinned target_repo.version', () => {
+  // Same (url, code) — '49494-3' on http://loinc.org — arriving via two paths:
+  // (a) ocl-bridge cascade target on a CIEL bridge result (resolves via
+  //     target_repo, so pre-fix inherited target_repo.version="HEAD")
+  // (b) ocl-scispacy direct match (resolves via fixed canonical, no version)
+  // Pre-fix the keys diverged (`[…,"HEAD"]` vs `[…,null]`) and the LLM saw
+  // the concept twice with split evidence. Post-fix the cascade target drops
+  // the inherited version, so both paths key on the same canonical (url, code).
+  const pinnedCtx = {
+    ...projectContext,
+    target_repo: { ...projectContext.target_repo, version: 'HEAD' }
+  }
+
+  const bridgeOut = normalizeAlgoResult(bridgeResult_CIEL_to_LOINC, {
+    algorithmId: 'ocl-bridge',
+    algorithmConfig: oclBridgeAlgo,
+    algorithmResponseId: 'ar-bridge',
+    projectContext: pinnedCtx
+  })
+  // Scispacy fixture has the same code (49494-3) on the same canonical
+  // (http://loinc.org via reference_source='fixed').
+  const directOut = normalizeAlgoResult(scispacyResult_partial, {
+    algorithmId: 'ocl-scispacy-loinc',
+    algorithmConfig: oclScispacyAlgo,
+    algorithmResponseId: 'ar-direct',
+    projectContext: pinnedCtx
+  })
+
+  const cascadeTargetDef = bridgeOut.concept_definitions.find(d => d.reference.code === '49494-3')
+  const directDef = directOut.concept_definitions.find(d => d.reference.code === '49494-3')
+
+  assert.ok(cascadeTargetDef && directDef)
+  assert.equal(cascadeTargetDef.key, directDef.key,
+    'cascade target and fixed-canonical direct match must share a concept_key for dedup')
+  assert.equal(cascadeTargetDef.key, makeConceptKey({ url: 'http://loinc.org', code: '49494-3' }),
+    'shared key is the version-less canonical key')
+})
+
+test('bridge cascade target collides with direct fixed-canonical match in defsByKey dedup', () => {
+  // Models the defsByKey dedup in buildV2RecommendationPayload (MapProject.jsx).
+  // With the fix, candidates from the two paths collapse to ONE map entry, and
+  // the bridge_child + standard evidence converges onto a single recommendable.
+  const pinnedCtx = {
+    ...projectContext,
+    target_repo: { ...projectContext.target_repo, version: 'HEAD' }
+  }
+  const bridgeOut = normalizeAlgoResult(bridgeResult_CIEL_to_LOINC, {
+    algorithmId: 'ocl-bridge',
+    algorithmConfig: oclBridgeAlgo,
+    algorithmResponseId: 'ar-bridge',
+    projectContext: pinnedCtx
+  })
+  const directOut = normalizeAlgoResult(scispacyResult_partial, {
+    algorithmId: 'ocl-scispacy-loinc',
+    algorithmConfig: oclScispacyAlgo,
+    algorithmResponseId: 'ar-direct',
+    projectContext: pinnedCtx
+  })
+
+  const allCandidates = [...bridgeOut.candidates, ...directOut.candidates]
+  const allDefs = [...bridgeOut.concept_definitions, ...directOut.concept_definitions]
+
+  const defsByKey = new Map()
+  for (const def of allDefs) defsByKey.set(def.key, def)
+
+  const targetKey = makeConceptKey({ url: 'http://loinc.org', code: '49494-3' })
+  assert.ok(defsByKey.has(targetKey), 'shared target key is in the dedup map')
+
+  // Two evidence-bearing candidates point at the target key: one bridge_child
+  // (from ocl-bridge) and one standard (from ocl-scispacy). Pre-fix these were
+  // keyed differently and the evidence never converged.
+  const evidenceForTarget = allCandidates.filter(c => c.concept_key === targetKey)
+  assert.equal(evidenceForTarget.length, 2,
+    'one bridge_child + one direct candidate converge on the same concept_key')
+  assert.ok(evidenceForTarget.some(c => c.type === 'bridge_child'))
+  assert.ok(evidenceForTarget.some(c => c.type === 'standard'))
+})
+
 // ---------- normalizeAlgorithmInvocation ----------
 
 test('invocation wraps a multi-result payload into one AlgorithmResponse + flat entities', () => {

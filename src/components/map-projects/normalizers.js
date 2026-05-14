@@ -161,8 +161,13 @@ const cascadeTargetToConceptDefinition = (mapping, cascadeIdentity, projectConte
       mapping[cascadeIdentity.code_field || 'cascade_target_concept_code'],
     ...mapping
   }
-  const reference = resolveReference(syntheticResult, cascadeIdentity, projectContext)
-  if (!reference) return null
+  const resolved = resolveReference(syntheticResult, cascadeIdentity, projectContext)
+  if (!resolved) return null
+  // Drop the inherited target_repo.version slot. The cascade target is a stub
+  // identified by (url, code); the project's repo pin (often "HEAD") is not a
+  // per-concept version and including it would split the concept_key from a
+  // direct-path match against the same (url, code).
+  const reference = { url: resolved.url, code: resolved.code }
 
   const oclUrlField = cascadeIdentity.ocl_url_field
   const oclUrl = oclUrlField ? mapping?.[oclUrlField] : undefined
