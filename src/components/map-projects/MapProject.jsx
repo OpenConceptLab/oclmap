@@ -756,7 +756,8 @@ const MapProject = () => {
       setProjectPromptTemplateKey(response.data?.prompt_template_key || '')
       setPromptOutputLocale(response.data?.prompt_output_locale || null)
       setUseLexicalVariants(Boolean(response.data?.use_lexical_variants))
-      setAnalysis(response.data?.analysis || {})
+      const rawAnalysis = response.data?.analysis || {}
+      setAnalysis(Object.fromEntries(Object.entries(rawAnalysis).map(([k, v]) => [k, Array.isArray(v) ? v : [v]])))
       setProject(response.data)
       setConfigure(false)
     })
@@ -2259,7 +2260,9 @@ const MapProject = () => {
       const rowStateLabel = VIEWS[rowState].label
       let concept = mapSelected[index]
       let _repo = concept?.repo
-      const aiRecommendation = get(analysis, index)?.output || get(analysis, index)
+      const rowAnalyses = get(analysis, index) || []
+      const latestAnalysis = Array.isArray(rowAnalyses) ? rowAnalyses[rowAnalyses.length - 1] : rowAnalyses
+      const aiRecommendation = latestAnalysis?.output || latestAnalysis
       const aiCandidate = get(aiRecommendation, 'primary_candidate')
       // v2 response: prefer concept_key (resolves via conceptCache for an
       // unambiguous match), then canonical_reference.code (the PR2a shim);
@@ -3840,7 +3843,13 @@ const MapProject = () => {
         })
       )
     }
-    if(isNumber(__index) && repoVersion && !analysis[__index] && _candidates?.length > 0) {
+    // Auto-match (caller supplied resolvedPromptTemplate) fires once per row;
+    // user-initiated single-row clicks always append a new entry to the
+    // per-row analysis history.
+    const isAutoMatch = Boolean(resolvedPromptTemplate)
+    const existingAnalyses = analysis[__index] || []
+    const alreadyAnalyzed = isAutoMatch && existingAnalyses.length > 0
+    if(isNumber(__index) && repoVersion && !alreadyAnalyzed && _candidates?.length > 0) {
       if(!promptTemplate?.key) {
         setAlert({message: 'AI Assistant prompt template is not available', severity: 'error'})
         markAlgo(__index, 'recommend', -3)
@@ -3935,7 +3944,15 @@ const MapProject = () => {
 
         markAlgo(__index, 'recommend', 1)
         log({created_at: timestamp, action: 'AIRecommendation', description: get(response.data, 'output.rationale') || get(response.data, 'rationale'), extras: {...response.data, model: selectedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}}, __index)
-        setAnalysis(prev => ({...prev, [__index]: {...response.data, model: selectedModel?.id || AIModel, model_name: selectedModel?.name, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri, timestamp: timestamp, user: user.username || user.id}}))
+        const resolvedTemplate = response.data?.template || {}
+        const resolvedVersion = resolvedTemplate.version || promptTemplateRef?.version || null
+        const resolvedPromptRef = {
+          ...promptTemplateRef,
+          version: resolvedVersion,
+          uri: resolvedVersion && promptTemplateRef?.key ? `/prompts/${promptTemplateRef.key}/${resolvedVersion}/` : (promptTemplateRef?.uri || null)
+        }
+        const newEntry = {...response.data, model: selectedModel?.id || AIModel, model_name: selectedModel?.name, prompt_template: resolvedPromptRef, prompt_template_uri: resolvedPromptRef.uri, output_locale: promptOutputLocale || null, timestamp: timestamp, user: user.username || user.id}
+        setAnalysis(prev => ({...prev, [__index]: [...(prev[__index] || []), newEntry]}))
         return true
       } catch (err) {
         markAlgo(__index, 'recommend', -2)
@@ -3946,7 +3963,7 @@ const MapProject = () => {
         return false
       }
     } else {
-      markAlgo(__index, 'recommend', analysis[__index] ? 1 : -3)
+      markAlgo(__index, 'recommend', analysis[__index]?.length > 0 ? 1 : -3)
     }
     return false
   }
