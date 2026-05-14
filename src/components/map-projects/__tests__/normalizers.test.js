@@ -727,3 +727,177 @@ test('multi-algo: same concept from ocl-search and ocl-semantic produces matchin
   assert.equal(a.candidates[0].score, 0.85)
   assert.equal(b.candidates[0].score, 0.91)
 })
+
+// ---------- target_repo version alignment across algorithm paths (#2520) ----------
+//
+// A mapping project pins to ONE explicit target_repo version. Concept identity
+// for dedup must be anchored to that pin across ALL algorithm paths that hit
+// the same target repo:
+//   - target_repo reference_source (ocl-search, ocl-semantic) — inherits pin via projectContext
+//   - bridge_repo cascade_target (ocl-bridge cascade hits) — inherits pin via the cascade's target_repo branch
+//   - fixed reference_source (ocl-scispacy) whose canonical_url matches the project's target_repo
+//     — must also inherit the pin so it dedups with the other paths
+//
+// Without the fixed-branch inheritance, scispacy LOINC produced concept_keys
+// with `version: null` while every other path keyed on the project's pin
+// (e.g. "2.81"), splitting the same logical concept into separate
+// recommendable_concepts entries with split evidence in the v2 LLM payload.
+
+test('fixed-canonical algo whose URL matches target_repo inherits the project version pin', () => {
+  const pinnedCtx = {
+    ...projectContext,
+    target_repo: { ...projectContext.target_repo, version: '2.81' }
+  }
+  const out = normalizeAlgoResult(scispacyResult_partial, {
+    algorithmId: 'ocl-scispacy-loinc',
+    algorithmConfig: oclScispacyAlgo,
+    algorithmResponseId: 'ar-scispacy',
+    projectContext: pinnedCtx
+  })
+
+  const def = out.concept_definitions.find(d => d.reference.code === '49494-3')
+  assert.ok(def, 'scispacy ConceptDefinition was emitted')
+  assert.equal(def.reference.version, '2.81',
+    'fixed canonical matching target_repo must inherit the project version pin')
+  assert.deepEqual(def.reference, { url: 'http://loinc.org', code: '49494-3', version: '2.81' })
+})
+
+test('all algorithm paths converge on the same concept_key under a pinned target_repo version', () => {
+  // Released-version pin (the common case). Four paths hit the same LOINC
+  // concept and must produce identical concept_keys for dedup to work:
+  //   1. ocl-search direct  (target_repo)
+  //   2. ocl-semantic direct (target_repo)
+  //   3. ocl-bridge cascade target (target_repo via cascade)
+  //   4. ocl-scispacy direct (fixed canonical matching target_repo)
+  const pinnedCtx = {
+    ...projectContext,
+    target_repo: { ...projectContext.target_repo, version: '2.81' }
+  }
+
+  const searchOut = normalizeAlgoResult(oclSearchResult_LOINC_glucose_full, {
+    algorithmId: 'ocl-search',
+    algorithmConfig: oclSearchAlgo,
+    algorithmResponseId: 'ar-search',
+    projectContext: pinnedCtx
+  })
+  const semanticOut = normalizeAlgoResult(oclSemanticResult_LOINC_glucose_full, {
+    algorithmId: 'ocl-semantic',
+    algorithmConfig: oclSemanticAlgo,
+    algorithmResponseId: 'ar-semantic',
+    projectContext: pinnedCtx
+  })
+  const bridgeOut = normalizeAlgoResult(bridgeResult_CIEL_to_LOINC, {
+    algorithmId: 'ocl-bridge',
+    algorithmConfig: oclBridgeAlgo,
+    algorithmResponseId: 'ar-bridge',
+    projectContext: pinnedCtx
+  })
+  const scispacyOut = normalizeAlgoResult(scispacyResult_partial, {
+    algorithmId: 'ocl-scispacy-loinc',
+    algorithmConfig: oclScispacyAlgo,
+    algorithmResponseId: 'ar-scispacy',
+    projectContext: pinnedCtx
+  })
+
+  const expectedKey = makeConceptKey({ url: 'http://loinc.org', code: '49494-3', version: '2.81' })
+
+  const searchDef = searchOut.concept_definitions.find(d => d.reference.code === '49494-3')
+  const semanticDef = semanticOut.concept_definitions.find(d => d.reference.code === '49494-3')
+  const bridgeCascadeDef = bridgeOut.concept_definitions.find(d => d.reference.code === '49494-3')
+  const scispacyDef = scispacyOut.concept_definitions.find(d => d.reference.code === '49494-3')
+
+  assert.ok(searchDef && semanticDef && bridgeCascadeDef && scispacyDef,
+    'all four paths emit a ConceptDefinition for the target concept')
+  assert.equal(searchDef.key, expectedKey, 'ocl-search keys on pinned version')
+  assert.equal(semanticDef.key, expectedKey, 'ocl-semantic keys on pinned version')
+  assert.equal(bridgeCascadeDef.key, expectedKey, 'ocl-bridge cascade target keys on pinned version')
+  assert.equal(scispacyDef.key, expectedKey, 'ocl-scispacy keys on pinned version (fixed→target_repo alignment)')
+})
+
+test('all paths converge under HEAD pin too (degenerate but supported)', () => {
+  // HEAD is an explicit, valid project pin — uncommon but allowed. The
+  // alignment must hold whether the pin is a released version or HEAD.
+  const headCtx = {
+    ...projectContext,
+    target_repo: { ...projectContext.target_repo, version: 'HEAD' }
+  }
+  const searchOut = normalizeAlgoResult(oclSearchResult_LOINC_glucose_full, {
+    algorithmId: 'ocl-search',
+    algorithmConfig: oclSearchAlgo,
+    algorithmResponseId: 'ar-search',
+    projectContext: headCtx
+  })
+  const bridgeOut = normalizeAlgoResult(bridgeResult_CIEL_to_LOINC, {
+    algorithmId: 'ocl-bridge',
+    algorithmConfig: oclBridgeAlgo,
+    algorithmResponseId: 'ar-bridge',
+    projectContext: headCtx
+  })
+  const scispacyOut = normalizeAlgoResult(scispacyResult_partial, {
+    algorithmId: 'ocl-scispacy-loinc',
+    algorithmConfig: oclScispacyAlgo,
+    algorithmResponseId: 'ar-scispacy',
+    projectContext: headCtx
+  })
+  const expectedKey = makeConceptKey({ url: 'http://loinc.org', code: '49494-3', version: 'HEAD' })
+
+  assert.equal(searchOut.concept_definitions.find(d => d.reference.code === '49494-3').key, expectedKey)
+  assert.equal(bridgeOut.concept_definitions.find(d => d.reference.code === '49494-3').key, expectedKey)
+  assert.equal(scispacyOut.concept_definitions.find(d => d.reference.code === '49494-3').key, expectedKey)
+})
+
+test('fixed-canonical algo whose URL does NOT match target_repo does not inherit project version', () => {
+  // Safety: the version-inheritance only applies when the fixed canonical
+  // points at the same repo as target_repo. A fixed algo targeting a
+  // different canonical (e.g. SNOMED while the project's target is LOINC)
+  // must continue to produce version-less references — those concepts live
+  // in a different repo entirely and have no relationship to the pin.
+  const pinnedCtx = {
+    ...projectContext,
+    target_repo: { ...projectContext.target_repo, version: '2.81' }
+  }
+  const snomedAlgo = {
+    id: 'custom-snomed',
+    type: 'custom',
+    concept_identity: {
+      reference_source: 'fixed',
+      canonical_url: 'http://snomed.info/sct',
+      code_field: 'id'
+    }
+  }
+  const snomedResult = {
+    id: '12345678',
+    display_name: 'Some SNOMED concept',
+    search_meta: { search_score: 0.7, algorithm: 'custom-snomed' }
+  }
+  const out = normalizeAlgoResult(snomedResult, {
+    algorithmId: 'custom-snomed',
+    algorithmConfig: snomedAlgo,
+    algorithmResponseId: 'ar-snomed',
+    projectContext: pinnedCtx
+  })
+
+  const def = out.concept_definitions.find(d => d.reference.code === '12345678')
+  assert.ok(def)
+  assert.equal(def.reference.version, undefined,
+    'fixed canonical pointing at a different repo than target_repo does NOT inherit the pin')
+  assert.deepEqual(def.reference, { url: 'http://snomed.info/sct', code: '12345678' })
+})
+
+test('fixed-canonical algo with no target_repo.version on project (unpinned) still produces version-less key', () => {
+  // Backward-compat: when the project's target_repo has no version field
+  // (legacy projects or in-flight setup), the fixed-branch inheritance is a
+  // no-op — scispacy continues to emit version-less references as before.
+  // Once the form-level "version required" validation lands (separate
+  // follow-up), this case stops occurring in production.
+  const out = normalizeAlgoResult(scispacyResult_partial, {
+    algorithmId: 'ocl-scispacy-loinc',
+    algorithmConfig: oclScispacyAlgo,
+    algorithmResponseId: 'ar-scispacy',
+    projectContext  // no target_repo.version
+  })
+  const def = out.concept_definitions.find(d => d.reference.code === '49494-3')
+  assert.ok(def)
+  assert.equal(def.reference.version, undefined)
+  assert.deepEqual(def.reference, { url: 'http://loinc.org', code: '49494-3' })
+})
