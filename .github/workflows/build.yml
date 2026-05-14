@@ -28,8 +28,20 @@ jobs:
     - run: npm ci
     - run: ./node_modules/eslint/bin/eslint.js src --ext .jsx,.js
 
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Setup Node
+      uses: actions/setup-node@v3
+      with:
+        node-version: 22
+    - run: npm ci
+    - run: npm test
+
   build:
-    needs: [eslint]
+    needs: [eslint, test]
     name: Build and push image
     runs-on: ubuntu-latest
 

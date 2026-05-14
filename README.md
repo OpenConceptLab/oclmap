@@ -21,6 +21,11 @@ Development is being coordinated by the OCL Mapper Squad, consisting of team mem
 docker exec -it <container_name> bash -c "eslint src --ext .jsx,.js"
 ```
 
+### Test
+```
+docker exec -it oclmap-web-1 bash -c "npm test"
+```
+
 #### Major/minor version increase
 
 In order to increase major/minor version you need to set the new version in [package.json](package.json).
