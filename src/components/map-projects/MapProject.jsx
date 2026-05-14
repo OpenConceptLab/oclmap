@@ -2787,13 +2787,20 @@ const MapProject = () => {
     const SCISPACY_WARMUP_MAX_MS = 10 * 60 * 1000
     const warmupStart = Date.now()
     let warmingUp = true
+    let seenWarmingUp = false
 
     while(warmingUp) {
       if(abortRef.current) { setIsLoadingInDecisionView(false); return }
       try {
         const response = await service.appendToUrl('/$match-scispacy-loinc/').post(payload)
 
-        if(response?.status === 503 && response?.data?.status === 'warming_up') {
+        // APIService resolves 5xx errors with error.response.data, so response
+        // is the parsed body object — not the axios response. A 503 warming_up
+        // from the lambda resolves as {status: 'warming_up', message: '...'}.
+        // A 502 (EC2 still booting) resolves as {error: '...'}.
+        const isWarmingUp = response?.status === 'warming_up' || (seenWarmingUp && response?.error)
+        if(isWarmingUp) {
+          seenWarmingUp = true
           const elapsed = Date.now() - warmupStart
           if(elapsed + SCISPACY_WARMUP_RETRY_MS > SCISPACY_WARMUP_MAX_MS) {
             markAlgo(__row.__index, 'ocl-scispacy-loinc', -2)
