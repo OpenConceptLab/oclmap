@@ -626,7 +626,9 @@
     "create_similar": "Create similar",
     "create_similar_name": "Copy of {{name}}",
     "set_ai_assistant_output_language": "Set AI Assistant output language",
-    "ai_assistant_output_locale": "Output locale"
+    "ai_assistant_output_locale": "Output locale",
+    "use_lexical_variants": "Use Lexical Variants",
+    "use_lexical_variants_description": "Expand $match search to include English spelling variants (e.g. color/colour, leukemia/leukaemia) when matching concept names."
   },
   "app": {
     "web_version": "Web Version",

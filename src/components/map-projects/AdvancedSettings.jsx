@@ -5,6 +5,7 @@ import Collapse from '@mui/material/Collapse'
 import Button from '@mui/material/Button'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import Checkbox from '@mui/material/Checkbox'
+import FormHelperText from '@mui/material/FormHelperText'
 import UpIcon from '@mui/icons-material/ArrowDropUp';
 import DownIcon from '@mui/icons-material/ArrowDropDown';
 
@@ -15,11 +16,11 @@ const AdvancedSettings = ({ namespaceValue, setNamespace, defaultNamespace, isCo
 
   return (
     <div className='col-xs-12 padding-0' style={{marginBottom: '16px', marginTop: '4px'}}>
-        <Button size='small' variant='text' color={open ? 'primary' : 'secondary'} endIcon={open ? <UpIcon fontSize='inherit' /> : <DownIcon fontSize='inherit' />} onClick={() => setOpen(!open)} sx={{textTransform: 'none'}}>
-          {t('map_project.advanced_settings')}
-        </Button>
+      <Button size='small' variant='text' color={open ? 'primary' : 'secondary'} endIcon={open ? <UpIcon fontSize='inherit' /> : <DownIcon fontSize='inherit' />} onClick={() => setOpen(!open)} sx={{textTransform: 'none'}}>
+        {t('map_project.advanced_settings')}
+      </Button>
       <Collapse in={open}>
-    <div className='col-xs-12 padding-0' style={{marginTop: '4px'}}>
+        <div className='col-xs-12 padding-0' style={{marginTop: '4px'}}>
           <TextField
             fullWidth
             size='small'
@@ -35,17 +36,20 @@ const AdvancedSettings = ({ namespaceValue, setNamespace, defaultNamespace, isCo
           />
           {
             isCoreUser &&
-              <FormControlLabel
-                sx={{marginTop: '8px'}}
-                control={
-                  <Checkbox
-                    size='small'
-                    checked={Boolean(useLexicalVariants)}
-                    onChange={event => setUseLexicalVariants(event.target.checked)}
-                  />
-                }
-                label={t('map_project.use_lexical_variants', 'Use Lexical Variants')}
-              />
+              <>
+                <FormControlLabel
+                  sx={{marginTop: '8px'}}
+                  control={
+                    <Checkbox
+                      size='small'
+                      checked={Boolean(useLexicalVariants)}
+                      onChange={event => setUseLexicalVariants(event.target.checked)}
+                    />
+                  }
+                  label={t('map_project.use_lexical_variants')}
+                />
+                <FormHelperText sx={{marginTop: 0}}>{t('map_project.use_lexical_variants_description')}</FormHelperText>
+              </>
           }
         </div>
       </Collapse>

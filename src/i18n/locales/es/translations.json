@@ -601,7 +601,9 @@
     "config_error_missing_canonical": "Al algoritmo personalizado \"{{name}}\" le falta una URL canónica válida.",
     "target_repo_required_on_load": "A este proyecto le falta un repositorio de destino. Configure el repositorio de destino para ver los candidatos guardados.",
     "create_similar": "Crear similar",
-    "create_similar_name": "Copia de {{name}}"
+    "create_similar_name": "Copia de {{name}}",
+    "use_lexical_variants": "Usar variantes léxicas",
+    "use_lexical_variants_description": "Amplíe la búsqueda $match para incluir variantes ortográficas en inglés (p. ej. color/colour, leukemia/leukaemia) al comparar nombres de conceptos."
   },
   "app": {
     "web_version": "Versión Web",
