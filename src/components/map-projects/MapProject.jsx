@@ -2783,32 +2783,56 @@ const MapProject = () => {
     // to wake up returns 503) no longer get written as `results: []` —
     // we mark the algo as failed without persisting the empty entry, so
     // the next row visit retries.
-    try {
-      const response = await service.appendToUrl('/$match-scispacy-loinc/').post(payload)
-      const isError = response?.detail
-        || response?.status >= 400
-        || (response && response.data === undefined && response.status !== 200)
-      if(isError) {
+    const SCISPACY_WARMUP_RETRY_MS = 2 * 60 * 1000
+    const SCISPACY_WARMUP_MAX_MS = 10 * 60 * 1000
+    const warmupStart = Date.now()
+    let warmingUp = true
+
+    while(warmingUp) {
+      if(abortRef.current) { setIsLoadingInDecisionView(false); return }
+      try {
+        const response = await service.appendToUrl('/$match-scispacy-loinc/').post(payload)
+
+        if(response?.status === 503 && response?.data?.status === 'warming_up') {
+          const elapsed = Date.now() - warmupStart
+          if(elapsed + SCISPACY_WARMUP_RETRY_MS > SCISPACY_WARMUP_MAX_MS) {
+            markAlgo(__row.__index, 'ocl-scispacy-loinc', -2)
+            log({action: 'algo_failed', extras: {algo: 'ocl-scispacy-loinc', status: 503, detail: 'warming_up_timeout'}}, __row.__index)
+            setAlert({message: "OCL's scispacy service did not come up within 10 minutes.", severity: 'error'})
+            setIsLoadingInDecisionView(false)
+            return response
+          }
+          setAlert({message: "OCL's scispacy matching service is warming up. Retrying in 2 minutes…", severity: 'info'})
+          await new Promise(resolve => setTimeout(resolve, SCISPACY_WARMUP_RETRY_MS))
+        } else {
+          warmingUp = false
+          const isError = response?.detail
+            || response?.status >= 400
+            || (response && response.data === undefined && response.status !== 200)
+          if(isError) {
+            markAlgo(__row.__index, 'ocl-scispacy-loinc', -2)
+            log({action: 'algo_failed', extras: {algo: 'ocl-scispacy-loinc', status: response?.status, detail: response?.detail}}, __row.__index)
+            setAlert({
+              message: response?.detail || "OCL's scispacy matching service is starting up. This may take a couple minutes. You can safely leave this row and come back. Click Refresh if results aren't here in a couple of minutes.",
+              severity: 'warning'
+            })
+            setIsLoadingInDecisionView(false)
+            return response
+          }
+          if(callback) callback(response, payload)
+          setIsLoadingInDecisionView(false)
+          return response
+        }
+      } catch(err) {
+        warmingUp = false
         markAlgo(__row.__index, 'ocl-scispacy-loinc', -2)
-        log({action: 'algo_failed', extras: {algo: 'ocl-scispacy-loinc', status: response?.status, detail: response?.detail}}, __row.__index)
+        log({action: 'algo_failed', extras: {algo: 'ocl-scispacy-loinc', error: err?.message}}, __row.__index)
         setAlert({
-          message: response?.detail || "OCL's scispacy matching service is starting up. This may take a couple minutes. You can safely leave this row and come back. Click Refresh if results aren't here in a couple of minutes.",
+          message: "OCL's scispacy matching service is starting up. This may take a couple minutes. You can safely leave this row and come back. Click Refresh if results aren't here in a couple of minutes.",
           severity: 'warning'
         })
         setIsLoadingInDecisionView(false)
-        return response
       }
-      if(callback) callback(response, payload)
-      setIsLoadingInDecisionView(false)
-      return response
-    } catch(err) {
-      markAlgo(__row.__index, 'ocl-scispacy-loinc', -2)
-      log({action: 'algo_failed', extras: {algo: 'ocl-scispacy-loinc', error: err?.message}}, __row.__index)
-      setAlert({
-        message: "OCL's scispacy matching service is starting up. This may take a couple minutes. You can safely leave this row and come back. Click Refresh if results aren't here in a couple of minutes.",
-        severity: 'warning'
-      })
-      setIsLoadingInDecisionView(false)
     }
   }
 
