@@ -3768,10 +3768,12 @@ const MapProject = () => {
         })
       )
     }
+    // Auto-match (caller supplied resolvedPromptTemplate) fires once per row;
+    // user-initiated single-row clicks always append a new entry to the
+    // per-row analysis history.
+    const isAutoMatch = Boolean(resolvedPromptTemplate)
     const existingAnalyses = analysis[__index] || []
-    const selectedModelId = getSelectedAIModel()?.id || AIModel
-    const templateKey = promptTemplate?.key
-    const alreadyAnalyzed = existingAnalyses.some(a => a?.model === selectedModelId && a?.prompt_template?.key === templateKey)
+    const alreadyAnalyzed = isAutoMatch && existingAnalyses.length > 0
     if(isNumber(__index) && repoVersion && !alreadyAnalyzed && _candidates?.length > 0) {
       if(!promptTemplate?.key) {
         setAlert({message: 'AI Assistant prompt template is not available', severity: 'error'})
@@ -3867,12 +3869,15 @@ const MapProject = () => {
 
         markAlgo(__index, 'recommend', 1)
         log({created_at: timestamp, action: 'AIRecommendation', description: get(response.data, 'output.rationale') || get(response.data, 'rationale'), extras: {...response.data, model: selectedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}}, __index)
-        const newEntry = {...response.data, model: selectedModel?.id || AIModel, model_name: selectedModel?.name, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri, timestamp: timestamp, user: user.username || user.id}
-        setAnalysis(prev => {
-          const existing = prev[__index] || []
-          const filtered = existing.filter(a => !(a?.model === newEntry.model && a?.prompt_template?.key === promptTemplateRef?.key))
-          return {...prev, [__index]: [...filtered, newEntry]}
-        })
+        const resolvedTemplate = response.data?.template || {}
+        const resolvedVersion = resolvedTemplate.version || promptTemplateRef?.version || null
+        const resolvedPromptRef = {
+          ...promptTemplateRef,
+          version: resolvedVersion,
+          uri: resolvedVersion && promptTemplateRef?.key ? `/prompts/${promptTemplateRef.key}/${resolvedVersion}/` : (promptTemplateRef?.uri || null)
+        }
+        const newEntry = {...response.data, model: selectedModel?.id || AIModel, model_name: selectedModel?.name, prompt_template: resolvedPromptRef, prompt_template_uri: resolvedPromptRef.uri, output_locale: promptOutputLocale || null, timestamp: timestamp, user: user.username || user.id}
+        setAnalysis(prev => ({...prev, [__index]: [...(prev[__index] || []), newEntry]}))
         return true
       } catch (err) {
         markAlgo(__index, 'recommend', -2)

@@ -627,7 +627,8 @@
     "create_similar": "Create similar",
     "create_similar_name": "Copy of {{name}}",
     "set_ai_assistant_output_language": "Set AI Assistant output language",
-    "ai_assistant_output_locale": "Output locale"
+    "ai_assistant_output_locale": "Output locale",
+    "output_locale": "Output Locale"
   },
   "app": {
     "web_version": "Web Version",

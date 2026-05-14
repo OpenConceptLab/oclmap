@@ -30,10 +30,13 @@ const AICandidatesAnalysis = ({ analysis: analysisProp, onClose, sx, isCoreUser 
   const analysisArray = Array.isArray(analysisProp) ? analysisProp : (analysisProp ? [analysisProp] : [])
   const total = analysisArray.length
 
-  // Jump to latest when a new entry is added
+  // Jump to latest only when total grows (a new entry was appended);
+  // don't yank the user back when total holds steady on re-render.
+  const prevTotalRef = React.useRef(0)
   React.useEffect(() => {
-    if(total > 0)
+    if(total > prevTotalRef.current)
       setPage(total - 1)
+    prevTotalRef.current = total
   }, [total])
 
   const analysis = analysisArray[page]
@@ -126,13 +129,13 @@ const AICandidatesAnalysis = ({ analysis: analysisProp, onClose, sx, isCoreUser 
                 </Typography>
               </span>
               {
-                analysis?.prompt_template_uri &&
+                analysis?.output_locale &&
                   <span style={{marginRight: '4px', display: 'inline-flex'}}>
                     <Typography gutterBottom sx={{ color: 'text.secondary', fontSize: 12, mb: 0 }} component='span'>
-                      URI:
+                      {t('map_project.output_locale')}:
                     </Typography>
                     <Typography gutterBottom sx={{ color: 'text.primary', fontSize: 12, mb: 0 }} component='span'>
-                      {analysis.prompt_template_uri}
+                      {analysis.output_locale}
                     </Typography>
                   </span>
               }

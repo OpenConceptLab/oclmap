@@ -556,6 +556,7 @@
     "ai_prompt_template_default_model": "Modelo predeterminado",
     "set_ai_assistant_output_language": "Establecer el idioma de salida del asistente de IA",
     "ai_assistant_output_locale": "Configuración regional de salida",
+    "output_locale": "Idioma de salida",
     "reranker_configuration": "Configuración del reranker",
     "reranker_configuration_description": "Elija el modelo de reranker utilizado para calcular las puntuaciones unificadas de este proyecto. El modelo predeterminado se selecciona automáticamente, o puede ingresar un nombre de modelo personalizado.",
     "reranker_configuration_model": "Modelo de reranker",
