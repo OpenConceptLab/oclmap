@@ -2230,19 +2230,38 @@ const MapProject = () => {
 
   const getRowCandidatesForDownload = index => {
     let candidates = {};
+    // Build a code → rerank_score lookup from rowMatchState. Some algos
+    // (scispacy) intentionally omit search_normalized_score from allCandidates
+    // so the rerank pipeline can fill rerank_score — but that only updates
+    // rowMatchState, not allCandidates. This fallback makes the CSV reflect
+    // the same unified score the UI shows.
+    const rowState = rowMatchStateRef.current[index]
+    const rerankScoreByCode = new Map()
+    if(rowState?.concept_rows) {
+      forEach(values(rowState.concept_rows), cr => {
+        if(typeof cr.rerank_score === 'number') {
+          try {
+            const { code } = parseConceptKey(cr.concept_key)
+            rerankScoreByCode.set(code, cr.rerank_score)
+          } catch {} // malformed key — skip
+        }
+      })
+    }
     forEach(keys(allCandidatesRef.current).sort(), algoId => {
       const _candidates = allCandidatesRef.current[algoId]
       let algoKey = algoId.replaceAll('-', '').replaceAll(' ', '').replaceAll('_', '').toLowerCase()
-      let __candidates = orderBy(find(_candidates, c => c.row?.__index === index)?.results || [], 'search_meta.search_normalized_score', 'desc')
+      let __candidates = orderBy(find(_candidates, c => c.row?.__index === index)?.results || [], c => c?.search_meta?.search_normalized_score ?? rerankScoreByCode.get(c?.id) ?? -1, 'desc')
       __candidates = times(CANDIDATES_LIMIT, i => __candidates[i])
       forEach(__candidates, (candidate, i) => {
         if(candidate?.id) {
           const isBridge = algoId.includes('bridge')
+          const unifiedScore = candidate?.search_meta?.search_normalized_score
+            ?? rerankScoreByCode.get(candidate.id)
           candidates[`__result_${algoKey}_${twoDigit(i + 1)}__`] = candidate?.id ?
             (
               isBridge ?
                 bridgeRef.current?.getCandidateLabelForDownload(candidate) :
-                compact([`${candidate.id}:${candidate.display_name}`, `Unified Score: ${candidate?.search_meta?.search_normalized_score}`, `Raw Score: ${candidate?.search_meta?.search_score}`]).join('\n')
+                compact([`${candidate.id}:${candidate.display_name}`, `Unified Score: ${unifiedScore}`, `Raw Score: ${candidate?.search_meta?.search_score}`]).join('\n')
             ) :
             null
         }
