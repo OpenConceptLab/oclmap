@@ -2781,6 +2781,7 @@ const MapProject = () => {
     const payload = {rows: [{label: inputRow.name, itemid: __row.__index}]}
     const service = APIService.new()
     service.URL = SCISPACY_API_URL
+    service.appendToUrl('/$match-scispacy-loinc/')
     // Note: the previous shape had `setIsLoadingInDecisionView(false)` inside
     // a `finally` block that fired synchronously *before* the POST resolved
     // (the .then was detached, not awaited). Result: isLoading flipped back
@@ -2800,7 +2801,7 @@ const MapProject = () => {
     while(warmingUp) {
       if(abortRef.current) { setIsLoadingInDecisionView(false); return }
       try {
-        const response = await service.appendToUrl('/$match-scispacy-loinc/').post(payload)
+        const response = await service.post(payload)
 
         // APIService resolves 5xx errors with error.response.data, so response
         // is the parsed body object — not the axios response. A 503 warming_up
