@@ -98,7 +98,7 @@ import ProjectLogs from './ProjectLogs';
 import { useAlgos, CONCEPT_IDENTITY_BY_TYPE, ensureConceptIdentity } from './algorithms'
 import AutoMatchDialog from './AutoMatchDialog'
 import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
-import { normalizeAlgorithmInvocation, lookupStatusRank, normalizeLegacyAllCandidates } from './normalizers'
+import { normalizeAlgorithmInvocation, lookupStatusRank, normalizeLegacyAllCandidates, buildRecommendableConceptEntry } from './normalizers'
 import { parseConceptKey } from './conceptKey'
 import { buildQualityRowViews, conceptForMapping, resolveAICandidateID } from './viewBuilders.js'
 
@@ -3750,6 +3750,10 @@ const MapProject = () => {
     }
 
     const targetCanonical = projectContext.target_repo.canonical_url
+    // Project-pinned identifying property codes. When absent (FHIR-passthrough
+    // sources or repos that haven't pinned a summary), filterPropertyBySummary
+    // passes def.property through whole.
+    const summaryPropertyCodes = repoVersion?.meta?.display?.concept_summary_properties
     const recommendable_concepts = []
     const bridge_context = []
 
@@ -3788,18 +3792,9 @@ const MapProject = () => {
               e.via = {bridge_concept_key: c.bridge_concept_key, map_type: c.map_type}
             return e
           })
-        recommendable_concepts.push({
-          concept_key: key,
-          canonical_reference: def.reference,
-          ocl_url: def.ocl_url,
-          display_name: def.display_name,
-          names: def.names,
-          descriptions: def.descriptions,
-          concept_class: def.concept_class,
-          datatype: def.datatype,
-          properties: def.properties,
-          evidence
-        })
+        recommendable_concepts.push(buildRecommendableConceptEntry({
+          def, key, evidence, rowState, summaryPropertyCodes
+        }))
       }
       // Else: concept from a non-target, non-bridge source — skip
     })
@@ -3823,33 +3818,14 @@ const MapProject = () => {
       console.error('AI ASSISTANT is not enabled for you.')
       return false
     }
-    // Source the legacy `candidates[]` array first from allCandidates (the
-    // PR2a path), and fall back to projecting from the unified rowMatchState
-    // when legacy is empty. Without the fallback, any flow that ends with
-    // populated rowMatchState but empty allCandidates (e.g. flag-on saved-
-    // project load races, or future paths that skip the parallel legacy
-    // write) bails before the POST fires — user sees no AI Assistant
-    // response even though the row clearly has candidates on screen.
-    let _candidates = flatten(map(selectedAlgoIds, algoId => find(allCandidatesRef.current[algoId], c => c.row?.__index === __index)?.results || []))
-    if(_candidates.length === 0 && rowMatchStateRef.current?.[__index]) {
-      const rowState = rowMatchStateRef.current[__index]
-      _candidates = compact(
-        Object.values(rowState.candidates || {}).map(cand => {
-          const def = conceptCacheRef.current[cand.concept_key]
-          if(!def) return null
-          const conceptRow = rowState.concept_rows?.[cand.concept_key]
-          const bridgeDef = cand.bridge_concept_key ? conceptCacheRef.current[cand.bridge_concept_key] : undefined
-          return conceptForMapping({candidate: cand, conceptDefinition: def, conceptRow, bridgeConceptDefinition: bridgeDef})
-        })
-      )
-    }
     // Auto-match (caller supplied resolvedPromptTemplate) fires once per row;
     // user-initiated single-row clicks always append a new entry to the
     // per-row analysis history.
     const isAutoMatch = Boolean(resolvedPromptTemplate)
     const existingAnalyses = analysis[__index] || []
     const alreadyAnalyzed = isAutoMatch && existingAnalyses.length > 0
-    if(isNumber(__index) && repoVersion && !alreadyAnalyzed && _candidates?.length > 0) {
+    const v2 = isNumber(__index) ? buildV2RecommendationPayload(__index) : null
+    if(isNumber(__index) && repoVersion && !alreadyAnalyzed && (v2?.recommendable_concepts?.length || 0) > 0) {
       if(!promptTemplate?.key) {
         setAlert({message: 'AI Assistant prompt template is not available', severity: 'error'})
         markAlgo(__index, 'recommend', -3)
@@ -3858,12 +3834,6 @@ const MapProject = () => {
 
       markAlgo(__index, 'recommend', 0)
       let rowData = prepareRow(__row, true, true)
-      // Option A: additive. Keep the legacy `candidates` field for the
-      // current prompt template; spread v2 fields alongside for the next
-      // prompt-template revision (which will read recommendable_concepts +
-      // bridge_context and structurally exclude bridges from the
-      // recommendation pool, fixing the bridge-recommendation bug).
-      const v2 = buildV2RecommendationPayload(__index)
 
       const selectedModel = getSelectedAIModel()
       let activePromptTemplate
@@ -3897,33 +3867,14 @@ const MapProject = () => {
         return false
       }
       const promptTemplateRef = getPromptTemplateRef(activePromptTemplate)
-      // Strip heavy fields before sending to the LLM. These are useful for
-      // the in-app UI (Table view chips, hover details) but burn tokens
-      // without adding signal for matching judgments. Keep the things the
-      // legacy prompt template actually reads (id, display_name, source,
-      // search_meta, url, concept_class, datatype, retired, mappings,
-      // property), drop the bulky ones.
-      //   extras       - LOINC source-specific JSON; very large per concept
-      //   names        - multiple locales, redundant with display_name
-      //   descriptions - multiple, often long; not used for matching
-      // The v2 `recommendable_concepts` already omits these (see
-      // buildV2RecommendationPayload). NB: if you see a literal "max_tokens"
-      // error from the model, that's the server-side prompt template's
-      // output budget — check ocl-ai-assistant's template config, not this
-      // file.
-      const stripHeavyFields = (c) => omit(c, ['_source', 'extras', 'names', 'descriptions'])
       const payload = {
         variables: {
           project: getProjectMetadata(),
           row: rowData.row,
           metadata: rowData.metadata,
-          candidates: [..._candidates.map(stripHeavyFields)],
-          ...(v2 ? {
-            payload_version: 'v2',
-            target_repo: v2.target_repo,
-            recommendable_concepts: v2.recommendable_concepts,
-            bridge_context: v2.bridge_context
-          } : {})
+          target_repo: v2.target_repo,
+          recommendable_concepts: v2.recommendable_concepts,
+          bridge_context: v2.bridge_context
         }
       }
 

@@ -18,7 +18,9 @@ import assert from 'node:assert/strict'
 import {
   createAlgorithmResponse,
   normalizeAlgoResult,
-  normalizeAlgorithmInvocation
+  normalizeAlgorithmInvocation,
+  filterPropertyBySummary,
+  buildRecommendableConceptEntry
 } from '../normalizers.js'
 import { makeConceptKey, parseConceptKey, referencesEqual } from '../conceptKey.js'
 
@@ -900,4 +902,221 @@ test('fixed-canonical algo with no target_repo.version on project (unpinned) sti
   assert.ok(def)
   assert.equal(def.reference.version, undefined)
   assert.deepEqual(def.reference, { url: 'http://loinc.org', code: '49494-3' })
+})
+
+// ============================================================================
+// filterPropertyBySummary — producer-side property filter for AI Assistant
+// v2 payload. See unified-mapper-model.md (PR3-D1).
+// ============================================================================
+
+// LOINC concept 2345-7 (Glucose [Mass/volume] in Serum or Plasma) property
+// dict. Shape matches GET /orgs/Regenstrief/sources/LOINC/concepts/2345-7/
+// on prod (verified 2026-05-14): array of {code, valueCoding} pairs from
+// ConceptDetailSerializer.property = JSONField(source='properties').
+const loincProperty = [
+  { code: 'COMPONENT', valueCoding: 'Glucose' },
+  { code: 'PROPERTY', valueCoding: 'MCnc' },
+  { code: 'TIME_ASPCT', valueCoding: 'Pt' },
+  { code: 'SYSTEM', valueCoding: 'Ser/Plas' },
+  { code: 'SCALE_TYP', valueCoding: 'Qn' },
+  { code: 'METHOD_TYP', valueCoding: '' },
+  { code: 'CLASS', valueCoding: 'CHEM' },
+  { code: 'STATUS', valueCoding: 'ACTIVE' },
+  { code: 'VersionLastChanged', valueCoding: '2.74' }
+]
+
+// Real production concept_summary_properties pinned on the LOINC repo
+// (https://api.openconceptlab.org/orgs/Regenstrief/sources/LOINC/, verified
+// 2026-05-14). Drops VersionLastChanged + STATUS; includes EXAMPLE_UCUM_UNITS /
+// ORDER_OBS / COMMON_TEST_RANK which the test fixture above doesn't carry —
+// representative of real filter behavior: matched-codes-only.
+const loincSummaryProperties = [
+  'COMPONENT', 'PROPERTY', 'TIME_ASPCT', 'SYSTEM', 'SCALE_TYP', 'METHOD_TYP',
+  'CLASS', 'EXAMPLE_UCUM_UNITS', 'ORDER_OBS', 'COMMON_TEST_RANK'
+]
+
+test('filterPropertyBySummary: passes property through when no summary codes configured', () => {
+  assert.equal(filterPropertyBySummary(loincProperty, undefined), loincProperty)
+  assert.equal(filterPropertyBySummary(loincProperty, null), loincProperty)
+  assert.equal(filterPropertyBySummary(loincProperty, []), loincProperty)
+})
+
+test('filterPropertyBySummary: filters to the summary subset (real LOINC summary pins)', () => {
+  const out = filterPropertyBySummary(loincProperty, loincSummaryProperties)
+  // 7 of the 9 fixture entries are in the summary (the other 3 summary codes
+  // — EXAMPLE_UCUM_UNITS, ORDER_OBS, COMMON_TEST_RANK — aren't in the fixture).
+  assert.equal(out.length, 7)
+  assert.deepEqual(out.map(p => p.code).sort(),
+    ['CLASS', 'COMPONENT', 'METHOD_TYP', 'PROPERTY', 'SCALE_TYP', 'SYSTEM', 'TIME_ASPCT'])
+  // Bookkeeping fields (STATUS, VersionLastChanged) are dropped — they
+  // aren't in the LOINC repo's summary pin.
+  assert.ok(!out.some(p => p.code === 'STATUS'))
+  assert.ok(!out.some(p => p.code === 'VersionLastChanged'))
+})
+
+test('filterPropertyBySummary: returns undefined when property is missing/empty', () => {
+  assert.equal(filterPropertyBySummary(undefined, ['COMPONENT']), undefined)
+  assert.equal(filterPropertyBySummary(null, ['COMPONENT']), undefined)
+  assert.equal(filterPropertyBySummary([], ['COMPONENT']), undefined)
+})
+
+test('filterPropertyBySummary: filtered result drops entries whose code is not in the summary', () => {
+  const out = filterPropertyBySummary(loincProperty, ['COMPONENT', 'SYSTEM'])
+  assert.deepEqual(out, [
+    { code: 'COMPONENT', valueCoding: 'Glucose' },
+    { code: 'SYSTEM', valueCoding: 'Ser/Plas' }
+  ])
+})
+
+test('filterPropertyBySummary: tolerates entries without a code field', () => {
+  const property = [
+    { code: 'COMPONENT', valueCoding: 'Glucose' },
+    { valueCoding: 'orphan' },
+    { code: undefined, valueCoding: 'still orphan' },
+    { code: 'SYSTEM', valueCoding: 'Ser/Plas' }
+  ]
+  const out = filterPropertyBySummary(property, ['COMPONENT', 'SYSTEM'])
+  assert.equal(out.length, 2)
+  assert.deepEqual(out.map(p => p.code), ['COMPONENT', 'SYSTEM'])
+})
+
+// ============================================================================
+// buildRecommendableConceptEntry — per-concept push into recommendable_concepts.
+// Exercises the 3 PR3-D1 producer additions: property (filtered by summary),
+// rerank_score (from rowState), retired (truthy-only).
+// ============================================================================
+
+// LOINC ConceptDefinition fixture matching the shape produced by
+// toConceptDefinition (normalizers.js) for LOINC 2345-7.
+const loincDef = {
+  reference: { url: 'http://loinc.org', code: '2345-7', version: '2.74' },
+  key: 'http://loinc.org|2345-7|2.74',
+  ocl_url: '/orgs/Regenstrief/sources/LOINC/concepts/2345-7/',
+  id: '2345-7',
+  display_name: 'Glucose [Mass/volume] in Serum or Plasma',
+  source: 'LOINC',
+  owner: 'Regenstrief',
+  names: [{ name: 'Glucose [Mass/volume] in Serum or Plasma', locale: 'en', locale_preferred: true }],
+  descriptions: [],
+  concept_class: 'LP',
+  datatype: 'Qn',
+  retired: false,
+  property: loincProperty,
+  lookup_status: 'full',
+  lookup_source_type: 'algorithm',
+  lookup_source: 'ocl-search'
+}
+
+const stdEvidence = [
+  { algorithm_id: 'ocl-search', candidate_type: 'standard', score: 0.93, highlights: ['glucose'] }
+]
+
+test('buildRecommendableConceptEntry: standard target-repo concept — all 3 PR3-D1 fields wired correctly', () => {
+  const rowState = {
+    concept_rows: { 'http://loinc.org|2345-7|2.74': { rerank_score: 0.87 } }
+  }
+  const entry = buildRecommendableConceptEntry({
+    def: loincDef,
+    key: loincDef.key,
+    evidence: stdEvidence,
+    rowState,
+    summaryPropertyCodes: loincSummaryProperties
+  })
+
+  // Identity + display passthrough
+  assert.equal(entry.concept_key, loincDef.key)
+  assert.deepEqual(entry.canonical_reference, loincDef.reference)
+  assert.equal(entry.ocl_url, loincDef.ocl_url)
+  assert.equal(entry.display_name, loincDef.display_name)
+  assert.equal(entry.concept_class, 'LP')
+  assert.equal(entry.datatype, 'Qn')
+
+  // (1) property is the filtered subset — 7 entries match the real-prod
+  //     LOINC summary pin from the fixture.
+  assert.ok(Array.isArray(entry.property))
+  assert.equal(entry.property.length, 7)
+  assert.deepEqual(entry.property.map(p => p.code).sort(),
+    ['CLASS', 'COMPONENT', 'METHOD_TYP', 'PROPERTY', 'SCALE_TYP', 'SYSTEM', 'TIME_ASPCT'])
+  assert.ok(!entry.property.some(p => p.code === 'STATUS'))
+  assert.ok(!entry.property.some(p => p.code === 'VersionLastChanged'))
+
+  // (2) rerank_score wired from rowState
+  assert.equal(entry.rerank_score, 0.87)
+
+  // (3) retired is absent (def.retired === false → not emitted)
+  assert.equal('retired' in entry, false)
+
+  assert.deepEqual(entry.evidence, stdEvidence)
+})
+
+test('buildRecommendableConceptEntry: retired:true on def emits retired:true on entry', () => {
+  const entry = buildRecommendableConceptEntry({
+    def: { ...loincDef, retired: true },
+    key: loincDef.key,
+    evidence: stdEvidence,
+    rowState: undefined,
+    summaryPropertyCodes: loincSummaryProperties
+  })
+  assert.equal(entry.retired, true)
+})
+
+test('buildRecommendableConceptEntry: retired absent for def.retired === false / undefined / "true" (truthy-string)', () => {
+  for (const retired of [false, undefined, null, 0, '', 'true']) {
+    const entry = buildRecommendableConceptEntry({
+      def: { ...loincDef, retired },
+      key: loincDef.key,
+      evidence: stdEvidence,
+      rowState: undefined,
+      summaryPropertyCodes: undefined
+    })
+    assert.equal('retired' in entry, false,
+      `retired=${JSON.stringify(retired)} should produce entry WITHOUT retired key`)
+  }
+})
+
+test('buildRecommendableConceptEntry: rerank_score is undefined when rowState is empty or concept_key absent', () => {
+  const entryNoRowState = buildRecommendableConceptEntry({
+    def: loincDef, key: loincDef.key, evidence: stdEvidence,
+    rowState: undefined, summaryPropertyCodes: undefined
+  })
+  assert.equal(entryNoRowState.rerank_score, undefined)
+
+  const entryDifferentKey = buildRecommendableConceptEntry({
+    def: loincDef, key: loincDef.key, evidence: stdEvidence,
+    rowState: { concept_rows: { 'http://loinc.org|99999-9|2.74': { rerank_score: 0.5 } } },
+    summaryPropertyCodes: undefined
+  })
+  assert.equal(entryDifferentKey.rerank_score, undefined)
+})
+
+test('buildRecommendableConceptEntry: property passes through whole when summary codes are not pinned', () => {
+  const entry = buildRecommendableConceptEntry({
+    def: loincDef, key: loincDef.key, evidence: stdEvidence,
+    rowState: undefined, summaryPropertyCodes: undefined
+  })
+  // No filter applied — full 9-entry fixture passes through.
+  assert.equal(entry.property.length, 9)
+})
+
+test('buildRecommendableConceptEntry: property is undefined when def has no property data', () => {
+  const entry = buildRecommendableConceptEntry({
+    def: { ...loincDef, property: undefined }, key: loincDef.key, evidence: stdEvidence,
+    rowState: undefined, summaryPropertyCodes: loincSummaryProperties
+  })
+  assert.equal(entry.property, undefined)
+})
+
+test('buildRecommendableConceptEntry: bridge_child evidence carries via.bridge_concept_key into entry untouched', () => {
+  const bridgeEvidence = [
+    { algorithm_id: 'ocl-ciel-bridge', candidate_type: 'bridge_child', score: 0.88,
+      highlights: undefined,
+      via: { bridge_concept_key: 'https://CIELterminology.org|887|2024-01', map_type: 'SAME-AS' } }
+  ]
+  const entry = buildRecommendableConceptEntry({
+    def: loincDef, key: loincDef.key, evidence: bridgeEvidence,
+    rowState: { concept_rows: { [loincDef.key]: { rerank_score: 0.91 } } },
+    summaryPropertyCodes: loincSummaryProperties
+  })
+  assert.deepEqual(entry.evidence, bridgeEvidence)
+  assert.equal(entry.rerank_score, 0.91)
 })
