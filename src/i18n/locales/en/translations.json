@@ -403,6 +403,10 @@
     "filter_name_locales": "Global Locale Filter",
     "loading_name_locales": "Loading Name Locales...",
     "filter_name_locales_helper": "Note: Restricting candidates to specific languages limits cross-lingual matching capabilities, but may improve the accuracy of results for certain datasets, especially if the input data is in the same language as a target repository's default language.",
+    "input_language": "Input Language",
+    "input_language_helper": "Language of the input data. Determines which target-repo name locales are sent to the AI Assistant.",
+    "ai_effective_locales": "AI will receive names in: {{locales}}",
+    "ai_all_locales": "AI will receive names in: all locales (no filter)",
     "default_filter": "Default Filter",
     "matching_algorithm": "Matching Algorithm",
     "matching_algorithm_description": "Select a matching algorithm. Learn more",
@@ -629,6 +633,7 @@
     "create_similar_name": "Copy of {{name}}",
     "set_ai_assistant_output_language": "Set AI Assistant output language",
     "ai_assistant_output_locale": "Output locale",
+    "ai_assistant_output_locale_helper": "Pick from the list, or type a regional BCP-47 code (e.g. pt-BR, fr-CA).",
     "output_locale": "Output Locale",
     "use_lexical_variants": "Use Lexical Variants",
     "use_lexical_variants_description": "Expand $match search to include English spelling variants (e.g. color/colour, leukemia/leukaemia) when matching concept names."

@@ -22,7 +22,11 @@ import {
   filterPropertyBySummary,
   buildRecommendableConceptEntry,
   compactProperty,
-  stripConstantClassAndDatatype
+  stripConstantClassAndDatatype,
+  filterAndTrimNames,
+  filterAndTrimDescriptions,
+  primarySubtag,
+  uniqByPrimarySubtag
 } from '../normalizers.js'
 import { makeConceptKey, parseConceptKey, referencesEqual } from '../conceptKey.js'
 
@@ -1268,4 +1272,300 @@ test('stripConstantClassAndDatatype: returns the same array reference (in-place)
   ]
   const out = stripConstantClassAndDatatype(entries)
   assert.equal(out, entries)
+})
+
+// ============================================================================
+// PR3-H — locale helpers (primarySubtag, uniqByPrimarySubtag).
+// ============================================================================
+
+test('primarySubtag: extracts language subtag, lowercased', () => {
+  assert.equal(primarySubtag('en'), 'en')
+  assert.equal(primarySubtag('en-US'), 'en')
+  assert.equal(primarySubtag('EN-US'), 'en')
+  assert.equal(primarySubtag('pt-BR'), 'pt')
+  assert.equal(primarySubtag('zh-Hant-TW'), 'zh')
+})
+
+test('primarySubtag: empty / null / undefined / non-string → empty string', () => {
+  assert.equal(primarySubtag(''), '')
+  assert.equal(primarySubtag(null), '')
+  assert.equal(primarySubtag(undefined), '')
+  assert.equal(primarySubtag(42), '')
+})
+
+test('uniqByPrimarySubtag: dedupes on primary subtag preserving first-seen order', () => {
+  assert.deepEqual(uniqByPrimarySubtag(['en', 'en-US', 'EN', 'pt-BR', 'pt', 'fr']),
+    ['en', 'pt', 'fr'])
+})
+
+test('uniqByPrimarySubtag: ignores empty / nullish entries', () => {
+  assert.deepEqual(uniqByPrimarySubtag(['en', '', null, undefined, 'pt']),
+    ['en', 'pt'])
+})
+
+test('uniqByPrimarySubtag: non-array input → []', () => {
+  assert.deepEqual(uniqByPrimarySubtag(null), [])
+  assert.deepEqual(uniqByPrimarySubtag(undefined), [])
+  assert.deepEqual(uniqByPrimarySubtag('en'), [])
+})
+
+// ============================================================================
+// PR3-H — filterAndTrimNames: locale filter + per-entry structural trim.
+// ============================================================================
+
+const multiLocaleNames = [
+  { name: 'Glucose [Mass/volume] in Serum or Plasma', locale: 'en', name_type: 'FULLY_SPECIFIED', locale_preferred: true, external_id: 'LP21407-6' },
+  { name: 'Glucose mass per vol', locale: 'en', name_type: 'SHORT', locale_preferred: false, external_id: 'LP21408-1' },
+  { name: 'Glucosa', locale: 'es-MX', name_type: 'FULLY_SPECIFIED', locale_preferred: true, external_id: 'LP-ES-1' },
+  { name: 'Glicose', locale: 'pt-BR', name_type: 'FULLY_SPECIFIED', locale_preferred: true, external_id: 'LP-PT-1' },
+  { name: 'Glucose-FR', locale: 'fr-CA', name_type: 'SYNONYM', locale_preferred: false, external_id: 'LP-FR-1' },
+  { name: '葡萄糖', locale: 'zh', name_type: 'FULLY_SPECIFIED', locale_preferred: true, external_id: 'LP-ZH-1' }
+]
+
+test('filterAndTrimNames: empty effectiveLocales → identity locale-wise, but trim still applied (drops external_id, drops locale_preferred:false)', () => {
+  const out = filterAndTrimNames(multiLocaleNames, [])
+  assert.equal(out.length, multiLocaleNames.length)
+  for (const n of out) {
+    assert.equal('external_id' in n, false)
+    assert.ok('name' in n)
+    assert.ok('locale' in n)
+    assert.ok('name_type' in n) // preserved — semantically meaningful
+  }
+  // locale_preferred only when true
+  assert.equal(out[0].locale_preferred, true)
+  assert.equal('locale_preferred' in out[1], false)
+})
+
+test('filterAndTrimNames: effectiveLocales=["en"] → only en/en-* survive, trimmed', () => {
+  const out = filterAndTrimNames(multiLocaleNames, ['en'])
+  assert.equal(out.length, 2)
+  for (const n of out) {
+    assert.equal(primarySubtag(n.locale), 'en')
+    assert.equal('external_id' in n, false)
+  }
+})
+
+test('filterAndTrimNames: primary-subtag match — "en" matches en-US/en-GB/en-AU', () => {
+  const names = [
+    { name: 'A', locale: 'en' },
+    { name: 'B', locale: 'en-US' },
+    { name: 'C', locale: 'en-GB' },
+    { name: 'D', locale: 'en-AU' },
+    { name: 'E', locale: 'fr' }
+  ]
+  const out = filterAndTrimNames(names, ['en'])
+  assert.deepEqual(out.map(n => n.name), ['A', 'B', 'C', 'D'])
+})
+
+test('filterAndTrimNames: a regional input like "pt-BR" matches all pt-* names (filter is reduced to primary subtag)', () => {
+  // Real-world use case: user picks pt-BR as input locale, expects the
+  // AI Assistant to receive all Portuguese names (pt, pt-PT, pt-AO),
+  // not just pt-BR. The effective filter set is normalized to {pt}.
+  const names = [
+    { name: 'Glicose pt', locale: 'pt' },
+    { name: 'Glicose pt-BR', locale: 'pt-BR' },
+    { name: 'Glicose pt-PT', locale: 'pt-PT' },
+    { name: 'Glicose pt-AO', locale: 'pt-AO' },
+    { name: 'Glucose en', locale: 'en' },
+    { name: 'Glucosa es', locale: 'es-MX' }
+  ]
+  const out = filterAndTrimNames(names, ['pt-BR'])
+  assert.deepEqual(out.map(n => n.name), [
+    'Glicose pt', 'Glicose pt-BR', 'Glicose pt-PT', 'Glicose pt-AO'
+  ])
+})
+
+test('filterAndTrimNames: case-insensitive matching', () => {
+  const names = [
+    { name: 'A', locale: 'EN' },
+    { name: 'B', locale: 'En-Us' },
+    { name: 'C', locale: 'FR' }
+  ]
+  const out = filterAndTrimNames(names, ['en'])
+  assert.deepEqual(out.map(n => n.name), ['A', 'B'])
+})
+
+test('filterAndTrimNames: union via multi-locale effective set', () => {
+  const out = filterAndTrimNames(multiLocaleNames, ['en', 'pt'])
+  assert.deepEqual(out.map(n => primarySubtag(n.locale)).sort(), ['en', 'en', 'pt'])
+})
+
+test('filterAndTrimNames: entries with no locale pass through even when filter active (defensive)', () => {
+  const names = [
+    { name: 'No-locale name', name_type: 'FULLY_SPECIFIED' },
+    { name: 'En name', locale: 'en' },
+    { name: 'Pt name', locale: 'pt-BR' }
+  ]
+  const out = filterAndTrimNames(names, ['en'])
+  assert.equal(out.length, 2)
+  assert.ok(out.find(n => n.name === 'No-locale name'))
+  assert.ok(out.find(n => n.name === 'En name'))
+})
+
+test('filterAndTrimNames: filter that excludes all entries → empty array (not undefined)', () => {
+  const out = filterAndTrimNames(multiLocaleNames, ['ja'])
+  assert.deepEqual(out, [])
+})
+
+test('filterAndTrimNames: non-array input → identity', () => {
+  assert.equal(filterAndTrimNames(undefined, ['en']), undefined)
+  assert.equal(filterAndTrimNames(null, ['en']), null)
+})
+
+test('filterAndTrimNames: skips null/undefined entries inside the array', () => {
+  const names = [
+    { name: 'A', locale: 'en' },
+    null,
+    undefined,
+    { name: 'B', locale: 'en' }
+  ]
+  const out = filterAndTrimNames(names, ['en'])
+  assert.deepEqual(out.map(n => n.name), ['A', 'B'])
+})
+
+test('filterAndTrimNames: trim preserves locale_preferred only when true', () => {
+  const names = [
+    { name: 'A', locale: 'en', locale_preferred: true },
+    { name: 'B', locale: 'en', locale_preferred: false },
+    { name: 'C', locale: 'en' },
+    { name: 'D', locale: 'en', locale_preferred: 'true' } // truthy-string is NOT true
+  ]
+  const out = filterAndTrimNames(names, ['en'])
+  assert.equal(out[0].locale_preferred, true)
+  assert.equal('locale_preferred' in out[1], false)
+  assert.equal('locale_preferred' in out[2], false)
+  assert.equal('locale_preferred' in out[3], false)
+})
+
+// ============================================================================
+// PR3-H — filterAndTrimDescriptions: same shape, keeps `type`.
+// ============================================================================
+
+const multiLocaleDescriptions = [
+  { description: 'Definition in en', locale: 'en', type: 'Definition', external_id: 'D1' },
+  { description: 'Usage in en', locale: 'en-US', type: 'Usage', external_id: 'D2' },
+  { description: 'Definição em pt', locale: 'pt-BR', type: 'Definition', external_id: 'D3' },
+  { description: 'Definition zh', locale: 'zh', type: 'Definition', external_id: 'D4' }
+]
+
+test('filterAndTrimDescriptions: drops external_id, keeps type', () => {
+  const out = filterAndTrimDescriptions(multiLocaleDescriptions, ['en'])
+  assert.equal(out.length, 2)
+  for (const d of out) {
+    assert.equal('external_id' in d, false)
+    assert.equal(d.type !== undefined, true)
+    assert.equal(primarySubtag(d.locale), 'en')
+  }
+})
+
+test('filterAndTrimDescriptions: empty effective set → identity locale-wise with trim applied', () => {
+  const out = filterAndTrimDescriptions(multiLocaleDescriptions, [])
+  assert.equal(out.length, multiLocaleDescriptions.length)
+  for (const d of out)
+    assert.equal('external_id' in d, false)
+})
+
+test('filterAndTrimDescriptions: non-array input → identity', () => {
+  assert.equal(filterAndTrimDescriptions(undefined, ['en']), undefined)
+  assert.equal(filterAndTrimDescriptions(null, ['en']), null)
+})
+
+// ============================================================================
+// PR3-H — buildRecommendableConceptEntry integration with effectiveLocales.
+// ============================================================================
+
+test('buildRecommendableConceptEntry: with effectiveLocales=["en"], a 13-locale LOINC concept ships only en/en-* names', () => {
+  const fatLoincDef = {
+    ...loincDef,
+    names: multiLocaleNames,
+    descriptions: multiLocaleDescriptions
+  }
+  const entry = buildRecommendableConceptEntry({
+    def: fatLoincDef,
+    key: fatLoincDef.key,
+    evidence: stdEvidence,
+    rowState: undefined,
+    summaryPropertyCodes: undefined,
+    effectiveLocales: ['en']
+  })
+
+  // names locales — only en/en-*
+  assert.ok(Array.isArray(entry.names))
+  for (const n of entry.names)
+    assert.equal(primarySubtag(n.locale), 'en')
+
+  // external_id stripped on every name
+  for (const n of entry.names)
+    assert.equal('external_id' in n, false)
+
+  // name_type preserved (semantic signal)
+  assert.ok(entry.names.some(n => n.name_type === 'FULLY_SPECIFIED'))
+
+  // descriptions same treatment, type preserved
+  assert.ok(Array.isArray(entry.descriptions))
+  for (const d of entry.descriptions) {
+    assert.equal(primarySubtag(d.locale), 'en')
+    assert.equal('external_id' in d, false)
+    assert.ok(d.type)
+  }
+})
+
+test('buildRecommendableConceptEntry: no effectiveLocales → keeps every locale but still trims external_id (zero-regression path)', () => {
+  const fatLoincDef = {
+    ...loincDef,
+    names: multiLocaleNames,
+    descriptions: multiLocaleDescriptions
+  }
+  const entry = buildRecommendableConceptEntry({
+    def: fatLoincDef,
+    key: fatLoincDef.key,
+    evidence: stdEvidence,
+    rowState: undefined,
+    summaryPropertyCodes: undefined
+    // effectiveLocales omitted — backwards-compatible path
+  })
+
+  assert.equal(entry.names.length, multiLocaleNames.length)
+  assert.equal(entry.descriptions.length, multiLocaleDescriptions.length)
+  for (const n of entry.names)
+    assert.equal('external_id' in n, false)
+  for (const d of entry.descriptions)
+    assert.equal('external_id' in d, false)
+})
+
+test('buildRecommendableConceptEntry: filter that excludes all descriptions omits the field entirely (L-8 preserved)', () => {
+  const fatLoincDef = {
+    ...loincDef,
+    names: multiLocaleNames,
+    descriptions: multiLocaleDescriptions
+  }
+  const entry = buildRecommendableConceptEntry({
+    def: fatLoincDef,
+    key: fatLoincDef.key,
+    evidence: stdEvidence,
+    rowState: undefined,
+    summaryPropertyCodes: undefined,
+    effectiveLocales: ['ja']
+  })
+  assert.equal('descriptions' in entry, false)
+  assert.deepEqual(entry.names, [])
+})
+
+test('buildRecommendableConceptEntry: union effectiveLocales=["pt","en"] surfaces both pt and en names', () => {
+  const fatLoincDef = {
+    ...loincDef,
+    names: multiLocaleNames,
+    descriptions: multiLocaleDescriptions
+  }
+  const entry = buildRecommendableConceptEntry({
+    def: fatLoincDef,
+    key: fatLoincDef.key,
+    evidence: stdEvidence,
+    rowState: undefined,
+    summaryPropertyCodes: undefined,
+    effectiveLocales: ['pt', 'en']
+  })
+
+  const langs = entry.names.map(n => primarySubtag(n.locale)).sort()
+  assert.deepEqual(langs, ['en', 'en', 'pt'])
 })
