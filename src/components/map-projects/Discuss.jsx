@@ -50,7 +50,7 @@ const Discuss = ({ logs, onAdd }) => {
     if (log.action === 'exclude')
       return t('map_project.excluded')
     if(['AIRecommendation'].includes(log.action))
-      return `${log.action}: ${log.description}`
+      return `${log.action}: ${log.description?.narrative || log.description}`
     if(['commented'].includes(log.action)) {
       return <b>{log.description}</b>
     }
