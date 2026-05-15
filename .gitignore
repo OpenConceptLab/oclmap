@@ -309,3 +309,5 @@ dist/
 .idea/
 .DS_Store
 output/*
+# Added by code-review-graph
+.code-review-graph/
