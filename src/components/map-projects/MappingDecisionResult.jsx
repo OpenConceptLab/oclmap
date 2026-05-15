@@ -18,9 +18,21 @@ import ConceptSummaryProperties from '../concepts/ConceptSummaryProperties'
 import MapButton from './MapButton'
 import Score from './Score'
 
-const MappingDecisionResult = ({targetConcept, row, rowIndex, mapTypes, allMapTypes, onMap, proposed, columns, repoVersion, onTargetClick, candidatesScore}) => {
+const MappingDecisionResult = ({targetConcept, row, rowIndex, mapTypes, allMapTypes, onMap, proposed, columns, repoVersion, onTargetClick, candidatesScore, setShowHighlights}) => {
   const { t } = useTranslation();
   const parentParams = targetConcept?.url ? URIToParentParams(targetConcept.url) : {}
+  const contributingAlgorithms = targetConcept?.contributingAlgorithms
+    || targetConcept?.search_meta?.contributing_algorithms
+    || []
+  const contributingAlgorithmIds = targetConcept?.contributingAlgorithmIds
+    || targetConcept?.search_meta?.contributing_algorithm_ids
+    || []
+  const algoChipLabels = contributingAlgorithms.length
+    ? contributingAlgorithms.map(algo => algo?.algorithm_id).filter(Boolean)
+    : (contributingAlgorithmIds.length
+      ? contributingAlgorithmIds
+      : compact([targetConcept?.search_meta?.algorithm]))
+  const secondaryScoreText = algoChipLabels.length > 1 ? '(...)' : undefined
   const hasClass = has(row, 'Class') || has(row, 'Concept Class') || has(row, 'Property: Class')
   const hasDatatype = has(row, 'Datatype') || has(row, 'datatype') || has(row, 'Property: Datatype')
   const getFieldFromProposed = field => {
@@ -170,10 +182,19 @@ const MappingDecisionResult = ({targetConcept, row, rowIndex, mapTypes, allMapTy
                         </span>
                       </div>
                     <div style={{marginTop: '6px'}}>
-                      <Score candidate={targetConcept} sx={{padding: '0px'}} candidatesScore={candidatesScore} />
+                      <Score
+                        size='small'
+                        candidate={targetConcept}
+                        sx={{padding: '0px'}}
+                        candidatesScore={candidatesScore}
+                        secondaryScoreText={secondaryScoreText}
+                        setShowHighlights={setShowHighlights}
+                        onHighlightClick={() => setShowHighlights?.(targetConcept)}
+                      />
                       {
-                        targetConcept?.search_meta?.algorithm &&
-                          <Chip sx={{marginLeft: '4px'}} label={targetConcept.search_meta.algorithm} variant='outlined' color='warning' />
+                        algoChipLabels.map(algoId => (
+                          <Chip size='small' key={algoId} sx={{marginLeft: '4px'}} label={algoId} variant='outlined' color='warning' />
+                        ))
                       }
                     </div>
                     </>

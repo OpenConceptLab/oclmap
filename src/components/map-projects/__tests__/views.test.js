@@ -19,6 +19,7 @@ import {
   buildAlgorithmRowViews,
   buildQualityRowViews,
   candidateToRowView,
+  conceptForMapping,
   sortRowViews
 } from '../viewBuilders.js'
 
@@ -27,6 +28,7 @@ import {
 const KEY_LOINC_GLUCOSE = JSON.stringify(['http://loinc.org', '49494-3', null])
 const KEY_LOINC_CHOL    = JSON.stringify(['http://loinc.org', '2093-3', null])
 const KEY_CIEL_BRIDGE   = JSON.stringify(['https://CIELterminology.org', 'CIEL_12345', null])
+const KEY_CIEL_TARGET_VERSIONED = JSON.stringify(['https://CIELterminology.org', 'CIEL_12345', 'HEAD'])
 const KEY_SNOMED_BRIDGE = JSON.stringify(['http://snomed.info/sct', '74521008', null])
 
 const defLOINCGlucose = {
@@ -69,6 +71,20 @@ const defCIELBridge = {
   lookup_status: 'full',
   lookup_source_type: 'algorithm',
   lookup_source: 'ocl-bridge'
+}
+
+const defCIELTargetVersioned = {
+  reference: { url: 'https://CIELterminology.org', code: 'CIEL_12345', version: 'HEAD' },
+  key: KEY_CIEL_TARGET_VERSIONED,
+  ocl_url: '/orgs/CIEL/sources/CIEL/concepts/CIEL_12345/',
+  id: 'CIEL_12345',
+  display_name: 'Blood glucose measurement',
+  source: 'CIEL',
+  owner: 'CIEL',
+  retired: false,
+  lookup_status: 'full',
+  lookup_source_type: 'algorithm',
+  lookup_source: 'ocl-semantic'
 }
 
 const defSnomedBridge = {
@@ -236,6 +252,10 @@ test('buildQualityRowViews dedupes multi-algo convergence (one ConceptRow, multi
   assert.equal(views[0].contributingCandidates.length, 2)
   assert.deepEqual(
     views[0].contributingCandidates.map(c => c.algorithm_id).sort(),
+    ['ocl-search', 'ocl-semantic']
+  )
+  assert.deepEqual(
+    views[0].contributingAlgorithmIds.sort(),
     ['ocl-search', 'ocl-semantic']
   )
   // Primary is the highest-scoring standard candidate (ocl-search at 0.85),
@@ -406,6 +426,54 @@ test('buildQualityRowViews: multi-bridge case — distinct bridge intermediaries
   assert.equal(views.length, 3, 'two bridges + one target')
   const loincView = views.find(v => v.conceptDefinition.key === KEY_LOINC_GLUCOSE)
   assert.equal(loincView.contributingCandidates.length, 2, 'both bridge_children point to the same LOINC concept')
+})
+
+test('buildQualityRowViews: same visible concept from direct and bridge rows collapses into one row with per-algo raw scores', () => {
+  const cache = {
+    [KEY_CIEL_BRIDGE]: defCIELBridge,
+    [KEY_CIEL_TARGET_VERSIONED]: defCIELTargetVersioned
+  }
+  const rowState = {
+    candidates: {
+      semantic: { id: 'semantic', algorithm_id: 'ocl-semantic', concept_key: KEY_CIEL_TARGET_VERSIONED, type: 'standard', score: 1.5 },
+      bridge: { id: 'bridge', algorithm_id: 'ocl-ciel-bridge', concept_key: KEY_CIEL_BRIDGE, type: 'bridge', score: 3.06 },
+      child: { id: 'child', algorithm_id: 'ocl-ciel-bridge', concept_key: KEY_CIEL_TARGET_VERSIONED, type: 'bridge_child', parent_candidate_id: 'bridge', bridge_concept_key: KEY_CIEL_BRIDGE, map_type: 'SAME-AS' }
+    },
+    concept_rows: {
+      [KEY_CIEL_TARGET_VERSIONED]: { concept_key: KEY_CIEL_TARGET_VERSIONED, rerank_score: 99.85 },
+      [KEY_CIEL_BRIDGE]: { concept_key: KEY_CIEL_BRIDGE, rerank_score: 99.85 }
+    }
+  }
+  const views = buildQualityRowViews(rowState, cache)
+  assert.equal(views.length, 1)
+  assert.equal(views[0].contributingCandidates.length, 3)
+  assert.deepEqual(
+    views[0].contributingAlgorithms.sort((a, b) => a.algorithm_id.localeCompare(b.algorithm_id)),
+    [
+      { algorithm_id: 'ocl-ciel-bridge', rawScore: 3.06 },
+      { algorithm_id: 'ocl-semantic', rawScore: 1.5 }
+    ]
+  )
+})
+
+test('conceptForMapping preserves merged algorithm provenance for mapped header rendering', () => {
+  const rowView = {
+    candidate: { algorithm_id: 'ocl-semantic', score: 1.5, map_type: 'SAME-AS' },
+    conceptDefinition: defCIELTargetVersioned,
+    conceptRow: { rerank_score: 99.85 },
+    contributingAlgorithms: [
+      { algorithm_id: 'ocl-semantic', rawScore: 1.5 },
+      { algorithm_id: 'ocl-ciel-bridge', rawScore: 3.06 }
+    ],
+    contributingAlgorithmIds: ['ocl-semantic', 'ocl-ciel-bridge']
+  }
+  const out = conceptForMapping(rowView)
+  assert.deepEqual(out.contributingAlgorithmIds, ['ocl-semantic', 'ocl-ciel-bridge'])
+  assert.deepEqual(out.search_meta.contributing_algorithm_ids, ['ocl-semantic', 'ocl-ciel-bridge'])
+  assert.deepEqual(out.search_meta.contributing_algorithms, [
+    { algorithm_id: 'ocl-semantic', rawScore: 1.5 },
+    { algorithm_id: 'ocl-ciel-bridge', rawScore: 3.06 }
+  ])
 })
 
 // ---------- sortRowViews ----------

@@ -68,7 +68,7 @@ const getBestSynonym = (synonyms = []) => {
 };
 
 
-const Item = ({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition, bridgeContributors, setShowHighlights, onMap, isSelectedForMap, noScore, repoVersion, synonymPrefix, isAIRecommended, showAlgo, candidatesScore, algoScoreFirst, placeholderMap, bridgeChild}) => {
+const Item = ({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition, bridgeContributors, contributingAlgorithms, contributingAlgorithmIds, setShowHighlights, onMap, isSelectedForMap, noScore, repoVersion, synonymPrefix, isAIRecommended, showAlgo, candidatesScore, algoScoreFirst, placeholderMap, bridgeChild}) => {
   const conceptToMap = conceptForMapping({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition})
   const idLabel = conceptDefinition?.id || conceptDefinition?.reference?.code
   const sourceLabel = conceptDefinition?.source
@@ -86,6 +86,14 @@ const Item = ({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition
   const convergenceTooltip = (bridgeContributors || []).length
     ? bridgeContributors.map(formatBridgeContributor).filter(Boolean).join('\n')
     : ''
+  const algoChips = (contributingAlgorithms || []).length
+    ? contributingAlgorithms
+    : ((contributingAlgorithmIds || []).length
+      ? contributingAlgorithmIds.map(algorithm_id => ({ algorithm_id, rawScore: null }))
+      : (candidate?.algorithm_id ? [{ algorithm_id: candidate.algorithm_id, rawScore: candidate?.score ?? null }] : []))
+  const multiAlgoScoreText = !algoScoreFirst && algoChips.length > 1
+    ? '(...)'
+    : null
   return (
     <>
       <ListItemText
@@ -160,14 +168,30 @@ const Item = ({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition
               <ConceptSummaryProperties concept={conceptDefinition} repoVersion={repoVersion} />
             </div>
             {
-              showAlgo && candidate?.algorithm_id ?
+              showAlgo && algoChips.length ?
                 <div className='col-xs-12 padding-0' style={{marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px'}}>
-                  <Chip size='small' label={candidate.algorithm_id} variant='outlined' color='warning' />
                   {
-                    convergenceTooltip &&
-                      <Tooltip title={<span style={{whiteSpace: 'pre-line'}}>{convergenceTooltip}</span>} placement='top'>
-                        <InfoOutlinedIcon sx={{fontSize: '14px', color: 'text.secondary', cursor: 'help'}} />
-                      </Tooltip>
+                    algoChips.map(({ algorithm_id: algoId }) => {
+                      const showBridgeInfo = Boolean(convergenceTooltip) && algoId === 'ocl-ciel-bridge'
+                      const chip = (
+                        <Chip
+                          key={algoId}
+                          size='small'
+                          label={algoId}
+                          variant='outlined'
+                          color='warning'
+                          deleteIcon={showBridgeInfo ? <InfoOutlinedIcon sx={{fontSize: '14px', color: 'text.secondary !important', cursor: 'help'}} /> : undefined}
+                          onDelete={showBridgeInfo ? () => {} : undefined}
+                        />
+                      )
+                      if(!showBridgeInfo)
+                        return chip
+                      return (
+                        <Tooltip key={algoId} title={<span style={{whiteSpace: 'pre-line'}}>{convergenceTooltip}</span>} placement='top'>
+                          {chip}
+                        </Tooltip>
+                      )
+                    })
                   }
               </div> : null
             }
@@ -186,6 +210,7 @@ const Item = ({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition
               isAIRecommended={isAIRecommended}
               candidatesScore={candidatesScore}
               algoScoreFirst={algoScoreFirst}
+              secondaryScoreText={multiAlgoScoreText}
               onHighlightClick={showHighlightsPayload}
             />
         }
@@ -284,7 +309,7 @@ const legacyToRowView = (legacy) => {
 const Concept = ({_id, firstChild, lastChild, concept, setShowHighlights, isShown, onCardClick, onMap, isSelectedForMap, noScore, repoVersion, isAIRecommended, sx, notClickable, noSynonymPrefix, locales, showAlgo, candidatesScore, algoScoreFirst, asTarget, AIRecommendedCandidateId, targetCanonical}) => {
   const rowView = concept?.conceptDefinition ? concept : legacyToRowView(concept)
   if(!rowView?.conceptDefinition) return null
-  const { type, candidate, conceptDefinition, conceptRow, bridgeConceptDefinition, bridgeChildren, bridgeContributors } = rowView
+  const { type, candidate, conceptDefinition, conceptRow, bridgeConceptDefinition, bridgeChildren, bridgeContributors, contributingAlgorithmIds, contributingAlgorithms } = rowView
   // Map action is gated on canonical alignment with the project's target
   // repo. Bridge intermediaries (e.g. CIEL when target is ICD) aren't
   // mappable themselves — they're reference metadata about the cascade.
@@ -408,6 +433,8 @@ const Concept = ({_id, firstChild, lastChild, concept, setShowHighlights, isShow
     conceptRow={conceptRow}
     bridgeConceptDefinition={bridgeConceptDefinition}
     bridgeContributors={bridgeContributors}
+    contributingAlgorithms={contributingAlgorithms}
+    contributingAlgorithmIds={contributingAlgorithmIds}
     repoVersion={repoVersion}
     synonymPrefix={synonymPrefix}
     setShowHighlights={setShowHighlights}

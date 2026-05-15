@@ -18,6 +18,16 @@
 const compact = arr => (arr || []).filter(x => x != null && x !== false)
 const values = obj => Object.values(obj || {})
 const isNumber = v => typeof v === 'number' && !Number.isNaN(v)
+const uniq = arr => [...new Set(arr || [])]
+const displayIdentityOf = def => `${def?.reference?.url || ''}::${def?.id || def?.reference?.code || ''}`
+const toNumberOrNull = (v) => {
+  if(isNumber(v)) return v
+  if(typeof v === 'string' && v.trim() !== '') {
+    const parsed = parseFloat(v)
+    if(!Number.isNaN(parsed)) return parsed
+  }
+  return null
+}
 
 /**
  * Build a "RowView" object for a single Candidate. Joins the Candidate
@@ -93,10 +103,32 @@ export const buildQualityRowViews = (rowState, conceptCache) => {
   if(!rowState) return []
   const allCandidates = values(rowState.candidates || {})
   const conceptRows = values(rowState.concept_rows || {})
-  return compact(conceptRows.map(conceptRow => {
+  const groupedByIdentity = new Map()
+
+  conceptRows.forEach(conceptRow => {
     const conceptDefinition = conceptCache?.[conceptRow.concept_key]
-    if(!conceptDefinition) return null
+    if(!conceptDefinition) return
     const contributing = allCandidates.filter(c => c.concept_key === conceptRow.concept_key)
+    if(!contributing.length) return
+    const identity = displayIdentityOf(conceptDefinition)
+    const existing = groupedByIdentity.get(identity)
+    if(existing) {
+      existing.conceptRows.push(conceptRow)
+      existing.contributing.push(...contributing)
+      existing.definitions.push(conceptDefinition)
+    } else {
+      groupedByIdentity.set(identity, {
+        conceptRows: [conceptRow],
+        contributing: [...contributing],
+        definitions: [conceptDefinition]
+      })
+    }
+  })
+
+  return compact([...groupedByIdentity.values()].map(group => {
+    const contributing = uniq(group.contributing.map(c => c?.id))
+      .map(id => group.contributing.find(c => c?.id === id))
+      .filter(Boolean)
     // Prefer a 'standard' candidate as the primary; else any bridge_child
     // (with its bridge intermediary attached); else whatever's there.
     // Within each type group, pick the highest-scoring candidate so the
@@ -105,11 +137,21 @@ export const buildQualityRowViews = (rowState, conceptCache) => {
     // selected by Object.values() iteration order and the "primary algorithm"
     // chip flipped between renders. Falls back to -Infinity for unscored
     // candidates (notably bridge_child, which has no own score).
-    const byScoreDesc = (a, b) => (b?.score ?? -Infinity) - (a?.score ?? -Infinity)
+    const byScoreDesc = (a, b) => (toNumberOrNull(b?.score) ?? -Infinity) - (toNumberOrNull(a?.score) ?? -Infinity)
     const primary = [...contributing.filter(c => c.type === 'standard')].sort(byScoreDesc)[0]
       || [...contributing.filter(c => c.type === 'bridge_child')].sort(byScoreDesc)[0]
-      || contributing[0]
+      || [...contributing].sort(byScoreDesc)[0]
     if(!primary) return null
+    const conceptDefinition = conceptCache?.[primary.concept_key] || group.definitions[0]
+    if(!conceptDefinition) return null
+    const primaryConceptRow = group.conceptRows.find(cr => cr.concept_key === primary.concept_key) || group.conceptRows[0]
+    const rerankScore = group.conceptRows
+      .map(cr => cr?.rerank_score)
+      .filter(isNumber)
+      .sort((a, b) => b - a)[0]
+    const conceptRow = isNumber(rerankScore)
+      ? { ...primaryConceptRow, rerank_score: rerankScore }
+      : primaryConceptRow
     let bridgeConceptDefinition
     if(primary.type === 'bridge_child' && primary.bridge_concept_key)
       bridgeConceptDefinition = conceptCache[primary.bridge_concept_key]
@@ -127,6 +169,21 @@ export const buildQualityRowViews = (rowState, conceptCache) => {
           algorithm_id: c.algorithm_id
         } : null
       }))
+    const contributingAlgorithms = values(contributing.reduce((acc, c) => {
+      const algorithmId = c?.algorithm_id
+      if(!algorithmId) return acc
+      const parent = c?.parent_candidate_id ? allCandidates.find(a => a?.id === c.parent_candidate_id) : null
+      const rawScore = toNumberOrNull(c?.score) ?? toNumberOrNull(parent?.score)
+      const existing = acc[algorithmId]
+      if(!existing || ((rawScore ?? -Infinity) > (existing.rawScore ?? -Infinity))) {
+        acc[algorithmId] = {
+          algorithm_id: algorithmId,
+          rawScore
+        }
+      }
+      return acc
+    }, {}))
+    const contributingAlgorithmIds = contributingAlgorithms.map(a => a.algorithm_id)
     return {
       type: primary.type === 'bridge_child' ? 'bridge_child' : 'standard',
       candidate: primary,
@@ -134,6 +191,8 @@ export const buildQualityRowViews = (rowState, conceptCache) => {
       conceptRow,
       bridgeConceptDefinition,
       bridgeContributors,
+      contributingAlgorithms,
+      contributingAlgorithmIds,
       contributingCandidates: contributing
     }
   }))
@@ -174,7 +233,7 @@ export const sortRowViews = (views, sortBy, order) => {
  */
 export const conceptForMapping = (rowView) => {
   if(!rowView) return null
-  const { candidate, conceptDefinition, conceptRow, bridgeConceptDefinition } = rowView
+  const { candidate, conceptDefinition, conceptRow, bridgeConceptDefinition, contributingAlgorithms, contributingAlgorithmIds } = rowView
   if(!conceptDefinition) return null
   return {
     id: conceptDefinition.id || conceptDefinition.reference?.code,
@@ -201,14 +260,18 @@ export const conceptForMapping = (rowView) => {
       search_score: candidate?.score,
       search_normalized_score: conceptRow?.rerank_score,
       search_highlight: candidate?.highlights,
-      map_type: candidate?.map_type
+      map_type: candidate?.map_type,
+      contributing_algorithms: contributingAlgorithms,
+      contributing_algorithm_ids: contributingAlgorithmIds
     },
     bridge_concept: bridgeConceptDefinition ? {
       id: bridgeConceptDefinition.id || bridgeConceptDefinition.reference?.code,
       url: bridgeConceptDefinition.ocl_url,
       display_name: bridgeConceptDefinition.display_name,
       source: bridgeConceptDefinition.source
-    } : undefined
+    } : undefined,
+    contributingAlgorithms,
+    contributingAlgorithmIds
   }
 }
 
@@ -235,10 +298,9 @@ export const getScoreDetails = (input = {}, candidatesScore = {}) => {
   const searchMeta = input?.search_meta || candidate?.search_meta
   const rerankFloat = isNumber(conceptRow?.rerank_score)
     ? conceptRow.rerank_score
-    : (isNumber(searchMeta?.search_normalized_score) ? searchMeta.search_normalized_score : null)
-  const score = isNumber(candidate?.score)
-    ? candidate.score
-    : (isNumber(searchMeta?.search_score) ? searchMeta.search_score : null)
+    : (toNumberOrNull(searchMeta?.search_normalized_score))
+  const score = toNumberOrNull(candidate?.score)
+    ?? toNumberOrNull(searchMeta?.search_score)
   // ConceptRow.rerank_score is already on the 0-100 scale (the rerank API
   // returns search_normalized_score in that range). Display directly.
   // No fallback to `score * 100`: an interim semantic-search candidate has

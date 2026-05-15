@@ -3542,6 +3542,10 @@ const MapProject = () => {
       cached.search_meta = concept.search_meta
     if(cached && concept?.source)
       cached.source = concept.source
+    if(cached && concept?.contributingAlgorithms)
+      cached.contributingAlgorithms = concept.contributingAlgorithms
+    if(cached && concept?.contributingAlgorithmIds)
+      cached.contributingAlgorithmIds = concept.contributingAlgorithmIds
     return returnSelf ? (cached || concept) : cached
   }
 
@@ -3552,9 +3556,32 @@ const MapProject = () => {
   const isConfigureInSplitView = configure && file?.name
   const columnsForTable = getColumnsForTable()
   let targetConcept = mapSelected[rowIndex] ? getConcept(mapSelected[rowIndex], true) : false
+  const targetRowViews = rowMatchStateRef.current?.[rowIndex]
+    ? buildQualityRowViews(rowMatchStateRef.current[rowIndex], conceptCacheRef.current)
+    : []
+  const selectedTargetRowView = targetConcept ? find(targetRowViews, view => {
+    const mapped = conceptForMapping(view)
+    if(!mapped) return false
+    if(targetConcept?.url && mapped.url)
+      return mapped.url === targetConcept.url
+    return mapped.id === targetConcept?.id
+  }) : false
+  if(selectedTargetRowView && targetConcept) {
+    const mergedConcept = conceptForMapping(selectedTargetRowView)
+    targetConcept = {
+      ...targetConcept,
+      ...mergedConcept,
+      repo: targetConcept.repo,
+      url: targetConcept.url || mergedConcept.url
+    }
+  }
   const targetConceptFromCandidate = (!isEmpty(allCandidatesRef.current) && isNumber(rowIndex) && targetConcept?.url) ? find(getAllCandidatesForRow(rowIndex), {url: targetConcept.url}) : false
   if(targetConceptFromCandidate)
-    targetConcept.search_meta = targetConceptFromCandidate.search_meta
+    targetConcept.search_meta = {
+      ...(targetConceptFromCandidate.search_meta || {}),
+      contributing_algorithms: targetConcept?.search_meta?.contributing_algorithms || targetConcept?.contributingAlgorithms,
+      contributing_algorithm_ids: targetConcept?.search_meta?.contributing_algorithm_ids || targetConcept?.contributingAlgorithmIds
+    }
   else if(!targetConcept?.search_meta?.search_normalized_score) {
     let meta = find(searchedConcepts[rowIndex], {url: targetConcept?.url})?.search_meta
     if(meta?.search_normalized_score)
@@ -4457,6 +4484,7 @@ const MapProject = () => {
                   conceptCache={conceptCache}
                   candidatesScore={candidatesScore}
                   targetConcept={targetConcept}
+                  setShowHighlights={setShowHighlights}
                   repoVersion={repoVersion}
                   row={row}
                   rowIndex={rowIndex}

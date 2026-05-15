@@ -42,7 +42,7 @@ export const ScoreValueChip = ({ bucketColor, label, size='medium', showIndicato
   />
 )
 
-const Score = ({candidate, conceptRow, setShowHighlights, sx, isAIRecommended, candidatesScore, algoScoreFirst, size, onHighlightClick}) => {
+const Score = ({candidate, conceptRow, setShowHighlights, sx, isAIRecommended, candidatesScore, algoScoreFirst, size, onHighlightClick, secondaryScoreText}) => {
   const { t } = useTranslation();
   const {
     score,
@@ -94,6 +94,10 @@ const Score = ({candidate, conceptRow, setShowHighlights, sx, isAIRecommended, c
                     }
                   </span>
                   {
+                    secondaryScoreText ?
+                      <span style={{fontSize: '12px', color: 'rgba(0, 0, 0, 0.6)', marginLeft: '4px', fontStyle: 'italic'}}>
+                        {secondaryScoreText}
+                      </span> :
                     hasPercentile && hasRawScore ?
                       <span style={{fontSize: '12px', color: 'rgba(0, 0, 0, 0.6)', marginLeft: '4px', fontStyle: 'italic'}}>
                         {`(${algoScoreFirst && hasRawScore ? rerankScore : algoScore})`}
