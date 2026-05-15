@@ -374,7 +374,11 @@ const MapProject = () => {
       const keysToLoad = concept_definitions
         .filter(d => d && d.lookup_status !== 'full')
         .map(d => d.key)
-      if(keysToLoad.length) ensureLoadedRef.current(keysToLoad)
+      if(keysToLoad.length) {
+        ensureLoadedRef.current(keysToLoad).then(() => {
+          if(scheduleRerankRef.current) scheduleRerankRef.current(rowIndex)
+        })
+      }
     }
 
     // Trigger a rerank if any newly-arrived ConceptRow lacks a rerank_score
@@ -2955,7 +2959,16 @@ const MapProject = () => {
       const pendingLookups = Object.keys(rowStateForLookup.concept_rows)
         .filter(key => inFlightLookupsRef.current.has(key))
         .map(key => inFlightLookupsRef.current.get(key))
-      if(pendingLookups.length) await Promise.all(pendingLookups)
+      if(pendingLookups.length) {
+        await Promise.all(pendingLookups)
+        // The settling lookups fired scheduleRerank via settle()/writeConceptCachePatch,
+        // setting a 300ms debounce timer. Clear it — we're already inside rerank() and
+        // about to run, so that timer would only queue a redundant rerankRerunNeeded.
+        if(rerankDebounceRef.current[index]) {
+          clearTimeout(rerankDebounceRef.current[index])
+          delete rerankDebounceRef.current[index]
+        }
+      }
     }
     const rerankRows = buildRerankRowsForRow(index)
     const row = data[index]
@@ -3317,16 +3330,6 @@ const MapProject = () => {
       inFlightLookupsRef.current.delete(key)
       const fn = settlers.get(key)
       if(fn) fn()
-      // Re-fire scheduleRerank for every row that references this key. The
-      // scheduleRerank gate defers while any lookup is in-flight, so this
-      // unblocks rerank once the last lookup for a row settles — even for
-      // concepts that already had a display_name (which writeConceptCachePatch's
-      // name-transition guard wouldn't re-fire for).
-      if(scheduleRerankRef.current) {
-        Object.entries(rowMatchStateRef.current).forEach(([idx, rowState]) => {
-          if(rowState?.concept_rows?.[key]) scheduleRerankRef.current(Number(idx))
-        })
-      }
     }
 
     const fetchConceptByOclUrl = async (key, oclUrl, source) => {
