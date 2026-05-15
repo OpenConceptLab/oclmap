@@ -183,7 +183,7 @@ const SubHeader = ({count, onClick, isCollapsed, header, indicatorColor, isFirst
 }
 
 
-const CandidateList = ({rowViews, header, rowIndex, sortBy, order, setShowItem, showItem, setShowHighlights, isSelectedForMap, onMap, onFetchMore, bgColor, bucketId, display, onDisplayChange, noToolbar, toolbarControl, repoVersion, alignToolbarLeft, rightControl, analysis, showAnalysis, openAnalysis, onCloseAnalysis, isInProgress, AIRecommendedCandidateId, locales, scispacy, showAlgo, collapsed, onCollapse, candidatesScore, algoScoreFirst, byAlgorithm, isFirst, isCoreUser, targetCanonical}) => {
+const CandidateList = ({rowViews, header, rowIndex, sortBy, order, setShowItem, showItem, setShowHighlights, isSelectedForMap, onMap, onFetchMore, bgColor, bucketId, display, onDisplayChange, noToolbar, toolbarControl, repoVersion, alignToolbarLeft, rightControl, analysis, showAnalysis, openAnalysis, onCloseAnalysis, isInProgress, AIRecommendedCandidateId, locales, scispacy, showAlgo, collapsed, onCollapse, candidatesScore, algoScoreFirst, byAlgorithm, isFirst, isCoreUser, targetCanonical, analysisPage, setAnalysisPage}) => {
   // Decorate rowViews so they work for BOTH renderers:
   //   - Table view: SearchResults/TableResults reads legacy concept fields
   //     (id, url, names, descriptions, source, search_meta, ...) via the
@@ -297,7 +297,15 @@ const CandidateList = ({rowViews, header, rowIndex, sortBy, order, setShowItem, 
         subheader={
           (showAnalysis && openAnalysis) ? (
             <div className='col-xs-12 padding-0' style={{display: 'inline-flex', flexDirection: 'column'}}>
-              <AICandidatesAnalysis analysis={analysis} onClose={onCloseAnalysis} sx={{marginBottom: '4px'}} isCoreUser={isCoreUser} isInProgress={isInProgress} />
+              <AICandidatesAnalysis
+                analysis={analysis}
+                onClose={onCloseAnalysis}
+                sx={{marginBottom: '4px'}}
+                isCoreUser={isCoreUser}
+                isInProgress={isInProgress}
+                page={analysisPage}
+                onPageChange={setAnalysisPage}
+              />
               {
                 showHeader &&
                   <SubHeader count={count} onClick={onCollapseToggle} isCollapsed={isCollapsed} header={header} indicatorColor={bgColor} isFirst={isFirst} />
@@ -376,15 +384,35 @@ const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCa
   const [openFilters, setOpenFilters] = React.useState(false)
   const [display, setDisplay] = React.useState('card')
   const [openAIAnalysis, setOpenAIAnalysis] = React.useState(undefined)
+  const [analysisPage, setAnalysisPage] = React.useState(0)
   const recommendedScore = candidatesScore?.recommended
   const availableScore = candidatesScore?.available
+  const analysisArray = Array.isArray(analysis) ? analysis : (analysis ? [analysis] : [])
+  const analysisCount = analysisArray.length
   // Resolve the AI-recommended candidate against conceptCache: prefer the
   // v2 concept_key passthrough, then canonical_reference.code (PR2a shim),
   // then the legacy concept_id/id. The resolved code is matched against
   // ConceptDefinition.reference.code in Concept.jsx for highlighting.
   const isRecommendInProgress = rowStage?.recommend === 0
-  const latestAnalysis = Array.isArray(analysis) ? analysis[analysis.length - 1] : analysis
-  const primary = latestAnalysis?.output?.primary_candidate || latestAnalysis?.primary_candidate
+  const prevAnalysisCountRef = React.useRef(0)
+  const prevIsInProgressRef = React.useRef(false)
+  React.useEffect(() => {
+    if(analysisCount > prevAnalysisCountRef.current)
+      setAnalysisPage(Math.max(0, analysisCount - 1))
+    else if(isRecommendInProgress && !prevIsInProgressRef.current)
+      setAnalysisPage(analysisCount)
+    else if(!isRecommendInProgress && prevIsInProgressRef.current)
+      setAnalysisPage(page => Math.min(page, Math.max(0, analysisCount - 1)))
+    prevAnalysisCountRef.current = analysisCount
+    prevIsInProgressRef.current = isRecommendInProgress
+  }, [analysisCount, isRecommendInProgress])
+  React.useEffect(() => {
+    setAnalysisPage(analysisCount > 0 ? analysisCount - 1 : 0)
+  }, [rowIndex, analysisCount])
+  const selectedAnalysis = isRecommendInProgress && analysisPage >= analysisCount
+    ? undefined
+    : analysisArray[analysisPage]
+  const primary = selectedAnalysis?.output?.primary_candidate || selectedAnalysis?.primary_candidate
   const AIRecommendedCandidateId = resolveAICandidateID(primary, conceptCache)
 
   // Quality (score-grouped) view shows ONLY target-repo concepts. Bridge
@@ -428,7 +456,9 @@ const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCa
     candidatesScore: candidatesScore,
     algoScoreFirst: algoScoreFirst,
     isCoreUser: isCoreUser,
-    targetCanonical: targetCanonical
+    targetCanonical: targetCanonical,
+    analysisPage: analysisPage,
+    setAnalysisPage: setAnalysisPage
   }
 
   const onSort = option => {

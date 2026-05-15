@@ -22,35 +22,13 @@ import compact from 'lodash/compact'
 import Comment from './Comment'
 
 
-const AICandidatesAnalysis = ({ analysis: analysisProp, onClose, sx, isCoreUser, isInProgress }) => {
+const AICandidatesAnalysis = ({ analysis: analysisProp, onClose, sx, isCoreUser, isInProgress, page = 0, onPageChange }) => {
   const { t } = useTranslation();
   const [openDetails, setOpenDetails] = React.useState(false)
-  const [page, setPage] = React.useState(0)
 
   const analysisArray = Array.isArray(analysisProp) ? analysisProp : (analysisProp ? [analysisProp] : [])
   const total = analysisArray.length
   const effectiveTotal = total + (isInProgress ? 1 : 0)
-
-  // Jump to latest only when total grows (a new entry was appended);
-  // don't yank the user back when total holds steady on re-render.
-  const prevTotalRef = React.useRef(0)
-  React.useEffect(() => {
-    if(total > prevTotalRef.current)
-      setPage(total - 1)
-    prevTotalRef.current = total
-  }, [total])
-
-  // Jump to the pending slot when a new request starts; clamp back to the
-  // last real result when the request fails (success appends an entry and
-  // the total-growth effect above handles the jump).
-  const prevIsInProgressRef = React.useRef(false)
-  React.useEffect(() => {
-    if(isInProgress && !prevIsInProgressRef.current)
-      setPage(total) // pending slot: one beyond real entries
-    else if(!isInProgress && prevIsInProgressRef.current)
-      setPage(p => Math.min(p, Math.max(0, total - 1))) // clamp on failure
-    prevIsInProgressRef.current = isInProgress
-  }, [isInProgress])
 
   const isPendingPage = isInProgress && page >= total
   const analysis = isPendingPage ? undefined : analysisArray[page]
@@ -166,11 +144,11 @@ const AICandidatesAnalysis = ({ analysis: analysisProp, onClose, sx, isCoreUser,
               {
                 effectiveTotal > 1 &&
                   <span style={{display: 'inline-flex', alignItems: 'center', fontSize: '12px', marginRight: '4px'}}>
-                    <IconButton size='small' sx={{padding: '2px', color: 'text.primary'}} onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}>
+                    <IconButton size='small' sx={{padding: '2px', color: 'text.primary'}} onClick={() => onPageChange?.(Math.max(0, page - 1))} disabled={page === 0}>
                       <ChevronLeftIcon sx={{fontSize: '1rem'}} />
                     </IconButton>
                     <b style={{fontSize: '12px'}}>{page + 1}/{effectiveTotal}</b>
-                    <IconButton size='small' sx={{padding: '2px', color: 'text.primary'}} onClick={() => setPage(p => Math.min(effectiveTotal - 1, p + 1))} disabled={page === effectiveTotal - 1}>
+                    <IconButton size='small' sx={{padding: '2px', color: 'text.primary'}} onClick={() => onPageChange?.(Math.min(effectiveTotal - 1, page + 1))} disabled={page === effectiveTotal - 1}>
                       <ChevronRightIcon sx={{fontSize: '1rem'}} />
                     </IconButton>
                   </span>
