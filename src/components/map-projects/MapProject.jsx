@@ -590,7 +590,7 @@ const MapProject = () => {
       setAlgosSelected(copiedProject.algorithms || [])
       setEncoderModel(copiedProject.encoder_model || DEFAULT_ENCODER_MODEL)
       setUseLexicalVariants(Boolean(copiedProject.use_lexical_variants))
-      setInputLocale((copiedProject.input_locales || [])[0] || 'en')
+      setInputLocale((copiedProject.input_locales || [])[0] || '')
       if(copiedProject.target_repo_url) {
         const repoParams = URIToParentParams(copiedProject.target_repo_url, true)
         fetchRepo(dropVersion(copiedProject.target_repo_url))
