@@ -2243,7 +2243,7 @@ const MapProject = () => {
           try {
             const { code } = parseConceptKey(cr.concept_key)
             rerankScoreByCode.set(code, cr.rerank_score)
-          } catch {} // malformed key — skip
+          } catch { console.log('Unable to parse', cr?.concept_key) }
         }
       })
     }
