@@ -3827,7 +3827,7 @@ const MapProject = () => {
     const alreadyAnalyzed = isAutoMatch && existingAnalyses.length > 0
     const v2 = isNumber(__index) ? buildV2RecommendationPayload(__index) : null
     if(isNumber(__index) && repoVersion && !alreadyAnalyzed && (v2?.recommendable_concepts?.length || 0) > 0) {
-      if(!promptTemplate?.key) {
+      if(!(resolvedPromptTemplate?.key || promptTemplate?.key)) {
         setAlert({message: 'AI Assistant prompt template is not available', severity: 'error'})
         markAlgo(__index, 'recommend', -3)
         return false
