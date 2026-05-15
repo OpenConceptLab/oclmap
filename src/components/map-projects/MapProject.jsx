@@ -2945,6 +2945,17 @@ const MapProject = () => {
       rerankRerunNeededRef.current.add(index)
       return null
     }
+    // Wait for any in-flight $lookups for this row's concepts. buildRerankRowsForRow
+    // filters out nameless entries, so running before lookups complete silently
+    // drops candidates from the payload. This matters most for the bulk path
+    // (processRerankWithConcurrency calls rerank() directly, bypassing scheduleRerank).
+    const rowStateForLookup = rowMatchStateRef.current[index]
+    if(rowStateForLookup?.concept_rows) {
+      const pendingLookups = Object.keys(rowStateForLookup.concept_rows)
+        .filter(key => inFlightLookupsRef.current.has(key))
+        .map(key => inFlightLookupsRef.current.get(key))
+      if(pendingLookups.length) await Promise.all(pendingLookups)
+    }
     const rerankRows = buildRerankRowsForRow(index)
     const row = data[index]
     const query = get(prepareRow(row), 'name')
@@ -3079,6 +3090,13 @@ const MapProject = () => {
     }
     const rowState = rowMatchStateRef.current[rowIndex]
     if(!rowState) return
+    // Defer if any concept for this row still has an in-flight $lookup — rerank
+    // needs display_name to be available. settle() in ensureLoaded re-fires
+    // scheduleRerank once each lookup resolves, so the last settlement unblocks us.
+    const hasInFlightLookup = Object.keys(rowState.concept_rows || {}).some(
+      key => inFlightLookupsRef.current.has(key)
+    )
+    if(hasInFlightLookup) return
     const hasEligiblePending = Object.values(rowState.concept_rows || {}).some(cr => {
       if(isNumber(cr.rerank_score)) return false
       const def = conceptCacheRef.current[cr.concept_key]
@@ -3298,6 +3316,16 @@ const MapProject = () => {
       inFlightLookupsRef.current.delete(key)
       const fn = settlers.get(key)
       if(fn) fn()
+      // Re-fire scheduleRerank for every row that references this key. The
+      // scheduleRerank gate defers while any lookup is in-flight, so this
+      // unblocks rerank once the last lookup for a row settles — even for
+      // concepts that already had a display_name (which writeConceptCachePatch's
+      // name-transition guard wouldn't re-fire for).
+      if(scheduleRerankRef.current) {
+        Object.entries(rowMatchStateRef.current).forEach(([idx, rowState]) => {
+          if(rowState?.concept_rows?.[key]) scheduleRerankRef.current(Number(idx))
+        })
+      }
     }
 
     const fetchConceptByOclUrl = async (key, oclUrl, source) => {
