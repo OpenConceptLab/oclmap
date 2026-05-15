@@ -199,6 +199,7 @@ const MapProject = () => {
   const [promptTemplate, setPromptTemplate] = React.useState(false)
   const [promptTemplates, setPromptTemplates] = React.useState(false)
   const [projectPromptTemplateKey, setProjectPromptTemplateKey] = React.useState('')
+  const promptTemplatesFetchedRef = React.useRef(false)
 
   const abortRef = React.useRef(false);
   const isBulkMatchRunningRef = React.useRef(false);
@@ -3681,6 +3682,8 @@ const MapProject = () => {
   React.useEffect(() => {
     if(!AIModels.length || !AI_ASSISTANT_API_URL)
       return
+    if(promptTemplatesFetchedRef.current) return
+    promptTemplatesFetchedRef.current = true
 
     if(isCoreUser)
       fetchPromptTemplates(AIModels)
