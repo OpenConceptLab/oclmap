@@ -183,7 +183,7 @@ const SubHeader = ({count, onClick, isCollapsed, header, indicatorColor, isFirst
 }
 
 
-const CandidateList = ({rowViews, header, rowIndex, sortBy, order, setShowItem, showItem, setShowHighlights, isSelectedForMap, onMap, onFetchMore, bgColor, bucketId, display, onDisplayChange, noToolbar, toolbarControl, repoVersion, alignToolbarLeft, rightControl, analysis, showAnalysis, openAnalysis, onCloseAnalysis, AIRecommendedCandidateId, locales, scispacy, showAlgo, collapsed, onCollapse, candidatesScore, algoScoreFirst, byAlgorithm, isFirst, isCoreUser, targetCanonical}) => {
+const CandidateList = ({rowViews, header, rowIndex, sortBy, order, setShowItem, showItem, setShowHighlights, isSelectedForMap, onMap, onFetchMore, bgColor, bucketId, display, onDisplayChange, noToolbar, toolbarControl, repoVersion, alignToolbarLeft, rightControl, analysis, showAnalysis, openAnalysis, onCloseAnalysis, isInProgress, AIRecommendedCandidateId, locales, scispacy, showAlgo, collapsed, onCollapse, candidatesScore, algoScoreFirst, byAlgorithm, isFirst, isCoreUser, targetCanonical}) => {
   // Decorate rowViews so they work for BOTH renderers:
   //   - Table view: SearchResults/TableResults reads legacy concept fields
   //     (id, url, names, descriptions, source, search_meta, ...) via the
@@ -297,7 +297,7 @@ const CandidateList = ({rowViews, header, rowIndex, sortBy, order, setShowItem, 
         subheader={
           (showAnalysis && openAnalysis) ? (
             <div className='col-xs-12 padding-0' style={{display: 'inline-flex', flexDirection: 'column'}}>
-              <AICandidatesAnalysis analysis={analysis} onClose={onCloseAnalysis} sx={{marginBottom: '4px'}} isCoreUser={isCoreUser} />
+              <AICandidatesAnalysis analysis={analysis} onClose={onCloseAnalysis} sx={{marginBottom: '4px'}} isCoreUser={isCoreUser} isInProgress={isInProgress} />
               {
                 showHeader &&
                   <SubHeader count={count} onClick={onCollapseToggle} isCollapsed={isCollapsed} header={header} indicatorColor={bgColor} isFirst={isFirst} />
@@ -382,6 +382,7 @@ const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCa
   // v2 concept_key passthrough, then canonical_reference.code (PR2a shim),
   // then the legacy concept_id/id. The resolved code is matched against
   // ConceptDefinition.reference.code in Concept.jsx for highlighting.
+  const isRecommendInProgress = rowStage?.recommend === 0
   const latestAnalysis = Array.isArray(analysis) ? analysis[analysis.length - 1] : analysis
   const primary = latestAnalysis?.output?.primary_candidate || latestAnalysis?.primary_candidate
   const AIRecommendedCandidateId = resolveAICandidateID(primary, conceptCache)
@@ -548,6 +549,7 @@ const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCa
                 onPromptTemplateChange={onPromptTemplateChange}
                 isCoreUser={isCoreUser}
                 disabled={!areAlgoRun}
+                isInProgress={isRecommendInProgress}
               />
           }
         </span>
@@ -557,6 +559,11 @@ const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCa
   React.useEffect(() => {
     setOpenAIAnalysis(isEmpty(analysis) ? false : (openAIAnalysis !== false))
   }, [rowIndex])
+
+  React.useEffect(() => {
+    if(isRecommendInProgress)
+      setOpenAIAnalysis(true)
+  }, [isRecommendInProgress])
 
 
   return (
@@ -641,6 +648,7 @@ const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCa
                 showAnalysis
                 openAnalysis={Boolean(openAIAnalysis)}
                 onCloseAnalysis={() => setOpenAIAnalysis(false)}
+                isInProgress={isRecommendInProgress}
                 showAlgo
                 collapsed={collapsed}
                 onCollapse={setCollapsed}
@@ -762,7 +770,8 @@ const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCa
                         analysis: analysis,
                         showAnalysis: true,
                         openAnalysis: Boolean(openAIAnalysis),
-                        onCloseAnalysis: () => setOpenAIAnalysis(false)
+                        onCloseAnalysis: () => setOpenAIAnalysis(false),
+                        isInProgress: isRecommendInProgress
                       } :
                     {}
                   )

@@ -56,6 +56,8 @@ const AIAssistantButton = ({
   promptTemplates,
   promptTemplate,
   onPromptTemplateChange,
+  isInProgress,
+  disabled,
   ...rest
 }) => {
   const { t } = useTranslation()
@@ -118,6 +120,7 @@ const AIAssistantButton = ({
           color='primary'
           onClick={handleToggle}
           startIcon={<AssistantIcon fontSize='inherit' sx={{marginTop: '-1px'}} />}
+          disabled={disabled}
           {...rest}
           sx={{textTransform: 'none', whiteSpace: 'nowrap', paddingTop: '5px', ...rest.sx}}
         >
@@ -156,6 +159,7 @@ const AIAssistantButton = ({
                       }}
                       onSubmit={handleSubmit}
                       showSubmit
+                      disabled={isInProgress}
                       sx={{border: 'none', padding: 0, minWidth: '360px'}}
                     />
                   </div>
@@ -176,6 +180,7 @@ const AIAssistantButton = ({
         ref={anchorRef}
         aria-label="Button group AI models"
         color='primary'
+        disabled={disabled || isInProgress}
         {...rest}
       >
         <Button
