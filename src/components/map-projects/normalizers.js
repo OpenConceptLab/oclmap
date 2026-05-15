@@ -401,10 +401,50 @@ export const filterPropertyBySummary = (property, summaryCodes) => {
 }
 
 /**
+ * Compact a property[] array to a `{code: value}` object for the AI Assistant
+ * payload. PR3-D3-lite (L-5): saves ~50% bytes vs. the FHIR-aligned
+ * `[{code, valueCoding}, ...]` shape by elimminating per-entry overhead. The
+ * LLM reads property values by axis name in plain English (per the LOINC
+ * system prompt's axis-by-axis methodology); the wire shape doesn't matter.
+ *
+ * Safe fallback: FHIR allows a CodeSystem.property `code` to repeat within a
+ * single concept (e.g. multiple `parent` codes). If any code appears twice,
+ * the original array is returned unchanged so no values are lost to map
+ * collision. LOINC's identifying axes (COMPONENT, PROPERTY, etc.) are unique
+ * per concept; ICD-11 / SNOMED edge cases preserve the array form.
+ *
+ * Pure.
+ */
+export const compactProperty = (property) => {
+  if (!Array.isArray(property) || property.length === 0) return property
+  const seen = new Set()
+  for (const p of property) {
+    const code = p?.code
+    if (!code) return property
+    if (seen.has(code)) return property
+    seen.add(code)
+  }
+  const obj = {}
+  for (const p of property) {
+    obj[p.code] = p.valueCoding ?? p.value ?? null
+  }
+  return obj
+}
+
+/**
  * Build a single recommendable_concepts[*] entry for the AI Assistant v2
  * payload. Pure projection — no React, no refs. The MapProject component
  * calls this once per (target-canonical) ConceptDefinition while walking
  * defsByKey in buildV2RecommendationPayload.
+ *
+ * PR3-D3-lite trims applied here:
+ *   - L-2: `ocl_url` dropped (UI deeplink; LLM doesn't use it).
+ *   - L-5: `property` compacted via `compactProperty` (FHIR array → object).
+ *   - L-8: `descriptions` omitted when the source array is empty.
+ *
+ * L-3 (drop constant `concept_class` / `datatype` across the surfaced set) is
+ * applied by the caller AFTER this function builds each entry, since the
+ * homogeneity check requires the full set.
  *
  * @param {Object} args
  * @param {Object} args.def                  ConceptDefinition (from conceptCache or normalizer output)
@@ -417,18 +457,40 @@ export const buildRecommendableConceptEntry = ({ def, key, evidence, rowState, s
   const entry = {
     concept_key: key,
     canonical_reference: def.reference,
-    ocl_url: def.ocl_url,
     display_name: def.display_name,
     names: def.names,
-    descriptions: def.descriptions,
     concept_class: def.concept_class,
     datatype: def.datatype,
-    property: filterPropertyBySummary(def.property, summaryPropertyCodes),
+    property: compactProperty(filterPropertyBySummary(def.property, summaryPropertyCodes)),
     rerank_score: rowState?.concept_rows?.[key]?.rerank_score,
     evidence
   }
+  if (Array.isArray(def.descriptions) && def.descriptions.length > 0)
+    entry.descriptions = def.descriptions
   if (def.retired === true) entry.retired = true
   return entry
+}
+
+/**
+ * Apply L-3 (drop constant `concept_class` / `datatype`) across a built
+ * recommendable_concepts[] set. If ALL entries share the same value on
+ * either field, that field is removed from every entry — it carries zero
+ * discriminatory signal for the LLM in the homogeneous case. If the
+ * surfaced set is heterogeneous on the field, the field is kept on every
+ * entry as today.
+ *
+ * Pure. Mutates entries in place.
+ */
+export const stripConstantClassAndDatatype = (entries) => {
+  if (!Array.isArray(entries) || entries.length < 2) return entries
+  for (const field of ['concept_class', 'datatype']) {
+    const values = entries.map(e => e[field])
+    const first = values[0]
+    if (first !== undefined && values.every(v => v === first)) {
+      for (const e of entries) delete e[field]
+    }
+  }
+  return entries
 }
 
 /**

@@ -98,7 +98,7 @@ import ProjectLogs from './ProjectLogs';
 import { useAlgos, CONCEPT_IDENTITY_BY_TYPE, ensureConceptIdentity } from './algorithms'
 import AutoMatchDialog from './AutoMatchDialog'
 import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
-import { normalizeAlgorithmInvocation, lookupStatusRank, normalizeLegacyAllCandidates, buildRecommendableConceptEntry } from './normalizers'
+import { normalizeAlgorithmInvocation, lookupStatusRank, normalizeLegacyAllCandidates, buildRecommendableConceptEntry, stripConstantClassAndDatatype } from './normalizers'
 import { parseConceptKey } from './conceptKey'
 import { buildQualityRowViews, conceptForMapping, resolveAICandidateID } from './viewBuilders.js'
 
@@ -3776,6 +3776,20 @@ const MapProject = () => {
     }
   }
 
+  // Slim projection of project metadata for the AI Assistant payload.
+  // The full getProjectMetadata() is used for save-as-JSON (legacy schema)
+  // and carries UI / algorithm / save-state fields the LLM has no use for.
+  // PR3-D3-lite (L-1): drop fields_mapped, score_configuration, encoder_model,
+  // include_retired, owner*/url, target_repo (envelope target_repo carries
+  // the load-bearing canonical_url/relative_url/version already).
+  const getAIProjectMetadata = () => {
+    return {
+      name: name,
+      description: description,
+      filters: filters
+    }
+  }
+
   // Build the v2 AI Assistant payload sections (recommendable_concepts +
   // bridge_context + target_repo) by running the unified-model normalizer
   // over the legacy allCandidates for the row. Sourcing from allCandidates
@@ -3882,8 +3896,18 @@ const MapProject = () => {
       // Else: concept from a non-target, non-bridge source — skip
     })
 
+    // PR3-D3-lite (L-3): drop `concept_class` / `datatype` from every entry
+    // when constant across the surfaced set. LOINC always emits both as
+    // constants ("LOINC" / "Nom"); for mixed-class repos the fields stay.
+    stripConstantClassAndDatatype(recommendable_concepts)
+
+    // PR3-D3-lite (L-6): strip `canonical_url_source` from the target_repo
+    // projection. The field is admin metadata (tells UI whether the canonical
+    // was explicit on the repo vs. derived) — the LLM has no use for it.
+    // eslint-disable-next-line no-unused-vars
+    const { canonical_url_source: _src, ...aiTargetRepo } = projectContext.target_repo
     return {
-      target_repo: projectContext.target_repo,
+      target_repo: aiTargetRepo,
       recommendable_concepts,
       bridge_context
     }
@@ -3951,7 +3975,7 @@ const MapProject = () => {
       const promptTemplateRef = getPromptTemplateRef(activePromptTemplate)
       const payload = {
         variables: {
-          project: getProjectMetadata(),
+          project: getAIProjectMetadata(),
           row: rowData.row,
           metadata: rowData.metadata,
           target_repo: v2.target_repo,
