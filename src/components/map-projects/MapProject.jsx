@@ -241,6 +241,21 @@ const MapProject = () => {
   const [versions, setVersions] = React.useState([])
   const [conceptCache, setConceptCache] = React.useState({})
   const [allMapTypes, setAllMapTypes] = React.useState([])
+  // PR3-H: OCL Locales source provides the canonical language picker for
+  // both Input Language and AI Output Locale. Fetched once per session.
+  // Each concept: {id: 'por' (ISO 639-3), locale: 'pt' (BCP-47 subtag),
+  // display_name: 'Portuguese'}. We use the BCP-47 `locale` field as the
+  // stored value and `display_name` for the label.
+  // Initial state is the fallback list so the dropdowns are usable
+  // immediately on mount and on fetch failure. All language lists in the
+  // app sort alphabetically by display name (English collation).
+  const LOCALE_FALLBACK = [
+    { id: 'en', name: 'English' },
+    { id: 'fr', name: 'French' },
+    { id: 'pt', name: 'Portuguese' },
+    { id: 'es', name: 'Spanish' }
+  ]
+  const [oclLocales, setOclLocales] = React.useState(LOCALE_FALLBACK)
   const [random, setRandom] = React.useState(0)
   const [deleteProject, setDeleteProject] = React.useState(false)
   const [loadingProject, setLoadingProject] = React.useState(false)
@@ -251,6 +266,12 @@ const MapProject = () => {
   const [lookupConfig, setLookupConfig] = React.useState({})
   const [encoderModel, setEncoderModel] = React.useState(DEFAULT_ENCODER_MODEL)
   const [promptOutputLocale, setPromptOutputLocale] = React.useState(null)
+  // PR3-H: project-level input language. Default 'en' for new projects so
+  // the auto-populate rule for target-repo name filter (see ConfigurationForm)
+  // produces a useful starting set. Existing projects load whatever the
+  // backend has stored (null for projects created before this field existed
+  // — they observe the zero-regression "no filter" path).
+  const [inputLocale, setInputLocale] = React.useState('en')
   const [useLexicalVariants, setUseLexicalVariants] = React.useState(false)
   // Project canonical-resolution context (plans/unified-mapper-model.md
   // "Project configuration: explicit canonical context"). Empty = use the
@@ -527,6 +548,7 @@ const MapProject = () => {
 
   React.useEffect(() => {
     fetchMapTypes()
+    fetchOclLocales()
     fetchAIModels()
 
     if(params.projectId && params.owner) {
@@ -568,6 +590,7 @@ const MapProject = () => {
       setAlgosSelected(copiedProject.algorithms || [])
       setEncoderModel(copiedProject.encoder_model || DEFAULT_ENCODER_MODEL)
       setUseLexicalVariants(Boolean(copiedProject.use_lexical_variants))
+      setInputLocale((copiedProject.input_locales || [])[0] || '')
       if(copiedProject.target_repo_url) {
         const repoParams = URIToParentParams(copiedProject.target_repo_url, true)
         fetchRepo(dropVersion(copiedProject.target_repo_url))
@@ -760,6 +783,11 @@ const MapProject = () => {
       setEncoderModel(response.data?.encoder_model || DEFAULT_ENCODER_MODEL)
       setProjectPromptTemplateKey(response.data?.prompt_template_key || '')
       setPromptOutputLocale(response.data?.prompt_output_locale || null)
+      // PR3-H: backend stores `input_locales` as a list; UI is single-select
+      // for now, so we hydrate from the first element. Empty/missing on
+      // older projects keeps the zero-regression "no filter" path active
+      // until the user opens config and picks a language.
+      setInputLocale((response.data?.input_locales || [])[0] || '')
       setUseLexicalVariants(Boolean(response.data?.use_lexical_variants))
       const rawAnalysis = response.data?.analysis || {}
       setAnalysis(Object.fromEntries(Object.entries(rawAnalysis).map(([k, v]) => [k, Array.isArray(v) ? v : [v]])))
@@ -774,6 +802,22 @@ const MapProject = () => {
   }
 
   const fetchMapTypes = () => APIService.orgs('OCL').sources('MapTypes').appendToUrl('concepts/lookup/').get().then(response => setAllMapTypes(response.data?.map(d => d.id)))
+
+  // PR3-H: fetch the canonical locale catalog from /orgs/OCL/sources/Locales/.
+  // ~486 concepts, each mapping a 3-letter ISO 639-3 id to a 2-letter BCP-47
+  // `locale` and human-readable `display_name`. Concepts missing a `locale`
+  // (e.g. macro-language groupings like "Creoles and pidgins") are filtered
+  // out so the dropdown only offers usable filter values. The list is
+  // sorted alphabetically by display name (English collation) to match the
+  // convention used by browser/OS language pickers. On fetch failure the
+  // state keeps the initial fallback list.
+  const fetchOclLocales = () => APIService.orgs('OCL').sources('Locales').appendToUrl('concepts/').get(null, null, {limit: 500}).then(response => {
+    const valid = (response?.data || []).filter(c => c?.locale && !c?.retired)
+    if (valid.length === 0) return
+    const sorted = valid.map(c => ({id: c.locale, name: c.display_name}))
+      .sort((a, b) => a.name.localeCompare(b.name, 'en'))
+    setOclLocales(sorted)
+  })
 
   const alertUser = (e) => {
     e.preventDefault();
@@ -1231,6 +1275,10 @@ const MapProject = () => {
     formData.append('filters', JSON.stringify(getFilters()))
     formData.append('prompt_template_key', getProjectPromptTemplateKey())
     formData.append('prompt_output_locale', promptOutputLocale || '')
+    // PR3-H: backend field is plural (ArrayField) — single-select UI wraps
+    // the value in a one-element list. Future multi-select can send N
+    // elements without any backend change.
+    formData.append('input_locales', JSON.stringify(inputLocale ? [inputLocale] : []))
     formData.append('use_lexical_variants', useLexicalVariants)
     const isUpdate = Boolean(project?.id)
     let service = APIService.new().overrideURL(owner).appendToUrl('map-projects/')
@@ -3851,6 +3899,14 @@ const MapProject = () => {
     // sources or repos that haven't pinned a summary), filterPropertyBySummary
     // passes def.property through whole.
     const summaryPropertyCodes = repoVersion?.meta?.display?.concept_summary_properties
+    // PR3-H: union of (input_locale, filters.locale). Empty set = no locale
+    // filter applied (backwards-compatible for projects with neither set).
+    const filterLocaleString = (filters?.locale || '')
+    const filterLocales = filterLocaleString ? filterLocaleString.split(',').map(s => s.trim()).filter(Boolean) : []
+    const effectiveLocales = [
+      ...(inputLocale ? [inputLocale] : []),
+      ...filterLocales
+    ]
     const recommendable_concepts = []
     const bridge_context = []
 
@@ -3890,7 +3946,7 @@ const MapProject = () => {
             return e
           })
         recommendable_concepts.push(buildRecommendableConceptEntry({
-          def, key, evidence, rowState, summaryPropertyCodes
+          def, key, evidence, rowState, summaryPropertyCodes, effectiveLocales
         }))
       }
       // Else: concept from a non-target, non-bridge source — skip
@@ -4095,6 +4151,9 @@ const MapProject = () => {
       setAIModel={setAIModel}
       promptOutputLocale={promptOutputLocale}
       setPromptOutputLocale={setPromptOutputLocale}
+      inputLocale={inputLocale}
+      setInputLocale={setInputLocale}
+      oclLocales={oclLocales}
       namespace={namespace}
       setNamespace={setNamespace}
       useLexicalVariants={useLexicalVariants}

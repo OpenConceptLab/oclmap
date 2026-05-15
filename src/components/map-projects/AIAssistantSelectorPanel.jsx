@@ -29,22 +29,25 @@ const AIAssistantSelectorPanel = ({
   showSubmit = false,
   disabled = false,
   showLocale = false,
+  availableLocales,
   sx = {}
 }) => {
   const { t } = useTranslation()
-  const locales = [
-    {id: 'auto', name: 'auto (experimental)'},
-    { id: 'en',    name: 'English' },
-    { id: 'es',    name: 'español' },
-    { id: 'es-MX', name: 'español (México)' },
-    { id: 'pt',    name: 'português' },
-    { id: 'pt-BR', name: 'português (Brasil)' },
-    { id: 'pt-PT', name: 'português (Portugal)' },
-    { id: 'fr',    name: 'français' },
-    { id: 'fr-CA', name: 'français (Canada)' },
-    { id: 'de',    name: 'Deutsch' },
-    { id: 'it',    name: 'italiano' },
+  // `availableLocales` is the OCL Locales catalog (see MapProject.jsx
+  // `fetchOclLocales`). Defensive fallback (sorted alphabetically by name)
+  // covers the rare case where the prop is empty.
+  const AUTO_OPTION = {id: 'auto', name: 'auto (experimental)'}
+  const FALLBACK_LOCALES = [
+    { id: 'en', name: 'English' },
+    { id: 'fr', name: 'French' },
+    { id: 'pt', name: 'Portuguese' },
+    { id: 'es', name: 'Spanish' }
   ]
+  const baseLocales = (Array.isArray(availableLocales) && availableLocales.length > 0)
+    ? availableLocales
+    : FALLBACK_LOCALES
+  // `auto` always at the top; rest as-supplied (already sorted upstream).
+  const locales = [AUTO_OPTION, ...baseLocales]
   const [checkLocale, setCheckLocale] = React.useState(false)
 
   if (!promptTemplates?.length) {
@@ -231,7 +234,13 @@ const AIAssistantSelectorPanel = ({
                       }
                     </li>
                   )}
-                  renderInput={(params) => <TextField {...params} label={t('map_project.ai_assistant_output_locale')} />}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label={t('map_project.ai_assistant_output_locale')}
+                      helperText={t('map_project.ai_assistant_output_locale_helper', 'Pick from the list, or type a regional BCP-47 code (e.g. pt-BR, fr-CA).')}
+                    />
+                  )}
                 />
             }
           </>

@@ -58,10 +58,35 @@ const VisuallyHiddenInput = styled('input')({
 
 const deriveCanonicalUrl = relativeUrl => relativeUrl ? `https://ns.openconceptlab.org${relativeUrl}` : ''
 
-const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, name, setName, description, setDescription, repo, onRepoChange, repoVersion, setRepoVersion, versions, mappedSources, targetSourcesFromRows, algosSelected, setAlgosSelected, sx, algos, validColumns, columns, isValidColumnValue, updateColumn, configure, setConfigure, columnVisibilityModel, setColumnVisibilityModel, onSave, isSaving, candidatesScore, onScoreChange, includeDefaultFilter, setIncludeDefaultFilter, filters, setFilters, locales, isLoadingLocales, setAIAssistantColumns, AIAssistantColumns, inAIAssistantGroup, lookupConfig, setLookupConfig, encoderModel, setEncoderModel, isCoreUser, canBridge, canScispacy, promptTemplates, promptTemplate, onPromptTemplateChange, AIModels, AIModel, setAIModel, namespace, setNamespace, promptOutputLocale, setPromptOutputLocale, useLexicalVariants, setUseLexicalVariants }) => {
+const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, name, setName, description, setDescription, repo, onRepoChange, repoVersion, setRepoVersion, versions, mappedSources, targetSourcesFromRows, algosSelected, setAlgosSelected, sx, algos, validColumns, columns, isValidColumnValue, updateColumn, configure, setConfigure, columnVisibilityModel, setColumnVisibilityModel, onSave, isSaving, candidatesScore, onScoreChange, includeDefaultFilter, setIncludeDefaultFilter, filters, setFilters, locales, isLoadingLocales, setAIAssistantColumns, AIAssistantColumns, inAIAssistantGroup, lookupConfig, setLookupConfig, encoderModel, setEncoderModel, isCoreUser, canBridge, canScispacy, promptTemplates, promptTemplate, onPromptTemplateChange, AIModels, AIModel, setAIModel, namespace, setNamespace, promptOutputLocale, setPromptOutputLocale, inputLocale, setInputLocale, oclLocales, useLexicalVariants, setUseLexicalVariants }) => {
   const { t } = useTranslation();
   const isLLMAlgoNotAllowed = !repoVersion?.match_algorithms?.includes('llm')
   const appliedLocales = filters?.locale ? filters?.locale?.split(',') : []
+  // PR3-H: effective set of name locales the AI Assistant will receive.
+  // Union of (input_locale, filters.locale) deduped on primary subtag.
+  // Empty = no filter (backwards-compatible for old projects with neither set).
+  const primarySubtag = (loc) => (loc || '').split('-')[0].toLowerCase()
+  const effectiveAILocales = (() => {
+    const seen = new Set()
+    const out = []
+    for (const l of [inputLocale, ...appliedLocales].filter(Boolean)) {
+      const tag = primarySubtag(l)
+      if (!tag || seen.has(tag)) continue
+      seen.add(tag)
+      out.push(tag)
+    }
+    return out
+  })()
+  // PR3-H: Input Language + Output Locale dropdowns both pull from
+  // /orgs/OCL/sources/Locales/ (loaded once in MapProject.jsx). Each entry
+  // is {id: '<bcp47 subtag>', name: '<English display name>'}.
+  const localeOptions = oclLocales || []
+  const selectedInputLocaleOption = localeOptions.find(o => o.id === inputLocale) || null
+  const inputLocaleOptionLabel = option => {
+    if (typeof option === 'string') return option
+    if (!option?.id) return ''
+    return `[${option.id}] ${option.name}`
+  }
   const targetCanonicalFromRepo = repo?.canonical_url
   const targetCanonicalDerived = !targetCanonicalFromRepo && repo?.url ? deriveCanonicalUrl(repo.url) : ''
   const effectiveTargetCanonical = targetCanonicalFromRepo || targetCanonicalDerived
@@ -157,6 +182,33 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
           onChange={handleFileUpload}
         />
       </Button>
+
+      <Autocomplete
+        size='small'
+        id='input-locale'
+        options={localeOptions}
+        value={selectedInputLocaleOption}
+        getOptionLabel={inputLocaleOptionLabel}
+        isOptionEqualToValue={(option, current) => option?.id === current?.id}
+        onChange={(event, option) => setInputLocale(option?.id || '')}
+        sx={{marginTop: '12px'}}
+        renderOption={(props, option) => (
+          <li {...props} key={option.id}>
+            <span style={{display: 'flex', alignItems: 'center'}}>
+              <span style={{marginRight: '6px', fontSize: '14px', color: 'rgba(0, 0, 0, 0.6)'}}>[{option.id}]</span>
+              <span>{option.name}</span>
+            </span>
+          </li>
+        )}
+        renderInput={(params) => (
+          <TextField
+            {...params}
+            size='small'
+            label={t('map_project.input_language', 'Input Language')}
+            helperText={t('map_project.input_language_helper', 'Language of the input data. Determines which target-repo name locales are sent to the AI Assistant.')}
+          />
+        )}
+      />
 
       <Typography component="div" sx={{fontSize: '16px', fontWeight: 'bold', marginTop: '20px'}}>
         {t('map_project.target_repository')}
@@ -330,7 +382,13 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
               showLocale
               promptOutputLocale={promptOutputLocale}
               setPromptOutputLocale={setPromptOutputLocale}
+              availableLocales={localeOptions}
             />
+            <FormHelperText sx={{marginTop: '8px', marginLeft: '8px'}}>
+              {effectiveAILocales.length > 0
+                ? t('map_project.ai_effective_locales', {locales: effectiveAILocales.join(', '), defaultValue: 'AI will receive names in: {{locales}}'})
+                : t('map_project.ai_all_locales', 'AI will receive names in: all locales (no filter)')}
+            </FormHelperText>
           </>
       }
 

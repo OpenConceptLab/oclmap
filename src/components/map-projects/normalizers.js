@@ -432,6 +432,120 @@ export const compactProperty = (property) => {
 }
 
 /**
+ * Reduce a locale tag to its primary subtag (the part before any `-`),
+ * lowercased. `en-US` → `en`, `pt-BR` → `pt`, `EN` → `en`. Empty/nullish
+ * input returns `''`. Pure.
+ */
+export const primarySubtag = (locale) => {
+  if (!locale || typeof locale !== 'string') return ''
+  const idx = locale.indexOf('-')
+  return (idx === -1 ? locale : locale.slice(0, idx)).toLowerCase()
+}
+
+/**
+ * Reduce a list of locale tags to the unique set of primary subtags.
+ * `['en', 'en-US', 'PT-br']` → `['en', 'pt']`. Preserves first-seen order.
+ * Pure.
+ */
+export const uniqByPrimarySubtag = (locales) => {
+  if (!Array.isArray(locales)) return []
+  const seen = new Set()
+  const out = []
+  for (const l of locales) {
+    const tag = primarySubtag(l)
+    if (!tag || seen.has(tag)) continue
+    seen.add(tag)
+    out.push(tag)
+  }
+  return out
+}
+
+/**
+ * Trim a single `names[*]` entry to the fields the LLM actually consumes.
+ * Drops `external_id` (upstream-system identifier, useless to the LLM).
+ * Keeps `name_type` when set (semantically meaningful — fully-specified
+ * vs. synonym vs. index term carries weight for match-recommendation).
+ * Emits `locale_preferred` only when literally `true` (mirrors the
+ * truthy-only pattern used for `retired`).
+ *
+ * Pure.
+ */
+const trimName = (n) => {
+  if (!n) return n
+  const out = { name: n.name, locale: n.locale }
+  if (n.name_type) out.name_type = n.name_type
+  if (n.locale_preferred === true) out.locale_preferred = true
+  return out
+}
+
+/**
+ * Trim a single `descriptions[*]` entry. Drops `external_id`. Keeps `type`
+ * (description-types like `Definition` / `Usage` carry meaning).
+ *
+ * Pure.
+ */
+const trimDescription = (d) => {
+  if (!d) return d
+  const out = { description: d.description, locale: d.locale }
+  if (d.type) out.type = d.type
+  if (d.locale_preferred === true) out.locale_preferred = true
+  return out
+}
+
+/**
+ * Filter a list of `names[*]` entries by primary-subtag match against the
+ * effective locale set, then trim each surviving entry to the LLM-relevant
+ * fields. Names with no `locale` field pass through (defensive — typically
+ * canonical fully-specified names that lost their tag in upstream processing).
+ *
+ * Behavior:
+ *   - `effectiveLocales` empty/missing → identity locale-wise (every entry
+ *     survives the filter) but `trimName` is still applied. This is the
+ *     backwards-compatible path for old projects with neither `input_locale`
+ *     nor `filters.locale` set; they pay the structural-trim savings but
+ *     keep their full multi-locale set.
+ *   - `effectiveLocales` populated → keep entries whose locale's primary
+ *     subtag is in the set (case-insensitive), plus entries with no locale.
+ *
+ * Pure.
+ */
+export const filterAndTrimNames = (names, effectiveLocales) => {
+  if (!Array.isArray(names)) return names
+  const set = new Set(uniqByPrimarySubtag(effectiveLocales))
+  const filterActive = set.size > 0
+  const out = []
+  for (const n of names) {
+    if (!n) continue
+    if (filterActive && n.locale) {
+      const tag = primarySubtag(n.locale)
+      if (tag && !set.has(tag)) continue
+    }
+    out.push(trimName(n))
+  }
+  return out
+}
+
+/**
+ * Filter+trim companion for `descriptions[*]`. Same locale semantics as
+ * `filterAndTrimNames`. Pure.
+ */
+export const filterAndTrimDescriptions = (descriptions, effectiveLocales) => {
+  if (!Array.isArray(descriptions)) return descriptions
+  const set = new Set(uniqByPrimarySubtag(effectiveLocales))
+  const filterActive = set.size > 0
+  const out = []
+  for (const d of descriptions) {
+    if (!d) continue
+    if (filterActive && d.locale) {
+      const tag = primarySubtag(d.locale)
+      if (tag && !set.has(tag)) continue
+    }
+    out.push(trimDescription(d))
+  }
+  return out
+}
+
+/**
  * Build a single recommendable_concepts[*] entry for the AI Assistant v2
  * payload. Pure projection — no React, no refs. The MapProject component
  * calls this once per (target-canonical) ConceptDefinition while walking
@@ -441,6 +555,12 @@ export const compactProperty = (property) => {
  *   - L-2: `ocl_url` dropped (UI deeplink; LLM doesn't use it).
  *   - L-5: `property` compacted via `compactProperty` (FHIR array → object).
  *   - L-8: `descriptions` omitted when the source array is empty.
+ *
+ * PR3-H trims applied here:
+ *   - `names`/`descriptions` filtered by primary-subtag match against
+ *     `effectiveLocales` (empty set → no locale filter, identity behavior).
+ *   - Per-entry structural trim: drop `external_id` always; emit
+ *     `locale_preferred` only when `true`.
  *
  * L-3 (drop constant `concept_class` / `datatype` across the surfaced set) is
  * applied by the caller AFTER this function builds each entry, since the
@@ -452,21 +572,26 @@ export const compactProperty = (property) => {
  * @param {Array<Object>} args.evidence      [{algorithm_id, candidate_type, score, highlights, via?}, ...]
  * @param {Object} [args.rowState]           rowMatchState[rowIndex] — provides rerank_score per concept_key
  * @param {Array<string>} [args.summaryPropertyCodes] target_repo summary property codes (optional filter)
+ * @param {Array<string>} [args.effectiveLocales]     PR3-H union of (input_locale, filters.locale); empty = no locale filter
  */
-export const buildRecommendableConceptEntry = ({ def, key, evidence, rowState, summaryPropertyCodes }) => {
+export const buildRecommendableConceptEntry = ({
+  def, key, evidence, rowState, summaryPropertyCodes, effectiveLocales
+}) => {
+  const filteredNames = filterAndTrimNames(def.names, effectiveLocales)
+  const filteredDescriptions = filterAndTrimDescriptions(def.descriptions, effectiveLocales)
   const entry = {
     concept_key: key,
     canonical_reference: def.reference,
     display_name: def.display_name,
-    names: def.names,
+    names: filteredNames,
     concept_class: def.concept_class,
     datatype: def.datatype,
     property: compactProperty(filterPropertyBySummary(def.property, summaryPropertyCodes)),
     rerank_score: rowState?.concept_rows?.[key]?.rerank_score,
     evidence
   }
-  if (Array.isArray(def.descriptions) && def.descriptions.length > 0)
-    entry.descriptions = def.descriptions
+  if (Array.isArray(filteredDescriptions) && filteredDescriptions.length > 0)
+    entry.descriptions = filteredDescriptions
   if (def.retired === true) entry.retired = true
   return entry
 }
