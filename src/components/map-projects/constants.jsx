@@ -73,3 +73,4 @@ export const ROW_STAGES = {
   '1': 'completed'
 }
 export const PROMPTS_KEY_DEFAULT = 'match-recommend-normalized'
+export const PROMPTS_ACTION_TYPE_DEFAULT = 'match-recommend'

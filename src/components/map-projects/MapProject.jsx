@@ -78,7 +78,7 @@ import ConceptHome from '../concepts/ConceptHome'
 import DraggablePaperComponent from '../common/DraggablePaperComponent'
 import LoaderDialog from '../common/LoaderDialog'
 import Error403 from '../errors/Error403'
-import { HEADERS, SEMANTIC_SEARCH_HEADERS, ROW_STATES, VIEWS, DECISION_TABS, ROW_STAGES, PROMPTS_KEY_DEFAULT } from './constants'
+import { HEADERS, SEMANTIC_SEARCH_HEADERS, ROW_STATES, VIEWS, DECISION_TABS, ROW_STAGES, PROMPTS_KEY_DEFAULT, PROMPTS_ACTION_TYPE_DEFAULT } from './constants'
 import MapProjectDeleteConfirmDialog from './MapProjectDeleteConfirmDialog';
 import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
@@ -3684,7 +3684,7 @@ const MapProject = () => {
 
     const service = APIService.new()
     service.URL = AI_ASSISTANT_API_URL
-    service.appendToUrl('/prompts/').get(null, null, {action_type: PROMPTS_KEY_DEFAULT}).then(response => {
+    service.appendToUrl('/prompts/').get(null, null, {action_type: PROMPTS_ACTION_TYPE_DEFAULT}).then(response => {
       if(response?.detail) {
         setAIModel(find(models, {is_default: true})?.id || '')
         return
