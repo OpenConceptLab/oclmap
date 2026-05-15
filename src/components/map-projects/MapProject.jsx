@@ -3848,12 +3848,6 @@ const MapProject = () => {
     const alreadyAnalyzed = isAutoMatch && existingAnalyses.length > 0
     const v2 = isNumber(__index) ? buildV2RecommendationPayload(__index) : null
     if(isNumber(__index) && repoVersion && !alreadyAnalyzed && (v2?.recommendable_concepts?.length || 0) > 0) {
-      if(!(resolvedPromptTemplate?.key || promptTemplate?.key)) {
-        setAlert({message: 'AI Assistant prompt template is not available', severity: 'error'})
-        markAlgo(__index, 'recommend', -3)
-        return false
-      }
-
       markAlgo(__index, 'recommend', 0)
       let rowData = prepareRow(__row, true, true)
 
@@ -3861,6 +3855,11 @@ const MapProject = () => {
       let activePromptTemplate
       try {
         activePromptTemplate = resolvedPromptTemplate || await resolvePromptTemplateForInvocation()
+        if(!activePromptTemplate?.key) {
+          setAlert({message: 'AI Assistant prompt template is not available', severity: 'error'})
+          markAlgo(__index, 'recommend', -3)
+          return false
+        }
         // Single-row invocations (no caller-supplied resolvedPromptTemplate)
         // should always hit the latest prompt template, NOT a pinned version.
         // Version pinning matters for bulk auto-match runs (the resolved
@@ -3871,7 +3870,7 @@ const MapProject = () => {
         // doesn't host that specific version path. Clear `version` and the
         // already-version-bearing `uri`/`url`/`prompt_template_uri` so
         // getResolvedPromptTemplateURI falls through to '/prompts/<key>/'.
-        if(!resolvedPromptTemplate && activePromptTemplate) {
+        if(!resolvedPromptTemplate) {
           activePromptTemplate = {
             ...activePromptTemplate,
             version: null,
