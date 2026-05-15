@@ -401,6 +401,37 @@ export const filterPropertyBySummary = (property, summaryCodes) => {
 }
 
 /**
+ * Build a single recommendable_concepts[*] entry for the AI Assistant v2
+ * payload. Pure projection — no React, no refs. The MapProject component
+ * calls this once per (target-canonical) ConceptDefinition while walking
+ * defsByKey in buildV2RecommendationPayload.
+ *
+ * @param {Object} args
+ * @param {Object} args.def                  ConceptDefinition (from conceptCache or normalizer output)
+ * @param {string} args.key                  the concept_key
+ * @param {Array<Object>} args.evidence      [{algorithm_id, candidate_type, score, highlights, via?}, ...]
+ * @param {Object} [args.rowState]           rowMatchState[rowIndex] — provides rerank_score per concept_key
+ * @param {Array<string>} [args.summaryPropertyCodes] target_repo summary property codes (optional filter)
+ */
+export const buildRecommendableConceptEntry = ({ def, key, evidence, rowState, summaryPropertyCodes }) => {
+  const entry = {
+    concept_key: key,
+    canonical_reference: def.reference,
+    ocl_url: def.ocl_url,
+    display_name: def.display_name,
+    names: def.names,
+    descriptions: def.descriptions,
+    concept_class: def.concept_class,
+    datatype: def.datatype,
+    property: filterPropertyBySummary(def.property, summaryPropertyCodes),
+    rerank_score: rowState?.concept_rows?.[key]?.rerank_score,
+    evidence
+  }
+  if (def.retired === true) entry.retired = true
+  return entry
+}
+
+/**
  * Backfill rowMatchState + ConceptDefinitions from the legacy
  * `allCandidates` shape (a saved-project artifact: `{ [algoId]: [{row,
  * results}, ...] }`). Called on project load so that v1-saved projects

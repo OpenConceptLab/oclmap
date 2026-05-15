@@ -98,7 +98,7 @@ import ProjectLogs from './ProjectLogs';
 import { useAlgos, CONCEPT_IDENTITY_BY_TYPE, ensureConceptIdentity } from './algorithms'
 import AutoMatchDialog from './AutoMatchDialog'
 import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
-import { normalizeAlgorithmInvocation, lookupStatusRank, normalizeLegacyAllCandidates, filterPropertyBySummary } from './normalizers'
+import { normalizeAlgorithmInvocation, lookupStatusRank, normalizeLegacyAllCandidates, buildRecommendableConceptEntry } from './normalizers'
 import { parseConceptKey } from './conceptKey'
 import { buildQualityRowViews, conceptForMapping, resolveAICandidateID } from './viewBuilders.js'
 
@@ -3792,21 +3792,9 @@ const MapProject = () => {
               e.via = {bridge_concept_key: c.bridge_concept_key, map_type: c.map_type}
             return e
           })
-        const entry = {
-          concept_key: key,
-          canonical_reference: def.reference,
-          ocl_url: def.ocl_url,
-          display_name: def.display_name,
-          names: def.names,
-          descriptions: def.descriptions,
-          concept_class: def.concept_class,
-          datatype: def.datatype,
-          property: filterPropertyBySummary(def.property, summaryPropertyCodes),
-          rerank_score: rowState?.concept_rows?.[key]?.rerank_score,
-          evidence
-        }
-        if(def.retired === true) entry.retired = true
-        recommendable_concepts.push(entry)
+        recommendable_concepts.push(buildRecommendableConceptEntry({
+          def, key, evidence, rowState, summaryPropertyCodes
+        }))
       }
       // Else: concept from a non-target, non-bridge source — skip
     })
