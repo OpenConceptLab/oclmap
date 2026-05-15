@@ -3072,8 +3072,10 @@ const MapProject = () => {
       const allDone = bulkMatchAlgoIdsRef.current.every(id => stage[id] === 1 || stage[id] === -2)
       if(!allDone) return
     } else {
-      // Single-row: defer if any configured algo is still in-flight for this row.
-      if(selectedAlgoIds.some(id => stage[id] === 0)) return
+      // Single-row: wait until every configured algo has either completed (1) or failed (-2).
+      // Checking only === 0 (in-flight) wasn't enough — algos not yet started (-1) or
+      // uninitialized (undefined) would let rerank fire before their candidates arrived.
+      if(selectedAlgoIds.some(id => stage[id] !== 1 && stage[id] !== -2)) return
     }
     const rowState = rowMatchStateRef.current[rowIndex]
     if(!rowState) return
