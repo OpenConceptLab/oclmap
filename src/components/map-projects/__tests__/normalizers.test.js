@@ -20,7 +20,9 @@ import {
   normalizeAlgoResult,
   normalizeAlgorithmInvocation,
   filterPropertyBySummary,
-  buildRecommendableConceptEntry
+  buildRecommendableConceptEntry,
+  compactProperty,
+  stripConstantClassAndDatatype
 } from '../normalizers.js'
 import { makeConceptKey, parseConceptKey, referencesEqual } from '../conceptKey.js'
 
@@ -1011,7 +1013,7 @@ const stdEvidence = [
   { algorithm_id: 'ocl-search', candidate_type: 'standard', score: 0.93, highlights: ['glucose'] }
 ]
 
-test('buildRecommendableConceptEntry: standard target-repo concept — all 3 PR3-D1 fields wired correctly', () => {
+test('buildRecommendableConceptEntry: standard target-repo concept — all 3 PR3-D1 fields wired correctly + PR3-D3-lite trims applied', () => {
   const rowState = {
     concept_rows: { 'http://loinc.org|2345-7|2.74': { rerank_score: 0.87 } }
   }
@@ -1026,19 +1028,26 @@ test('buildRecommendableConceptEntry: standard target-repo concept — all 3 PR3
   // Identity + display passthrough
   assert.equal(entry.concept_key, loincDef.key)
   assert.deepEqual(entry.canonical_reference, loincDef.reference)
-  assert.equal(entry.ocl_url, loincDef.ocl_url)
   assert.equal(entry.display_name, loincDef.display_name)
   assert.equal(entry.concept_class, 'LP')
   assert.equal(entry.datatype, 'Qn')
 
+  // PR3-D3-lite (L-2): ocl_url is dropped entirely — UI deeplink, LLM doesn't need it
+  assert.equal('ocl_url' in entry, false)
+
+  // PR3-D3-lite (L-8): descriptions omitted when empty
+  assert.equal('descriptions' in entry, false)
+
   // (1) property is the filtered subset — 7 entries match the real-prod
-  //     LOINC summary pin from the fixture.
-  assert.ok(Array.isArray(entry.property))
-  assert.equal(entry.property.length, 7)
-  assert.deepEqual(entry.property.map(p => p.code).sort(),
+  //     LOINC summary pin from the fixture, and PR3-D3-lite (L-5) compacts
+  //     to {code: value} object form.
+  assert.equal(typeof entry.property, 'object')
+  assert.equal(Array.isArray(entry.property), false)
+  assert.equal(Object.keys(entry.property).length, 7)
+  assert.deepEqual(Object.keys(entry.property).sort(),
     ['CLASS', 'COMPONENT', 'METHOD_TYP', 'PROPERTY', 'SCALE_TYP', 'SYSTEM', 'TIME_ASPCT'])
-  assert.ok(!entry.property.some(p => p.code === 'STATUS'))
-  assert.ok(!entry.property.some(p => p.code === 'VersionLastChanged'))
+  assert.ok(!('STATUS' in entry.property))
+  assert.ok(!('VersionLastChanged' in entry.property))
 
   // (2) rerank_score wired from rowState
   assert.equal(entry.rerank_score, 0.87)
@@ -1089,13 +1098,16 @@ test('buildRecommendableConceptEntry: rerank_score is undefined when rowState is
   assert.equal(entryDifferentKey.rerank_score, undefined)
 })
 
-test('buildRecommendableConceptEntry: property passes through whole when summary codes are not pinned', () => {
+test('buildRecommendableConceptEntry: property passes through whole when summary codes are not pinned (still compacted)', () => {
   const entry = buildRecommendableConceptEntry({
     def: loincDef, key: loincDef.key, evidence: stdEvidence,
     rowState: undefined, summaryPropertyCodes: undefined
   })
-  // No filter applied — full 9-entry fixture passes through.
-  assert.equal(entry.property.length, 9)
+  // No summary filter applied — full 9-entry fixture passes through, but
+  // PR3-D3-lite (L-5) compacts to a 9-key object.
+  assert.equal(typeof entry.property, 'object')
+  assert.equal(Array.isArray(entry.property), false)
+  assert.equal(Object.keys(entry.property).length, 9)
 })
 
 test('buildRecommendableConceptEntry: property is undefined when def has no property data', () => {
@@ -1119,4 +1131,141 @@ test('buildRecommendableConceptEntry: bridge_child evidence carries via.bridge_c
   })
   assert.deepEqual(entry.evidence, bridgeEvidence)
   assert.equal(entry.rerank_score, 0.91)
+})
+
+// ============================================================================
+// PR3-D3-lite (L-8) — descriptions omitted only when source array is empty;
+// non-empty arrays still ship.
+// ============================================================================
+
+test('buildRecommendableConceptEntry (L-8): descriptions kept when non-empty', () => {
+  const descs = [{ description: 'A clinical glucose measurement', locale: 'en' }]
+  const entry = buildRecommendableConceptEntry({
+    def: { ...loincDef, descriptions: descs },
+    key: loincDef.key, evidence: stdEvidence,
+    rowState: undefined, summaryPropertyCodes: undefined
+  })
+  assert.deepEqual(entry.descriptions, descs)
+})
+
+test('buildRecommendableConceptEntry (L-8): descriptions absent when missing/null/undefined', () => {
+  for (const descriptions of [undefined, null, []]) {
+    const entry = buildRecommendableConceptEntry({
+      def: { ...loincDef, descriptions },
+      key: loincDef.key, evidence: stdEvidence,
+      rowState: undefined, summaryPropertyCodes: undefined
+    })
+    assert.equal('descriptions' in entry, false,
+      `descriptions=${JSON.stringify(descriptions)} should be omitted from entry`)
+  }
+})
+
+// ============================================================================
+// PR3-D3-lite (L-5) — compactProperty: array → {code: value} with safe
+// fallback when codes collide (FHIR allows repeats per concept).
+// ============================================================================
+
+test('compactProperty: empty / missing input passes through', () => {
+  assert.equal(compactProperty(undefined), undefined)
+  assert.equal(compactProperty(null), null)
+  assert.deepEqual(compactProperty([]), [])
+})
+
+test('compactProperty: unique codes — compacts to object preserving values', () => {
+  const property = [
+    { code: 'COMPONENT', valueCoding: 'Glucose' },
+    { code: 'PROPERTY', valueCoding: 'MCnc' },
+    { code: 'SYSTEM', valueCoding: 'Ser/Plas' }
+  ]
+  const out = compactProperty(property)
+  assert.equal(typeof out, 'object')
+  assert.equal(Array.isArray(out), false)
+  assert.deepEqual(out, { COMPONENT: 'Glucose', PROPERTY: 'MCnc', SYSTEM: 'Ser/Plas' })
+})
+
+test('compactProperty: code collision triggers safe fallback (returns array unchanged)', () => {
+  const property = [
+    { code: 'parent', valueCoding: 'A' },
+    { code: 'parent', valueCoding: 'B' },
+    { code: 'COMPONENT', valueCoding: 'Glucose' }
+  ]
+  const out = compactProperty(property)
+  // Identity-preserving fallback when collision detected — no data loss.
+  assert.equal(out, property)
+})
+
+test('compactProperty: entry without a code field triggers safe fallback', () => {
+  const property = [
+    { code: 'COMPONENT', valueCoding: 'Glucose' },
+    { valueCoding: 'orphan' }
+  ]
+  const out = compactProperty(property)
+  assert.equal(out, property)
+})
+
+test('compactProperty: prefers .valueCoding, falls back to .value, then null', () => {
+  const property = [
+    { code: 'A', valueCoding: 'coded' },
+    { code: 'B', value: 'plain' },
+    { code: 'C' }
+  ]
+  assert.deepEqual(compactProperty(property),
+    { A: 'coded', B: 'plain', C: null })
+})
+
+// ============================================================================
+// PR3-D3-lite (L-3) — stripConstantClassAndDatatype: drop fields when constant
+// across the set, keep them when heterogeneous.
+// ============================================================================
+
+test('stripConstantClassAndDatatype: drops both fields when constant across LOINC set', () => {
+  const entries = [
+    { concept_key: 'a', concept_class: 'LOINC', datatype: 'Nom' },
+    { concept_key: 'b', concept_class: 'LOINC', datatype: 'Nom' },
+    { concept_key: 'c', concept_class: 'LOINC', datatype: 'Nom' }
+  ]
+  stripConstantClassAndDatatype(entries)
+  for (const e of entries) {
+    assert.equal('concept_class' in e, false)
+    assert.equal('datatype' in e, false)
+  }
+})
+
+test('stripConstantClassAndDatatype: keeps concept_class when heterogeneous, drops datatype when constant', () => {
+  const entries = [
+    { concept_key: 'a', concept_class: 'LP', datatype: 'Qn' },
+    { concept_key: 'b', concept_class: 'LOINC', datatype: 'Qn' }
+  ]
+  stripConstantClassAndDatatype(entries)
+  assert.equal(entries[0].concept_class, 'LP')
+  assert.equal(entries[1].concept_class, 'LOINC')
+  assert.equal('datatype' in entries[0], false)
+  assert.equal('datatype' in entries[1], false)
+})
+
+test('stripConstantClassAndDatatype: no-op on a single-entry set (nothing to compare)', () => {
+  const entries = [{ concept_key: 'a', concept_class: 'LOINC', datatype: 'Nom' }]
+  stripConstantClassAndDatatype(entries)
+  assert.equal(entries[0].concept_class, 'LOINC')
+  assert.equal(entries[0].datatype, 'Nom')
+})
+
+test('stripConstantClassAndDatatype: undefined values everywhere — treated as constant, dropped', () => {
+  const entries = [
+    { concept_key: 'a' },
+    { concept_key: 'b' }
+  ]
+  stripConstantClassAndDatatype(entries)
+  // Loop's `first !== undefined` guard means undefined-everywhere is NOT stripped
+  // (since there's nothing to strip). Verified: no fields added or changed.
+  assert.deepEqual(entries, [{ concept_key: 'a' }, { concept_key: 'b' }])
+})
+
+test('stripConstantClassAndDatatype: returns the same array reference (in-place)', () => {
+  const entries = [
+    { concept_class: 'LOINC' },
+    { concept_class: 'LOINC' }
+  ]
+  const out = stripConstantClassAndDatatype(entries)
+  assert.equal(out, entries)
 })
