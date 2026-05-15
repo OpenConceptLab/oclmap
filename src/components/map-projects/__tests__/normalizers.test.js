@@ -18,7 +18,8 @@ import assert from 'node:assert/strict'
 import {
   createAlgorithmResponse,
   normalizeAlgoResult,
-  normalizeAlgorithmInvocation
+  normalizeAlgorithmInvocation,
+  filterPropertyBySummary
 } from '../normalizers.js'
 import { makeConceptKey, parseConceptKey, referencesEqual } from '../conceptKey.js'
 
@@ -900,4 +901,68 @@ test('fixed-canonical algo with no target_repo.version on project (unpinned) sti
   assert.ok(def)
   assert.equal(def.reference.version, undefined)
   assert.deepEqual(def.reference, { url: 'http://loinc.org', code: '49494-3' })
+})
+
+// ============================================================================
+// filterPropertyBySummary — producer-side property filter for AI Assistant
+// v2 payload. See unified-mapper-model.md (PR3-D1).
+// ============================================================================
+
+// Realistic LOINC property dict (subset). OCL emits this as an array of
+// {code, value} pairs from ConceptDetailSerializer.property.
+const loincProperty = [
+  { code: 'COMPONENT', value: 'Glucose' },
+  { code: 'PROPERTY', value: 'MCnc' },
+  { code: 'TIME_ASPCT', value: 'Pt' },
+  { code: 'SYSTEM', value: 'Ser/Plas' },
+  { code: 'SCALE_TYP', value: 'Qn' },
+  { code: 'METHOD', value: '' },
+  { code: 'CLASS', value: 'CHEM' },
+  { code: 'STATUS', value: 'ACTIVE' },
+  { code: 'VersionLastChanged', value: '2.74' }
+]
+
+test('filterPropertyBySummary: passes property through when no summary codes configured', () => {
+  assert.equal(filterPropertyBySummary(loincProperty, undefined), loincProperty)
+  assert.equal(filterPropertyBySummary(loincProperty, null), loincProperty)
+  assert.equal(filterPropertyBySummary(loincProperty, []), loincProperty)
+})
+
+test('filterPropertyBySummary: filters to the summary subset when configured', () => {
+  const summary = ['COMPONENT', 'PROPERTY', 'TIME_ASPCT', 'SYSTEM', 'SCALE_TYP', 'METHOD']
+  const out = filterPropertyBySummary(loincProperty, summary)
+  assert.equal(out.length, 6)
+  assert.deepEqual(out.map(p => p.code).sort(),
+    ['COMPONENT', 'METHOD', 'PROPERTY', 'SCALE_TYP', 'SYSTEM', 'TIME_ASPCT'])
+  // Identity-bearing chips are kept; bookkeeping fields (CLASS / STATUS /
+  // VersionLastChanged) are dropped from the v2 prompt push.
+  assert.ok(!out.some(p => p.code === 'CLASS'))
+  assert.ok(!out.some(p => p.code === 'STATUS'))
+})
+
+test('filterPropertyBySummary: returns undefined when property is missing/empty', () => {
+  assert.equal(filterPropertyBySummary(undefined, ['COMPONENT']), undefined)
+  assert.equal(filterPropertyBySummary(null, ['COMPONENT']), undefined)
+  assert.equal(filterPropertyBySummary([], ['COMPONENT']), undefined)
+})
+
+test('filterPropertyBySummary: filtered result drops entries whose code is not in the summary', () => {
+  const summary = ['COMPONENT', 'SYSTEM']
+  const out = filterPropertyBySummary(loincProperty, summary)
+  assert.deepEqual(out, [
+    { code: 'COMPONENT', value: 'Glucose' },
+    { code: 'SYSTEM', value: 'Ser/Plas' }
+  ])
+})
+
+test('filterPropertyBySummary: tolerates entries without a code field', () => {
+  const property = [
+    { code: 'COMPONENT', value: 'Glucose' },
+    { value: 'orphan' },
+    { code: undefined, value: 'still orphan' },
+    { code: 'SYSTEM', value: 'Ser/Plas' }
+  ]
+  const out = filterPropertyBySummary(property, ['COMPONENT', 'SYSTEM'])
+  assert.equal(out.length, 2)
+  assert.deepEqual(out.map(p => p.code), ['COMPONENT', 'SYSTEM'])
 })

@@ -379,6 +379,28 @@ const LOOKUP_RANK = { pending: 0, failed: 0, partial: 1, full: 2 }
 export const lookupStatusRank = (status) => LOOKUP_RANK[status] ?? 0
 
 /**
+ * Filter a ConceptDefinition.property[] dict array to the subset the project
+ * considers identifying — repoVersion.meta.display.concept_summary_properties
+ * (e.g. for LOINC: COMPONENT / PROPERTY / TIME_ASPCT / SYSTEM / SCALE_TYP /
+ * METHOD). Producer-side volume control for the AI Assistant v2 payload's
+ * recommendable_concepts[*].property push.
+ *
+ * Returns:
+ *   - undefined  when `property` is missing/empty (essentializer drops the key)
+ *   - `property` whole when no summary list is configured (FHIR-passthrough
+ *     sources, or repos that haven't pinned summary properties)
+ *   - filtered subset matching the summary codes otherwise
+ *
+ * Pure: no lodash, no React.
+ */
+export const filterPropertyBySummary = (property, summaryCodes) => {
+  if (!Array.isArray(property) || property.length === 0) return undefined
+  if (!Array.isArray(summaryCodes) || summaryCodes.length === 0) return property
+  const set = new Set(summaryCodes)
+  return property.filter(p => p?.code && set.has(p.code))
+}
+
+/**
  * Backfill rowMatchState + ConceptDefinitions from the legacy
  * `allCandidates` shape (a saved-project artifact: `{ [algoId]: [{row,
  * results}, ...] }`). Called on project load so that v1-saved projects
