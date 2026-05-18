@@ -42,6 +42,7 @@ import LookupConfig from './LookupConfig'
 import AdvancedSettings from './AdvancedSettings'
 import RerankerConfig from './RerankerConfig'
 import AIAssistantSelectorPanel from './AIAssistantSelectorPanel'
+import { hasSelectedTargetRepoVersion } from './projectTargetRepo'
 
 const VisuallyHiddenInput = styled('input')({
   clip: 'rect(0 0 0 0)',
@@ -99,6 +100,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
   // can name the specific algorithms.
   const configErrors = getProjectConfigErrors(algosSelected)
   const hasConfigErrors = configErrors.length > 0
+  const hasTargetRepoVersion = hasSelectedTargetRepoVersion(repoVersion)
   const getAlgos = () => {
     return algos.map(algo => {
       if(algo.type === 'ocl-semantic')
@@ -224,7 +226,19 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
       </FormHelperText>
 
       <RepoSearchAutocomplete label={t('map_project.repository')} size='small' onChange={(id, item) => onRepoChange(item)} value={repo}  sx={{marginTop: '12px'}}/>
-      <RepoVersionSearchAutocomplete versions={versions} label={t('common.version')} size='small' onChange={(id, item) => setRepoVersion(item)} value={repoVersion} sx={{marginTop: '12px'}} />
+      <RepoVersionSearchAutocomplete
+        versions={versions}
+        label={t('common.version')}
+        size='small'
+        onChange={(id, item) => setRepoVersion(item)}
+        value={repoVersion}
+        sx={{marginTop: '12px'}}
+        error={Boolean(repo?.url && !hasTargetRepoVersion)}
+        helperText={repo?.url && !hasTargetRepoVersion ? t(
+          'map_project.target_repo_version_required',
+          'Select a target repository version before saving.'
+        ) : ''}
+      />
       {
         effectiveTargetCanonical &&
           <Stack direction='row' spacing={0.75} alignItems='center' sx={{marginTop: '6px', marginLeft: '8px', minWidth: 0}}>
@@ -485,7 +499,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
         sx={{textTransform: 'none', margin: '20px 5px 5px 0px'}}
         startIcon={<SaveIcon />}
         onClick={onSave}
-        disabled={!name || !file?.name || !owner || hasConfigErrors}
+        disabled={!name || !file?.name || !owner || hasConfigErrors || !hasTargetRepoVersion}
         loading={isSaving}
         loadingPosition="start"
       >

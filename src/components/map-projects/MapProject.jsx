@@ -68,7 +68,7 @@ import pick from 'lodash/pick'
 import { OperationsContext } from '../app/LayoutContext';
 
 import APIService from '../../services/APIService';
-import { highlightTexts, dropVersion, getCurrentUser, URIToParentParams, hasAuthGroup, downloadObject, currentUserToken } from '../../common/utils';
+import { highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, downloadObject, currentUserToken } from '../../common/utils';
 import { WHITE, SURFACE_COLORS } from '../../common/colors';
 
 import { useDoubleClick } from '../common/useDoubleClick'
@@ -100,6 +100,7 @@ import AutoMatchDialog from './AutoMatchDialog'
 import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
 import { normalizeAlgorithmInvocation, lookupStatusRank, normalizeLegacyAllCandidates, buildRecommendableConceptEntry, stripConstantClassAndDatatype } from './normalizers'
 import { parseConceptKey } from './conceptKey'
+import { getProjectTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId } from './projectTargetRepo'
 import { buildQualityRowViews, conceptForMapping, resolveAICandidateID } from './viewBuilders.js'
 
 import './MapProject.scss'
@@ -449,6 +450,7 @@ const MapProject = () => {
   const scispacyEnabled = find(algosSelected, {type: 'ocl-scispacy'})
   const bridgeAlgo = find(algosSelected, a => ['ocl-bridge', 'ocl-ciel-bridge'].includes(a.type))
   const bridgeEnabled = Boolean(bridgeAlgo)
+  const selectedTargetRepoVersion = getTargetRepoVersionId(repoVersion)
 
   // Build projectContext for the unified-model normalizer. Reads target repo
   // canonical_url from repo metadata; if absent, derives
@@ -456,7 +458,7 @@ const MapProject = () => {
   // conventions — see plans/unified-mapper-model.md). When a bridge algo is
   // selected, includes bridge_repo derived from algo.target_repo_url.
   const buildProjectContext = React.useCallback(() => {
-    if(!repo?.url) return null
+    if(!repo?.url || !selectedTargetRepoVersion) return null
     const targetCanonical = repo.canonical_url || `https://ns.openconceptlab.org${repo.url}`
     const ctx = {
       namespace: namespace || get(project, 'owner_url') || owner,
@@ -464,7 +466,7 @@ const MapProject = () => {
         relative_url: repo.url,
         canonical_url: targetCanonical,
         canonical_url_source: repo.canonical_url ? 'repo' : 'derived',
-        version: repoVersion?.id || repo.version
+        version: selectedTargetRepoVersion
       }
     }
     // bridge_repo when a bridge algo is in use. Prefer the explicit canonical
@@ -488,7 +490,7 @@ const MapProject = () => {
       }
     }
     return ctx
-  }, [project, owner, repo, repoVersion, bridgeAlgo, namespace])
+  }, [project, owner, repo, bridgeAlgo, namespace, selectedTargetRepoVersion])
 
   const baseAlgos = useAlgos(t, toggles)
   const [apiAlgos, setApiAlgos] = React.useState([]);
@@ -592,9 +594,9 @@ const MapProject = () => {
       setUseLexicalVariants(Boolean(copiedProject.use_lexical_variants))
       setInputLocale((copiedProject.input_locales || [])[0] || '')
       if(copiedProject.target_repo_url) {
-        const repoParams = URIToParentParams(copiedProject.target_repo_url, true)
+        const targetRepoVersion = getProjectTargetRepoVersion(copiedProject)
         fetchRepo(dropVersion(copiedProject.target_repo_url))
-        fetchVersions(copiedProject.target_repo_url, repoParams?.repoVersion || 'HEAD')
+        fetchVersions(copiedProject.target_repo_url, targetRepoVersion)
       }
       setConfigure(true)
     }).finally(() => setLoadingProject(false))
@@ -710,15 +712,17 @@ const MapProject = () => {
       const loadedRelativeURL = dropVersion(response.data?.target_repo_url || '') || response.data?.target_repo_url
       const loadedTargetCanonical = response.data?.target_repo?.canonical_url ||
         (loadedRelativeURL ? `https://ns.openconceptlab.org${loadedRelativeURL}` : null)
+      const loadedTargetVersion = getProjectTargetRepoVersion(response.data)
+      const needsTargetRepoVersionSelection = Boolean(loadedTargetCanonical && !loadedTargetVersion)
       const loadedAlgos = response.data?.algorithms || []
       const loadedBridge = find(loadedAlgos, a => ['ocl-bridge', 'ocl-ciel-bridge'].includes(a.type))
-      const loadProjectContext = loadedTargetCanonical ? {
+      const loadProjectContext = loadedTargetCanonical && loadedTargetVersion ? {
         namespace: response.data?.namespace || response.data?.owner_url || '',
         target_repo: {
           relative_url: loadedRelativeURL,
           canonical_url: loadedTargetCanonical,
           canonical_url_source: response.data?.target_repo?.canonical_url ? 'repo' : 'derived',
-          version: URIToParentParams(response.data?.target_repo_url, true)?.repoVersion || undefined
+          version: loadedTargetVersion
         },
         ...(loadedBridge?.target_repo_url ? {
           bridge_repo: {
@@ -753,23 +757,22 @@ const MapProject = () => {
         }
       } else {
         conceptCacheRef.current = _cache
-        // No target canonical means the saved project is missing the
-        // load-bearing target_repo configuration. Under UNIFIED_MODEL_ENABLED
-        // the read path needs this canonical to resolve candidates, so the
-        // candidate list will be empty until the user fixes it. Block-and-
-        // banner: surface an error alert and pop the configuration drawer
-        // open. Only warn when there's actually saved match data — a
-        // brand-new project loading with empty allCandidates is normal.
-        if(!isEmpty(_allCandidates)) {
+        // Missing target repo config blocks the load-bearing projectContext.
+        // Missing canonical is only worth bannering when there are saved
+        // candidates to recover; missing version should always block the user
+        // until they explicitly pick one.
+        if(needsTargetRepoVersionSelection || !isEmpty(_allCandidates)) {
           setAlert({
-            message: t(
+            message: needsTargetRepoVersionSelection ? t(
+              'map_project.target_repo_version_required_on_load',
+              'This project is missing a target repository version. Select a version before continuing.'
+            ) : t(
               'map_project.target_repo_required_on_load',
               'This project is missing a target repository. Configure the target repository to see saved candidates.'
             ),
             severity: 'error',
             duration: 10
           })
-          setConfigure(true)
         }
       }
 
@@ -792,7 +795,7 @@ const MapProject = () => {
       const rawAnalysis = response.data?.analysis || {}
       setAnalysis(Object.fromEntries(Object.entries(rawAnalysis).map(([k, v]) => [k, Array.isArray(v) ? v : [v]])))
       setProject(response.data)
-      setConfigure(false)
+      setConfigure(Boolean(!loadProjectContext))
     })
   }
 
@@ -1059,8 +1062,7 @@ const MapProject = () => {
     let _states = {...rowStatuses}
     const repoVersionURL = data['__Repo URL__'] || data['__map_repo_url__']
     const repoURL = dropVersion(repoVersionURL)
-    const repoParams = URIToParentParams(repoVersionURL, true)
-    const repoVersion = data['__Repo Version__'] || repoParams.repoVersion
+    const repoVersion = data['__Repo Version__'] || getTargetRepoVersionFromUrl(repoVersionURL)
     forEach(jsonData, (data, index) => {
       data.__index = index
       if(isResuming) {
@@ -1106,7 +1108,7 @@ const MapProject = () => {
       setProposed(_proposed)
 
       let repoURL = projectData?.target_repo_url || _repo?.url
-      let repoVersion = projectData?.target_repo_url ? URIToParentParams(projectData?.target_repo_url, true)?.repoVersion || 'HEAD' : _repo?.version
+      let repoVersion = getProjectTargetRepoVersion(projectData) || _repo?.version || ''
       if(repoURL) {
         fetchRepo(repoURL, _repo)
         fetchVersions(repoURL, repoVersion)
@@ -1206,6 +1208,18 @@ const MapProject = () => {
   }
 
   const onSave = () => {
+    if(!repoVersion?.version_url || !selectedTargetRepoVersion) {
+      setConfigure(true)
+      setAlert({
+        message: t(
+          'map_project.target_repo_version_required',
+          'Select a target repository version before saving.'
+        ),
+        severity: 'error',
+        duration: 8
+      })
+      return
+    }
     setIsSaving(true)
     const f = getFileObjectFromRows()
     const selected = map(mapSelected, (data, i) => {
@@ -1247,8 +1261,7 @@ const MapProject = () => {
     formData.append('name', name || f.name)
     formData.append('description', description)
     formData.append('columns', JSON.stringify(map(columns, col => ({...col, hidden: columnVisibilityModel[col.dataKey] === false, width: columnWidth[col.dataKey] || undefined, ai_assistant_hidden: AIAssistantColumns[col.dataKey] === false}))))
-    if(repoVersion?.version_url)
-      formData.append('target_repo_url', repoVersion.version_url)
+    formData.append('target_repo_url', repoVersion.version_url)
     // Persist the live target_repo canonical so reload doesn't need to wait
     // for fetchRepo. Without this the load path falls back to a derived
     // canonical (https://ns.openconceptlab.org/...) that doesn't match the
@@ -1260,7 +1273,7 @@ const MapProject = () => {
         owner: repo.owner,
         owner_type: repo.owner_type,
         source: repo.short_code || repo.id,
-        source_version: repoVersion?.id || repo.version || repo.id
+        source_version: selectedTargetRepoVersion
       }))
     formData.append('algorithms', JSON.stringify(map(algosSelected, algo => omit(algo, ['__key']))))
     formData.append('score_configuration', JSON.stringify(candidatesScore))
@@ -1357,11 +1370,14 @@ const MapProject = () => {
   }
 
   const onRepoVersionChange = version => {
-    setRepoVersion(version)
+    setRepoVersion(version || false)
     if(version?.version_url) {
       fetchLocaleDistribution(version.version_url)
       fetchMappedSources(version.version_url, setMappedSources)
       updateAlgosByRepoVersion(version)
+    } else {
+      setMappedSources([])
+      setLocales([])
     }
   }
 
@@ -1904,26 +1920,20 @@ const MapProject = () => {
       setVersions(_versions)
       if(_selectedVersion) {
         const _version = find(_versions, {id: _selectedVersion})
-        onRepoVersionChange(_version)
-      }
-      else if(_versions?.length === 1)
-        onRepoVersionChange(_versions[0])
-      else {
-        let releasedVersion = find(_versions, {released: true})
-        if(releasedVersion)
-          onRepoVersionChange(releasedVersion)
+        onRepoVersionChange(_version || false)
+      } else {
+        onRepoVersionChange(false)
       }
     })
   }
 
   const onRepoChange = (newRepo) => {
     setRepo(newRepo)
+    onRepoVersionChange(false)
     if(newRepo?.url) {
       fetchVersions(newRepo.url)
     } else {
       setVersions([])
-      setRepoVersion(false)
-      setMappedSources([])
     }
   }
 

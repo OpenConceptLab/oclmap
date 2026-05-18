@@ -3,7 +3,7 @@ import TextField from '@mui/material/TextField';
 import Autocomplete from '@mui/material/Autocomplete';
 
 
-const RepoVersionSearchAutocomplete = ({versions, onChange, label, id, required, size, sx, value}) => {
+const RepoVersionSearchAutocomplete = ({versions, onChange, label, id, required, size, sx, value, error, helperText}) => {
   const [open, setOpen] = React.useState(false)
 
   const handleChange = (event, id, item) => {
@@ -41,6 +41,8 @@ const RepoVersionSearchAutocomplete = ({versions, onChange, label, id, required,
             variant="outlined"
             fullWidth
             size={size || 'medium'}
+            error={Boolean(error)}
+            helperText={helperText}
           />
         )
       }
