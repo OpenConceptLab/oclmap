@@ -1278,7 +1278,8 @@ const MapProject = () => {
     // PR3-H: backend field is plural (ArrayField) — single-select UI wraps
     // the value in a one-element list. Future multi-select can send N
     // elements without any backend change.
-    formData.append('input_locales', JSON.stringify(inputLocale ? [inputLocale] : []))
+    if(inputLocale)
+      formData.append('input_locales', JSON.stringify([inputLocale]))
     formData.append('use_lexical_variants', useLexicalVariants)
     const isUpdate = Boolean(project?.id)
     let service = APIService.new().overrideURL(owner).appendToUrl('map-projects/')
@@ -3420,7 +3421,7 @@ const MapProject = () => {
           const items = Array.isArray(response?.data) ? response.data : []
           await Promise.all(toResolve.map(async ({key, reference}, i) => {
             const item = items[i]
-            const repoUrl = item?.resolved === true && item?.result?.url
+            const repoUrl = lookupConfig?.url || (item?.resolved === true ? item?.result?.url : null)
             if(!repoUrl) {
               writeLookupFailure(key)
               settle(key)
