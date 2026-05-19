@@ -3343,7 +3343,8 @@ const MapProject = () => {
     // Search-tab fetches respected the user's token but the new unified
     // ensureLoaded path silently used the session token instead — leaving
     // the LookupConfig widget half-decorative.
-    const authToken = lookupConfig?.token || currentUserToken()
+    const currentToken = currentUserToken()
+    const authToken = lookupConfig?.token || currentToken
 
     const directFetches = []
     const toResolve = []
@@ -3383,9 +3384,13 @@ const MapProject = () => {
 
     const fetchConceptByOclUrl = async (key, oclUrl, source) => {
       try {
-        const response = await APIService.new()
-          .overrideURL(oclUrl)
-          .get(authToken, null, {includeMappings: true, mappingBrief: true, mapTypes: 'SAME-AS,SAME AS,SAME_AS', verbose: true})
+        let service = APIService.new()
+        if(oclUrl.startsWith('http://') || oclUrl.startsWith('https://')) {
+          service.URL = oclUrl
+        } else {
+          service = service.overrideURL(oclUrl)
+        }
+        const response = await service.get(authToken, null, {includeMappings: true, mappingBrief: true, mapTypes: 'SAME-AS,SAME AS,SAME_AS', verbose: true})
         const data = response?.data
         if(data?.id) {
           const existing = conceptCacheRef.current[key] || {}
@@ -3416,7 +3421,7 @@ const MapProject = () => {
         : {url: reference.url})
       resolvePromise = APIService.new()
         .overrideURL('/$resolveReference/')
-        .post(body, authToken, null, resolveNamespace ? {namespace: resolveNamespace} : undefined)
+        .post(body, currentToken, null, resolveNamespace ? {namespace: resolveNamespace} : undefined)
         .then(async response => {
           const items = Array.isArray(response?.data) ? response.data : []
           await Promise.all(toResolve.map(async ({key, reference}, i) => {
