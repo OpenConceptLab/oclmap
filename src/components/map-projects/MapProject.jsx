@@ -1613,7 +1613,7 @@ const MapProject = () => {
                 })
               })
             }
-            lookupCandidates(algo.id, flatten(map(data, 'results')))
+            if(!UNIFIED_MODEL_ENABLED) lookupCandidates(algo.id, flatten(map(data, 'results')))
             setMatchedConcepts(prev => [...prev, ...data]);
             activeRequests.delete(promise); // Remove from active set after completion
           });
@@ -1828,7 +1828,7 @@ const MapProject = () => {
           ...prev,
           [algo.id]: [...reject(prev[algo.id], c => c.row.__index === index), ...(results || [])]
         }))
-        lookupCandidates(algo.id, results)
+        if(!UNIFIED_MODEL_ENABLED) lookupCandidates(algo.id, results)
         if(UNIFIED_MODEL_ENABLED) {
           // Route the bridge invocation through the normalizer (the per-row
           // path goes via onResponse, but the bulk path lives here).
@@ -1872,7 +1872,7 @@ const MapProject = () => {
           ...prev,
           [algo.id]: [...reject(prev[algo.id], c => c.row.__index === _index), ...(results || [])]
         }))
-        lookupCandidates(algo.id, results)
+        if(!UNIFIED_MODEL_ENABLED) lookupCandidates(algo.id, results)
         if(UNIFIED_MODEL_ENABLED) {
           // Mirror the bulk-bridge wiring — the per-row scispacy path goes via
           // onResponse, but the bulk path lives here.
@@ -2739,7 +2739,7 @@ const MapProject = () => {
         if(offset === 0) {
           const results = algoId === 'ocl-scispacy-loinc' ? [{row: __row, results: fromScispacyResultsToConcepts(get(response.data, __row.__index) || [])}] : data
           nextCandidates = {...allCandidatesRef.current, [algoId]: [...reject(allCandidatesRef.current[algoId], c => c.row.__index === __row.__index), ...(results || [])]}
-          lookupCandidates(algoId, get(results, '0.results'))
+          if(!UNIFIED_MODEL_ENABLED) lookupCandidates(algoId, get(results, '0.results'))
           if(UNIFIED_MODEL_ENABLED) {
             // Normalize the invocation for this row and merge into the new
             // RowMatchState. Reads still come from allCandidates — flipping
