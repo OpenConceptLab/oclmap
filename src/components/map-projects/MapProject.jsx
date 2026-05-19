@@ -420,6 +420,16 @@ const MapProject = () => {
   // Promise instead of issuing a duplicate fetch.
   const inFlightLookupsRef = React.useRef(new Map())
 
+  // URL-level fetch dedup for ensureLoaded. Keyed by ocl_url. Stores
+  // Promise<data|null>: in-flight entries deduplicate concurrent requests for
+  // the same URL even when they arrive under different concept_keys (e.g.
+  // ocl-scispacy uses a hardcoded canonical 'http://loinc.org' while
+  // ocl-bridge cascade targets use target_repo's canonical — they produce
+  // different concept_keys but resolve to the same OCL URL). Failed/404
+  // entries are deleted so they remain retryable; successful entries persist
+  // for the session.
+  const urlFetchCacheRef = React.useRef(new Map())
+
   // Rerank scheduling (plans/unified-mapper-model.md "Rerank — debounce +
   // in-flight check"). Replaces the legacy "wait for every algo to
   // complete" trigger with: any ConceptRow with rerank_score === undefined
@@ -3412,15 +3422,34 @@ const MapProject = () => {
     }
 
     const fetchConceptByOclUrl = async (key, oclUrl, source) => {
+      // URL-level dedup: if a different concept_key is already fetching this
+      // same OCL URL (or fetched it successfully), reuse that promise instead
+      // of issuing a duplicate network request.
+      let dataPromise = urlFetchCacheRef.current.get(oclUrl)
+      if(!dataPromise) {
+        dataPromise = (async () => {
+          try {
+            let service = APIService.new()
+            if(oclUrl.startsWith('http://') || oclUrl.startsWith('https://')) {
+              service.URL = oclUrl
+            } else {
+              service = service.overrideURL(oclUrl)
+            }
+            const response = await service.get(authToken, null, {includeMappings: true, mappingBrief: true, mapTypes: 'SAME-AS,SAME AS,SAME_AS', verbose: true})
+            const data = response?.data
+            if(data?.id) return data
+            urlFetchCacheRef.current.delete(oclUrl)
+            return null
+          } catch (_) {
+            urlFetchCacheRef.current.delete(oclUrl)
+            return null
+          }
+        })()
+        urlFetchCacheRef.current.set(oclUrl, dataPromise)
+      }
+
       try {
-        let service = APIService.new()
-        if(oclUrl.startsWith('http://') || oclUrl.startsWith('https://')) {
-          service.URL = oclUrl
-        } else {
-          service = service.overrideURL(oclUrl)
-        }
-        const response = await service.get(authToken, null, {includeMappings: true, mappingBrief: true, mapTypes: 'SAME-AS,SAME AS,SAME_AS', verbose: true})
-        const data = response?.data
+        const data = await dataPromise
         if(data?.id) {
           const existing = conceptCacheRef.current[key] || {}
           writeConceptCachePatch(key, {
