@@ -213,11 +213,12 @@ export const isTransientNetworkError = err => {
   return ['ECONNABORTED', 'ETIMEDOUT', 'ENETUNREACH'].includes(err.code);
 };
 
-export const retryWithBackoff = async (fn, { maxRetries = 2, baseDelayMs = 3000, backoffFactor = 4, jitterFactor = 0.25, isCancelled = () => false, isRetryable = () => false } = {}) => {
+export const retryWithBackoff = async (fn, { maxRetries = 2, baseDelayMs = 3000, backoffFactor = 4, jitterFactor = 0.25, isCancelled = () => false, isRetryable = () => false, onAttemptFailed = null } = {}) => {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       return await fn();
     } catch (err) {
+      onAttemptFailed?.(err, attempt);
       if (attempt >= maxRetries || !isRetryable(err) || isCancelled()) throw err;
       const base = baseDelayMs * Math.pow(backoffFactor, attempt);
       const delay = base * (1 - jitterFactor + Math.random() * jitterFactor * 2);

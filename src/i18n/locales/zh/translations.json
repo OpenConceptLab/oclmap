@@ -631,7 +631,9 @@
     "create_similar": "创建类似项目",
     "create_similar_name": "{{name}} 的副本",
     "use_lexical_variants": "使用词汇变体",
-    "use_lexical_variants_description": "扩展 $match 搜索范围，以在匹配概念名称时包含英语拼写变体（例如 color/colour、leukemia/leukaemia）。"
+    "use_lexical_variants_description": "扩展 $match 搜索范围，以在匹配概念名称时包含英语拼写变体（例如 color/colour、leukemia/leukaemia）。",
+    "ai_recommendation_failed_retry": "AI 推荐失败 — 点击重试",
+    "ai_recommendation_running": "AI 推荐进行中"
   },
   "app": {
     "web_version": "Web 版本",

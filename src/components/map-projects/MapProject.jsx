@@ -11,6 +11,7 @@ import { useParams, useHistory, useLocation } from 'react-router-dom'
 
 import Paper from '@mui/material/Paper'
 import Button from '@mui/material/Button';
+import CircularProgress from '@mui/material/CircularProgress';
 import Typography from '@mui/material/Typography';
 import Dialog from '@mui/material/Dialog';
 import IconButton from '@mui/material/IconButton'
@@ -920,6 +921,34 @@ const MapProject = () => {
         }
       }
     })
+    if(AI_ASSISTANT_API_URL) {
+      cols.push({
+        field: '_aiRecommendStatus_',
+        headerName: '',
+        width: 48,
+        sortable: false,
+        filterable: false,
+        disableColumnMenu: true,
+        renderCell: params => {
+          const status = rowStageRef.current[params.row.__index]?.recommend
+          if(status === 0)
+            return (
+              <Tooltip title={t('map_project.ai_recommendation_running')}>
+                <CircularProgress size={16} />
+              </Tooltip>
+            )
+          if(status === -2)
+            return (
+              <Tooltip title={t('map_project.ai_recommendation_failed_retry')}>
+                <IconButton size='small' onClick={e => { e.stopPropagation(); fetchRecommendation(params.row) }}>
+                  <AssistantIcon color='error' fontSize='small' />
+                </IconButton>
+              </Tooltip>
+            )
+          return null
+        }
+      })
+    }
     return cols
   }
 
@@ -4061,6 +4090,11 @@ const MapProject = () => {
             jitterFactor: 0.25,
             isCancelled: () => abortRef.current,
             isRetryable: isTransientNetworkError,
+            onAttemptFailed: (err, attempt) => {
+              const errorMessage = err?.response?.data?.detail || err?.message || t('unknown_error')
+              const retrySuffix = attempt > 0 ? ` [Retry ${attempt}]` : ''
+              log({created_at: moment().toDate(), action: 'AIRecommendation', description: `failed with ${errorMessage}${retrySuffix}`, extras: {error: errorMessage, model: selectedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}}, __index)
+            },
           }
         )
         let timestamp = moment().toDate()
@@ -4086,8 +4120,6 @@ const MapProject = () => {
       } catch (err) {
         markAlgo(__index, 'recommend', -2)
         const errorMessage = err?.detail || err?.response?.data?.detail || err?.message || t('unknown_error')
-        let timestamp = moment().toDate()
-        log({created_at: timestamp, action: 'AIRecommendation', description: errorMessage, extras: {error: errorMessage, model: selectedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}}, __index)
         setAlert({message: errorMessage, severity: 'error'})
         return false
       }
