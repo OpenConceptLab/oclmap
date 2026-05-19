@@ -4080,9 +4080,10 @@ const MapProject = () => {
 
       const service = APIService.new()
       service.URL = getPromptTemplateInvokeURL(activePromptTemplate, promptTemplateRef?.key)
+      const invokeTs = Date.now()
       try {
         const response = await retryWithBackoff(
-          () => service.request('POST', payload),
+          attempt => service.request('POST', payload, undefined, {headers: {'X-OCL-REQUEST-IDEMPOTENCY-KEY': `${params.projectId}-${__index}-${attempt}-${invokeTs}`}}),
           {
             maxRetries: 2,
             baseDelayMs: 3000,

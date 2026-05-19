@@ -216,7 +216,7 @@ export const isTransientNetworkError = err => {
 export const retryWithBackoff = async (fn, { maxRetries = 2, baseDelayMs = 3000, backoffFactor = 4, jitterFactor = 0.25, isCancelled = () => false, isRetryable = () => false, onAttemptFailed = null } = {}) => {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      return await fn();
+      return await fn(attempt);
     } catch (err) {
       onAttemptFailed?.(err, attempt);
       if (attempt >= maxRetries || !isRetryable(err) || isCancelled()) throw err;
