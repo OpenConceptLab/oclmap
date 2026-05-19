@@ -67,7 +67,7 @@ import pick from 'lodash/pick'
 
 import { OperationsContext } from '../app/LayoutContext';
 
-import APIService from '../../services/APIService';
+import APIService, { isTransientNetworkError, retryWithBackoff } from '../../services/APIService';
 import { highlightTexts, dropVersion, getCurrentUser, URIToParentParams, hasAuthGroup, downloadObject, currentUserToken } from '../../common/utils';
 import { WHITE, SURFACE_COLORS } from '../../common/colors';
 
@@ -4052,7 +4052,17 @@ const MapProject = () => {
       const service = APIService.new()
       service.URL = getPromptTemplateInvokeURL(activePromptTemplate, promptTemplateRef?.key)
       try {
-        const response = await service.post(payload)
+        const response = await retryWithBackoff(
+          () => service.request('POST', payload),
+          {
+            maxRetries: 2,
+            baseDelayMs: 3000,
+            backoffFactor: 4,
+            jitterFactor: 0.25,
+            isCancelled: () => abortRef.current,
+            isRetryable: isTransientNetworkError,
+          }
+        )
         let timestamp = moment().toDate()
         if(response?.detail) {
           markAlgo(__index, 'recommend', -2)

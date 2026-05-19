@@ -1065,3 +1065,5 @@ export const isNumeric = value => {
   if (value.trim() === "") return false;
   return Number.isFinite(Number(value));
 };
+
+export const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));

@@ -1,7 +1,7 @@
 /*eslint no-process-env: 0*/
 import axios from 'axios';
 import {get, omit, isPlainObject, isString, defaults } from 'lodash';
-import { currentUserToken, getAPIURL, logoutUser } from '../common/utils';
+import { currentUserToken, getAPIURL, logoutUser, sleep } from '../common/utils';
 
 const APIServiceProvider = {};
 const throttlingListeners = new Set();
@@ -205,6 +205,25 @@ RESOURCES.forEach(resource => {
 APIServiceProvider.onThrottle = listener => {
   throttlingListeners.add(listener);
   return () => throttlingListeners.delete(listener);
+};
+
+export const isTransientNetworkError = err => {
+  if (!err?.isAxiosError) return false;
+  if (!err.response) return true;
+  return ['ECONNABORTED', 'ETIMEDOUT', 'ENETUNREACH'].includes(err.code);
+};
+
+export const retryWithBackoff = async (fn, { maxRetries = 2, baseDelayMs = 3000, backoffFactor = 4, jitterFactor = 0.25, isCancelled = () => false, isRetryable = () => false } = {}) => {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt >= maxRetries || !isRetryable(err) || isCancelled()) throw err;
+      const base = baseDelayMs * Math.pow(backoffFactor, attempt);
+      const delay = base * (1 - jitterFactor + Math.random() * jitterFactor * 2);
+      await sleep(delay);
+    }
+  }
 };
 
 export default APIServiceProvider;
