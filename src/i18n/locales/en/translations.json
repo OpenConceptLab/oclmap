@@ -473,6 +473,7 @@
     "source": "Source",
     "show_more": "Show more",
     "ai_recommended": "AI Recommended",
+    "ai_alternate": "AI Alternate Candidate Suggestion",
     "ai_assistant": "AI Assistant",
     "view_raw_json": "View Raw JSON",
     "comment": "Comment",

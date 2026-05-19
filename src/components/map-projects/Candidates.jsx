@@ -183,7 +183,7 @@ const SubHeader = ({count, onClick, isCollapsed, header, indicatorColor, isFirst
 }
 
 
-const CandidateList = ({rowViews, header, rowIndex, sortBy, order, setShowItem, showItem, setShowHighlights, isSelectedForMap, onMap, onFetchMore, bgColor, bucketId, display, onDisplayChange, noToolbar, toolbarControl, repoVersion, alignToolbarLeft, rightControl, analysis, showAnalysis, openAnalysis, onCloseAnalysis, isInProgress, AIRecommendedCandidateId, locales, scispacy, showAlgo, collapsed, onCollapse, candidatesScore, algoScoreFirst, byAlgorithm, isFirst, isCoreUser, targetCanonical, analysisPage, setAnalysisPage}) => {
+const CandidateList = ({rowViews, header, rowIndex, sortBy, order, setShowItem, showItem, setShowHighlights, isSelectedForMap, onMap, onFetchMore, bgColor, bucketId, display, onDisplayChange, noToolbar, toolbarControl, repoVersion, alignToolbarLeft, rightControl, analysis, showAnalysis, openAnalysis, onCloseAnalysis, isInProgress, AIRecommendedCandidateId, AIAlternateCandidateIds, locales, scispacy, showAlgo, collapsed, onCollapse, candidatesScore, algoScoreFirst, byAlgorithm, isFirst, isCoreUser, targetCanonical, analysisPage, setAnalysisPage}) => {
   // Decorate rowViews so they work for BOTH renderers:
   //   - Table view: SearchResults/TableResults reads legacy concept fields
   //     (id, url, names, descriptions, source, search_meta, ...) via the
@@ -330,6 +330,7 @@ const CandidateList = ({rowViews, header, rowIndex, sortBy, order, setShowItem, 
             setShowHighlights={setShowHighlights}
             repoVersion={repoVersion}
             AIRecommendedCandidateId={AIRecommendedCandidateId}
+            AIAlternateCandidateIds={AIAlternateCandidateIds}
             locales={locales}
             notClickable={Boolean(scispacy)}
             showAlgo={showAlgo}
@@ -414,6 +415,10 @@ const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCa
     : analysisArray[analysisPage]
   const primary = selectedAnalysis?.output?.primary_candidate || selectedAnalysis?.primary_candidate
   const AIRecommendedCandidateId = resolveAICandidateID(primary, conceptCache)
+  const alternateCandidates = selectedAnalysis?.output?.alternative_candidates || selectedAnalysis?.alternative_candidates || []
+  const AIAlternateCandidateIds = [...new Set(alternateCandidates
+    .map(candidate => resolveAICandidateID(candidate, conceptCache))
+    .filter(id => id && id !== AIRecommendedCandidateId))]
 
   // Quality (score-grouped) view shows ONLY target-repo concepts. Bridge
   // intermediaries live in algorithm view as metadata-about-the-target;
@@ -452,6 +457,7 @@ const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCa
     display: display,
     repoVersion: repoVersion,
     AIRecommendedCandidateId: AIRecommendedCandidateId,
+    AIAlternateCandidateIds: AIAlternateCandidateIds,
     locales: locales,
     candidatesScore: candidatesScore,
     algoScoreFirst: algoScoreFirst,

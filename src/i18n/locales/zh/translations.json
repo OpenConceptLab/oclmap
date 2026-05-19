@@ -464,6 +464,7 @@
     "source": "来源",
     "show_more": "显示更多",
     "ai_recommended": "AI 推荐",
+    "ai_alternate": "AI 备选候选建议",
     "ai_assistant": "智能助手",
     "view_raw_json": "查看原始 JSON",
     "comment": "评论",

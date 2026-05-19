@@ -439,6 +439,7 @@
     "source": "Fuente",
     "show_more": "Mostrar más",
     "ai_recommended": "Recomendado por IA",
+    "ai_alternate": "Sugerencia de candidato alternativo de IA",
     "ai_assistant": "Asistente de IA",
     "view_raw_json": "Ver JSON Sin Procesar",
     "comment": "Comentario",
