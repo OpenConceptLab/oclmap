@@ -25,6 +25,7 @@ import FilterListIcon from '@mui/icons-material/FilterList';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SortIcon from '@mui/icons-material/Sort';
 import GroupIcon from '@mui/icons-material/Layers';
+import AssistantIcon from '@mui/icons-material/Assistant';
 
 import isEmpty from 'lodash/isEmpty'
 import flatten from 'lodash/flatten'
@@ -126,7 +127,7 @@ const Sort = ({ selected, onSort }) => {
   )
 }
 
-const Group = ({ selected, onGroup }) => {
+const Group = ({ selected, onGroup, hasAIAnalysis }) => {
   const { t } = useTranslation();
   const [anchorEl, setAnchorEl] = React.useState(false)
   const onGroupClick = event => setAnchorEl(event.currentTarget)
@@ -155,12 +156,18 @@ const Group = ({ selected, onGroup }) => {
         <ListItemButton id='group_by_algorithm' sx={{padding: '4px 10px', '&:hover': {color: 'inherit'}, '&:focus': {outline: 'none', textDecoration: 'none', color: 'inherit'}}} onClick={() => onClick('algorithm')} selected={selected === 'algorithm'}>
           <ListItemText primary={t('map_project.algorithm')} />
         </ListItemButton>
+        {
+          hasAIAnalysis &&
+            <ListItemButton id='group_by_ai_analysis' sx={{padding: '4px 10px', '&:hover': {color: 'inherit'}, '&:focus': {outline: 'none', textDecoration: 'none', color: 'inherit'}}} onClick={() => onClick('ai_analysis')} selected={selected === 'ai_analysis'}>
+              <ListItemText primary={t('map_project.group_by_ai_analysis')} />
+            </ListItemButton>
+        }
     </Menu>
     </>
   )
 }
 
-const SubHeader = ({count, onClick, isCollapsed, header, indicatorColor, isFirst}) => {
+const SubHeader = ({count, onClick, isCollapsed, header, indicatorColor, indicatorIcon, isFirst}) => {
   return (
     <ListSubheader sx={{lineHeight: '28px', padding: '2px 8px', display: 'inline-flex', justifyContent: 'space-between', width: '100%', color: '#000', fontSize: '12px', borderBottom: '2px solid', cursor: 'pointer', alignItems: 'center', opacity: count === 0 ? 0.5 : 1, marginTop: isFirst ? 0 : '16px'}} onClick={count === 0 ? undefined : onClick}>
       <span style={{display: 'flex', alignItems: 'center'}}>
@@ -170,8 +177,11 @@ const SubHeader = ({count, onClick, isCollapsed, header, indicatorColor, isFirst
           <ExpandLessIcon fontSize='small' sx={{marginRight: '4px'}} />
         }
         {
-          indicatorColor &&
-            <ConceptIcon fontSize='small' selected sx={{fill: indicatorColor, fontSize: '0.85rem', marginRight: '6px'}} />
+          indicatorIcon || indicatorColor ?
+            (
+              indicatorIcon || <ConceptIcon fontSize='small' selected sx={{fill: indicatorColor, fontSize: '0.85rem', marginRight: '6px'}} />
+            ) :
+          null
         }
         <b>{header}</b>
       </span>
@@ -183,7 +193,7 @@ const SubHeader = ({count, onClick, isCollapsed, header, indicatorColor, isFirst
 }
 
 
-const CandidateList = ({rowViews, header, rowIndex, sortBy, order, setShowItem, showItem, setShowHighlights, isSelectedForMap, onMap, onFetchMore, bgColor, bucketId, display, onDisplayChange, noToolbar, toolbarControl, repoVersion, alignToolbarLeft, rightControl, analysis, showAnalysis, openAnalysis, onCloseAnalysis, isInProgress, AIRecommendedCandidateId, AIAlternateCandidateIds, locales, scispacy, showAlgo, collapsed, onCollapse, candidatesScore, algoScoreFirst, byAlgorithm, isFirst, isCoreUser, targetCanonical, analysisPage, setAnalysisPage}) => {
+const CandidateList = ({rowViews, header, rowIndex, sortBy, order, setShowItem, showItem, setShowHighlights, isSelectedForMap, onMap, onFetchMore, bgColor, headerIndicatorIcon, bucketId, display, onDisplayChange, noToolbar, toolbarControl, repoVersion, alignToolbarLeft, rightControl, analysis, showAnalysis, openAnalysis, onCloseAnalysis, isInProgress, AIRecommendedCandidateId, AIAlternateCandidateIds, locales, scispacy, showAlgo, collapsed, onCollapse, candidatesScore, algoScoreFirst, byAlgorithm, showEmptyHeader, isFirst, isCoreUser, targetCanonical, analysisPage, setAnalysisPage}) => {
   // Decorate rowViews so they work for BOTH renderers:
   //   - Table view: SearchResults/TableResults reads legacy concept fields
   //     (id, url, names, descriptions, source, search_meta, ...) via the
@@ -273,7 +283,7 @@ const CandidateList = ({rowViews, header, rowIndex, sortBy, order, setShowItem, 
     return cols
   }
   const count = rowViews.length
-  const showHeader = byAlgorithm || count > 0
+  const showHeader = byAlgorithm || showEmptyHeader || count > 0
   return (
     <ul>
       <SearchResults
@@ -308,13 +318,13 @@ const CandidateList = ({rowViews, header, rowIndex, sortBy, order, setShowItem, 
               />
               {
                 showHeader &&
-                  <SubHeader count={count} onClick={onCollapseToggle} isCollapsed={isCollapsed} header={header} indicatorColor={bgColor} isFirst={isFirst} />
+                  <SubHeader count={count} onClick={onCollapseToggle} isCollapsed={isCollapsed} header={header} indicatorColor={bgColor} indicatorIcon={headerIndicatorIcon} isFirst={isFirst} />
               }
             </div>
           ) :
             (
               showHeader &&
-                <SubHeader count={count} onClick={onCollapseToggle} isCollapsed={isCollapsed} header={header} indicatorColor={bgColor} isFirst={isFirst} />
+                <SubHeader count={count} onClick={onCollapseToggle} isCollapsed={isCollapsed} header={header} indicatorColor={bgColor} indicatorIcon={headerIndicatorIcon} isFirst={isFirst} />
             )
         }
         title=' '
@@ -410,15 +420,29 @@ const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCa
   React.useEffect(() => {
     setAnalysisPage(analysisCount > 0 ? analysisCount - 1 : 0)
   }, [rowIndex, analysisCount])
+  React.useEffect(() => {
+    if(groupBy === 'ai_analysis' && analysisCount === 0)
+      setGroupBy('quality')
+  }, [analysisCount, groupBy])
   const selectedAnalysis = isRecommendInProgress && analysisPage >= analysisCount
     ? undefined
     : analysisArray[analysisPage]
+  const selectedAnalysisForGrouping = selectedAnalysis || analysisArray[analysisCount - 1]
   const primary = selectedAnalysis?.output?.primary_candidate || selectedAnalysis?.primary_candidate
   const AIRecommendedCandidateId = resolveAICandidateID(primary, conceptCache)
   const alternateCandidates = selectedAnalysis?.output?.alternative_candidates || selectedAnalysis?.alternative_candidates || []
   const AIAlternateCandidateIds = [...new Set(alternateCandidates
     .map(candidate => resolveAICandidateID(candidate, conceptCache))
     .filter(id => id && id !== AIRecommendedCandidateId))]
+  const groupedAnalysisPrimaryId = resolveAICandidateID(
+    selectedAnalysisForGrouping?.output?.primary_candidate || selectedAnalysisForGrouping?.primary_candidate,
+    conceptCache
+  )
+  const groupedAnalysisAlternateIds = [...new Set(
+    (selectedAnalysisForGrouping?.output?.alternative_candidates || selectedAnalysisForGrouping?.alternative_candidates || [])
+      .map(candidate => resolveAICandidateID(candidate, conceptCache))
+      .filter(id => id && id !== groupedAnalysisPrimaryId)
+  )]
 
   // Quality (score-grouped) view shows ONLY target-repo concepts. Bridge
   // intermediaries live in algorithm view as metadata-about-the-target;
@@ -489,7 +513,7 @@ const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCa
     setGroupBy(option)
     if(option === 'algorithm')
       setSortBy('algo_score')
-    if(!option || option === 'quality')
+    if(!option || option === 'quality' || option === 'ai_analysis')
       setSortBy('rerank_score')
   }
 
@@ -519,6 +543,25 @@ const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCa
         }))
       }
     }
+    if(groupBy === 'ai_analysis') {
+      const sorted = sortRowViews(qualityRowViews, 'rerank_score', 'desc')
+      const primaryCandidate = []
+      const alternateCandidates = []
+      const rest = []
+      sorted.forEach(view => {
+        const code = view?.conceptDefinition?.reference?.code
+        if(groupedAnalysisPrimaryId && code === groupedAnalysisPrimaryId) {
+          primaryCandidate.push(view)
+          return
+        }
+        if(groupedAnalysisAlternateIds.includes(code)) {
+          alternateCandidates.push(view)
+          return
+        }
+        rest.push(view)
+      })
+      return { primaryCandidate, alternateCandidates, rest }
+    }
     let recommended = []
     let available = []
     let lowRanked = []
@@ -542,7 +585,23 @@ const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCa
     return { recommended, available, lowRanked, pendingRerank }
   }
 
-  const { byAlgoCandidates, recommended, available, lowRanked, pendingRerank } = getCandidates()
+  const { byAlgoCandidates, recommended, available, lowRanked, pendingRerank, primaryCandidate, alternateCandidates: aiAlternateCandidates, rest } = getCandidates()
+  const aiPrimaryBucketId = `${rowIndex}-ai-primary`
+  const aiAlternatesBucketId = `${rowIndex}-ai-alternates`
+  const aiRestBucketId = `${rowIndex}-ai-rest`
+  const hasAIPrimaryCandidates = (primaryCandidate || []).length > 0
+  const hasAIAlternateCandidates = (aiAlternateCandidates || []).length > 0
+
+  React.useEffect(() => {
+    if(groupBy !== 'ai_analysis') return
+    setCollapsed(prev => {
+      const withoutAIBuckets = prev.filter(id => ![aiPrimaryBucketId, aiAlternatesBucketId, aiRestBucketId].includes(id))
+      const nextCollapsed = [...withoutAIBuckets]
+      if(hasAIPrimaryCandidates || hasAIAlternateCandidates)
+        nextCollapsed.push(aiRestBucketId)
+      return nextCollapsed
+    })
+  }, [groupBy, rowIndex, hasAIPrimaryCandidates, hasAIAlternateCandidates])
 
   const getRightControls = () => {
       return (
@@ -568,8 +627,11 @@ const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCa
           {
             !noCandidatesFound &&
               <>
-                <Group onGroup={onGroup} selected={groupBy} />
-                <Sort onSort={onSort} selected={sortBy} />
+                <Group onGroup={onGroup} selected={groupBy} hasAIAnalysis={analysisCount > 0} />
+                {
+                  groupBy !== 'ai_analysis' &&
+                    <Sort onSort={onSort} selected={sortBy} />
+                }
               </>
           }
           {
@@ -756,6 +818,75 @@ const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCa
                 />
             }
           </li>
+              </>
+          }
+          {
+            groupBy === 'ai_analysis' &&
+              <>
+                <li>
+                  <CandidateList
+                    {...baseProps}
+                    rowViews={primaryCandidate || []}
+                    header={t('map_project.primary_candidate')}
+                    headerIndicatorIcon={<AssistantIcon color='primary' fontSize='small' sx={{marginRight: '6px', fontSize: '0.95rem'}} />}
+                    onFetchMore={onFetchMore}
+                    bgColor={SCORES_COLOR.recommended}
+                    bucketId={aiPrimaryBucketId}
+                    noToolbar={false}
+                    onDisplayChange={setDisplay}
+                    toolbarControl={
+                      <Button color={(isEmpty(appliedFacets) && !openFilters) ? undefined : 'primary'} sx={{minWidth: 'auto'}} onClick={() => setOpenFilters(!openFilters)} disabled={isEmpty(facets)}>
+                        <Badge badgeContent={flatten(values(appliedFacets).map(v => values(v))).length} color='primary'>
+                          <FilterListIcon sx={{color: (isEmpty(appliedFacets) && !openFilters) ? '#000': 'primary'}} />
+                        </Badge>
+                      </Button>
+                    }
+                    alignToolbarLeft
+                    rightControl={getRightControls()}
+                    analysis={analysis}
+                    showAnalysis
+                    openAnalysis={Boolean(openAIAnalysis)}
+                    onCloseAnalysis={() => setOpenAIAnalysis(false)}
+                    isInProgress={isRecommendInProgress}
+                    showAlgo
+                    showEmptyHeader
+                    collapsed={collapsed}
+                    onCollapse={setCollapsed}
+                    candidatesScore={candidatesScore}
+                    isFirst
+                  />
+                </li>
+                <li>
+                  <CandidateList
+                    {...baseProps}
+                    rowViews={aiAlternateCandidates || []}
+                    header={t('map_project.alternate_candidates')}
+                    headerIndicatorIcon={<AssistantIcon color='warning' fontSize='small' sx={{marginRight: '6px', fontSize: '0.95rem'}} />}
+                    onFetchMore={onFetchMore}
+                    bgColor={SCORES_COLOR.available}
+                    bucketId={aiAlternatesBucketId}
+                    noToolbar
+                    showAlgo
+                    showEmptyHeader
+                    collapsed={collapsed}
+                    onCollapse={setCollapsed}
+                    candidatesScore={candidatesScore}
+                  />
+                </li>
+                <li>
+                  <CandidateList
+                    {...baseProps}
+                    rowViews={rest || []}
+                    header={t('map_project.rest')}
+                    onFetchMore={onFetchMore}
+                    bucketId={aiRestBucketId}
+                    noToolbar
+                    showAlgo
+                    collapsed={collapsed}
+                    onCollapse={setCollapsed}
+                    candidatesScore={candidatesScore}
+                  />
+                </li>
               </>
           }
           {
