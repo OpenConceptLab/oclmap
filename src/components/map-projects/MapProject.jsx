@@ -2417,7 +2417,7 @@ const MapProject = () => {
         '__oclai_rec_concept_name__': get(aiCandidate, 'name') || null,
         '__oclai_alt_concepts__': compact(map(get(aiRecommendation, 'alternative_candidates', []), c => resolveAICandidateID(c, conceptCacheRef.current))).join('\n') || null,
         '__oclai_oos_suggestions__': getOutOfScopeSuggestions() || null,
-        '__oclai_rationale__': get(aiRecommendation, 'rationale') || null,
+        '__oclai_rationale__': aiRecommendation?.rationale?.narrative || aiRecommendation?.rationale || null,
         ...candidates,
         '__proposed__': isEmpty(proposed[index]) ? null : JSON.stringify(proposed[index]),
       }
