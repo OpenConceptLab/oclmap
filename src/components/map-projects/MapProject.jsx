@@ -3491,7 +3491,7 @@ const MapProject = () => {
               return
             }
             const base = repoUrl.endsWith('/') ? repoUrl : `${repoUrl}/`
-            const conceptUrl = `${base}concepts/${encodeURIComponent(reference.code)}/`
+            const conceptUrl = `${base}concepts/${encodeURIComponent(encodeURIComponent(reference.code))}/`
             await fetchConceptByOclUrl(key, conceptUrl, `$resolveReference -> ${base}`)
           }))
         })
