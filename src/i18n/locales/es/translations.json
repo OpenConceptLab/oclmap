@@ -459,6 +459,8 @@
     "scispacy_candidates": "Candidatos de ScispaCy LOINC",
     "ai_analysis": "Análisis de IA",
     "group_by_ai_analysis": "Análisis de IA",
+    "view_existing_analysis": "Ver existente",
+    "run_new_analysis": "Ejecutar nuevo análisis",
     "matched": "Coincidencias",
     "dates": "Fechas",
     "none": "Ninguno",

@@ -491,6 +491,8 @@
     "bridge_candidates": "Bridge Candidates",
     "scispacy_candidates": "ScispaCy LOINC Candidates",
     "ai_analysis": "AI Analysis",
+    "view_existing_analysis": "View Existing",
+    "run_new_analysis": "Run New Analysis",
     "matched": "Matched",
     "dates": "Dates",
     "none": "None",

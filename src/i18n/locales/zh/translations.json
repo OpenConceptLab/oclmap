@@ -484,6 +484,8 @@
     "scispacy_candidates": "ScispaCy LOINC 候选项",
     "ai_analysis": "AI 分析",
     "group_by_ai_analysis": "AI 分析",
+    "view_existing_analysis": "查看现有",
+    "run_new_analysis": "运行新的分析",
     "matched": "已匹配",
     "dates": "日期",
     "none": "无",

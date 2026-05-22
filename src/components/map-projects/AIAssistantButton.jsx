@@ -57,6 +57,9 @@ const AIAssistantButton = ({
   promptTemplate,
   onPromptTemplateChange,
   isInProgress,
+  hasExistingAnalysis = false,
+  isAnalysisOpen = false,
+  onViewExistingAnalysis,
   disabled,
   ...rest
 }) => {
@@ -107,8 +110,16 @@ const AIAssistantButton = ({
     onClick(event, model)
   }
 
+  const handleViewExistingAnalysis = event => {
+    event.preventDefault()
+    event.stopPropagation()
+    setOpen(false)
+    onViewExistingAnalysis?.(event)
+  }
+
   const recommendedOptions = filter(models, {is_recommended: true})
   const otherOptions = filter(models, {is_recommended: false})
+  const offerExistingAnalysis = hasExistingAnalysis && !isAnalysisOpen
 
   if (isCoreUser && promptTemplates?.length) {
     return (
@@ -160,6 +171,8 @@ const AIAssistantButton = ({
                       onSubmit={handleSubmit}
                       showSubmit
                       disabled={isInProgress}
+                      secondaryActionLabel={offerExistingAnalysis ? t('map_project.view_existing_analysis') : undefined}
+                      onSecondaryAction={offerExistingAnalysis ? handleViewExistingAnalysis : undefined}
                       sx={{border: 'none', padding: 0, minWidth: '360px'}}
                     />
                   </div>
@@ -186,7 +199,7 @@ const AIAssistantButton = ({
         <Button
           size='small'
           sx={{textTransform: 'none', whiteSpace: 'nowrap', paddingTop: '5px'}}
-          onClick={event => onClick(event, model)}
+          onClick={offerExistingAnalysis ? handleToggle : (event => onClick(event, model))}
           startIcon={<AssistantIcon fontSize='inherit' sx={{marginTop: '-1px'}} />}
         >
           {t('map_project.ai_assistant')}
@@ -224,6 +237,17 @@ const AIAssistantButton = ({
             <Paper>
               <ClickAwayListener onClickAway={handleClose}>
                 <MenuList id="split-button-menu" autoFocusItem sx={{textAlign: 'left', maxHeight: '400px', overflow: 'auto', paddingTop: 0, paddingBottom: 0, maxWidth: '500px'}}>
+                  {
+                    offerExistingAnalysis &&
+                      <>
+                        <MenuItem onClick={handleViewExistingAnalysis}>
+                          {t('map_project.view_existing_analysis')}
+                        </MenuItem>
+                        <MenuItem onClick={handleSubmit}>
+                          {t('map_project.run_new_analysis')}
+                        </MenuItem>
+                      </>
+                  }
                   {
                     orderBy(recommendedOptions, 'name').length > 0 &&
                       <>

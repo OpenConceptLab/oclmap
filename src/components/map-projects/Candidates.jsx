@@ -646,6 +646,9 @@ const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCa
                 promptTemplate={promptTemplate}
                 onPromptTemplateChange={onPromptTemplateChange}
                 isCoreUser={isCoreUser}
+                hasExistingAnalysis={analysisCount > 0}
+                isAnalysisOpen={Boolean(openAIAnalysis)}
+                onViewExistingAnalysis={() => setOpenAIAnalysis(true)}
                 disabled={!areAlgoRun}
                 isInProgress={isRecommendInProgress}
               />
