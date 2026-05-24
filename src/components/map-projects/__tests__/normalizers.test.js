@@ -1126,7 +1126,7 @@ test('buildRecommendableConceptEntry: bridge_child evidence carries via.bridge_c
   const bridgeEvidence = [
     { algorithm_id: 'ocl-ciel-bridge', candidate_type: 'bridge_child', score: 0.88,
       highlights: undefined,
-      via: { bridge_concept_key: 'https://CIELterminology.org|887|2024-01', map_type: 'SAME-AS' } }
+      via: { bridge_concept_key: 'https://CIELterminology.org|887|2024-01', bridge_map_type: 'SAME-AS' } }
   ]
   const entry = buildRecommendableConceptEntry({
     def: loincDef, key: loincDef.key, evidence: bridgeEvidence,
