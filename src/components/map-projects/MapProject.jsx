@@ -100,6 +100,8 @@ import { useAlgos, CONCEPT_IDENTITY_BY_TYPE, ensureConceptIdentity } from './alg
 import AutoMatchDialog from './AutoMatchDialog'
 import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
 import { normalizeAlgorithmInvocation, lookupStatusRank, normalizeLegacyAllCandidates, buildRecommendableConceptEntry, stripConstantClassAndDatatype } from './normalizers'
+// Debug-only — remove with OpenConceptLab/ocl_issues#2536 fix
+import { traceConceptCacheWrite, traceConceptCacheRead } from './__debug/conceptCacheTrace'
 import { parseConceptKey } from './conceptKey'
 import { buildQualityRowViews, conceptForMapping, resolveAICandidateID } from './viewBuilders.js'
 
@@ -377,8 +379,14 @@ const MapProject = () => {
     concept_definitions.forEach(def => {
       const existing = nextCache[def.key]
       if(!existing || lookupStatusRank(def.lookup_status) > lookupStatusRank(existing.lookup_status)) {
+        // Debug — #2536
+        traceConceptCacheWrite(def.key, 'mergeIntoRowMatchState/accept', existing, def, { rowIndex, algorithmId: incomingAlgoId })
         nextCache[def.key] = def
         cacheChanged = true
+      } else {
+        // Debug — #2536: log rejections too, so we can see when the rank guard
+        // blocks a thinner write that might have been desired.
+        traceConceptCacheWrite(def.key, 'mergeIntoRowMatchState/reject(rank)', existing, def, { rowIndex, algorithmId: incomingAlgoId })
       }
     })
     if(cacheChanged) {
@@ -1776,6 +1784,14 @@ const MapProject = () => {
   }, [allCandidates]);
 
   React.useEffect(() => {
+    // Debug — #2536: this effect is suspect (A) in the PR3-G investigation.
+    // If conceptCache (React state) lags behind a synchronous ref update,
+    // this copies the stale state back into the ref, wiping enrichments.
+    // Log a sample of keys to see whether this effect is racing.
+    if (typeof window !== 'undefined' && window.localStorage?.getItem('MAPPER_DEBUG_CONCEPT_KEY')) {
+      const targetKey = window.localStorage.getItem('MAPPER_DEBUG_CONCEPT_KEY')
+      traceConceptCacheWrite(targetKey, 'effect/syncRefFromState', conceptCacheRef.current?.[targetKey], conceptCache?.[targetKey])
+    }
     conceptCacheRef.current = conceptCache;
   }, [conceptCache]);
 
@@ -2444,6 +2460,15 @@ const MapProject = () => {
       .get(null, null, {includeMappings: true, mappingBrief: true, mapTypes: 'SAME-AS,SAME AS,SAME_AS', verbose: true})
       .then(response => {
         const res = {...response?.data, search_meta: {...matched.search_meta}, repo: {...matched.repo}}
+        // Debug — #2536: this is suspect (B). Spreads `conceptCache` (closure-
+        // captured React state, possibly stale) and adds a URL-keyed entry.
+        // If the closure is stale, this setConceptCache call wipes any
+        // synchronous concept_key-keyed enrichments made since this closure
+        // was captured. Logs both the closure state and what's about to be set.
+        if (typeof window !== 'undefined' && window.localStorage?.getItem('MAPPER_DEBUG_CONCEPT_KEY')) {
+          const targetKey = window.localStorage.getItem('MAPPER_DEBUG_CONCEPT_KEY')
+          traceConceptCacheWrite(targetKey, 'legacy-url/setConceptCache(rowOpen)', conceptCache?.[targetKey], conceptCacheRef.current?.[targetKey], { url, csvRowIndex: csvRow.__index, note: 'state-vs-ref' })
+        }
         setConceptCache({...conceptCache, [url]: res})
       })
     setConfigure(false)
@@ -3348,6 +3373,8 @@ const MapProject = () => {
   const writeConceptCachePatch = React.useCallback((key, def) => {
     if(!key || !def) return
     const prev = conceptCacheRef.current[key]
+    // Debug — #2536
+    traceConceptCacheWrite(key, 'writeConceptCachePatch', prev, def)
     const next = { ...conceptCacheRef.current, [key]: def }
     conceptCacheRef.current = next
     setConceptCache(next)
@@ -3926,6 +3953,9 @@ const MapProject = () => {
       allNormCandidates = Object.values(rowState.candidates)
       Object.values(rowState.candidates).forEach(cand => {
         const def = conceptCacheRef.current[cand.concept_key]
+        // Debug — #2536: log what buildV2RecommendationPayload sees in cache
+        // for the target key at AI-payload-build time.
+        traceConceptCacheRead(cand.concept_key, 'buildV2RecommendationPayload', def, { rowIndex, candType: cand.type })
         if(!def) return
         const existing = defsByKey.get(def.key)
         if(!existing || lookupStatusRank(def.lookup_status) > lookupStatusRank(existing.lookup_status))
