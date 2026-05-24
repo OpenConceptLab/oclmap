@@ -1,0 +1,38 @@
+{
+  "id": "QC02.Z",
+  "url": "/orgs/OpenMRS-OCL-Squad/sources/ICD-11-WHO-Mapper/concepts/QC02.Z/",
+  "display_name": "Need for immunization against certain specified single infectious diseases, unspecified",
+  "names": [
+    {
+      "uuid": "41765003",
+      "name": "Need for immunization against certain specified single infectious diseases, unspecified",
+      "external_id": null,
+      "type": "ConceptName",
+      "locale": "en",
+      "locale_preferred": true,
+      "name_type": "FULLY_SPECIFIED",
+      "checksum": "e3819d03382ac5798bdfb9807eb745d3",
+      "retired": false
+    }
+  ],
+  "descriptions": [],
+  "concept_class": "Diagnosis",
+  "datatype": "N/A",
+  "retired": false,
+  "property": [
+    {
+      "code": "isLeaf",
+      "valueBoolean": "True"
+    }
+  ],
+  "source": "ICD-11-WHO-Mapper",
+  "owner": "OpenMRS-OCL-Squad",
+  "extras": {
+    "isLeaf": "True",
+    "ChapterNo": "24",
+    "IsResidual": "True",
+    "BrowserLink": "https://icd.who.int/browse/2026-01/mms/en#704382402/mms/unspecified",
+    "DepthInKind": "2",
+    "Linearization URI": "http://id.who.int/icd/release/11/mms/704382402/unspecified"
+  }
+}

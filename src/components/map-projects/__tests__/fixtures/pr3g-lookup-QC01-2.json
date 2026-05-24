@@ -1,0 +1,39 @@
+{
+  "id": "QC01.2",
+  "url": "/orgs/OpenMRS-OCL-Squad/sources/ICD-11-WHO-Mapper/concepts/QC01.2/",
+  "display_name": "Need for immunization against rabies",
+  "names": [
+    {
+      "uuid": "41764991",
+      "name": "Need for immunization against rabies",
+      "external_id": null,
+      "type": "ConceptName",
+      "locale": "en",
+      "locale_preferred": true,
+      "name_type": "FULLY_SPECIFIED",
+      "checksum": "be9921c2b0f4987d3bef03916c1f85be",
+      "retired": false
+    }
+  ],
+  "descriptions": [],
+  "concept_class": "Diagnosis",
+  "datatype": "N/A",
+  "retired": false,
+  "property": [
+    {
+      "code": "isLeaf",
+      "valueBoolean": "True"
+    }
+  ],
+  "source": "ICD-11-WHO-Mapper",
+  "owner": "OpenMRS-OCL-Squad",
+  "extras": {
+    "isLeaf": "True",
+    "ChapterNo": "24",
+    "IsResidual": "False",
+    "BrowserLink": "https://icd.who.int/browse/2026-01/mms/en#2103337383",
+    "DepthInKind": "2",
+    "Foundation URI": "http://id.who.int/icd/entity/2103337383",
+    "Linearization URI": "http://id.who.int/icd/release/11/mms/2103337383"
+  }
+}

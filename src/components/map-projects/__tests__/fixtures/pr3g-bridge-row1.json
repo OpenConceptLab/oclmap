@@ -1,0 +1,298 @@
+{
+  "row": {
+    "name": "Need for vaccination",
+    "__index": 1,
+    "synonyms": [
+      "Need for vaccination"
+    ]
+  },
+  "results": [
+    {
+      "search_meta": {
+        "match_type": "very_high",
+        "search_score": 115.90799,
+        "search_rerank_score": null,
+        "search_confidence": null,
+        "search_highlight": {
+          "name": [
+            "<em>Need</em> <em>for</em> <em>vaccination</em>"
+          ],
+          "synonyms": [
+            "N\u00e9cessit\u00e9 d'une <em>vaccination</em>"
+          ]
+        },
+        "search_normalized_score": 100.0,
+        "algorithm": "ocl-bridge"
+      },
+      "uuid": "11479548",
+      "mappings": [
+        {
+          "checksums": {
+            "smart": "0078fb9435592bb9839ebde2f832e3f7",
+            "standard": "1d9a8af0c4d3ff4142276d1a13976d2f"
+          },
+          "id": "10351084",
+          "type": "Mapping",
+          "map_type": "NARROWER-THAN",
+          "url": "/orgs/CIEL/sources/CIEL/mappings/10351084/",
+          "version_url": "/orgs/CIEL/sources/CIEL/mappings/10351084/18049144/",
+          "to_concept_code": "QC02.Z",
+          "to_concept_url": null,
+          "cascade_target_concept_code": "QC02.Z",
+          "cascade_target_concept_url": null,
+          "cascade_target_source_owner": "WHO",
+          "cascade_target_source_name": "ICD-11-WHO",
+          "cascade_target_concept_name": null,
+          "retired": false,
+          "sort_weight": null,
+          "from_concept_code": "111604",
+          "from_concept_url": "/orgs/CIEL/sources/CIEL/concepts/111604/"
+        }
+      ],
+      "extras": {},
+      "checksums": {
+        "smart": "9f9390585fd40e289358237610e0ec24",
+        "standard": "6f95112dc29055988b6c600354720898"
+      },
+      "id": "111604",
+      "external_id": "111604AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "concept_class": "Diagnosis",
+      "datatype": "N/A",
+      "url": "/orgs/CIEL/sources/CIEL/concepts/111604/",
+      "retired": false,
+      "source": "CIEL",
+      "owner": "CIEL",
+      "owner_type": "Organization",
+      "owner_url": "/orgs/CIEL/",
+      "display_name": "Need for vaccination",
+      "display_locale": "en",
+      "names": [
+        {
+          "uuid": "41064002",
+          "name": "Need for vaccination",
+          "external_id": "12316BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+          "type": "ConceptName",
+          "locale": "en",
+          "locale_preferred": true,
+          "name_type": "FULLY_SPECIFIED",
+          "checksum": "881b6a275ff8b5feb1d1bde7c4bc5d40",
+          "retired": false
+        },
+        {
+          "uuid": "41064003",
+          "name": "N\u00e9cessit\u00e9 d'une vaccination",
+          "external_id": "5a148865-ab2c-4124-a4d8-301a58fd4a8d",
+          "type": "ConceptName",
+          "locale": "fr",
+          "locale_preferred": true,
+          "name_type": "FULLY_SPECIFIED",
+          "checksum": "56ba9bb2141c917a268f5213c6a33380",
+          "retired": false
+        },
+        {
+          "uuid": "41064004",
+          "name": "Necessidade de imuniza\u00e7\u00e3o",
+          "external_id": "f7ac5748-d2cb-4de5-bcda-b21fddb611cf",
+          "type": "ConceptName",
+          "locale": "pt_BR",
+          "locale_preferred": true,
+          "name_type": "FULLY_SPECIFIED",
+          "checksum": "9d04ad536b41d383920cc0e2ecc190c3",
+          "retired": false
+        },
+        {
+          "uuid": "41064005",
+          "name": "Necessidade de imuniza\u00e7\u00e3o",
+          "external_id": "74a39458-1eb0-46bc-88db-e1fe45495211",
+          "type": "ConceptName",
+          "locale": "pt",
+          "locale_preferred": true,
+          "name_type": "FULLY_SPECIFIED",
+          "checksum": "2fcc69de08eadcc929d4b5c9fbc20f0d",
+          "retired": false
+        }
+      ],
+      "descriptions": [
+        {
+          "uuid": "4155686",
+          "description": "Administration of vaccines to stimulate the host's immune response. This includes any preparation intended for active immunological prophylaxis.",
+          "external_id": "2983FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
+          "type": "ConceptDescription",
+          "locale": "en",
+          "locale_preferred": false,
+          "description_type": null,
+          "checksum": "ec7b570860a1c8357857bcebf4ec2fcd",
+          "retired": false
+        }
+      ],
+      "created_on": "2026-04-28T04:55:56.682537Z",
+      "updated_on": "2026-04-28T04:55:56.685975Z",
+      "versions_url": "/orgs/CIEL/sources/CIEL/concepts/111604/versions/",
+      "version": "11479548",
+      "type": "Concept",
+      "update_comment": null,
+      "version_url": "/orgs/CIEL/sources/CIEL/concepts/111604/11479548/",
+      "updated_by": "ocladmin",
+      "created_by": "ocladmin",
+      "public_can_view": true,
+      "versioned_object_id": 26096,
+      "latest_source_version": "v2026-04-28",
+      "property": []
+    },
+    {
+      "search_meta": {
+        "match_type": "very_high",
+        "search_score": 10.839414,
+        "search_rerank_score": null,
+        "search_confidence": null,
+        "search_highlight": {
+          "name": [
+            "Requires rabies <em>vaccination</em> course"
+          ],
+          "synonyms": [
+            "<em>Need</em> <em>for</em> rabies <em>vaccination</em>",
+            "N\u00e9cessit\u00e9 d'une <em>vaccination</em> contre la rage",
+            "<em>Need</em> <em>for</em> immunization against rabies"
+          ]
+        },
+        "search_normalized_score": 9.351740117312016,
+        "algorithm": "ocl-bridge"
+      },
+      "uuid": "11497877",
+      "mappings": [
+        {
+          "checksums": {
+            "smart": "03d71b4c094bea79bcefbefb244c5bd9",
+            "standard": "1fab2a8008c7f365dd7b0754bf013fa7"
+          },
+          "id": "10479712",
+          "type": "Mapping",
+          "map_type": "SAME-AS",
+          "url": "/orgs/CIEL/sources/CIEL/mappings/10479712/",
+          "version_url": "/orgs/CIEL/sources/CIEL/mappings/10479712/18169689/",
+          "to_concept_code": "QC01.2",
+          "to_concept_url": null,
+          "cascade_target_concept_code": "QC01.2",
+          "cascade_target_concept_url": null,
+          "cascade_target_source_owner": "WHO",
+          "cascade_target_source_name": "ICD-11-WHO",
+          "cascade_target_concept_name": null,
+          "retired": false,
+          "sort_weight": null,
+          "from_concept_code": "127662",
+          "from_concept_url": "/orgs/CIEL/sources/CIEL/concepts/127662/"
+        }
+      ],
+      "extras": {},
+      "checksums": {
+        "smart": "8a46dcf00fad9cc4e3ed3651206b85e0",
+        "standard": "29462f85944304acbbc228d64185d189"
+      },
+      "id": "127662",
+      "external_id": "127662AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "concept_class": "Diagnosis",
+      "datatype": "N/A",
+      "url": "/orgs/CIEL/sources/CIEL/concepts/127662/",
+      "retired": false,
+      "source": "CIEL",
+      "owner": "CIEL",
+      "owner_type": "Organization",
+      "owner_url": "/orgs/CIEL/",
+      "display_name": "Requires rabies vaccination course",
+      "display_locale": "en",
+      "names": [
+        {
+          "uuid": "41188261",
+          "name": "Requires rabies vaccination course",
+          "external_id": "27686BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+          "type": "ConceptName",
+          "locale": "en",
+          "locale_preferred": true,
+          "name_type": "FULLY_SPECIFIED",
+          "checksum": "4c97fc3e0c3ba7100ef0c35aa8095c10",
+          "retired": false
+        },
+        {
+          "uuid": "41188262",
+          "name": "requiere una dosis de vacuna antirr\u00e1bica",
+          "external_id": "75912BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+          "type": "ConceptName",
+          "locale": "es",
+          "locale_preferred": true,
+          "name_type": "FULLY_SPECIFIED",
+          "checksum": "9fca6d6cad4986b3110e854bb68e71bb",
+          "retired": false
+        },
+        {
+          "uuid": "41188263",
+          "name": "Need for rabies vaccination",
+          "external_id": "139958BBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+          "type": "ConceptName",
+          "locale": "en",
+          "locale_preferred": false,
+          "name_type": null,
+          "checksum": "78f0b3dc0b3f2c8f4996556b264f2227",
+          "retired": false
+        },
+        {
+          "uuid": "41188264",
+          "name": "Need for immunization against rabies",
+          "external_id": "174ab06e-8142-4af9-891a-c8eb95aeb681",
+          "type": "ConceptName",
+          "locale": "en",
+          "locale_preferred": false,
+          "name_type": null,
+          "checksum": "23516258c2c76ea8bea3b043230997ae",
+          "retired": false
+        },
+        {
+          "uuid": "41188265",
+          "name": "N\u00e9cessit\u00e9 d'une vaccination contre la rage",
+          "external_id": "cd90ddf6-2ff1-4e8c-a0d4-a837ac32def3",
+          "type": "ConceptName",
+          "locale": "fr",
+          "locale_preferred": true,
+          "name_type": "FULLY_SPECIFIED",
+          "checksum": "d3775e079f27daaf97d1c820c454827a",
+          "retired": false
+        },
+        {
+          "uuid": "41188266",
+          "name": "Necessidade de imuniza\u00e7\u00e3o contra a raiva",
+          "external_id": "9fba5ecb-46d0-4eb1-84d8-d1ae28214724",
+          "type": "ConceptName",
+          "locale": "pt_BR",
+          "locale_preferred": true,
+          "name_type": "FULLY_SPECIFIED",
+          "checksum": "b4d3a673f2ec9935a4b9786b58bf3b92",
+          "retired": false
+        },
+        {
+          "uuid": "41188267",
+          "name": "Necessidade de imuniza\u00e7\u00e3o contra a raiva",
+          "external_id": "4517ba99-d100-482d-b7e5-c49d3ce28ab8",
+          "type": "ConceptName",
+          "locale": "pt",
+          "locale_preferred": true,
+          "name_type": "FULLY_SPECIFIED",
+          "checksum": "71a886d99d4fa961c5db67b022792539",
+          "retired": false
+        }
+      ],
+      "descriptions": [],
+      "created_on": "2026-04-28T05:35:23.037910Z",
+      "updated_on": "2026-04-28T05:35:23.041742Z",
+      "versions_url": "/orgs/CIEL/sources/CIEL/concepts/127662/versions/",
+      "version": "11497877",
+      "type": "Concept",
+      "update_comment": null,
+      "version_url": "/orgs/CIEL/sources/CIEL/concepts/127662/11497877/",
+      "updated_by": "ocladmin",
+      "created_by": "ocladmin",
+      "public_can_view": true,
+      "versioned_object_id": 32543,
+      "latest_source_version": "v2026-04-28",
+      "property": []
+    }
+  ]
+}
