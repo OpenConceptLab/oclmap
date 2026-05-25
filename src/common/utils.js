@@ -755,7 +755,7 @@ export const URIToParentParams = (uri, includeVersion=false) => {
   parent.repoType = upperFirst(parts[3]?.slice(0, -1))
   parent.repo = parts[4]
   if(includeVersion)
-    parent.repoVersion = parts[5] || 'HEAD'
+    parent.repoVersion = parts[5]
   return parent
 }
 
