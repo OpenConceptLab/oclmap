@@ -42,7 +42,7 @@ export const ScoreValueChip = ({ bucketColor, label, size='medium', showIndicato
   />
 )
 
-const Score = ({candidate, conceptRow, setShowHighlights, sx, isAIRecommended, candidatesScore, algoScoreFirst, size, onHighlightClick, secondaryScoreText}) => {
+const Score = ({candidate, conceptRow, setShowHighlights, sx, isAIRecommended, isAIAlternate, candidatesScore, algoScoreFirst, size, onHighlightClick, secondaryScoreText}) => {
   const { t } = useTranslation();
   const {
     score,
@@ -71,13 +71,14 @@ const Score = ({candidate, conceptRow, setShowHighlights, sx, isAIRecommended, c
         } : undefined}
       >
         {
-          isAIRecommended &&
-            <Tooltip title={t('map_project.ai_recommended')}>
+          isAIRecommended || isAIAlternate ?
+            <Tooltip title={isAIRecommended ? t('map_project.ai_recommended') : t('map_project.ai_alternate')}>
               <ListItemIcon sx={{minWidth: 'auto', marginRight: '6px'}}>
-                <AssistantIcon color='primary' fontSize='small' sx={{marginRight: '4px'}} />
+                <AssistantIcon color={isAIRecommended ? 'primary' : 'warning'} fontSize='small' sx={{marginRight: '4px'}} />
               </ListItemIcon>
-            </Tooltip>
-          }
+            </Tooltip> :
+          null
+        }
         <ListItemText
           sx={{margin: 0, '.MuiListItemText-primary': {fontSize: '14px'}, '.MuiListItemText-secondary': {fontSize: '12px'}}}
           primary={

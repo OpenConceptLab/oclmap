@@ -34,7 +34,9 @@
     "start": "./node_modules/webpack-dev-server/bin/webpack-dev-server.js --progress --host 0.0.0.0 --port ${WEB_PORT} --env API_URL=${API_URL} --env NODE_ENV=${NODE_ENV} --env RECAPTCHA_SITE_KEY=${RECAPTCHA_SITE_KEY} --env GA_ACCOUNT_ID=${GA_ACCOUNT_ID} --env HOTJAR_ID=${HOTJAR_ID} --env ERRBIT_URL=${ERRBIT_URL} --env ERRBIT_KEY=${ERRBIT_KEY} --env LOGIN_REDIRECT_URL=${LOGIN_REDIRECT_URL} --env OIDC_RP_CLIENT_ID=${OIDC_RP_CLIENT_ID} --env OIDC_RP_CLIENT_SECRET=${OIDC_RP_CLIENT_SECRET} --env OCL_ONLINE=${OCL_ONLINE} --env BRIDGE_MATCH_URL=${BRIDGE_MATCH_URL} --env AI_ASSISTANT_API_URL=${AI_ASSISTANT_API_URL} --env SCISPACY_LOINC_API_URL=${SCISPACY_LOINC_API_URL} --env OCL_ONLINE_API_URL=${OCL_ONLINE_API_URL} --mode ${NODE_ENV} --hot",
     "build": "node --max-old-space-size=1536 ./node_modules/webpack/bin/webpack.js --progress --env API_URL=${API_URL} --env NODE_ENV=${NODE_ENV} --env RECAPTCHA_SITE_KEY=${RECAPTCHA_SITE_KEY} --env GA_ACCOUNT_ID=${GA_ACCOUNT_ID} --env HOTJAR_ID=${HOTJAR_ID} --env ERRBIT_URL=${ERRBIT_URL} --env ERRBIT_KEY=${ERRBIT_KEY} --env LOGIN_REDIRECT_URL=${LOGIN_REDIRECT_URL} --env OIDC_RP_CLIENT_ID=${OIDC_RP_CLIENT_ID} --env OIDC_RP_CLIENT_SECRET=${OIDC_RP_CLIENT_SECRET} --env OCL_ONLINE=${OCL_ONLINE} --env BRIDGE_MATCH_URL=${BRIDGE_MATCH_URL} --env AI_ASSISTANT_API_URL=${AI_ASSISTANT_API_URL} --env SCISPACY_LOINC_API_URL=${SCISPACY_LOINC_API_URL} --env OCL_ONLINE_API_URL=${OCL_ONLINE_API_URL} --mode ${NODE_ENV}",
     "eslint": "./node_modules/.bin/eslint ./src",
-    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test 'src/**/__tests__/**/*.test.js'"
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test 'src/**/__tests__/**/*.test.js'",
+    "test:integration": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./test-integration-setup.js --test 'src/**/__integration__/**/*.test.js'",
+    "test:all": "npm test && npm run test:integration"
   },
   "devDependencies": {
     "@babel/core": "^7.26.10",
@@ -45,6 +47,9 @@
     "@babel/preset-env": "^7.26.9",
     "@babel/preset-react": "^7.26.3",
     "@babel/runtime": "^7.26.10",
+    "@happy-dom/global-registrator": "^15.11.7",
+    "@testing-library/dom": "^10.4.0",
+    "@testing-library/react": "^16.1.0",
     "babel-eslint": "^10.1.0",
     "babel-loader": "^8.4.1",
     "copy-webpack-plugin": "^4.6.0",

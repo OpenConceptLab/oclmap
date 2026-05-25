@@ -30,6 +30,8 @@ const AIAssistantSelectorPanel = ({
   disabled = false,
   showLocale = false,
   availableLocales,
+  secondaryActionLabel,
+  onSecondaryAction,
   sx = {}
 }) => {
   const { t } = useTranslation()
@@ -248,6 +250,17 @@ const AIAssistantSelectorPanel = ({
       {
         showSubmit &&
           <Box sx={{ display: 'flex', justifyContent: 'flex-end', marginTop: '12px' }}>
+            {
+              secondaryActionLabel && onSecondaryAction &&
+                <Button
+                  variant='text'
+                  size='small'
+                  sx={{ textTransform: 'none', marginRight: '8px' }}
+                  onClick={onSecondaryAction}
+                >
+                  {secondaryActionLabel}
+                </Button>
+            }
             <Button
               variant='contained'
               size='small'

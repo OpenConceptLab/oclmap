@@ -11,6 +11,7 @@ import { useParams, useHistory, useLocation } from 'react-router-dom'
 
 import Paper from '@mui/material/Paper'
 import Button from '@mui/material/Button';
+import CircularProgress from '@mui/material/CircularProgress';
 import Typography from '@mui/material/Typography';
 import Dialog from '@mui/material/Dialog';
 import IconButton from '@mui/material/IconButton'
@@ -67,8 +68,8 @@ import pick from 'lodash/pick'
 
 import { OperationsContext } from '../app/LayoutContext';
 
-import APIService from '../../services/APIService';
-import { highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, downloadObject, currentUserToken } from '../../common/utils';
+import APIService, { isTransientNetworkError, retryWithBackoff } from '../../services/APIService';
+import { highlightTexts, dropVersion, getCurrentUser, URIToParentParams, hasAuthGroup, downloadObject, currentUserToken } from '../../common/utils';
 import { WHITE, SURFACE_COLORS } from '../../common/colors';
 
 import { useDoubleClick } from '../common/useDoubleClick'
@@ -397,7 +398,7 @@ const MapProject = () => {
         .filter(d => d && d.lookup_status !== 'full')
         .map(d => d.key)
       if(keysToLoad.length) {
-        ensureLoadedRef.current(keysToLoad).then(() => {
+        ensureLoadedRef.current(keysToLoad, rowIndex).then(() => {
           if(scheduleRerankRef.current) scheduleRerankRef.current(rowIndex)
         })
       }
@@ -419,6 +420,16 @@ const MapProject = () => {
   // dedupes concurrent calls for the same key by awaiting the existing
   // Promise instead of issuing a duplicate fetch.
   const inFlightLookupsRef = React.useRef(new Map())
+
+  // URL-level fetch dedup for ensureLoaded. Keyed by ocl_url. Stores
+  // Promise<data|null>: in-flight entries deduplicate concurrent requests for
+  // the same URL even when they arrive under different concept_keys (e.g.
+  // ocl-scispacy uses a hardcoded canonical 'http://loinc.org' while
+  // ocl-bridge cascade targets use target_repo's canonical — they produce
+  // different concept_keys but resolve to the same OCL URL). Failed/404
+  // entries are deleted so they remain retryable; successful entries persist
+  // for the session.
+  const urlFetchCacheRef = React.useRef(new Map())
 
   // Rerank scheduling (plans/unified-mapper-model.md "Rerank — debounce +
   // in-flight check"). Replaces the legacy "wait for every algo to
@@ -923,6 +934,34 @@ const MapProject = () => {
         }
       }
     })
+    if(AI_ASSISTANT_API_URL) {
+      cols.push({
+        field: '_aiRecommendStatus_',
+        headerName: '',
+        width: 48,
+        sortable: false,
+        filterable: false,
+        disableColumnMenu: true,
+        renderCell: params => {
+          const status = rowStageRef.current[params.row.__index]?.recommend
+          if(status === 0)
+            return (
+              <Tooltip title={t('map_project.ai_recommendation_running')}>
+                <CircularProgress size={16} />
+              </Tooltip>
+            )
+          if(status === -2)
+            return (
+              <Tooltip title={t('map_project.ai_recommendation_failed_retry')}>
+                <IconButton size='small' onClick={e => { e.stopPropagation(); fetchRecommendation(params.row) }}>
+                  <AssistantIcon color='error' fontSize='small' />
+                </IconButton>
+              </Tooltip>
+            )
+          return null
+        }
+      })
+    }
     return cols
   }
 
@@ -1291,7 +1330,8 @@ const MapProject = () => {
     // PR3-H: backend field is plural (ArrayField) — single-select UI wraps
     // the value in a one-element list. Future multi-select can send N
     // elements without any backend change.
-    formData.append('input_locales', JSON.stringify(inputLocale ? [inputLocale] : []))
+    if(inputLocale)
+      formData.append('input_locales', JSON.stringify([inputLocale]))
     formData.append('use_lexical_variants', useLexicalVariants)
     const isUpdate = Boolean(project?.id)
     let service = APIService.new().overrideURL(owner).appendToUrl('map-projects/')
@@ -1628,7 +1668,7 @@ const MapProject = () => {
                 })
               })
             }
-            lookupCandidates(algo.id, flatten(map(data, 'results')))
+            if(!UNIFIED_MODEL_ENABLED) lookupCandidates(algo.id, flatten(map(data, 'results')))
             setMatchedConcepts(prev => [...prev, ...data]);
             activeRequests.delete(promise); // Remove from active set after completion
           });
@@ -1843,7 +1883,7 @@ const MapProject = () => {
           ...prev,
           [algo.id]: [...reject(prev[algo.id], c => c.row.__index === index), ...(results || [])]
         }))
-        lookupCandidates(algo.id, results)
+        if(!UNIFIED_MODEL_ENABLED) lookupCandidates(algo.id, results)
         if(UNIFIED_MODEL_ENABLED) {
           // Route the bridge invocation through the normalizer (the per-row
           // path goes via onResponse, but the bulk path lives here).
@@ -1887,7 +1927,7 @@ const MapProject = () => {
           ...prev,
           [algo.id]: [...reject(prev[algo.id], c => c.row.__index === _index), ...(results || [])]
         }))
-        lookupCandidates(algo.id, results)
+        if(!UNIFIED_MODEL_ENABLED) lookupCandidates(algo.id, results)
         if(UNIFIED_MODEL_ENABLED) {
           // Mirror the bulk-bridge wiring — the per-row scispacy path goes via
           // onResponse, but the bulk path lives here.
@@ -2387,7 +2427,7 @@ const MapProject = () => {
         '__oclai_rec_concept_name__': get(aiCandidate, 'name') || null,
         '__oclai_alt_concepts__': compact(map(get(aiRecommendation, 'alternative_candidates', []), c => resolveAICandidateID(c, conceptCacheRef.current))).join('\n') || null,
         '__oclai_oos_suggestions__': getOutOfScopeSuggestions() || null,
-        '__oclai_rationale__': get(aiRecommendation, 'rationale') || null,
+        '__oclai_rationale__': aiRecommendation?.rationale?.narrative || aiRecommendation?.rationale || null,
         ...candidates,
         '__proposed__': isEmpty(proposed[index]) ? null : JSON.stringify(proposed[index]),
       }
@@ -2414,7 +2454,18 @@ const MapProject = () => {
       .get(null, null, {includeMappings: true, mappingBrief: true, mapTypes: 'SAME-AS,SAME AS,SAME_AS', verbose: true})
       .then(response => {
         const res = {...response?.data, search_meta: {...matched.search_meta}, repo: {...matched.repo}}
-        setConceptCache({...conceptCache, [url]: res})
+        // Source from the live ref, not closure-captured state. The .then
+        // here is created when onCSVRowSelect runs (on user click); its
+        // closure of `conceptCache` is whatever React state was at click
+        // time, which by fetch-response time is stale relative to any
+        // writeConceptCachePatch / mergeIntoRowMatchState writes that
+        // landed in the interim. Spreading the stale state then
+        // setConceptCache-ing it lets the useEffect at conceptCache state
+        // sync copy that stale value back into the ref, wiping enrichment
+        // for unrelated keys (OpenConceptLab/ocl_issues#2536, PR3-G).
+        const next = {...conceptCacheRef.current, [url]: res}
+        conceptCacheRef.current = next
+        setConceptCache(next)
       })
     setConfigure(false)
     setShowProjectLogs(false)
@@ -2748,7 +2799,7 @@ const MapProject = () => {
         if(offset === 0) {
           const results = algoId === 'ocl-scispacy-loinc' ? [{row: __row, results: fromScispacyResultsToConcepts(get(response.data, __row.__index) || [])}] : data
           nextCandidates = {...allCandidatesRef.current, [algoId]: [...reject(allCandidatesRef.current[algoId], c => c.row.__index === __row.__index), ...(results || [])]}
-          lookupCandidates(algoId, get(results, '0.results'))
+          if(!UNIFIED_MODEL_ENABLED) lookupCandidates(algoId, get(results, '0.results'))
           if(UNIFIED_MODEL_ENABLED) {
             // Normalize the invocation for this row and merge into the new
             // RowMatchState. Reads still come from allCandidates — flipping
@@ -3341,7 +3392,7 @@ const MapProject = () => {
     writeConceptCachePatch(key, { ...existing, lookup_status: 'failed' })
   }, [writeConceptCachePatch])
 
-  const ensureLoaded = React.useCallback(async (conceptKeys) => {
+  const ensureLoaded = React.useCallback(async (conceptKeys, logRowIndex) => {
     if(!Array.isArray(conceptKeys) || conceptKeys.length === 0) return
     const ctx = buildProjectContext()
     const resolveNamespace = ctx?.namespace
@@ -3352,7 +3403,8 @@ const MapProject = () => {
     // Search-tab fetches respected the user's token but the new unified
     // ensureLoaded path silently used the session token instead — leaving
     // the LookupConfig widget half-decorative.
-    const authToken = lookupConfig?.token || currentUserToken()
+    const currentToken = currentUserToken()
+    const authToken = lookupConfig?.token || currentToken
 
     const directFetches = []
     const toResolve = []
@@ -3390,12 +3442,47 @@ const MapProject = () => {
       if(fn) fn()
     }
 
-    const fetchConceptByOclUrl = async (key, oclUrl, source) => {
+    const fetchConceptByOclUrl = async (key, oclUrl, source, logRowIndex) => {
+      // URL-level dedup: if a different concept_key is already fetching this
+      // same OCL URL (or fetched it successfully), reuse that promise instead
+      // of issuing a duplicate network request.
+      let dataPromise = urlFetchCacheRef.current.get(oclUrl)
+      if(!dataPromise) {
+        const attemptFetch = async () => {
+          let service = APIService.new()
+          if(oclUrl.startsWith('http://') || oclUrl.startsWith('https://')) {
+            service.URL = oclUrl
+          } else {
+            service = service.overrideURL(oclUrl)
+          }
+          const response = await service.request('GET', undefined, authToken, {query: {includeMappings: true, mappingBrief: true, mapTypes: 'SAME-AS,SAME AS,SAME_AS', verbose: true}})
+          const data = response?.data
+          if(data?.id) return data
+          urlFetchCacheRef.current.delete(oclUrl)
+          return null
+        }
+        // Retry on 404: the lookup repo may still be lazily building the concept.
+        // Attempts happen at t=0s, t=3s, t=7s.
+        const code = parseConceptKey(key).code
+        dataPromise = retryWithBackoff(attemptFetch, {
+          maxRetries: 2,
+          baseDelayMs: 3000,
+          backoffFactor: 4/3,
+          jitterFactor: 0,
+          isRetryable: err => err?.response?.status === 404,
+          onAttemptFailed: (err, attempt) => {
+            if(err?.response?.status === 404)
+              log({action: 'lookup', description: t('map_project.lookup_concept_404', {code, attempt: attempt + 1}), extras: {url: oclUrl, error: t('map_project.lookup_concept_404', {code, attempt: attempt + 1})}}, logRowIndex)
+          },
+        }).catch(() => {
+          urlFetchCacheRef.current.delete(oclUrl)
+          return null
+        })
+        urlFetchCacheRef.current.set(oclUrl, dataPromise)
+      }
+
       try {
-        const response = await APIService.new()
-          .overrideURL(oclUrl)
-          .get(authToken, null, {includeMappings: true, mappingBrief: true, mapTypes: 'SAME-AS,SAME AS,SAME_AS', verbose: true})
-        const data = response?.data
+        const data = await dataPromise
         if(data?.id) {
           const existing = conceptCacheRef.current[key] || {}
           writeConceptCachePatch(key, {
@@ -3416,7 +3503,7 @@ const MapProject = () => {
       }
     }
 
-    const directPromise = Promise.all(directFetches.map(({key, oclUrl}) => fetchConceptByOclUrl(key, oclUrl)))
+    const directPromise = Promise.all(directFetches.map(({key, oclUrl}) => fetchConceptByOclUrl(key, oclUrl, undefined, logRowIndex)))
 
     let resolvePromise = Promise.resolve()
     if(toResolve.length) {
@@ -3425,20 +3512,20 @@ const MapProject = () => {
         : {url: reference.url})
       resolvePromise = APIService.new()
         .overrideURL('/$resolveReference/')
-        .post(body, authToken, null, resolveNamespace ? {namespace: resolveNamespace} : undefined)
+        .post(body, currentToken, null, resolveNamespace ? {namespace: resolveNamespace} : undefined)
         .then(async response => {
           const items = Array.isArray(response?.data) ? response.data : []
           await Promise.all(toResolve.map(async ({key, reference}, i) => {
             const item = items[i]
-            const repoUrl = item?.resolved === true && item?.result?.url
+            const repoUrl = lookupConfig?.url || (item?.resolved === true ? item?.result?.url : null)
             if(!repoUrl) {
               writeLookupFailure(key)
               settle(key)
               return
             }
             const base = repoUrl.endsWith('/') ? repoUrl : `${repoUrl}/`
-            const conceptUrl = `${base}concepts/${encodeURIComponent(reference.code)}/`
-            await fetchConceptByOclUrl(key, conceptUrl, `$resolveReference -> ${base}`)
+            const conceptUrl = `${base}concepts/${encodeURIComponent(encodeURIComponent(reference.code))}/`
+            await fetchConceptByOclUrl(key, conceptUrl, `$resolveReference -> ${base}`, logRowIndex)
           }))
         })
         .catch(() => {
@@ -3952,7 +4039,7 @@ const MapProject = () => {
               highlights: c.highlights
             }
             if(c.type === 'bridge_child' && c.bridge_concept_key)
-              e.via = {bridge_concept_key: c.bridge_concept_key, map_type: c.map_type}
+              e.via = {bridge_concept_key: c.bridge_concept_key, bridge_map_type: c.map_type}
             return e
           })
         recommendable_concepts.push(buildRecommendableConceptEntry({
@@ -4055,8 +4142,24 @@ const MapProject = () => {
 
       const service = APIService.new()
       service.URL = getPromptTemplateInvokeURL(activePromptTemplate, promptTemplateRef?.key)
+      const invokeTs = Date.now()
       try {
-        const response = await service.post(payload)
+        const response = await retryWithBackoff(
+          attempt => service.request('POST', payload, undefined, {headers: {'X-OCL-REQUEST-IDEMPOTENCY-KEY': `${params.projectId}-${__index}-${attempt}-${invokeTs}`}}),
+          {
+            maxRetries: 2,
+            baseDelayMs: 3000,
+            backoffFactor: 4,
+            jitterFactor: 0.25,
+            isCancelled: () => abortRef.current,
+            isRetryable: isTransientNetworkError,
+            onAttemptFailed: (err, attempt) => {
+              const errorMessage = err?.response?.data?.detail || err?.message || t('unknown_error')
+              const retrySuffix = attempt > 0 ? ` [Retry ${attempt}]` : ''
+              log({created_at: moment().toDate(), action: 'AIRecommendation', description: `failed with ${errorMessage}${retrySuffix}`, extras: {error: errorMessage, model: selectedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}}, __index)
+            },
+          }
+        )
         let timestamp = moment().toDate()
         if(response?.detail) {
           markAlgo(__index, 'recommend', -2)
@@ -4080,8 +4183,6 @@ const MapProject = () => {
       } catch (err) {
         markAlgo(__index, 'recommend', -2)
         const errorMessage = err?.detail || err?.response?.data?.detail || err?.message || t('unknown_error')
-        let timestamp = moment().toDate()
-        log({created_at: timestamp, action: 'AIRecommendation', description: errorMessage, extras: {error: errorMessage, model: selectedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}}, __index)
         setAlert({message: errorMessage, severity: 'error'})
         return false
       }

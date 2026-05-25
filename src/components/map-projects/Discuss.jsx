@@ -22,6 +22,7 @@ import AssistantIcon from '@mui/icons-material/Assistant';
 import ReviewedIcon from '@mui/icons-material/FactCheckOutlined';
 import AlgoIcon from '@mui/icons-material/JoinRight';
 import RerankIcon from '@mui/icons-material/LowPriority';
+import LookupFailedIcon from '@mui/icons-material/ManageSearch';
 
 import map from 'lodash/map'
 import startCase from 'lodash/startCase'
@@ -85,6 +86,8 @@ const Discuss = ({ logs, onAdd }) => {
       return <AlgoIcon fontSize='small' color={color} />
     if(log.action === 'rerank_finished')
       return <RerankIcon fontSize='small' color={color} />
+    if(log.action === 'lookup')
+      return <LookupFailedIcon fontSize='small' color={color} />
     return log.user.slice(0, 2).toUpperCase()
   }
 
@@ -93,7 +96,7 @@ const Discuss = ({ logs, onAdd }) => {
       return 'error'
     if(['proposed'].includes(log.action))
       return 'warning'
-    if(['mapped', 'auto-matched', 'AIRecommendation', 'approved', 'reviewed', 'algo_finished', 'rerank_finished'].includes(log.action))
+    if(['mapped', 'auto-matched', 'AIRecommendation', 'approved', 'reviewed', 'algo_finished', 'rerank_finished', 'lookup'].includes(log.action))
       return log.extras?.error ? 'error' : 'primary'
     return undefined
   }

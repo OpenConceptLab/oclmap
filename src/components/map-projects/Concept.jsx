@@ -68,7 +68,7 @@ const getBestSynonym = (synonyms = []) => {
 };
 
 
-const Item = ({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition, bridgeContributors, contributingAlgorithms, contributingAlgorithmIds, setShowHighlights, onMap, isSelectedForMap, noScore, repoVersion, synonymPrefix, isAIRecommended, showAlgo, candidatesScore, algoScoreFirst, placeholderMap, bridgeChild}) => {
+const Item = ({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition, bridgeContributors, contributingAlgorithms, contributingAlgorithmIds, setShowHighlights, onMap, isSelectedForMap, noScore, repoVersion, synonymPrefix, isAIRecommended, isAIAlternate, showAlgo, candidatesScore, algoScoreFirst, placeholderMap, bridgeChild}) => {
   const conceptToMap = conceptForMapping({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition})
   const idLabel = conceptDefinition?.id || conceptDefinition?.reference?.code
   const sourceLabel = conceptDefinition?.source
@@ -208,6 +208,7 @@ const Item = ({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition
               conceptRow={conceptRow}
               setShowHighlights={setShowHighlights}
               isAIRecommended={isAIRecommended}
+              isAIAlternate={isAIAlternate}
               candidatesScore={candidatesScore}
               algoScoreFirst={algoScoreFirst}
               secondaryScoreText={multiAlgoScoreText}
@@ -306,7 +307,7 @@ const legacyToRowView = (legacy) => {
 // Legacy callers (Target Code column, decision tables, search results)
 // pass a flat concept-shape object instead — legacyToRowView wraps those
 // so a single render path covers both worlds while PR3 cleanup is pending.
-const Concept = ({_id, firstChild, lastChild, concept, setShowHighlights, isShown, onCardClick, onMap, isSelectedForMap, noScore, repoVersion, isAIRecommended, sx, notClickable, noSynonymPrefix, locales, showAlgo, candidatesScore, algoScoreFirst, asTarget, AIRecommendedCandidateId, targetCanonical}) => {
+const Concept = ({_id, firstChild, lastChild, concept, setShowHighlights, isShown, onCardClick, onMap, isSelectedForMap, noScore, repoVersion, isAIRecommended, sx, notClickable, noSynonymPrefix, locales, showAlgo, candidatesScore, algoScoreFirst, asTarget, AIRecommendedCandidateId, AIAlternateCandidateIds, targetCanonical}) => {
   const rowView = concept?.conceptDefinition ? concept : legacyToRowView(concept)
   if(!rowView?.conceptDefinition) return null
   const { type, candidate, conceptDefinition, conceptRow, bridgeConceptDefinition, bridgeChildren, bridgeContributors, contributingAlgorithmIds, contributingAlgorithms } = rowView
@@ -319,6 +320,7 @@ const Concept = ({_id, firstChild, lastChild, concept, setShowHighlights, isShow
   const effectiveIsSelectedForMap = isMappable ? isSelectedForMap : false
   const idForUI = conceptDefinition.ocl_url || conceptDefinition.id || conceptDefinition.reference?.code
   const isSelectedToShow = isShown ? isShown(idForUI) : false
+  const aiAlternateIds = Array.isArray(AIAlternateCandidateIds) ? AIAlternateCandidateIds : []
 
   let synonymPrefix = ''
   const highlights = candidate?.highlights
@@ -347,7 +349,9 @@ const Concept = ({_id, firstChild, lastChild, concept, setShowHighlights, isShow
   }
 
   if(type === 'bridge') {
-    const isBridgeAIRecommended = AIRecommendedCandidateId && conceptDefinition.reference?.code === AIRecommendedCandidateId
+    const bridgeCode = conceptDefinition.reference?.code
+    const isBridgeAIRecommended = AIRecommendedCandidateId && bridgeCode === AIRecommendedCandidateId
+    const isBridgeAIAlternate = aiAlternateIds.includes(bridgeCode)
     return (
       <>
         {
@@ -372,6 +376,7 @@ const Concept = ({_id, firstChild, lastChild, concept, setShowHighlights, isShow
               candidatesScore={candidatesScore}
               algoScoreFirst={algoScoreFirst}
               isAIRecommended={isBridgeAIRecommended}
+              isAIAlternate={isBridgeAIAlternate}
             />
         }
         {
@@ -390,7 +395,9 @@ const Concept = ({_id, firstChild, lastChild, concept, setShowHighlights, isShow
           <div className='col-xs-12' style={{paddingRight: 0, paddingLeft: algoScoreFirst ? '12px' : 0}}>
             {
               map(bridgeChildren || [], (child, index) => {
-                const childAIRecommended = AIRecommendedCandidateId && child.conceptDefinition?.reference?.code === AIRecommendedCandidateId
+                const childCode = child.conceptDefinition?.reference?.code
+                const childAIRecommended = AIRecommendedCandidateId && childCode === AIRecommendedCandidateId
+                const childAIAlternate = aiAlternateIds.includes(childCode)
                 return <ConceptItem
                   key={`${index}-${child.candidate?.id}`}
                   {...baseProps}
@@ -414,6 +421,7 @@ const Concept = ({_id, firstChild, lastChild, concept, setShowHighlights, isShow
                   candidatesScore={candidatesScore}
                   algoScoreFirst={algoScoreFirst}
                   isAIRecommended={childAIRecommended}
+                  isAIAlternate={childAIAlternate}
                 />
               })
             }
@@ -425,7 +433,9 @@ const Concept = ({_id, firstChild, lastChild, concept, setShowHighlights, isShow
 
   // type === 'standard' or 'bridge_child' (the latter only when rendered
   // directly, i.e. in the score-grouped view as the target concept).
-  const isAIMatch = AIRecommendedCandidateId && conceptDefinition.reference?.code === AIRecommendedCandidateId
+  const code = conceptDefinition.reference?.code
+  const isAIMatch = AIRecommendedCandidateId && code === AIRecommendedCandidateId
+  const isAIAlternate = aiAlternateIds.includes(code)
   return <ConceptItem
     {...baseProps}
     candidate={candidate}
@@ -439,6 +449,7 @@ const Concept = ({_id, firstChild, lastChild, concept, setShowHighlights, isShow
     synonymPrefix={synonymPrefix}
     setShowHighlights={setShowHighlights}
     isAIRecommended={isAIRecommended || isAIMatch}
+    isAIAlternate={isAIAlternate}
     isSelectedForMap={effectiveIsSelectedForMap}
     placeholderMap={!isMappable}
     onMap={onMap}
