@@ -558,6 +558,7 @@
     "lookup_configuration_url": "URL del repositorio",
     "lookup_configuration_token": "Token",
     "lookup_configuration_description": "Configure una Fuente/Sistema de códigos para la operación de búsqueda y recuperar definiciones de candidatos.",
+    "lookup_concept_404": "La búsqueda del Concepto:{{code}} falló con 404 (intento {{attempt}})",
     "ai_prompt_template": "Plantilla de prompt de IA",
     "ai_prompt_template_description": "Elija la plantilla de prompt utilizada para las recomendaciones de mapeo con IA.",
     "ai_prompt_template_field": "Plantilla de prompt",

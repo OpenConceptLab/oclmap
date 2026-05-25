@@ -583,6 +583,7 @@
     "lookup_configuration_url": "Repository URL",
     "lookup_configuration_token": "Token",
     "lookup_configuration_description": "Configure a Source/CodeSystem for lookup operation to fetch candidates definitions.",
+    "lookup_concept_404": "LookUp Concept:{{code}} failed with 404 (attempt {{attempt}})",
     "ai_prompt_template": "AI Prompt Template",
     "ai_prompt_template_description": "Choose the prompt template used for AI mapping recommendations.",
     "ai_prompt_template_field": "Prompt Template",

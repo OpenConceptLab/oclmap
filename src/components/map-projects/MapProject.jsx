@@ -397,7 +397,7 @@ const MapProject = () => {
         .filter(d => d && d.lookup_status !== 'full')
         .map(d => d.key)
       if(keysToLoad.length) {
-        ensureLoadedRef.current(keysToLoad).then(() => {
+        ensureLoadedRef.current(keysToLoad, rowIndex).then(() => {
           if(scheduleRerankRef.current) scheduleRerankRef.current(rowIndex)
         })
       }
@@ -3382,7 +3382,7 @@ const MapProject = () => {
     writeConceptCachePatch(key, { ...existing, lookup_status: 'failed' })
   }, [writeConceptCachePatch])
 
-  const ensureLoaded = React.useCallback(async (conceptKeys) => {
+  const ensureLoaded = React.useCallback(async (conceptKeys, logRowIndex) => {
     if(!Array.isArray(conceptKeys) || conceptKeys.length === 0) return
     const ctx = buildProjectContext()
     const resolveNamespace = ctx?.namespace
@@ -3432,30 +3432,42 @@ const MapProject = () => {
       if(fn) fn()
     }
 
-    const fetchConceptByOclUrl = async (key, oclUrl, source) => {
+    const fetchConceptByOclUrl = async (key, oclUrl, source, logRowIndex) => {
       // URL-level dedup: if a different concept_key is already fetching this
       // same OCL URL (or fetched it successfully), reuse that promise instead
       // of issuing a duplicate network request.
       let dataPromise = urlFetchCacheRef.current.get(oclUrl)
       if(!dataPromise) {
-        dataPromise = (async () => {
-          try {
-            let service = APIService.new()
-            if(oclUrl.startsWith('http://') || oclUrl.startsWith('https://')) {
-              service.URL = oclUrl
-            } else {
-              service = service.overrideURL(oclUrl)
-            }
-            const response = await service.get(authToken, null, {includeMappings: true, mappingBrief: true, mapTypes: 'SAME-AS,SAME AS,SAME_AS', verbose: true})
-            const data = response?.data
-            if(data?.id) return data
-            urlFetchCacheRef.current.delete(oclUrl)
-            return null
-          } catch (_) {
-            urlFetchCacheRef.current.delete(oclUrl)
-            return null
+        const attemptFetch = async () => {
+          let service = APIService.new()
+          if(oclUrl.startsWith('http://') || oclUrl.startsWith('https://')) {
+            service.URL = oclUrl
+          } else {
+            service = service.overrideURL(oclUrl)
           }
-        })()
+          const response = await service.request('GET', undefined, authToken, {query: {includeMappings: true, mappingBrief: true, mapTypes: 'SAME-AS,SAME AS,SAME_AS', verbose: true}})
+          const data = response?.data
+          if(data?.id) return data
+          urlFetchCacheRef.current.delete(oclUrl)
+          return null
+        }
+        // Retry on 404: the lookup repo may still be lazily building the concept.
+        // Attempts happen at t=0s, t=3s, t=7s.
+        const code = parseConceptKey(key).code
+        dataPromise = retryWithBackoff(attemptFetch, {
+          maxRetries: 2,
+          baseDelayMs: 3000,
+          backoffFactor: 4/3,
+          jitterFactor: 0,
+          isRetryable: err => err?.response?.status === 404,
+          onAttemptFailed: (err, attempt) => {
+            if(err?.response?.status === 404)
+              log({action: 'lookup', description: t('map_project.lookup_concept_404', {code, attempt: attempt + 1}), extras: {url: oclUrl, error: t('map_project.lookup_concept_404', {code, attempt: attempt + 1})}}, logRowIndex)
+          },
+        }).catch(() => {
+          urlFetchCacheRef.current.delete(oclUrl)
+          return null
+        })
         urlFetchCacheRef.current.set(oclUrl, dataPromise)
       }
 
@@ -3481,7 +3493,7 @@ const MapProject = () => {
       }
     }
 
-    const directPromise = Promise.all(directFetches.map(({key, oclUrl}) => fetchConceptByOclUrl(key, oclUrl)))
+    const directPromise = Promise.all(directFetches.map(({key, oclUrl}) => fetchConceptByOclUrl(key, oclUrl, undefined, logRowIndex)))
 
     let resolvePromise = Promise.resolve()
     if(toResolve.length) {
@@ -3503,7 +3515,7 @@ const MapProject = () => {
             }
             const base = repoUrl.endsWith('/') ? repoUrl : `${repoUrl}/`
             const conceptUrl = `${base}concepts/${encodeURIComponent(encodeURIComponent(reference.code))}/`
-            await fetchConceptByOclUrl(key, conceptUrl, `$resolveReference -> ${base}`)
+            await fetchConceptByOclUrl(key, conceptUrl, `$resolveReference -> ${base}`, logRowIndex)
           }))
         })
         .catch(() => {
