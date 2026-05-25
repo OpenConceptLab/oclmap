@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  getDefaultTargetRepoVersion,
   getProjectTargetRepoVersion,
   getTargetRepoVersionFromUrl,
   getTargetRepoVersionId,
@@ -37,6 +38,32 @@ test('getProjectTargetRepoVersion returns empty when the project has no pinned v
   assert.equal(
     getProjectTargetRepoVersion({ target_repo_url: '/orgs/Regenstrief/sources/LOINC/' }),
     ''
+  )
+})
+
+test('getDefaultTargetRepoVersion selects the only version transparently', () => {
+  const onlyVersion = { id: '2.81', released: false }
+  assert.deepEqual(getDefaultTargetRepoVersion([onlyVersion]), onlyVersion)
+})
+
+test('getDefaultTargetRepoVersion prefers the only released version', () => {
+  const releasedVersion = { id: '2.81', released: true }
+  assert.deepEqual(
+    getDefaultTargetRepoVersion([
+      { id: 'HEAD', released: false },
+      releasedVersion
+    ]),
+    releasedVersion
+  )
+})
+
+test('getDefaultTargetRepoVersion stays unset when multiple choices remain', () => {
+  assert.equal(
+    getDefaultTargetRepoVersion([
+      { id: 'HEAD', released: false },
+      { id: '2.81', released: false }
+    ]),
+    false
   )
 })
 

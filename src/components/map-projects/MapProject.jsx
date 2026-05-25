@@ -69,7 +69,7 @@ import pick from 'lodash/pick'
 import { OperationsContext } from '../app/LayoutContext';
 
 import APIService, { isTransientNetworkError, retryWithBackoff } from '../../services/APIService';
-import { highlightTexts, dropVersion, getCurrentUser, URIToParentParams, hasAuthGroup, downloadObject, currentUserToken } from '../../common/utils';
+import { highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, downloadObject, currentUserToken } from '../../common/utils';
 import { WHITE, SURFACE_COLORS } from '../../common/colors';
 
 import { useDoubleClick } from '../common/useDoubleClick'
@@ -101,7 +101,7 @@ import AutoMatchDialog from './AutoMatchDialog'
 import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
 import { normalizeAlgorithmInvocation, lookupStatusRank, normalizeLegacyAllCandidates, buildRecommendableConceptEntry, stripConstantClassAndDatatype } from './normalizers'
 import { parseConceptKey } from './conceptKey'
-import { getProjectTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId } from './projectTargetRepo'
+import { getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId } from './projectTargetRepo'
 import { buildQualityRowViews, conceptForMapping, resolveAICandidateID } from './viewBuilders.js'
 
 import './MapProject.scss'
@@ -1962,7 +1962,7 @@ const MapProject = () => {
         const _version = find(_versions, {id: _selectedVersion})
         onRepoVersionChange(_version || false)
       } else {
-        onRepoVersionChange(false)
+        onRepoVersionChange(getDefaultTargetRepoVersion(_versions))
       }
     })
   }
