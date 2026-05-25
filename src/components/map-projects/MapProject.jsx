@@ -2444,7 +2444,18 @@ const MapProject = () => {
       .get(null, null, {includeMappings: true, mappingBrief: true, mapTypes: 'SAME-AS,SAME AS,SAME_AS', verbose: true})
       .then(response => {
         const res = {...response?.data, search_meta: {...matched.search_meta}, repo: {...matched.repo}}
-        setConceptCache({...conceptCache, [url]: res})
+        // Source from the live ref, not closure-captured state. The .then
+        // here is created when onCSVRowSelect runs (on user click); its
+        // closure of `conceptCache` is whatever React state was at click
+        // time, which by fetch-response time is stale relative to any
+        // writeConceptCachePatch / mergeIntoRowMatchState writes that
+        // landed in the interim. Spreading the stale state then
+        // setConceptCache-ing it lets the useEffect at conceptCache state
+        // sync copy that stale value back into the ref, wiping enrichment
+        // for unrelated keys (OpenConceptLab/ocl_issues#2536, PR3-G).
+        const next = {...conceptCacheRef.current, [url]: res}
+        conceptCacheRef.current = next
+        setConceptCache(next)
       })
     setConfigure(false)
     setShowProjectLogs(false)
