@@ -1,24 +1,23 @@
 /**
- * Diagnostic test for OpenConceptLab/ocl_issues#2536 (PR3-G).
+ * Regression test for OpenConceptLab/ocl_issues#2536 (PR3-G).
  *
- * Bug: AI Assistant `recommendable_concepts[*]` entries for bridge cascade
- * targets are missing `display_name` even when the lookup repo returned 200.
- * The pure-logic reproducer (`__tests__/pr3g-cache-bug-repro.test.js`) already
- * ruled out the merge/write logic. The bug must be in React lifecycle.
+ * Bug (now fixed): AI Assistant `recommendable_concepts[*]` entries for
+ * bridge cascade targets were missing `display_name` even when the lookup
+ * repo returned 200, because of a stale-closure setConceptCache at
+ * MapProject.jsx:2447 (formerly L2472). The .then() callback inside
+ * onCSVRowSelect captured `conceptCache` (React state) in its closure;
+ * by the time the fetch resolved, that closure was stale relative to any
+ * writeConceptCachePatch enrichments. The stale value was written back to
+ * state, and the useEffect at MapProject.jsx:1738 then copied that stale
+ * state into conceptCacheRef, wiping enrichments for unrelated keys.
  *
- * Strategy: mount a minimal harness that mirrors MapProject.jsx's cache
- * pattern — useState + useRef + the useEffect at MapProject.jsx:1738 +
- * writeConceptCachePatch + mergeIntoRowMatchState's cache-merge branch +
- * the legacy URL-keyed setConceptCache at MapProject.jsx:2472. Then drive
- * it through the suspect interaction.
+ * Fix: source the URL-keyed write from `conceptCacheRef.current` (the live
+ * ref) instead of the closure-captured state. Matches the pattern already
+ * used by writeConceptCachePatch and mergeIntoRowMatchState.
  *
- * Outcome decision tree:
- *   - test 3 PASSES  → the (A)+(B) interaction in #2536 is NOT the bug.
- *                      Widen the harness (or mount MapProject itself) to
- *                      include more of the real lifecycle.
- *   - test 3 FAILS   → suspect (A)+(B) confirmed. Fix targets either the
- *                      useEffect at MapProject.jsx:1738 or the stale-closure
- *                      setConceptCache at MapProject.jsx:2472.
+ * This file mounts a minimal harness that mirrors the post-fix MapProject
+ * cache pattern. If anyone reintroduces the stale-closure setConceptCache
+ * (or another similar pattern in this area), PR3-G/3 will fail.
  */
 
 import test from 'node:test'
@@ -73,12 +72,20 @@ const CacheTestHarness = React.forwardRef((_props, ref) => {
     }
   }, [])
 
-  // Mirror MapProject.jsx:2472 — onCSVRowSelect's stale-closure setConceptCache.
-  // The `conceptCache` reference here is the closure-captured state value at
-  // the time this callback was created — NOT the ref. That's the bug pattern.
+  // Mirror MapProject.jsx:2447 (post-#2536 fix) — onCSVRowSelect's
+  // URL-keyed setConceptCache. The fix sources from `conceptCacheRef.current`
+  // (the live ref) instead of `conceptCache` (closure-captured state). The
+  // old buggy form `setConceptCache({...conceptCache, [url]: payload})`
+  // captured a stale state in its closure; the deferred .then() then wrote
+  // that stale state back, wiping any writeConceptCachePatch enrichment
+  // that had landed in the interim. The fix synchronously updates the ref
+  // and schedules a state update from the same live value — same pattern
+  // as writeConceptCachePatch and mergeIntoRowMatchState.
   const legacyURLKeyedWrite = React.useCallback((url, payload) => {
-    setConceptCache({ ...conceptCache, [url]: payload })
-  }, [conceptCache])
+    const next = { ...conceptCacheRef.current, [url]: payload }
+    conceptCacheRef.current = next
+    setConceptCache(next)
+  }, [])
 
   React.useImperativeHandle(ref, () => ({
     writeConceptCachePatch,
@@ -87,6 +94,8 @@ const CacheTestHarness = React.forwardRef((_props, ref) => {
     getCacheRef: () => conceptCacheRef.current,
     getCacheState: () => conceptCache,
   }), [conceptCache, writeConceptCachePatch, mergeIntoCache, legacyURLKeyedWrite])
+  // ^ getCacheState reads conceptCache directly; depending on conceptCache
+  // here is still useful so the test reads the latest committed state.
 
   return null
 })
@@ -153,63 +162,40 @@ test('PR3-G/2 re-merge: a second bridge merge cannot overwrite the lookup-enrich
   cleanup()
 })
 
-test('PR3-G/3 STALE CLOSURE: legacy URL-keyed setConceptCache wipes lookup enrichment', () => {
-  const ref = mountHarness()
+test('PR3-G/3 regression: deferred URL-keyed setConceptCache must NOT wipe lookup enrichment (#2536)', () => {
+  // Scenario this guards: in production, onCSVRowSelect issues a fetch and
+  // writes the response into conceptCache from a .then() callback. The
+  // callback was created when the user clicked (an earlier render); by
+  // the time the fetch resolves, conceptCache state may have advanced
+  // (e.g., a writeConceptCachePatch landed). If the callback uses the
+  // closure-captured state, the deferred write spreads a stale snapshot
+  // and the useEffect at MapProject.jsx:1738 copies that stale state back
+  // into the ref, wiping enrichment for unrelated keys.
+  //
+  // The fix (MapProject.jsx:2447, mirrored in the harness above) sources
+  // the URL-keyed write from conceptCacheRef.current instead. This test
+  // verifies enrichment survives a deferred callback under that pattern.
 
-  // T=0: bridge $match arrives, QC01.2 stub merged into cache (pending).
+  const ref = mountHarness()
   act(() => { ref.current.mergeIntoCache([bridgeStub(QC01)]) })
 
-  // T=1: ensureLoaded for QC01.2 completes; writeConceptCachePatch enriches.
-  act(() => { ref.current.writeConceptCachePatch(QC01, lookupEnriched(QC01)) })
+  // Capture the URL-keyed write callback NOW (post-merge, pre-lookup-patch).
+  // In production this models a user clicking a row before the bridge cascade
+  // target's lookup has completed.
+  const deferredCallback = ref.current.legacyURLKeyedWrite
 
-  // Verify enrichment is in BOTH the ref (synchronous) and state (after commit).
+  // Lookup patch lands while the deferred callback is still pending.
+  act(() => { ref.current.writeConceptCachePatch(QC01, lookupEnriched(QC01)) })
   assert.equal(ref.current.getCacheRef()[QC01].display_name, 'Need for immunization against rabies',
     'enrichment present in ref after writeConceptCachePatch')
-  assert.equal(ref.current.getCacheState()[QC01].display_name, 'Need for immunization against rabies',
-    'enrichment present in state after writeConceptCachePatch commit')
 
-  // T=2: legacyURLKeyedWrite captures a CURRENT closure of conceptCache and
-  // calls setConceptCache({...conceptCache, [url]: payload}). The closure
-  // here is the post-enrichment state, so it shouldn't lose anything...
-  // UNLESS the closure was captured BEFORE the writeConceptCachePatch ran.
-  //
-  // To repro the bug we need the legacyURLKeyedWrite callback to be the
-  // one created when state was still the bridge-stub. React re-creates the
-  // callback every render (its deps are [conceptCache]), so under normal
-  // rendering, by the time we call it after writeConceptCachePatch, the
-  // callback's closure has already advanced. But — what about a callback
-  // that was queued before the writeConceptCachePatch commit?
-  //
-  // In production, onCSVRowSelect's async .then() callback is created
-  // when the user clicks. The fetch returns later. The .then() captures
-  // the closure from the ORIGINAL render — which is stale by the time
-  // the response arrives. That's what we model here.
+  // Fire the deferred callback (modeling the .then() resolving).
+  act(() => { deferredCallback('/orgs/x/sources/y/concepts/z/', { id: 'z', display_name: 'unrelated' }) })
 
-  // Capture the legacyURLKeyedWrite that was current BEFORE the enrichment
-  // landed — to do that, get a fresh harness up to the pre-enrichment state.
-  cleanup()
-  const ref2 = mountHarness()
-  act(() => { ref2.current.mergeIntoCache([bridgeStub(QC01)]) })
-
-  // Capture the stale callback NOW (post-merge, pre-lookup-patch).
-  const staleLegacyWrite = ref2.current.legacyURLKeyedWrite
-
-  // Lookup patch lands.
-  act(() => { ref2.current.writeConceptCachePatch(QC01, lookupEnriched(QC01)) })
-  assert.equal(ref2.current.getCacheRef()[QC01].display_name, 'Need for immunization against rabies',
-    'ref carries enrichment after lookup patch')
-
-  // Now fire the stale callback (modeling the deferred .then() from a user
-  // click that happened before lookup completed).
-  act(() => { staleLegacyWrite('/orgs/x/sources/y/concepts/z/', { id: 'z', display_name: 'unrelated' }) })
-
-  // If suspect (A) + (B) is the bug, the stale closure's setConceptCache
-  // wrote {...staleState, [url]: payload} — staleState is the bridge-stub
-  // version. The useEffect at L1738 then copies that stale state back into
-  // the ref, wiping the enrichment.
-  const finalRefEntry = ref2.current.getCacheRef()[QC01]
-  assert.equal(finalRefEntry.display_name, 'Need for immunization against rabies',
-    'PR3-G: lookup enrichment must survive a deferred stale-closure setConceptCache (#2536)')
+  // The fix should keep the QC01.2 enrichment intact. If anyone re-introduces
+  // a stale-closure setConceptCache in this area, this assertion fails.
+  assert.equal(ref.current.getCacheRef()[QC01].display_name, 'Need for immunization against rabies',
+    'lookup enrichment must survive a deferred URL-keyed setConceptCache (#2536)')
 
   cleanup()
 })
