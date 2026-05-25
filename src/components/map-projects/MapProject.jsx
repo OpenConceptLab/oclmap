@@ -4017,7 +4017,7 @@ const MapProject = () => {
               highlights: c.highlights
             }
             if(c.type === 'bridge_child' && c.bridge_concept_key)
-              e.via = {bridge_concept_key: c.bridge_concept_key, map_type: c.map_type}
+              e.via = {bridge_concept_key: c.bridge_concept_key, bridge_map_type: c.map_type}
             return e
           })
         recommendable_concepts.push(buildRecommendableConceptEntry({
