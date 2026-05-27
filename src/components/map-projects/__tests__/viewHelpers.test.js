@@ -189,26 +189,15 @@ test('resolveAICandidateID: concept_key resolves via conceptCache (preferred)', 
   }
   const candidate = {
     concept_key: 'k1',
-    canonical_reference: { code: 'WRONG' },  // should be ignored when concept_key works
-    concept_id: 'ALSO-WRONG'
+    canonical_reference: { code: 'WRONG' }  // should be ignored when concept_key works
   }
   assert.equal(resolveAICandidateID(candidate, cache), '49494-3')
 })
 
-test('resolveAICandidateID: falls back to canonical_reference.code when concept_key is absent (PR2a shim)', () => {
+test('resolveAICandidateID: falls back to canonical_reference.code when concept_key is absent', () => {
   const cache = {}
-  const candidate = { canonical_reference: { code: '49494-3' }, concept_id: 'LEGACY' }
+  const candidate = { canonical_reference: { code: '49494-3' } }
   assert.equal(resolveAICandidateID(candidate, cache), '49494-3')
-})
-
-test('resolveAICandidateID: falls back to concept_id when v2 fields are absent (legacy v1)', () => {
-  const candidate = { concept_id: '49494-3' }
-  assert.equal(resolveAICandidateID(candidate, {}), '49494-3')
-})
-
-test('resolveAICandidateID: falls back to id when concept_id absent', () => {
-  const candidate = { id: '49494-3' }
-  assert.equal(resolveAICandidateID(candidate, {}), '49494-3')
 })
 
 test('resolveAICandidateID: concept_key present but not in cache falls through to canonical_reference', () => {

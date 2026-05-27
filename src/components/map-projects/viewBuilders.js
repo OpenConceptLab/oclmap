@@ -337,12 +337,11 @@ export const getScoreDetails = (input = {}, candidatesScore = {}) => {
  * Resolve an AI Assistant primary_candidate / alternative_candidate to a
  * displayable concept code. Resolution order:
  *   1. concept_key -> conceptCache[key].reference.code (v2, preferred)
- *   2. canonical_reference.code (v2 fallback, PR2a shim)
- *   3. concept_id / id (legacy v1)
+ *   2. canonical_reference.code (v2 fallback)
  */
 export const resolveAICandidateID = (candidate, conceptCache) => {
   if(!candidate) return null
   if(candidate.concept_key && conceptCache?.[candidate.concept_key]?.reference?.code)
     return conceptCache[candidate.concept_key].reference.code
-  return candidate.canonical_reference?.code || candidate.concept_id || candidate.id || null
+  return candidate.canonical_reference?.code || null
 }
