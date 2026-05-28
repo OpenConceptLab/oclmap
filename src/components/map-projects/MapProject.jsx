@@ -736,7 +736,7 @@ const MapProject = () => {
       const rawAnalysis = response.data?.analysis || {}
       setAnalysis(Object.fromEntries(Object.entries(rawAnalysis).map(([k, v]) => [k, Array.isArray(v) ? v : [v]])))
       setProject(response.data)
-      setConfigure(Boolean(!loadProjectContext))
+      setConfigure(false)
     })
   }
 
