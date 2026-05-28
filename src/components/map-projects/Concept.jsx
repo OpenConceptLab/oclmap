@@ -31,7 +31,7 @@ const formatBridgeContributor = (entry) => {
 const MAP_TYPE_CHIP_SX = {
   height: '18px',
   borderRadius: '4px',
-  margin: '0 6px',
+  margin: '0 6px 0 0',
   verticalAlign: 'baseline',
   '.MuiChip-label': {
     padding: '0 6px',
@@ -197,7 +197,8 @@ const Item = ({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition
             }
           </div>
         }
-        sx={{margin: '2px 0', '.MuiListItemText-primary': {fontSize: '14px'}, '.MuiListItemText-secondary': {fontSize: '12px', overflow: 'scroll'}}}
+        slotProps={{secondary: {component: 'div'}}}
+        sx={{margin: '2px 0', '.MuiListItemText-primary': {fontSize: '14px'}, '.MuiListItemText-secondary': {fontSize: '12px'}}}
       />
       <span style={{display: 'flex', alignItems: 'flex-start'}}>
         {
