@@ -13,7 +13,6 @@ import Paper from '@mui/material/Paper'
 import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
 import Typography from '@mui/material/Typography';
-import Dialog from '@mui/material/Dialog';
 import IconButton from '@mui/material/IconButton'
 import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
@@ -74,9 +73,8 @@ import { WHITE, SURFACE_COLORS } from '../../common/colors';
 
 import { useDoubleClick } from '../common/useDoubleClick'
 import CloseIconButton from '../common/CloseIconButton';
-import SearchHighlightsDialog from '../search/SearchHighlightsDialog'
-import ConceptHome from '../concepts/ConceptHome'
-import DraggablePaperComponent from '../common/DraggablePaperComponent'
+import ConceptDetailsPanel from './ConceptDetailsPanel'
+import { buildPanelPayload } from './openConceptPanel'
 import LoaderDialog from '../common/LoaderDialog'
 import Error403 from '../errors/Error403'
 import { HEADERS, SEMANTIC_SEARCH_HEADERS, ROW_STATES, VIEWS, DECISION_TABS, ROW_STAGES, PROMPTS_KEY_DEFAULT, PROMPTS_ACTION_TYPE_DEFAULT } from './constants'
@@ -214,7 +212,6 @@ const MapProject = () => {
   const [scoreBucketSortBy, setScoreBucketSortBy] = React.useState('desc')
 
   const [matchDialog, setMatchDialog] = React.useState(false)
-  const [showHighlights, setShowHighlights] = React.useState(false)
   const [showItem, setShowItem] = React.useState(false)
   const [autoMatchUnmappedOnly, setAutoMatchUnmappedOnly] = React.useState(true)
   const [autoRunAIAnalysis, setAutoRunAIAnalysis] = React.useState(false)
@@ -2378,7 +2375,7 @@ const MapProject = () => {
 
   const onCloseDecisions = () => {
     setRow(false)
-    setShowHighlights(false)
+    setShowItem(false)
     setSearchStr('')
   }
 
@@ -3117,22 +3114,49 @@ const MapProject = () => {
 
   const getAllCandidatesForRow = index => flatten(map(derivedAllCandidates(), candidates => getCandidatesForRow(index, candidates)))
 
-  const getRawScoresForConcept = (index, concept) => {
-    if(!concept || !isNumber(index))
-      return []
+  // Build the ConceptDetailsPanel payload using current-row context: looks
+  // up the concept in this row's quality views to enrich with multi-algo
+  // contributingAlgorithms + bridgeContributors, surfaces the cross-row
+  // chip when a Search-tab click matches the current row's candidates, and
+  // wires in AI recommendation flags when the caller provides them.
+  // Source-row identity ("ID: name") for the cross-tab "Also a candidate for X"
+  // chip — derived the same way MappingDecisionResult shows the row's Source Code
+  // (getLeftTitle), so the chip names the row with the identity the user already
+  // sees. Looked up by __index (the grid's stable row id) with a positional
+  // fallback; returns undefined when there's no active row.
+  const getCurrentRowSourceCode = () => {
+    if(!isNumber(rowIndex) || !data) return undefined
+    const sourceRow = find(data, {__index: rowIndex}) || data[rowIndex]
+    if(!sourceRow) return undefined
+    const valueFor = field => {
+      const col = find(columns, c => c?.label?.toLowerCase() === field.toLowerCase())
+      let val
+      if(col?.dataKey) val = sourceRow[col.dataKey]
+      if(!val) val = get(sourceRow, field) || get(sourceRow, field.toLowerCase())
+      return val
+    }
+    const id = valueFor('ID')
+    const name = valueFor('name') || valueFor('synonyms')
+    if(id && name) return `${id}: ${name}`
+    return id || name || undefined
+  }
 
-    return compact(map(derivedAllCandidates(), (candidates, algorithm) => {
-      const rowCandidates = getCandidatesForRow(index, candidates)
-      const matchingConcept = find(
-        rowCandidates,
-        candidate => candidate?.url === concept?.url || (
-          candidate?.id === concept?.id &&
-          (candidate?.source || candidate?.repo?.id || candidate?.repo?.short_code) === (concept?.source || concept?.repo?.id || concept?.repo?.short_code)
-        )
-      )
-      const score = parseFloat(matchingConcept?.search_meta?.search_score)
-      return Number.isFinite(score) ? {algorithm, score: score.toFixed(2)} : null
-    }))
+  const openConceptPanel = (concept, options = {}) => {
+    if(!concept) {
+      setShowItem(false)
+      return
+    }
+    const payload = buildPanelPayload({
+      concept,
+      rowMatchState: isNumber(rowIndex) ? rowMatchStateRef.current[rowIndex] : null,
+      conceptCache: conceptCacheRef.current,
+      currentRowCode: options.currentRowCode || getCurrentRowSourceCode(),
+      AIRecommendedCandidateId: options.AIRecommendedCandidateId,
+      AIAlternateCandidateIds: options.AIAlternateCandidateIds,
+      initialTab: options.initialTab,
+      fromCrossTab: options.fromCrossTab,
+    })
+    setShowItem(payload || false)
   }
 
   const fromScispacyResultsToConcepts = results => {
@@ -4508,7 +4532,6 @@ const MapProject = () => {
                   conceptCache={conceptCache}
                   candidatesScore={candidatesScore}
                   targetConcept={targetConcept}
-                  setShowHighlights={setShowHighlights}
                   repoVersion={repoVersion}
                   row={row}
                   rowIndex={rowIndex}
@@ -4518,7 +4541,7 @@ const MapProject = () => {
                   onMap={onMap}
                   proposed={proposed[rowIndex]}
                   columns={columns}
-                  onTargetClick={setShowItem}
+                  openConceptPanel={openConceptPanel}
                 />
                 <Divider sx={{width: '100%'}} />
                 <DecisionSelector
@@ -4591,9 +4614,8 @@ const MapProject = () => {
                       conceptCache={conceptCache}
                       targetCanonical={buildProjectContext()?.target_repo?.canonical_url}
                       targetRelativeUrl={buildProjectContext()?.target_repo?.relative_url}
-                      setShowItem={setShowItem}
+                      openConceptPanel={openConceptPanel}
                       showItem={showItem}
-                      setShowHighlights={setShowHighlights}
                       isSelectedForMap={isSelectedForMap}
                       onMap={onMap}
                       isLoading={isLoadingInDecisionView}
@@ -4632,7 +4654,7 @@ const MapProject = () => {
                       repoVersion={repoVersion}
                       concepts={searchedConcepts[rowIndex]}
                       response={searchResponse}
-                      setShowItem={setShowItem}
+                      openConceptPanel={openConceptPanel}
                       showItem={showItem}
                       isSelectedForMap={isSelectedForMap}
                       onMap={onMap}
@@ -4656,13 +4678,6 @@ const MapProject = () => {
                     <Discuss logs={logs[rowIndex]} onAdd={comment => comment ? log({action: 'commented', description: comment}) : null} />
                 }
               </div>
-              <SearchHighlightsDialog
-                open={Boolean(showHighlights)}
-                onClose={() => setShowHighlights(false)}
-                concept={showHighlights}
-                rawScores={getRawScoresForConcept(rowIndex, showHighlights)}
-                candidatesScore={candidatesScore}
-              />
             </> :
               <ProjectLogs open={showProjectLogs} onClose={() => setShowProjectLogs(false) } logs={projectLogs} project={project} />
           )
@@ -4673,36 +4688,18 @@ const MapProject = () => {
         deleteProject && project?.id &&
           <MapProjectDeleteConfirmDialog open={deleteProject} onClose={() => setDeleteProject(false)} project={project} />
       }
-      {
-        showItem?.id &&
-          <Dialog
-            PaperComponent={DraggablePaperComponent}
-            aria-labelledby="draggable-dialog-title"
-            disableEscapeKeyDown
-            open
-            onClose={() => setShowItem(false)}
-            scroll='paper'
-            maxWidth='sm'
-            fullWidth
-            sx={{
-              '& .MuiDialog-paper': {
-                borderRadius: '28px',
-                padding: 0,
-              }
-            }}
-          >
-            <ConceptHome
-              style={{borderRadius: 0}}
-              detailsStyle={{height: 'calc(100vh - 400px)'}}
-              repo={showItem.source === (repoVersion?.short_code || repoVersion?.id) ? repoVersion : null}
-              url={showItem.url}
-              concept={showItem}
-              onClose={() => setShowItem(false)}
-              onMap={onMap}
-              isSelectedForMap={isSelectedForMap}
-            />
-          </Dialog>
-      }
+      <ConceptDetailsPanel
+        payload={showItem}
+        onClose={() => setShowItem(false)}
+        onMap={onMap}
+        isSelectedForMap={isSelectedForMap}
+        candidatesScore={candidatesScore}
+        repoVersion={repoVersion}
+        effectiveLocales={[
+          ...(inputLocale ? [inputLocale] : []),
+          ...((filters?.locale || '').split(',').map(s => s.trim()).filter(Boolean))
+        ]}
+      />
 
       <ImportToCollection
         onImport={onImport}

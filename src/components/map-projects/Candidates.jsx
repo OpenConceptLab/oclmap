@@ -195,7 +195,7 @@ const SubHeader = ({count, onClick, isCollapsed, header, indicatorColor, indicat
 }
 
 
-const CandidateList = ({rowViews, header, rowIndex, sortBy, order, setShowItem, showItem, setShowHighlights, isSelectedForMap, onMap, onFetchMore, bgColor, headerIndicatorIcon, bucketId, display, onDisplayChange, noToolbar, toolbarControl, repoVersion, alignToolbarLeft, rightControl, analysis, showAnalysis, openAnalysis, onCloseAnalysis, isInProgress, AIRecommendedCandidateId, AIAlternateCandidateIds, locales, scispacy, showAlgo, collapsed, onCollapse, candidatesScore, algoScoreFirst, byAlgorithm, showEmptyHeader, isFirst, isCoreUser, targetCanonical, targetRelativeUrl, analysisPage, setAnalysisPage}) => {
+const CandidateList = ({rowViews, header, rowIndex, sortBy, order, openConceptPanel, showItem, isSelectedForMap, onMap, onFetchMore, bgColor, headerIndicatorIcon, bucketId, display, onDisplayChange, noToolbar, toolbarControl, repoVersion, alignToolbarLeft, rightControl, analysis, showAnalysis, openAnalysis, onCloseAnalysis, isInProgress, AIRecommendedCandidateId, AIAlternateCandidateIds, locales, scispacy, showAlgo, collapsed, onCollapse, candidatesScore, algoScoreFirst, byAlgorithm, showEmptyHeader, isFirst, isCoreUser, targetCanonical, targetRelativeUrl, analysisPage, setAnalysisPage}) => {
   // Decorate rowViews so they work for BOTH renderers:
   //   - Table view: SearchResults/TableResults reads legacy concept fields
   //     (id, url, names, descriptions, source, search_meta, ...) via the
@@ -333,13 +333,31 @@ const CandidateList = ({rowViews, header, rowIndex, sortBy, order, setShowItem, 
         renderer={props => {
           const rowView = props?.concept
           const key = `${bucketId}-${rowView?.candidate?.id || rowView?.conceptDefinition?.key}-${Math.random(100).toString()}`
+          // Bypass SearchResults.handleRowClick row-id lookup — rowViews
+          // don't carry top-level url/version_url/id, so its find returns
+          // false and would close the panel. Pass the rowView straight to
+          // openConceptPanel.
+          const onCardClick = openConceptPanel
+            ? (event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                openConceptPanel(rowView, {
+                  AIRecommendedCandidateId,
+                  AIAlternateCandidateIds,
+                })
+                setTimeout(() => {
+                  highlightTexts([rowView?.conceptDefinition], null, false)
+                }, 100)
+              }
+            : props.onCardClick
           return <Concept
             {...props}
             _id={`${bucketId}-${rowView?.candidate?.id || rowView?.conceptDefinition?.key}`}
             key={key}
+            onCardClick={onCardClick}
             onMap={onMap}
             isSelectedForMap={isSelectedForMap}
-            setShowHighlights={setShowHighlights}
+            openConceptPanel={openConceptPanel}
             repoVersion={repoVersion}
             AIRecommendedCandidateId={AIRecommendedCandidateId}
             AIAlternateCandidateIds={AIAlternateCandidateIds}
@@ -366,9 +384,12 @@ const CandidateList = ({rowViews, header, rowIndex, sortBy, order, setShowItem, 
         rightControl={rightControl}
         orderBy={sortBy}
         order={order}
-        resultContainerStyle={{height: 'auto', '.MuiTable-root': {tableLayout: 'fixed'}}}
+        resultContainerStyle={{height: 'auto'}}
         onShowItemSelect={rowView => {
-          setShowItem(conceptForMapping(rowView))
+          openConceptPanel(rowView, {
+            AIRecommendedCandidateId,
+            AIAlternateCandidateIds,
+          })
           setTimeout(() => {
             highlightTexts([rowView?.conceptDefinition], null, false)
           }, 100)
@@ -390,7 +411,7 @@ const CandidateList = ({rowViews, header, rowIndex, sortBy, order, setShowItem, 
 //   conceptCache — project-wide ConceptDefinition store, keyed by concept_key.
 //   algosSelected — algorithm definitions (for headers/grouping).
 // (plans/unified-mapper-model.md "How the views map onto this model".)
-const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCanonical, targetRelativeUrl, setShowItem, showItem, setShowHighlights, isSelectedForMap, onMap, onFetchMore, isLoading, candidatesScore, repoVersion, analysis, onFetchRecommendation, appliedFacets, setAppliedFacets, filters, facets, columns, defaultFilters, locales, models, selectedModel, onModelChange, promptTemplates, promptTemplate, onPromptTemplateChange, onRefreshClick, rowStage, inAIAssistantGroup, algosSelected, isCoreUser}) => {
+const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCanonical, targetRelativeUrl, openConceptPanel, showItem, isSelectedForMap, onMap, onFetchMore, isLoading, candidatesScore, repoVersion, analysis, onFetchRecommendation, appliedFacets, setAppliedFacets, filters, facets, columns, defaultFilters, locales, models, selectedModel, onModelChange, promptTemplates, promptTemplate, onPromptTemplateChange, onRefreshClick, rowStage, inAIAssistantGroup, algosSelected, isCoreUser}) => {
   const { t } = useTranslation();
   const [sortBy, setSortBy] = React.useState('rerank_score')
   const [groupBy, setGroupBy] = React.useState('quality')
@@ -475,10 +496,9 @@ const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCa
     rowIndex: rowIndex,
     onMap: onMap,
     isSelectedForMap: isSelectedForMap,
-    setShowHighlights: setShowHighlights,
+    openConceptPanel: openConceptPanel,
     sortBy: sortBy,
     order: order,
-    setShowItem: setShowItem,
     showItem: showItem,
     isLoading: isLoading,
     display: display,

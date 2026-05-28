@@ -13,7 +13,7 @@ import ExternalIdLabel from '../common/ExternalIdLabel'
 
 const borderColor = 'rgba(0, 0, 0, 0.12)'
 
-const ConceptDetails = ({ concept, repo, mappings, reverseMappings, loading, loadingOwnerMappings, ownerMappings, reverseOwnerMappings, onLoadOwnerMappings, style }) => {
+const ConceptDetails = ({ concept, repo, mappings, reverseMappings, loading, loadingOwnerMappings, ownerMappings, reverseOwnerMappings, onLoadOwnerMappings, style, effectiveLocales, linkedConceptUrls, linkedConceptLabel }) => {
   const { t } = useTranslation()
   const updatedBy = concept?.version_updated_by || concept?.updated_by
   return (
@@ -32,20 +32,34 @@ const ConceptDetails = ({ concept, repo, mappings, reverseMappings, loading, loa
       {
           Boolean(concept.names?.length) &&
             <div className='col-xs-12 padding-0' style={{marginTop: '16px'}}>
-              <Locales concept={concept} locales={concept.names} title={t('concept.name_and_synonyms')} repo={repo} />
+              <Locales
+                concept={concept}
+                locales={concept.names}
+                title={t('concept.name_and_synonyms')}
+                repo={repo}
+                effectiveLocales={effectiveLocales}
+                collapsible
+              />
             </div>
       }
       {
         Boolean(concept.descriptions?.length) &&
           <div className='col-xs-12 padding-0' style={{marginTop: '16px'}}>
-            <Locales concept={concept} locales={concept.descriptions} title={t('concept.descriptions')} repo={repo} />
+            <Locales
+              concept={concept}
+              locales={concept.descriptions}
+              title={t('concept.descriptions')}
+              repo={repo}
+              effectiveLocales={effectiveLocales}
+              collapsible
+            />
           </div>
       }
       <div className='col-xs-12 padding-0' style={{marginTop: '16px'}}>
         {
           loading ?
           <Skeleton variant="rounded" width='100%' height={120} sx={{borderRadius: '10px'}} /> :
-          <Associations concept={concept} mappings={mappings} reverseMappings={reverseMappings} ownerMappings={ownerMappings} reverseOwnerMappings={reverseOwnerMappings} onLoadOwnerMappings={onLoadOwnerMappings} loadingOwnerMappings={loadingOwnerMappings} />
+          <Associations concept={concept} mappings={mappings} reverseMappings={reverseMappings} ownerMappings={ownerMappings} reverseOwnerMappings={reverseOwnerMappings} onLoadOwnerMappings={onLoadOwnerMappings} loadingOwnerMappings={loadingOwnerMappings} linkedConceptUrls={linkedConceptUrls} linkedConceptLabel={linkedConceptLabel} />
         }
       </div>
       <div className='col-xs-12 padding-0' style={{marginTop: '32px'}}>

@@ -5,7 +5,6 @@ import Skeleton from '@mui/material/Skeleton';
 import APIService from '../../services/APIService';
 import { toParentURI } from '../../common/utils'
 import ConceptHeader from './ConceptHeader';
-import ConceptTabs from './ConceptTabs';
 import ConceptForm from './ConceptForm'
 import ConceptDetails from './ConceptDetails'
 
@@ -16,7 +15,6 @@ const ConceptHome = props => {
   const [concept, setConcept] = React.useState(props.concept || {})
 
   const [repo, setRepo] = React.useState(props.repo || {})
-  const [tab, setTab] = React.useState('metadata')
   const [edit, setEdit] = React.useState(false)
 
   const [loading, setLoading] = React.useState(false)
@@ -170,25 +168,42 @@ const ConceptHome = props => {
           {
             !edit &&
               <>
-                <div className='col-xs-12 padding-0'>
-                  <ConceptHeader concept={concept} onClose={props.onClose} repoURL={getRepoURL()} onEdit={onEdit} repo={repo} nested={props.nested} loading={loading} onMap={props.onMap} isSelectedForMap={props.isSelectedForMap} />
-                </div>
-                <ConceptTabs tab={tab} onTabChange={(event, newTab) => setTab(newTab)} loading={loading} />
                 {
-                  tab === 'metadata' &&
-                    <ConceptDetails
-                      style={props.detailsStyle}
-                      concept={concept}
-                      repo={repo}
-                      mappings={mappings}
-                      reverseMappings={reverseMappings}
-                      loading={loading}
-                      ownerMappings={ownerMappings}
-                      reverseOwnerMappings={reverseOwnerMappings}
-                      loadingOwnerMappings={loadingOwnerMappings}
-                      onLoadOwnerMappings={() => getOwnerMappings(concept)}
-                    />
+                  !props.hideHeader &&
+                    <div className='col-xs-12 padding-0'>
+                      <ConceptHeader
+                        concept={concept}
+                        onClose={props.onClose}
+                        repoURL={getRepoURL()}
+                        onEdit={onEdit}
+                        repo={repo}
+                        nested={props.nested}
+                        loading={loading}
+                        onMap={props.onMap}
+                        isSelectedForMap={props.isSelectedForMap}
+                        aiRecommended={props.aiRecommended}
+                        aiAlternate={props.aiAlternate}
+                        crossRowCode={props.crossRowCode}
+                        hideClose={props.hideClose}
+                        hideDragHandle={props.hideDragHandle}
+                      />
+                    </div>
                 }
+                <ConceptDetails
+                  style={props.detailsStyle}
+                  concept={concept}
+                  repo={repo}
+                  mappings={mappings}
+                  reverseMappings={reverseMappings}
+                  loading={loading}
+                  ownerMappings={ownerMappings}
+                  reverseOwnerMappings={reverseOwnerMappings}
+                  loadingOwnerMappings={loadingOwnerMappings}
+                  onLoadOwnerMappings={() => getOwnerMappings(concept)}
+                  effectiveLocales={props.effectiveLocales}
+                  linkedConceptUrls={props.linkedConceptUrls}
+                  linkedConceptLabel={props.linkedConceptLabel}
+                />
               </>
           }
         </div>

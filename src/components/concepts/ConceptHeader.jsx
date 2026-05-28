@@ -4,15 +4,21 @@ import has from 'lodash/has';
 import Typography from '@mui/material/Typography'
 import Skeleton from '@mui/material/Skeleton';
 import Button from '@mui/material/Button';
+import Chip from '@mui/material/Chip';
+import IconButton from '@mui/material/IconButton';
+import Tooltip from '@mui/material/Tooltip';
+import Stack from '@mui/material/Stack';
 import DownIcon from '@mui/icons-material/ArrowDropDown';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import AssistantIcon from '@mui/icons-material/Assistant';
 import CloseIconButton from '../common/CloseIconButton';
-import { toOwnerURI, currentUserHasAccess } from '../../common/utils';
+import { toOwnerURI, toV3URL, currentUserHasAccess } from '../../common/utils';
 import Breadcrumbs from '../common/Breadcrumbs'
 import { BLACK } from '../../common/colors'
 import ConceptManagementList from './ConceptManagementList'
 import MapButton from '../map-projects/MapButton'
 
-const ConceptHeader = ({concept, repo, onClose, repoURL, onEdit, nested, loading, onMap, isSelectedForMap}) => {
+const ConceptHeader = ({concept, repo, onClose, repoURL, onEdit, nested, loading, onMap, isSelectedForMap, aiRecommended, aiAlternate, crossRowCode, hideClose, hideDragHandle}) => {
   const { t } = useTranslation()
   const [menu, setMenu] = React.useState(false)
   const [menuAnchorEl, setMenuAnchorEl] = React.useState(false)
@@ -32,10 +38,16 @@ const ConceptHeader = ({concept, repo, onClose, repoURL, onEdit, nested, loading
     }
   }
 
+  const termBrowserUrl = concept?.url ? toV3URL(`/#${concept.url}`) : null
+  const headerWrapperStyle = hideDragHandle
+    ? {}
+    : {cursor: 'move'}
+  const headerWrapperId = hideDragHandle ? undefined : 'draggable-dialog-title'
+
   return (
-    <div className='col-xs-12 padding-0' style={{cursor: 'move'}} id='draggable-dialog-title'>
+    <div className='col-xs-12 padding-0' style={headerWrapperStyle} id={headerWrapperId}>
       <div className='col-xs-12 padding-0' style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
-        <span style={{width: 'calc(100% - 40px)'}}>
+        <span style={{width: hideClose ? '100%' : 'calc(100% - 80px)'}}>
           {
             !concept?.source ?
               <Skeleton variant='text' sx={{fontSize: '22px', width: '50px'}} />:
@@ -53,8 +65,25 @@ const ConceptHeader = ({concept, repo, onClose, repoURL, onEdit, nested, loading
             />
           }
         </span>
-        <span>
-          <CloseIconButton color='secondary' onClick={onClose} />
+        <span style={{display: 'flex', alignItems: 'center'}}>
+          {
+            termBrowserUrl && (
+              <Tooltip title={t('concept.open_in_term_browser')}>
+                <IconButton
+                  size='small'
+                  color='secondary'
+                  href={termBrowserUrl}
+                  target='_blank'
+                  rel='noopener noreferrer'
+                  sx={{marginRight: hideClose ? 0 : '4px'}}
+                  aria-label={t('concept.open_in_term_browser')}
+                >
+                  <OpenInNewIcon fontSize='small' />
+                </IconButton>
+              </Tooltip>
+            )
+          }
+          {!hideClose && <CloseIconButton color='secondary' onClick={onClose} />}
         </span>
       </div>
     <div className='col-xs-12' style={{padding: '0px'}}>
@@ -78,6 +107,46 @@ const ConceptHeader = ({concept, repo, onClose, repoURL, onEdit, nested, loading
       </span>
     }
     </div>
+      {
+        (aiRecommended || aiAlternate || crossRowCode) && (
+          // Chip row sits BELOW the display name (and above the Properties
+          // panel) so the breadcrumb + title read as one unit. `clear`/`width`
+          // are required because the title row above is a Bootstrap `col-xs-12`
+          // (float: left, full width); without clearing, this non-floated row
+          // gets squeezed into the zero-width gap beside that float and collapses.
+          <Stack direction='row' spacing={0.75} sx={{clear: 'both', width: '100%', marginTop: '8px', flexWrap: 'wrap'}}>
+            {
+              aiRecommended &&
+                <Chip
+                  size='small'
+                  color='primary'
+                  variant='outlined'
+                  icon={<AssistantIcon fontSize='small' />}
+                  label={t('map_project.ai_recommended')}
+                />
+            }
+            {
+              !aiRecommended && aiAlternate &&
+                <Chip
+                  size='small'
+                  color='warning'
+                  variant='outlined'
+                  icon={<AssistantIcon fontSize='small' />}
+                  label={t('map_project.ai_alternate')}
+                />
+            }
+            {
+              crossRowCode &&
+                <Chip
+                  size='small'
+                  color='secondary'
+                  variant='outlined'
+                  label={t('concept.also_candidate_for', {code: crossRowCode})}
+                />
+            }
+          </Stack>
+        )
+      }
     {
       false && currentUserHasAccess() && repo?.version === 'HEAD' && has(repo, 'source_type') && !loading &&
       <div className='col-xs-12 padding-0' style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
