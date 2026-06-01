@@ -20,6 +20,14 @@ const values = obj => Object.values(obj || {})
 const isNumber = v => typeof v === 'number' && !Number.isNaN(v)
 const uniq = arr => [...new Set(arr || [])]
 const displayIdentityOf = def => `${def?.reference?.url || ''}::${def?.id || def?.reference?.code || ''}`
+const normalizeRelativeUrl = (url) => {
+  if(typeof url !== 'string' || url === '') return ''
+  return url.endsWith('/') ? url : `${url}/`
+}
+const normalizeCanonicalUrl = (url) => {
+  if(typeof url !== 'string') return ''
+  return url.endsWith('/') ? url : `${url}/`
+}
 const toNumberOrNull = (v) => {
   if(isNumber(v)) return v
   if(typeof v === 'string' && v.trim() !== '') {
@@ -27,6 +35,19 @@ const toNumberOrNull = (v) => {
     if(!Number.isNaN(parsed)) return parsed
   }
   return null
+}
+
+const canonicalUrlsEqual = (left, right) => (
+  normalizeCanonicalUrl(left) !== '' &&
+  normalizeCanonicalUrl(left) === normalizeCanonicalUrl(right)
+)
+
+export const conceptBelongsToTargetRepo = (conceptDefinition, targetCanonical, targetRelativeUrl) => {
+  if(!conceptDefinition) return false
+  if(canonicalUrlsEqual(conceptDefinition?.reference?.url, targetCanonical)) return true
+  const relativeUrl = normalizeRelativeUrl(targetRelativeUrl)
+  const oclUrl = conceptDefinition?.ocl_url || ''
+  return relativeUrl !== '' && typeof oclUrl === 'string' && oclUrl.startsWith(relativeUrl)
 }
 
 /**

@@ -102,7 +102,7 @@ import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
 import { normalizeAlgorithmInvocation, lookupStatusRank, buildRecommendableConceptEntry, stripConstantClassAndDatatype } from './normalizers'
 import { parseConceptKey } from './conceptKey'
 import { getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId } from './projectTargetRepo'
-import { buildQualityRowViews, conceptForMapping, resolveAICandidateID } from './viewBuilders.js'
+import { buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, resolveAICandidateID } from './viewBuilders.js'
 
 import './MapProject.scss'
 import '../common/ResizablePanel.scss'
@@ -1404,15 +1404,17 @@ const MapProject = () => {
   const pickTopRowView = (rowIndex) => {
     const rowState = rowMatchStateRef.current[rowIndex]
     if(!rowState) return null
-    const targetCanonical = buildProjectContext()?.target_repo?.canonical_url
-    if(!targetCanonical) return null
+    const targetRepo = buildProjectContext()?.target_repo
+    const targetCanonical = targetRepo?.canonical_url
+    const targetRelativeUrl = targetRepo?.relative_url
+    if(!targetCanonical && !targetRelativeUrl) return null
     const views = buildQualityRowViews(rowState, conceptCacheRef.current)
     // Auto-match must land on a target-repo concept. Bridge intermediaries
     // are excluded — even if their rerank_score is high, they're not
     // mappable. Score view already places bridge_child rows under the
     // target concept's ConceptRow, so filtering by canonical_url here is
     // the right invariant.
-    const eligible = views.filter(v => v.conceptDefinition?.reference?.url === targetCanonical)
+    const eligible = views.filter(v => conceptBelongsToTargetRepo(v.conceptDefinition, targetCanonical, targetRelativeUrl))
     if(!eligible.length) return null
     return orderBy(eligible, [v => v.conceptRow?.rerank_score ?? -1], ['desc'])[0]
   }
@@ -3854,7 +3856,7 @@ const MapProject = () => {
           score: bridgeCandidate?.score,
           target_concept_keys
         })
-      } else if(def.reference?.url === targetCanonical) {
+      } else if(conceptBelongsToTargetRepo(def, targetCanonical, projectContext.target_repo.relative_url)) {
         // Target-repo concepts only. Evidence shows which algorithms surfaced
         // this concept (and via which bridge, if applicable).
         const evidence = allNormCandidates
@@ -4588,6 +4590,7 @@ const MapProject = () => {
                       rowState={rowMatchStateRef.current[rowIndex]}
                       conceptCache={conceptCache}
                       targetCanonical={buildProjectContext()?.target_repo?.canonical_url}
+                      targetRelativeUrl={buildProjectContext()?.target_repo?.relative_url}
                       setShowItem={setShowItem}
                       showItem={showItem}
                       setShowHighlights={setShowHighlights}
