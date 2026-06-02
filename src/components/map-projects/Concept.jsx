@@ -13,7 +13,7 @@ import Retired from '../common/Retired'
 import Score from './Score'
 import MapButton from './MapButton'
 import ConceptSummaryProperties from '../concepts/ConceptSummaryProperties'
-import { conceptForMapping } from './viewBuilders.js'
+import { conceptBelongsToTargetRepo, conceptForMapping } from './viewBuilders.js'
 
 // Format a contributor descriptor for the convergence tooltip:
 //   "via CIEL:1234 Activated partial thromboplastin time — SAME-AS"
@@ -308,7 +308,7 @@ const legacyToRowView = (legacy) => {
 // Legacy callers (Target Code column, decision tables, search results)
 // pass a flat concept-shape object instead — legacyToRowView wraps those
 // so a single render path covers both worlds while PR3 cleanup is pending.
-const Concept = ({_id, firstChild, lastChild, concept, setShowHighlights, isShown, onCardClick, onMap, isSelectedForMap, noScore, repoVersion, isAIRecommended, sx, notClickable, noSynonymPrefix, locales, showAlgo, candidatesScore, algoScoreFirst, asTarget, AIRecommendedCandidateId, AIAlternateCandidateIds, targetCanonical}) => {
+const Concept = ({_id, firstChild, lastChild, concept, setShowHighlights, isShown, onCardClick, onMap, isSelectedForMap, noScore, repoVersion, isAIRecommended, sx, notClickable, noSynonymPrefix, locales, showAlgo, candidatesScore, algoScoreFirst, asTarget, AIRecommendedCandidateId, AIAlternateCandidateIds, targetCanonical, targetRelativeUrl}) => {
   const rowView = concept?.conceptDefinition ? concept : legacyToRowView(concept)
   if(!rowView?.conceptDefinition) return null
   const { type, candidate, conceptDefinition, conceptRow, bridgeConceptDefinition, bridgeChildren, bridgeContributors, contributingAlgorithmIds, contributingAlgorithms } = rowView
@@ -317,7 +317,8 @@ const Concept = ({_id, firstChild, lastChild, concept, setShowHighlights, isShow
   // mappable themselves — they're reference metadata about the cascade.
   // Pass isSelectedForMap=false to Item so it renders the placeholder
   // spacer instead of a MapButton.
-  const isMappable = !targetCanonical || conceptDefinition?.reference?.url === targetCanonical
+  const isMappable = (!targetCanonical && !targetRelativeUrl)
+    || conceptBelongsToTargetRepo(conceptDefinition, targetCanonical, targetRelativeUrl)
   const effectiveIsSelectedForMap = isMappable ? isSelectedForMap : false
   const idForUI = conceptDefinition.ocl_url || conceptDefinition.id || conceptDefinition.reference?.code
   const isSelectedToShow = isShown ? isShown(idForUI) : false

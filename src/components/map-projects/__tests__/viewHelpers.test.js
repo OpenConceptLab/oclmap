@@ -12,12 +12,27 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  conceptBelongsToTargetRepo,
   getScoreDetails,
   conceptForMapping,
   resolveAICandidateID
 } from '../viewBuilders.js'
 
 const candidatesScore = { recommended: 80, available: 60 }
+
+test('conceptBelongsToTargetRepo: falls back to matching the OCL source path', () => {
+  assert.equal(
+    conceptBelongsToTargetRepo(
+      {
+        reference: { url: 'https://ns.openconceptlab.org/orgs/CIEL/sources/CIEL/' },
+        ocl_url: '/orgs/CIEL/sources/CIEL/concepts/120345/'
+      },
+      'https://cielterminology.org/fhir',
+      '/orgs/CIEL/sources/CIEL/'
+    ),
+    true
+  )
+})
 
 // ---------- getScoreDetails ----------
 

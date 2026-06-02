@@ -50,6 +50,7 @@ import AIAssistantButton from './AIAssistantButton'
 import {
   buildAlgorithmRowViews,
   buildQualityRowViews,
+  conceptBelongsToTargetRepo,
   sortRowViews,
   conceptForMapping,
   resolveAICandidateID
@@ -193,7 +194,7 @@ const SubHeader = ({count, onClick, isCollapsed, header, indicatorColor, indicat
 }
 
 
-const CandidateList = ({rowViews, header, rowIndex, sortBy, order, setShowItem, showItem, setShowHighlights, isSelectedForMap, onMap, onFetchMore, bgColor, headerIndicatorIcon, bucketId, display, onDisplayChange, noToolbar, toolbarControl, repoVersion, alignToolbarLeft, rightControl, analysis, showAnalysis, openAnalysis, onCloseAnalysis, isInProgress, AIRecommendedCandidateId, AIAlternateCandidateIds, locales, scispacy, showAlgo, collapsed, onCollapse, candidatesScore, algoScoreFirst, byAlgorithm, showEmptyHeader, isFirst, isCoreUser, targetCanonical, analysisPage, setAnalysisPage}) => {
+const CandidateList = ({rowViews, header, rowIndex, sortBy, order, setShowItem, showItem, setShowHighlights, isSelectedForMap, onMap, onFetchMore, bgColor, headerIndicatorIcon, bucketId, display, onDisplayChange, noToolbar, toolbarControl, repoVersion, alignToolbarLeft, rightControl, analysis, showAnalysis, openAnalysis, onCloseAnalysis, isInProgress, AIRecommendedCandidateId, AIAlternateCandidateIds, locales, scispacy, showAlgo, collapsed, onCollapse, candidatesScore, algoScoreFirst, byAlgorithm, showEmptyHeader, isFirst, isCoreUser, targetCanonical, targetRelativeUrl, analysisPage, setAnalysisPage}) => {
   // Decorate rowViews so they work for BOTH renderers:
   //   - Table view: SearchResults/TableResults reads legacy concept fields
   //     (id, url, names, descriptions, source, search_meta, ...) via the
@@ -218,12 +219,12 @@ const CandidateList = ({rowViews, header, rowIndex, sortBy, order, setShowItem, 
   })
   // Helper: a rowView is mappable only when its concept belongs to the
   // project's target repo (cascade targets in bridge flows DO; bridge
-  // intermediaries don't). targetCanonical comes from buildProjectContext
-  // in MapProject — the same canonical the normalizer used to stamp the
-  // ConceptDefinition.reference.url, so the comparison is exact.
+  // intermediaries don't). The comparison uses canonical URL in the
+  // common case, but also tolerates canonical drift via the OCL
+  // relative-URL fallback.
   const isTargetRepoView = (view) => {
-    if(!targetCanonical) return true
-    return view?.conceptDefinition?.reference?.url === targetCanonical
+    if(!targetCanonical && !targetRelativeUrl) return true
+    return conceptBelongsToTargetRepo(view?.conceptDefinition, targetCanonical, targetRelativeUrl)
   }
   const results = {total: onFetchMore ? rowsForTable.length : 1, results: rowsForTable}
   const isCollapsed = collapsed.includes(bucketId)
@@ -347,6 +348,7 @@ const CandidateList = ({rowViews, header, rowIndex, sortBy, order, setShowItem, 
             candidatesScore={candidatesScore}
             algoScoreFirst={algoScoreFirst}
             targetCanonical={targetCanonical}
+            targetRelativeUrl={targetRelativeUrl}
           />
         }}
         display={display}
@@ -387,7 +389,7 @@ const CandidateList = ({rowViews, header, rowIndex, sortBy, order, setShowItem, 
 //   conceptCache — project-wide ConceptDefinition store, keyed by concept_key.
 //   algosSelected — algorithm definitions (for headers/grouping).
 // (plans/unified-mapper-model.md "How the views map onto this model".)
-const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCanonical, setShowItem, showItem, setShowHighlights, isSelectedForMap, onMap, onFetchMore, isLoading, candidatesScore, repoVersion, analysis, onFetchRecommendation, appliedFacets, setAppliedFacets, filters, facets, columns, defaultFilters, locales, models, selectedModel, onModelChange, promptTemplates, promptTemplate, onPromptTemplateChange, onRefreshClick, rowStage, inAIAssistantGroup, algosSelected, isCoreUser}) => {
+const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCanonical, targetRelativeUrl, setShowItem, showItem, setShowHighlights, isSelectedForMap, onMap, onFetchMore, isLoading, candidatesScore, repoVersion, analysis, onFetchRecommendation, appliedFacets, setAppliedFacets, filters, facets, columns, defaultFilters, locales, models, selectedModel, onModelChange, promptTemplates, promptTemplate, onPromptTemplateChange, onRefreshClick, rowStage, inAIAssistantGroup, algosSelected, isCoreUser}) => {
   const { t } = useTranslation();
   const [sortBy, setSortBy] = React.useState('rerank_score')
   const [groupBy, setGroupBy] = React.useState('quality')
@@ -451,9 +453,9 @@ const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCa
   // by-algorithm browsing.
   const qualityRowViews = React.useMemo(() => {
     const views = buildQualityRowViews(rowState, conceptCache)
-    if(!targetCanonical) return views
-    return views.filter(v => v.conceptDefinition?.reference?.url === targetCanonical)
-  }, [rowState, conceptCache, targetCanonical])
+    if(!targetCanonical && !targetRelativeUrl) return views
+    return views.filter(v => conceptBelongsToTargetRepo(v.conceptDefinition, targetCanonical, targetRelativeUrl))
+  }, [rowState, conceptCache, targetCanonical, targetRelativeUrl])
   const hasAnyView = qualityRowViews.length > 0
   const isNoneLoaded = !rowState || (isEmpty(rowState.candidates) && isEmpty(rowState.algorithm_responses))
   const canFetchMore = hasAnyView
@@ -487,6 +489,7 @@ const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCa
     algoScoreFirst: algoScoreFirst,
     isCoreUser: isCoreUser,
     targetCanonical: targetCanonical,
+    targetRelativeUrl: targetRelativeUrl,
     analysisPage: analysisPage,
     setAnalysisPage: setAnalysisPage
   }

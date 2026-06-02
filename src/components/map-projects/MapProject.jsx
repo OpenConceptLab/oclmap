@@ -96,13 +96,13 @@ import ScoreBucketButton from './ScoreBucketButton'
 import Concept from './Concept'
 import ImportToCollection from './ImportToCollection'
 import ProjectLogs from './ProjectLogs';
-import { useAlgos, CONCEPT_IDENTITY_BY_TYPE, ensureConceptIdentity } from './algorithms'
+import { useAlgos, ensureConceptIdentity } from './algorithms'
 import AutoMatchDialog from './AutoMatchDialog'
 import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
-import { normalizeAlgorithmInvocation, lookupStatusRank, normalizeLegacyAllCandidates, buildRecommendableConceptEntry, stripConstantClassAndDatatype } from './normalizers'
+import { normalizeAlgorithmInvocation, lookupStatusRank, buildRecommendableConceptEntry, stripConstantClassAndDatatype } from './normalizers'
 import { parseConceptKey } from './conceptKey'
 import { getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId } from './projectTargetRepo'
-import { buildQualityRowViews, conceptForMapping, resolveAICandidateID } from './viewBuilders.js'
+import { buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, resolveAICandidateID } from './viewBuilders.js'
 
 import './MapProject.scss'
 import '../common/ResizablePanel.scss'
@@ -112,14 +112,13 @@ import '../common/ResizablePanel.scss'
  * (plans/unified-mapper-model.md, ocl_issues#2337). Flipped to true in PR2b
  * once: (a) the write-side parallel state was wired up in PR1, (b) PR2a
  * routed all algorithm types (bridge, scispacy, AI payload v2) through the
- * normalizer, and (c) PR2b flipped reads (Candidates / Concept / Score /
+ * normalizer, (c) PR2b flipped reads (Candidates / Concept / Score /
  * setAutoMatched / setStateViews) to consume rowMatchState + conceptCache
- * via structured tuples. The legacy allCandidates write path is still
- * populated so save/load works with the existing schema; PR3 drops it
- * along with the legacy `candidates` field in the AI payload and the
- * `concept_id` / `id` response shims.
+ * via structured tuples, and (d) PR3-C dropped the legacy allCandidates
+ * state + v1 save/load format. The wire format is now v2 only
+ * (mapper_schema_version: 2); prod data was migrated under
+ * OpenConceptLab/ocl_issues#2540.
  */
-const UNIFIED_MODEL_ENABLED = true
 
 // const LOG = {
 //   action: '',
@@ -157,11 +156,7 @@ const MapProject = () => {
   const [decisionFilters, setDecisionFilters] = React.useState([])
   const [matchedConcepts, setMatchedConcepts] = React.useState([]);
 
-  // Algo Candidates
-  const [allCandidates, setAllCandidates] = React.useState({}); // ocl-scispacy-loinc
-
-  // Unified candidate/concept model (plans/unified-mapper-model.md). Populated
-  // in parallel with allCandidates when UNIFIED_MODEL_ENABLED is true. Shape:
+  // Unified candidate/concept model (plans/unified-mapper-model.md). Shape:
   //   { [rowIndex]: {
   //       algorithm_responses: { [id]: AlgorithmResponse },
   //       candidates:          { [id]: Candidate },
@@ -412,7 +407,6 @@ const MapProject = () => {
       scheduleRerankRef.current(rowIndex)
   }, [])
 
-  const allCandidatesRef = React.useRef({})
   const conceptCacheRef = React.useRef({})
 
   // In-flight $lookup tracking (plans/unified-mapper-model.md "$lookup —
@@ -674,118 +668,54 @@ const MapProject = () => {
       } else {
         setLoadingProject(false)
       }
-      let _rowStage = {}
-      let _allCandidates = {}
-      let _cache = {}
-      forEach((response?.data?.candidates || []), candidate => {
-        forEach(candidate.results, concept => {
-          if(!_rowStage[candidate.row.__index]?.rerank)
-            _rowStage[candidate.row.__index] = {...(_rowStage[candidate.row.__index] || {}), rerank: isNumber(concept?.search_meta?.search_rerank_score) ? 1 : -1}
-          if(concept?.url && concept?.id && concept.display_name && concept.owner)
-            _cache[concept.url] = concept
-          forEach(concept?.mappings, mapping => {
-            if(mapping?.target_code?.id)
-              _cache[mapping.target_code.url] = mapping.target_code
-          })
-        })
-        if(!_rowStage[candidate.row.__index]?.recommend)
-          _rowStage[candidate.row.__index] = {...(_rowStage[candidate.row.__index] || {}), recommend: isEmpty(response.data.analysis[candidate.row.__index]) ? -1 : 1}
-        if(!get(_rowStage[candidate.row.__index]?.recommend))
-          _rowStage[candidate.row.__index] = {...(_rowStage[candidate.row.__index] || {}), recommend: isEmpty(response.data.analysis[candidate.row.__index]) ? -1 : 1}
-        let algo = candidate.algorithm || get(candidate.results, '0.search_meta.algorithm')
-        if(algo) {
-          _rowStage[candidate.row.__index] = {..._rowStage[candidate.row.__index], [algo]: 1}
-          if(has(_allCandidates, algo)) {
-            let _index = findIndex(_allCandidates[algo], c => c.row.__index === candidate.row.__index)
-            if(_index > -1) {
-              _allCandidates[algo][_index].results = [...(_allCandidates[algo][_index].results || []), ...(candidate.results || [])]
-              _allCandidates[algo][_index].filter = {...(_allCandidates[algo][_index].filter || {}), ...(candidate.filter || {})}
-              _allCandidates[algo][_index].map_config = [...(_allCandidates[algo][_index].map_config || []), ...(candidate.map_config || [])]
-            } else {
-              _allCandidates[algo] = [...(_allCandidates[algo] || []), candidate]
-            }
-          }
-          else {
-            _allCandidates[algo] = [candidate]
-          }
+      // v2 wire format: candidates is {mapper_schema_version: 2,
+      // concept_definitions: [[key, def], ...], rows: {idx: {...}, ...}}.
+      // Direct deserialize into rowMatchState + conceptCache; no
+      // normalizer round-trip needed (all data migrated to v2 in the
+      // ocl_issues#2540 maintenance window).
+      const savedCandidates = response.data?.candidates
+      const isV2 = savedCandidates && !Array.isArray(savedCandidates) &&
+                   savedCandidates.mapper_schema_version === 2
+      const _cache = {}
+      const _rowMatchState = {}
+      const _rowStage = {}
+      if(isV2) {
+        for(const [defKey, def] of (savedCandidates.concept_definitions || [])) {
+          _cache[defKey] = { ...def, key: defKey }
         }
-      })
+        Object.assign(_rowMatchState, savedCandidates.rows || {})
+        // Reconstruct rowStage UI markers from rowMatchState:
+        //   rerank: 1 if any concept_row has a rerank_score, else -1
+        //   recommend: 1 if response.data.analysis[idx] is non-empty, else -1
+        //   per-algo: 1 for each algorithm_response present on the row
+        const analysis = response.data?.analysis || {}
+        for(const [idxStr, row] of Object.entries(_rowMatchState)) {
+          const hasRerank = Object.values(row?.concept_rows || {}).some(cr => isNumber(cr?.rerank_score))
+          const stage = { rerank: hasRerank ? 1 : -1, recommend: isEmpty(analysis[idxStr]) ? -1 : 1 }
+          for(const ar of Object.values(row?.algorithm_responses || {})) {
+            if(ar?.algorithm_id) stage[ar.algorithm_id] = 1
+          }
+          _rowStage[idxStr] = stage
+        }
+      } else if(savedCandidates && !isEmpty(savedCandidates)) {
+        // Pre-migration v1 data should not exist in prod after the
+        // ocl_issues#2540 migration window. If it does, alert and skip —
+        // the operator needs to re-run the migration script.
+        setAlert({
+          message: t(
+            'map_project.candidates_legacy_shape',
+            'This project was saved in the legacy candidates format. Contact an admin to re-run the v1->v2 migration.'
+          ),
+          severity: 'error',
+          duration: 10
+        })
+      }
       setConceptCache(_cache)
-      setAllCandidates(_allCandidates)
+      setRowMatchState(_rowMatchState)
+      conceptCacheRef.current = _cache
+      rowMatchStateRef.current = _rowMatchState
       setAlgosSelected(response.data.algorithms)
       setRowStage(_rowStage)
-
-      // Backfill rowMatchState + conceptCache (keyed by concept_key) from
-      // the legacy `_allCandidates` we just hydrated. Required so that
-      // reloaded projects render correctly under UNIFIED_MODEL_ENABLED=true.
-      // PR3's normalizeLegacy.js will subsume this when schema-v2 load
-      // arrives. See plans/unified-mapper-model.md "Migration / Save-Load".
-      const loadedRelativeURL = dropVersion(response.data?.target_repo_url || '') || response.data?.target_repo_url
-      const loadedTargetCanonical = response.data?.target_repo?.canonical_url ||
-        (loadedRelativeURL ? `https://ns.openconceptlab.org${loadedRelativeURL}` : null)
-      const loadedTargetVersion = getProjectTargetRepoVersion(response.data)
-      const needsTargetRepoVersionSelection = Boolean(loadedTargetCanonical && !loadedTargetVersion)
-      const loadedAlgos = response.data?.algorithms || []
-      const loadedBridge = find(loadedAlgos, a => ['ocl-bridge', 'ocl-ciel-bridge'].includes(a.type))
-      const loadProjectContext = loadedTargetCanonical && loadedTargetVersion ? {
-        namespace: response.data?.namespace || response.data?.owner_url || '',
-        target_repo: {
-          relative_url: loadedRelativeURL,
-          canonical_url: loadedTargetCanonical,
-          canonical_url_source: response.data?.target_repo?.canonical_url ? 'repo' : 'derived',
-          version: loadedTargetVersion
-        },
-        ...(loadedBridge?.target_repo_url ? {
-          bridge_repo: {
-            relative_url: loadedBridge.target_repo_url,
-            canonical_url: loadedBridge?.bridge_repo?.canonical_url || `https://ns.openconceptlab.org${loadedBridge.target_repo_url}`,
-            canonical_url_source: loadedBridge?.bridge_repo?.canonical_url ? 'repo' : 'derived'
-          }
-        } : {})
-      } : null
-
-      if(loadProjectContext) {
-        // Enrich loadedAlgos with concept_identity (built-ins, API-loaded
-        // bridge/scispacy, custom). The normalizer reads algo.concept_identity
-        // directly; algos that can't be enriched fall through unchanged and
-        // the normalizer skips them.
-        const enrichedAlgos = loadedAlgos.map(a => ensureConceptIdentity(a) || a)
-        const { rowMatchState: loadedRowMatchState, conceptDefinitionsByKey: loadedDefsByKey } =
-          normalizeLegacyAllCandidates(_allCandidates, loadProjectContext, enrichedAlgos, CONCEPT_IDENTITY_BY_TYPE)
-        rowMatchStateRef.current = loadedRowMatchState
-        setRowMatchState(loadedRowMatchState)
-        if(loadedDefsByKey.size > 0) {
-          const next = { ..._cache }
-          loadedDefsByKey.forEach((def, key) => {
-            const existing = next[key]
-            if(!existing || lookupStatusRank(def.lookup_status) > lookupStatusRank(existing.lookup_status))
-              next[key] = def
-          })
-          conceptCacheRef.current = next
-          setConceptCache(next)
-        } else {
-          conceptCacheRef.current = _cache
-        }
-      } else {
-        conceptCacheRef.current = _cache
-        // Missing target repo config blocks the load-bearing projectContext.
-        // Missing canonical is only worth bannering when there are saved
-        // candidates to recover; missing version should always block the user
-        // until they explicitly pick one.
-        if(needsTargetRepoVersionSelection || !isEmpty(_allCandidates)) {
-          setAlert({
-            message: needsTargetRepoVersionSelection ? t(
-              'map_project.target_repo_version_required_on_load',
-              'This project is missing a target repository version. Select a version before continuing.'
-            ) : t(
-              'map_project.target_repo_required_on_load',
-              'This project is missing a target repository. Configure the target repository to see saved candidates.'
-            ),
-            severity: 'error',
-            duration: 10
-          })
-        }
-      }
 
       setName(response.data?.name || '')
       setDescription(response.data?.description || '')
@@ -806,7 +736,7 @@ const MapProject = () => {
       const rawAnalysis = response.data?.analysis || {}
       setAnalysis(Object.fromEntries(Object.entries(rawAnalysis).map(([k, v]) => [k, Array.isArray(v) ? v : [v]])))
       setProject(response.data)
-      setConfigure(Boolean(!loadProjectContext))
+      setConfigure(false)
     })
   }
 
@@ -1011,7 +941,8 @@ const MapProject = () => {
     setDecisions({})
     setDecisionFilters([])
     setMatchedConcepts([])
-    setAllCandidates({})
+    setRowMatchState({})
+    rowMatchStateRef.current = {}
     setSearchedConcepts({})
     setFetchedFacets({})
     setRowFacetKeys({})
@@ -1274,24 +1205,21 @@ const MapProject = () => {
         concept: getConcept(data)
       }
     })
-    let _getCandidates = (_candidates, returnAll) => {
-      let __candidates = []
-      forEach(_candidates, ___candidates => {
-        let __results = ___candidates.results || []
-        let results = returnAll ? __results : __results.slice(0, CANDIDATES_LIMIT)
-        results = map(results, result => {
-          const concept = omit(getConcept(result), '_source')
-          const mappings = map((result?.mappings || []), m => omit(m, 'target_concept'))
-          return { ...concept, mappings }
-        })
-        __candidates.push({...___candidates, results: results})
-      })
-      return __candidates
+    // v2 wire format: serialize rowMatchState + conceptCache directly.
+    // Concept identity lives in concept_definitions[] (deduped by key);
+    // per-row state lives in rows{}. The derived `key` field is stripped
+    // from each def (re-attached on load) per plans/unified-mapper-model.md.
+    const conceptDefinitions = []
+    const cache = conceptCacheRef.current || {}
+    for(const [defKey, def] of Object.entries(cache)) {
+      const { key: _runtimeKey, ...defWithoutKey } = def  // eslint-disable-line no-unused-vars
+      conceptDefinitions.push([defKey, defWithoutKey])
     }
-    const candidates = flatten(map(allCandidates, (_candidates, _algo) => {
-      let results = _getCandidates(_candidates, _algo.includes('scispacy'))
-      return results.map(result => ({...result, algorithm: _algo}))
-    }))
+    const candidates = {
+      mapper_schema_version: 2,
+      concept_definitions: conceptDefinitions,
+      rows: rowMatchStateRef.current || {}
+    }
     const formData = new FormData();
     formData.append('file', f);
     formData.append('candidates', JSON.stringify(candidates))
@@ -1476,15 +1404,17 @@ const MapProject = () => {
   const pickTopRowView = (rowIndex) => {
     const rowState = rowMatchStateRef.current[rowIndex]
     if(!rowState) return null
-    const targetCanonical = buildProjectContext()?.target_repo?.canonical_url
-    if(!targetCanonical) return null
+    const targetRepo = buildProjectContext()?.target_repo
+    const targetCanonical = targetRepo?.canonical_url
+    const targetRelativeUrl = targetRepo?.relative_url
+    if(!targetCanonical && !targetRelativeUrl) return null
     const views = buildQualityRowViews(rowState, conceptCacheRef.current)
     // Auto-match must land on a target-repo concept. Bridge intermediaries
     // are excluded — even if their rerank_score is high, they're not
     // mappable. Score view already places bridge_child rows under the
     // target concept's ConceptRow, so filtering by canonical_url here is
     // the right invariant.
-    const eligible = views.filter(v => v.conceptDefinition?.reference?.url === targetCanonical)
+    const eligible = views.filter(v => conceptBelongsToTargetRepo(v.conceptDefinition, targetCanonical, targetRelativeUrl))
     if(!eligible.length) return null
     return orderBy(eligible, [v => v.conceptRow?.rerank_score ?? -1], ['desc'])[0]
   }
@@ -1619,12 +1549,12 @@ const MapProject = () => {
           };
           const rowBatch = queue.shift();
           const promise = processBatch(_repo, rowBatch, algo).then((data) => {
-            // Under the unified model, populate rowMatchState before any
-            // consumer (setStateViews / setAutoMatched) tries to read it.
-            // The per-row fetch flow routes through `onResponse` which
-            // already calls mergeIntoRowMatchState; bulk processBatch
-            // doesn't, so we run the normalizer here.
-            if(UNIFIED_MODEL_ENABLED && Array.isArray(data) && data.length) {
+            // Populate rowMatchState before any consumer (setStateViews /
+            // setAutoMatched) tries to read it. The per-row fetch flow
+            // routes through `onResponse` which already calls
+            // mergeIntoRowMatchState; bulk processBatch doesn't, so we
+            // run the normalizer here.
+            if(Array.isArray(data) && data.length) {
               const projectCtx = buildProjectContext()
               if(projectCtx) {
                 const algoCfg = ensureConceptIdentity(algo)
@@ -1649,26 +1579,6 @@ const MapProject = () => {
             }
             if(!isMultiAlgo)
               setStateViews(data, _repo)
-            if(!data || !data.length) {
-              setAllCandidates(prev => {
-                const newCandidates = {...prev}
-                forEach(rowBatch, row => {
-                  let _index = findIndex(newCandidates[algo.id], c => c.row.__index === row.__index)
-                  if(_index > -1)
-                    newCandidates[algo.id][_index].results = []
-                  else
-                    newCandidates[algo.id] = [...(newCandidates[algo.id] || []), {row: prepareRow(row), results: []}]
-                })
-                return newCandidates
-              })
-            } else {
-              forEach(data, concept => {
-                setAllCandidates(prev => {
-                  return {...prev, [algo.id]: [...reject(prev[algo.id], c => c.row.__index === concept.row.__index), concept]}
-                })
-              })
-            }
-            if(!UNIFIED_MODEL_ENABLED) lookupCandidates(algo.id, flatten(map(data, 'results')))
             setMatchedConcepts(prev => [...prev, ...data]);
             activeRequests.delete(promise); // Remove from active set after completion
           });
@@ -1788,54 +1698,8 @@ const MapProject = () => {
   };
 
   React.useEffect(() => {
-    allCandidatesRef.current = allCandidates;
-  }, [allCandidates]);
-
-  React.useEffect(() => {
     conceptCacheRef.current = conceptCache;
   }, [conceptCache]);
-
-  // Re-normalize legacy allCandidates when the target repo's real canonical
-  // URL arrives. fetchAndSetProject runs synchronously and falls back to a
-  // derived canonical (https://ns.openconceptlab.org{relurl}) because the
-  // save format never persisted target_repo.canonical_url. Once fetchRepo
-  // resolves and `repo.canonical_url` lands (e.g. 'http://loinc.org' for
-  // LOINC), the ConceptDefinitions on rowMatchState are still stamped with
-  // the derived URL — and Candidates.jsx's Quality view filters by
-  // `view.conceptDefinition.reference.url === targetCanonical` (the live
-  // value), so nothing matches and the panel renders empty. Re-running
-  // normalizeLegacyAllCandidates with the live projectContext re-stamps the
-  // references to match.
-  const lastNormalizedCanonicalRef = React.useRef(null)
-  React.useEffect(() => {
-    const ctx = buildProjectContext()
-    const liveCanonical = ctx?.target_repo?.canonical_url
-    if(!liveCanonical) return
-    if(lastNormalizedCanonicalRef.current === liveCanonical) return
-    const allCands = allCandidatesRef.current
-    if(!allCands || isEmpty(allCands)) {
-      // No legacy data yet — record the canonical and exit. The initial
-      // load path will normalize once data arrives.
-      lastNormalizedCanonicalRef.current = liveCanonical
-      return
-    }
-    const enrichedAlgos = (algosSelected || []).map(a => ensureConceptIdentity(a) || a)
-    const { rowMatchState: newRowMatchState, conceptDefinitionsByKey: newDefsByKey } =
-      normalizeLegacyAllCandidates(allCands, ctx, enrichedAlgos, CONCEPT_IDENTITY_BY_TYPE)
-    rowMatchStateRef.current = newRowMatchState
-    setRowMatchState(newRowMatchState)
-    if(newDefsByKey.size > 0) {
-      const next = { ...conceptCacheRef.current }
-      newDefsByKey.forEach((def, key) => {
-        const existing = next[key]
-        if(!existing || lookupStatusRank(def.lookup_status) > lookupStatusRank(existing.lookup_status))
-          next[key] = def
-      })
-      conceptCacheRef.current = next
-      setConceptCache(next)
-    }
-    lastNormalizedCanonicalRef.current = liveCanonical
-  }, [buildProjectContext, algosSelected])
 
   const runBulkAIAnalysis = async (_rows) => {
     setLoadingMatches(true)
@@ -1879,25 +1743,18 @@ const MapProject = () => {
         const results = (isArray(response) ? response : response?.data)
         log({action: 'algo_finished', extras: {algo: algo.id}}, index)
         markAlgo(index, algo.id, 1)
-        setAllCandidates(prev => ({
-          ...prev,
-          [algo.id]: [...reject(prev[algo.id], c => c.row.__index === index), ...(results || [])]
-        }))
-        if(!UNIFIED_MODEL_ENABLED) lookupCandidates(algo.id, results)
-        if(UNIFIED_MODEL_ENABLED) {
-          // Route the bridge invocation through the normalizer (the per-row
-          // path goes via onResponse, but the bulk path lives here).
-          const algoDef = getAlgoDef(algo.id)
-          const rowPayload = find(results, r => r?.row?.__index === index)
-          if(rowPayload && algoDef) {
-            mergeIntoRowMatchState(index, normalizeAlgorithmInvocation(rowPayload, {
-              algorithmId: algo.id,
-              algorithmConfig: algoDef,
-              projectContext: buildProjectContext(),
-              rowIndex: index,
-              rawResponse: response
-            }))
-          }
+        // Route the bridge invocation through the normalizer (the per-row
+        // path goes via onResponse, but the bulk path lives here).
+        const algoDef = getAlgoDef(algo.id)
+        const rowPayload = find(results, r => r?.row?.__index === index)
+        if(rowPayload && algoDef) {
+          mergeIntoRowMatchState(index, normalizeAlgorithmInvocation(rowPayload, {
+            algorithmId: algo.id,
+            algorithmConfig: algoDef,
+            projectContext: buildProjectContext(),
+            rowIndex: index,
+            rawResponse: response
+          }))
         }
       })); // wait for completion
       await new Promise(resolve => setTimeout(resolve, 200)); // 1s delay
@@ -1923,25 +1780,18 @@ const MapProject = () => {
         const results = [{row: _rows[index], results: fromScispacyResultsToConcepts(get(response.data, index) || [])}]
         log({action: 'algo_finished', extras: {algo: algo.id}}, _index)
         markAlgo(_index, algo.id, 1)
-        setAllCandidates(prev => ({
-          ...prev,
-          [algo.id]: [...reject(prev[algo.id], c => c.row.__index === _index), ...(results || [])]
-        }))
-        if(!UNIFIED_MODEL_ENABLED) lookupCandidates(algo.id, results)
-        if(UNIFIED_MODEL_ENABLED) {
-          // Mirror the bulk-bridge wiring — the per-row scispacy path goes via
-          // onResponse, but the bulk path lives here.
-          const algoDef = getAlgoDef(algo.id)
-          const rowPayload = results[0]
-          if(rowPayload && algoDef) {
-            mergeIntoRowMatchState(_index, normalizeAlgorithmInvocation(rowPayload, {
-              algorithmId: algo.id,
-              algorithmConfig: algoDef,
-              projectContext: buildProjectContext(),
-              rowIndex: _index,
-              rawResponse: response
-            }))
-          }
+        // Mirror the bulk-bridge wiring — the per-row scispacy path goes via
+        // onResponse, but the bulk path lives here.
+        const algoDef = getAlgoDef(algo.id)
+        const rowPayload = results[0]
+        if(rowPayload && algoDef) {
+          mergeIntoRowMatchState(_index, normalizeAlgorithmInvocation(rowPayload, {
+            algorithmId: algo.id,
+            algorithmConfig: algoDef,
+            projectContext: buildProjectContext(),
+            rowIndex: _index,
+            rawResponse: response
+          }))
         }
       })); // wait for completion
       await new Promise(resolve => setTimeout(resolve, 500)); // 1s delay
@@ -2129,10 +1979,23 @@ const MapProject = () => {
     return t("map_project.auto_match");
   }
 
+  // Has any row in rowMatchState produced a candidate from an algo whose
+  // id matches the predicate? Used by the bulk-button labels to switch
+  // copy once results have landed.
+  const hasAnyCandidateForAlgoMatching = (algoIdPredicate) => {
+    const rms = rowMatchStateRef.current || {}
+    for(const row of Object.values(rms)) {
+      for(const c of Object.values(row?.candidates || {})) {
+        if(algoIdPredicate(c.algorithm_id)) return true
+      }
+    }
+    return false
+  }
+
   const getBulkBridgeCandidatesButtonLabel = () => {
     const effectiveEnd = loadingMatches ? _now : bridgeCandidatesEndedAt;
     const matchingDuration = getMatchingDuration(bridgeCandidatesStartedAt, effectiveEnd)
-    if(loadingMatches || Object.keys(allCandidatesRef.current).some(k => k.includes('bridge') && allCandidatesRef.current[k]?.length))
+    if(loadingMatches || hasAnyCandidateForAlgoMatching(id => id?.includes('bridge')))
       return `${t('map_project.bridge_candidates')} (${matchingDuration})`
     return t('map_project.bridge_candidates')
   }
@@ -2140,7 +2003,7 @@ const MapProject = () => {
   const getBulkScispacyCandidatesButtonLabel = () => {
     const effectiveEnd = loadingMatches ? _now : scispacyCandidatesEndedAt;
     const matchingDuration = getMatchingDuration(scispacyCandidatesStartedAt, effectiveEnd)
-    if(loadingMatches || allCandidatesRef.current['ocl-scispacy-loinc']?.length)
+    if(loadingMatches || hasAnyCandidateForAlgoMatching(id => id === 'ocl-scispacy-loinc'))
       return `${t('map_project.scispacy_candidates')} (${matchingDuration})`
     return t('map_project.scispacy_candidates')
   }
@@ -2297,8 +2160,17 @@ const MapProject = () => {
       ...(allStages.includes('recommend') ? ['__status_recommend__'] : [])
     ]
 
+    const allAlgoIds = (() => {
+      const ids = new Set()
+      for(const row of Object.values(rowMatchStateRef.current || {})) {
+        for(const ar of Object.values(row?.algorithm_responses || {})) {
+          if(ar?.algorithm_id) ids.add(ar.algorithm_id)
+        }
+      }
+      return [...ids].sort()
+    })()
     const candidateHeaders = []
-    forEach(keys(allCandidatesRef.current).sort(), algoId => {
+    forEach(allAlgoIds, algoId => {
       let algoKey = algoId.replaceAll('-', '').replaceAll(' ', '').replaceAll('_', '').toLowerCase()
       forEach(times(CANDIDATES_LIMIT, i => i + 1), i => {
         candidateHeaders.push(`__result_${algoKey}_${twoDigit(i)}__`)
@@ -2350,8 +2222,9 @@ const MapProject = () => {
         }
       })
     }
-    forEach(keys(allCandidatesRef.current).sort(), algoId => {
-      const _candidates = allCandidatesRef.current[algoId]
+    const _derived = derivedAllCandidates()
+    forEach(keys(_derived).sort(), algoId => {
+      const _candidates = _derived[algoId]
       let algoKey = algoId.replaceAll('-', '').replaceAll(' ', '').replaceAll('_', '').toLowerCase()
       let __candidates = orderBy(find(_candidates, c => c.row?.__index === index)?.results || [], c => c?.search_meta?.search_normalized_score ?? rerankScoreByCode.get(c?.id) ?? -1, 'desc')
       __candidates = times(CANDIDATES_LIMIT, i => __candidates[i])
@@ -2491,17 +2364,14 @@ const MapProject = () => {
   }
 
   const onRefreshClick = () => {
-    setAllCandidates(prev => {
-      let newCandidates = {...prev}
-      keys(newCandidates).forEach(algoId => {
-        const newConcepts = newCandidates[algoId]
-        let result = find(newConcepts, c => c.row.__index === rowIndex)
-        if(result)
-          result.results = null
-
-        newCandidates[algoId] = newConcepts
-      })
-      return newCandidates
+    // Drop this row's candidates from rowMatchState so the re-fetch
+    // doesn't short-circuit on the existing algorithm_responses entries.
+    setRowMatchState(prev => {
+      if(!prev?.[rowIndex]) return prev
+      const next = { ...prev }
+      delete next[rowIndex]
+      rowMatchStateRef.current = next
+      return next
     })
     fetchAllCandidatesForRow(getFirstAlgoDef()?.id, row, 0, undefined, undefined, undefined, true)
   }
@@ -2581,21 +2451,15 @@ const MapProject = () => {
     setShowItem(false)
     setDecisionTab(newValue)
     if(newValue === 'candidates' && repo?.id) {
-      // Two prior bugs in this guard:
-      //   1. `firstAlgo` was getFirstAlgoDef()?.id (already a string), but the
-      //      condition then did `allCandidatesRef.current[firstAlgo?.id]` —
-      //      string?.id is undefined, so the cache lookup always missed and
-      //      the refetch always fired even when candidates were cached.
-      //   2. No in-flight guard. If the user clicked the row, switched to
-      //      Discuss before semantic finished, and switched back, the chain
-      //      re-fired concurrently with the still-running first chain →
-      //      duplicate algo_finished logs + double rerank.
+      // Skip the refetch if the first algorithm has already produced a
+      // response for this row (any response, including zero-result), or
+      // if anything is currently in flight.
       const firstAlgoId = getFirstAlgoDef()?.id
       const rowStageForRow = rowStageRef.current?.[rowIndex] || {}
       const anyAlgoInFlight = selectedAlgoIds?.some(id => rowStageForRow[id] === 0)
-      const hasCandidates = Boolean(
-        find(allCandidatesRef.current[firstAlgoId], c => c.row.__index === rowIndex)
-      )
+      const rowMatchEntry = rowMatchStateRef.current?.[rowIndex]
+      const hasCandidates = Boolean(rowMatchEntry && Object.values(rowMatchEntry.algorithm_responses || {})
+        .some(ar => ar?.algorithm_id === firstAlgoId))
       if(firstAlgoId && !anyAlgoInFlight && !hasCandidates)
         fetchAllCandidatesForRow(firstAlgoId)
     }
@@ -2742,23 +2606,32 @@ const MapProject = () => {
         return
       let __row = isEmpty(_row) ? row : _row
 
-      const existingCandidates = find(allCandidatesRef.current[algoId], c => c.row.__index === __row.__index)
-      // Reuse when the algo's invocation completed for this row, regardless
-      // of whether it returned matches. Gating on results.length > 0 made
-      // any algo that legitimately returned zero matches (e.g. scispacy on
-      // a row with no in-vocabulary terms) look like it had never run —
-      // fetchAllCandidatesForRow would then re-dispatch and the inner
-      // fetcher (which DOES short-circuit on entry presence) would skip
-      // silently without firing onResponse, leaving the "Running: …"
-      // indicator pinned forever.
+      // Reuse when the algo has already produced an AlgorithmResponse for
+      // this row, regardless of whether it returned matches. Gating on
+      // candidates.length > 0 would make any algo that legitimately
+      // returned zero matches (e.g. scispacy on a row with no
+      // in-vocabulary terms) look like it had never run — the outer flow
+      // would then re-dispatch and the inner fetcher (which DOES
+      // short-circuit on entry presence) would skip silently without
+      // firing onResponse, leaving the "Running: …" indicator pinned.
+      const rowMatchEntry = rowMatchStateRef.current?.[__row.__index]
+      const hasAlgoResponse = rowMatchEntry && Object.values(rowMatchEntry.algorithm_responses || {})
+        .some(ar => ar?.algorithm_id === algoId)
       const canReuseExistingCandidates = !forceReload &&
         offset === 0 &&
         !_retired &&
-        existingCandidates !== undefined
+        hasAlgoResponse
 
       if(canReuseExistingCandidates) {
         markAlgo(__row.__index, algoId, 1)
-        setTimeout(() => highlightTexts((existingCandidates?.results || []), null, false), 100)
+        // Re-highlight any results we already have for this row+algo.
+        const existingResults = rowMatchEntry
+          ? Object.values(rowMatchEntry.candidates || {})
+              .filter(c => c.algorithm_id === algoId)
+              .map(c => conceptCacheRef.current?.[c.concept_key])
+              .filter(Boolean)
+          : []
+        setTimeout(() => highlightTexts(existingResults, null, false), 100)
         const nextAlgo = getNextAlgoDef(algoId)
         if(nextAlgo?.id && (offset === 0 || nextAlgo.type !== 'ocl-scispacy')) {
           markAlgo(__row.__index, nextAlgo.id, 0)
@@ -2775,76 +2648,57 @@ const MapProject = () => {
       markAlgo(__row.__index, algoId, 0)
       setIsLoadingInDecisionView(true)
       const onResponse = (response, payload) => {
-        const projectContext = UNIFIED_MODEL_ENABLED ? buildProjectContext() : null
+        const projectContext = buildProjectContext()
         if(response?.detail) {
           markAlgo(__row.__index, algoId, -2)
           log({action: 'algo_failed', extras: {algo: algoId}}, __row.__index)
           setAlert({message: response.detail, severity: 'error'})
-          if(UNIFIED_MODEL_ENABLED) {
-            mergeIntoRowMatchState(__row.__index, normalizeAlgorithmInvocation(null, {
-              algorithmId: algoId,
-              algorithmConfig: algoDef,
-              projectContext,
-              rowIndex: __row.__index,
-              status: 'failed',
-              error: response.detail,
-              rawResponse: response
-            }))
-          }
+          mergeIntoRowMatchState(__row.__index, normalizeAlgorithmInvocation(null, {
+            algorithmId: algoId,
+            algorithmConfig: algoDef,
+            projectContext,
+            rowIndex: __row.__index,
+            status: 'failed',
+            error: response.detail,
+            rawResponse: response
+          }))
           return
         }
         log({action: 'algo_finished', extras: {algo: algoId}}, __row.__index)
         let data = isArray(response) ? response : (response?.data || [])
-        let nextCandidates
         if(offset === 0) {
           const results = algoId === 'ocl-scispacy-loinc' ? [{row: __row, results: fromScispacyResultsToConcepts(get(response.data, __row.__index) || [])}] : data
-          nextCandidates = {...allCandidatesRef.current, [algoId]: [...reject(allCandidatesRef.current[algoId], c => c.row.__index === __row.__index), ...(results || [])]}
-          if(!UNIFIED_MODEL_ENABLED) lookupCandidates(algoId, get(results, '0.results'))
-          if(UNIFIED_MODEL_ENABLED) {
-            // Normalize the invocation for this row and merge into the new
-            // RowMatchState. Reads still come from allCandidates — flipping
-            // reads is PR 2.
-            const rowPayload = find(results, r => r?.row?.__index === __row.__index)
-            if(rowPayload) {
-              mergeIntoRowMatchState(__row.__index, normalizeAlgorithmInvocation(rowPayload, {
-                algorithmId: algoId,
-                algorithmConfig: algoDef,
-                projectContext,
-                rowIndex: __row.__index,
-                rawResponse: response,
-                // Mirrors the line 2452 reranker flag on the $match request.
-                // Only trust when single-algo native OCL — same condition that
-                // markAlgo('rerank', 1)s without firing a separate $rerank/.
-                trustServerRerank: !isMultiAlgo && algoDef.provider === 'ocl'
-              }))
-            }
-          }
-        } else {
-          const appendedResults = get(data, '0.results') || []
-          const newMatches = [...(allCandidatesRef.current[algoId] || [])]
-          const index = findIndex(newMatches, match => match.row.__index === __row.__index)
-          newMatches[index].results = [...newMatches[index].results, ...appendedResults]
-          lookupCandidates(algoId, appendedResults)
-          nextCandidates = {...allCandidatesRef.current, [algoId]: newMatches}
-          // Pagination append: feed just the new page's results into the
-          // unified state with append=true so existing candidates from
-          // previous pages stay put. Without this, Fetch More fires the
-          // request but the unified read path (Candidates.jsx) never sees
-          // the new results.
-          if(UNIFIED_MODEL_ENABLED) {
-            const appendPayload = {row: __row, results: appendedResults}
-            mergeIntoRowMatchState(__row.__index, normalizeAlgorithmInvocation(appendPayload, {
+          // Normalize the invocation for this row and merge into rowMatchState.
+          const rowPayload = find(results, r => r?.row?.__index === __row.__index)
+          if(rowPayload) {
+            mergeIntoRowMatchState(__row.__index, normalizeAlgorithmInvocation(rowPayload, {
               algorithmId: algoId,
               algorithmConfig: algoDef,
               projectContext,
               rowIndex: __row.__index,
               rawResponse: response,
+              // Mirrors the reranker flag on the $match request: trust the
+              // server's normalized score only for single-algo native OCL
+              // (same condition that markAlgo('rerank', 1)s without firing
+              // a separate $rerank/ pass).
               trustServerRerank: !isMultiAlgo && algoDef.provider === 'ocl'
-            }), {append: true})
+            }))
           }
+        } else {
+          // Pagination append: feed just the new page's results into
+          // rowMatchState with append=true so existing candidates from
+          // previous pages stay put.
+          const appendedResults = get(data, '0.results') || []
+          const appendPayload = {row: __row, results: appendedResults}
+          mergeIntoRowMatchState(__row.__index, normalizeAlgorithmInvocation(appendPayload, {
+            algorithmId: algoId,
+            algorithmConfig: algoDef,
+            projectContext,
+            rowIndex: __row.__index,
+            rawResponse: response,
+            trustServerRerank: !isMultiAlgo && algoDef.provider === 'ocl'
+          }), {append: true})
         }
-        allCandidatesRef.current = nextCandidates
-        setAllCandidates(nextCandidates)
         markAlgo(__row.__index, algoId, 1)
         setIsLoadingInDecisionView(false)
         let items = get(response?.data, '0.results') || (isArray(get(response, '0.results')) ? response[0].results : [])
@@ -2891,15 +2745,20 @@ const MapProject = () => {
 
   const fetchScispacyCandidates = async (_row, scrollToBottom, forceReload=false, isBulk=false, callback) => {
     let __row = isEmpty(_row) ? row : _row
-    // Gate on entry presence, not results.length: a successful invocation
-    // that returned zero matches still writes {row, results:[]} into
-    // allCandidates, and we shouldn't re-run on every tab visit just because
-    // the array is empty. Failures don't write an entry (the catch below
-    // markAlgo(-2)s without persisting), so undefined-entry correctly retries.
-    const existingEntry = find(allCandidatesRef.current['ocl-scispacy-loinc'], c => c.row.__index === __row.__index)
-    if(!isBulk && !forceReload && existingEntry !== undefined) {
-      const existingCandidates = existingEntry.results
-      if(existingCandidates?.length > 0)
+    // Gate on AlgorithmResponse presence, not candidate count: a successful
+    // invocation that returned zero matches still writes an algorithm_response
+    // into rowMatchState, and we shouldn't re-run on every tab visit just
+    // because the count is 0. Failures don't write a 'completed' response,
+    // so this correctly retries on the next visit.
+    const rowEntry = rowMatchStateRef.current?.[__row.__index]
+    const hasScispacyResponse = rowEntry && Object.values(rowEntry.algorithm_responses || {})
+      .some(ar => ar?.algorithm_id === 'ocl-scispacy-loinc')
+    if(!isBulk && !forceReload && hasScispacyResponse) {
+      const existingCandidates = Object.values(rowEntry.candidates || {})
+        .filter(c => c.algorithm_id === 'ocl-scispacy-loinc')
+        .map(c => conceptCacheRef.current?.[c.concept_key])
+        .filter(Boolean)
+      if(existingCandidates.length > 0)
         setTimeout(() => highlightTexts(existingCandidates, null, false), 100)
       return { skipped: true }
     }
@@ -3137,32 +2996,8 @@ const MapProject = () => {
         setRowMatchState(rowMatchStateRef.current)
       }
 
-      // Legacy allCandidates write — preserves rerank scores in the saved
-      // project JSON until PR3 lands schema-v2 save/load.
-      setAllCandidates(prev => {
-        const newCandidates = {...prev}
-        forEach(keys(prev), algoId => {
-          const existingCandidates = [...(prev[algoId] || [])]
-          const ranked = filter(response.data, result => {
-            if(algoId === 'ocl-ciel-bridge' && result.search_meta?.algorithm === 'ocl-bridge')
-              return result.owner_url === '/orgs/CIEL/'
-            return result.search_meta?.algorithm === algoId
-          })
-          if(ranked.length > 0) {
-            const matchIndex = findIndex(existingCandidates, match => match.row.__index === index)
-            if(matchIndex > -1) {
-              existingCandidates[matchIndex] = {
-                ...existingCandidates[matchIndex],
-                results: ranked
-              }
-              newCandidates[algoId] = existingCandidates
-            }
-          }
-        })
-        allCandidatesRef.current = newCandidates
-        return newCandidates
-      })
-
+      // (Removed legacy allCandidates re-stamp: rerank_score now lives on
+      //  rowMatchState[idx].concept_rows[concept_key], which we updated above.)
       markAlgo(index, 'rerank', 1)
       log({action: 'rerank_finished', description: `Reranked with ${encoderModel}`}, index)
       if(isBulk)
@@ -3242,13 +3077,51 @@ const MapProject = () => {
     return fullObject ? result : (result?.results || [])
   }
 
-  const getAllCandidatesForRow = index => flatten(map(allCandidatesRef.current, candidates => getCandidatesForRow(index, candidates)))
+  // Derived view of the legacy allCandidates shape, projected from
+  // rowMatchState + conceptCache. Used by readers that haven't yet been
+  // refactored to read rowMatchState directly (CSV export, fetch-dedup
+  // checks, the "do we have any X candidates loaded?" indicators).
+  // The v1 candidates wire format is gone; this derivation is the last
+  // remaining v1-shape surface inside the runtime.
+  //
+  // TODO(post-PR3-C): refactor each reader below to consume rowMatchState
+  // + conceptCache directly, then delete this helper.
+  const derivedAllCandidates = () => {
+    const out = {}
+    const cache = conceptCacheRef.current || {}
+    const rms = rowMatchStateRef.current || {}
+    for(const [idxStr, row] of Object.entries(rms)) {
+      const idx = parseInt(idxStr)
+      const byAlgo = {}
+      for(const c of Object.values(row?.candidates || {})) {
+        const def = cache[c.concept_key]
+        if(!def) continue
+        if(!byAlgo[c.algorithm_id]) byAlgo[c.algorithm_id] = []
+        byAlgo[c.algorithm_id].push({
+          ...def,
+          search_meta: {
+            algorithm: c.algorithm_id,
+            search_score: c.score,
+            search_normalized_score: row?.concept_rows?.[c.concept_key]?.rerank_score,
+            search_highlight: c.highlights,
+          }
+        })
+      }
+      for(const [algoId, results] of Object.entries(byAlgo)) {
+        if(!out[algoId]) out[algoId] = []
+        out[algoId].push({ row: { __index: idx }, results })
+      }
+    }
+    return out
+  }
+
+  const getAllCandidatesForRow = index => flatten(map(derivedAllCandidates(), candidates => getCandidatesForRow(index, candidates)))
 
   const getRawScoresForConcept = (index, concept) => {
     if(!concept || !isNumber(index))
       return []
 
-    return compact(map(allCandidates, (candidates, algorithm) => {
+    return compact(map(derivedAllCandidates(), (candidates, algorithm) => {
       const rowCandidates = getCandidatesForRow(index, candidates)
       const matchingConcept = find(
         rowCandidates,
@@ -3283,8 +3156,14 @@ const MapProject = () => {
   const fetchBridgeCandidates = (_row, offset=0, _retired, scrollToBottom, _filters, forceReload=false, isBulk=false, callback) => {
     let __row = isEmpty(_row) ? row : _row
     const bridgeAlgoId = bridgeAlgo?.id || 'ocl-ciel-bridge'
-    const existingCandidates = find(allCandidatesRef.current[bridgeAlgoId], c => c.row.__index === __row.__index)?.results
-    if(!isBulk && !forceReload && offset === 0 && !_retired && existingCandidates?.length> 0) {
+    const rowEntry = rowMatchStateRef.current?.[__row.__index]
+    const existingCandidates = rowEntry
+      ? Object.values(rowEntry.candidates || {})
+          .filter(c => c.algorithm_id === bridgeAlgoId)
+          .map(c => conceptCacheRef.current?.[c.concept_key])
+          .filter(Boolean)
+      : []
+    if(!isBulk && !forceReload && offset === 0 && !_retired && existingCandidates.length > 0) {
       setTimeout(() => highlightTexts(existingCandidates, null, false), 100)
       return Promise.resolve()
     }
@@ -3547,30 +3426,12 @@ const MapProject = () => {
     ensureLoadedRef.current = ensureLoaded
   }, [ensureLoaded])
 
-  // Thin convenience wrapper preserved at the legacy call sites: derive
-  // concept_keys for the just-arrived results via the algo's
-  // concept_identity, then delegate to ensureLoaded. Replaces the legacy
-  // `algo.lookup_required` gate — every concept that isn't already 'full'
-  // is eligible for $lookup, in line with the unified-model spec.
-  const lookupCandidates = (algoId, candidates) => {
-    if(!algoId || !Array.isArray(candidates) || candidates.length === 0) return
-    const ctx = buildProjectContext()
-    if(!ctx?.target_repo?.canonical_url) return
-    const algoConfig = ensureConceptIdentity(getAlgoDef(algoId))
-    if(!algoConfig) return
-    const normalized = normalizeAlgorithmInvocation(
-      {row: {__index: -1}, results: candidates},
-      {algorithmId: algoId, algorithmConfig: algoConfig, projectContext: ctx, rowIndex: -1}
-    )
-    const keysToLoad = normalized.concept_definitions
-      .filter(d => d.lookup_status !== 'full')
-      .map(d => d.key)
-    if(keysToLoad.length) ensureLoaded(keysToLoad)
-  }
-
   const onFetchMoreCandidates = () => {
     const algoDef = getFirstAlgoDef()
-    const currentResults = find(allCandidatesRef.current[algoDef?.id], matched => matched.row.__index === rowIndex)?.results?.length || 0
+    const rowEntry = rowMatchStateRef.current?.[rowIndex]
+    const currentResults = rowEntry
+      ? Object.values(rowEntry.candidates || {}).filter(c => c.algorithm_id === algoDef?.id).length
+      : 0
     fetchAllCandidatesForRow(algoDef?.id, null, currentResults, undefined, true)
   }
 
@@ -3720,7 +3581,7 @@ const MapProject = () => {
       url: targetConcept.url || mergedConcept.url
     }
   }
-  const targetConceptFromCandidate = (!isEmpty(allCandidatesRef.current) && isNumber(rowIndex) && targetConcept?.url) ? find(getAllCandidatesForRow(rowIndex), {url: targetConcept.url}) : false
+  const targetConceptFromCandidate = (!isEmpty(rowMatchStateRef.current) && isNumber(rowIndex) && targetConcept?.url) ? find(getAllCandidatesForRow(rowIndex), {url: targetConcept.url}) : false
   if(targetConceptFromCandidate)
     targetConcept.search_meta = {
       ...(targetConceptFromCandidate.search_meta || {}),
@@ -3936,60 +3797,29 @@ const MapProject = () => {
   }
 
   // Build the v2 AI Assistant payload sections (recommendable_concepts +
-  // bridge_context + target_repo) by running the unified-model normalizer
-  // over the legacy allCandidates for the row. Sourcing from allCandidates
-  // (rather than rowMatchState) means this works regardless of the
-  // UNIFIED_MODEL_ENABLED flag — the bridge-recommendation bug fix can ship
-  // with PR2a even though reads are still on legacy state.
-  // See plans/unified-mapper-model.md "AI Assistant payload (match-recommend)".
+  // bridge_context + target_repo) by reading directly from rowMatchState +
+  // conceptCache. See plans/unified-mapper-model.md "AI Assistant payload
+  // (match-recommend)".
   const buildV2RecommendationPayload = (rowIndex) => {
     const projectContext = buildProjectContext()
     if(!projectContext?.target_repo?.canonical_url) return null
 
-    let allNormCandidates = []
-    const defsByKey = new Map()
-
-    // Prefer reading directly from unified rowMatchState + conceptCache when
-    // it's populated (the authoritative source under UNIFIED_MODEL_ENABLED).
-    // Falls back to re-normalizing allCandidates only if the unified state
-    // is empty — keeps the PR2a path alive for any pre-flag flows.
     const rowState = rowMatchStateRef.current?.[rowIndex]
-    const haveUnified = rowState && Object.keys(rowState.candidates || {}).length > 0
-    if(haveUnified) {
-      allNormCandidates = Object.values(rowState.candidates)
-      Object.values(rowState.candidates).forEach(cand => {
-        const def = conceptCacheRef.current[cand.concept_key]
-        if(!def) return
-        const existing = defsByKey.get(def.key)
-        if(!existing || lookupStatusRank(def.lookup_status) > lookupStatusRank(existing.lookup_status))
-          defsByKey.set(def.key, def)
-        if(cand.bridge_concept_key) {
-          const bridgeDef = conceptCacheRef.current[cand.bridge_concept_key]
-          if(bridgeDef && !defsByKey.has(bridgeDef.key)) defsByKey.set(bridgeDef.key, bridgeDef)
-        }
-      })
-    } else {
-      selectedAlgoIds.forEach(algoId => {
-        const algoDef = getAlgoDef(algoId)
-        if(!algoDef?.concept_identity) return
-        const rowEntry = find(allCandidatesRef.current[algoId], c => c.row?.__index === rowIndex)
-        if(!rowEntry?.results?.length) return
+    if(!rowState || !Object.keys(rowState.candidates || {}).length) return null
 
-        const normalized = normalizeAlgorithmInvocation(
-          {row: rowEntry.row, results: rowEntry.results},
-          {algorithmId: algoId, algorithmConfig: algoDef, projectContext, rowIndex}
-        )
-
-        allNormCandidates.push(...normalized.candidates)
-        normalized.concept_definitions.forEach(def => {
-          const existing = defsByKey.get(def.key)
-          // Prefer richer definitions (full > partial > pending), matching the
-          // mergeIntoRowMatchState rule.
-          if(!existing || lookupStatusRank(def.lookup_status) > lookupStatusRank(existing.lookup_status))
-            defsByKey.set(def.key, def)
-        })
-      })
-    }
+    const allNormCandidates = Object.values(rowState.candidates)
+    const defsByKey = new Map()
+    allNormCandidates.forEach(cand => {
+      const def = conceptCacheRef.current[cand.concept_key]
+      if(!def) return
+      const existing = defsByKey.get(def.key)
+      if(!existing || lookupStatusRank(def.lookup_status) > lookupStatusRank(existing.lookup_status))
+        defsByKey.set(def.key, def)
+      if(cand.bridge_concept_key) {
+        const bridgeDef = conceptCacheRef.current[cand.bridge_concept_key]
+        if(bridgeDef && !defsByKey.has(bridgeDef.key)) defsByKey.set(bridgeDef.key, bridgeDef)
+      }
+    })
 
     const targetCanonical = projectContext.target_repo.canonical_url
     // Project-pinned identifying property codes. When absent (FHIR-passthrough
@@ -4026,7 +3856,7 @@ const MapProject = () => {
           score: bridgeCandidate?.score,
           target_concept_keys
         })
-      } else if(def.reference?.url === targetCanonical) {
+      } else if(conceptBelongsToTargetRepo(def, targetCanonical, projectContext.target_repo.relative_url)) {
         // Target-repo concepts only. Evidence shows which algorithms surfaced
         // this concept (and via which bridge, if applicable).
         const evidence = allNormCandidates
@@ -4760,6 +4590,7 @@ const MapProject = () => {
                       rowState={rowMatchStateRef.current[rowIndex]}
                       conceptCache={conceptCache}
                       targetCanonical={buildProjectContext()?.target_repo?.canonical_url}
+                      targetRelativeUrl={buildProjectContext()?.target_repo?.relative_url}
                       setShowItem={setShowItem}
                       showItem={showItem}
                       setShowHighlights={setShowHighlights}
