@@ -80,24 +80,31 @@ const main = async () => {
     const expectedCodes = new Set()    // codes from survivable results (+ cascade targets)
     const survivableRows = new Set()
     const orphanTags = new Map()
+    // Codes that the orphan/no-identity result-derived fallback should recover
+    // (PR3-C / ocl_issues#2555). Verified present in v2 below.
+    const recoverableCodes = new Set()
+    const addCodes = (results) => results.forEach(r => { if(r?.id) recoverableCodes.add(String(r.id)) })
 
     for(const entry of candidates) {
       const results = entry?.results || []
       v1Results += results.length
       const tag = effectiveTag(entry, soleAlgoId)
       const idx = entry?.row?.__index
-      if(!tag) { // null tag, multi-algo project -> migration drops (no recovery)
+      if(!tag) { // null tag, multi-algo -> recovered via result-derived fallback
         droppedOrphanTag += results.length
         if(results.length) orphanTags.set('<null>', (orphanTags.get('<null>') || 0) + results.length)
+        addCodes(results)
         continue
       }
       if(!configuredIds.has(tag)) {
         droppedOrphanTag += results.length
         if(results.length) orphanTags.set(tag, (orphanTags.get(tag) || 0) + results.length)
+        addCodes(results)
         continue
       }
       if(!algoHasIdentity(algoById.get(tag))) {
         droppedNoIdentity += results.length
+        addCodes(results)
         continue
       }
       // survivable
@@ -142,16 +149,19 @@ const main = async () => {
     // --- checks ---
     const missingCodes = [...expectedCodes].filter(c => !v2Codes.has(c))
     const missingRows = [...survivableRows].filter(r => !(r in rows))
+    // Orphan/no-identity recovery: every recoverable code should now be in v2.
+    const orphanMissingCodes = [...recoverableCodes].filter(c => !v2Codes.has(c))
+    const orphanRecoveredCount = recoverableCodes.size - orphanMissingCodes.length
     const flags = []
     if(missingCodes.length) flags.push(`CODE_COVERAGE_FAIL(${missingCodes.length} missing)`)
     if(missingRows.length) flags.push(`ROW_COVERAGE_FAIL(${missingRows.length} missing)`)
     if(refErrors.length) flags.push(`REF_INTEGRITY_FAIL(${refErrors.length})`)
-    // soft / data-loss signals
-    if(droppedOrphanTag > 0) flags.push(`ORPHAN_TAG_DROP(${droppedOrphanTag} results)`)
-    if(droppedNoIdentity > 0) flags.push(`NO_IDENTITY_DROP(${droppedNoIdentity} results)`)
+    if(orphanMissingCodes.length) flags.push(`ORPHAN_UNRECOVERED(${orphanMissingCodes.length} codes)`)
+    // info: orphan/no-identity at-risk results now recovered via fallback
+    if(droppedOrphanTag > 0) flags.push(`ORPHAN_TAG_RECOVERED(${orphanRecoveredCount}/${recoverableCodes.size} codes)`)
     if(v1Results > 0 && v2Candidates === 0) flags.push('ZERO_OUT_WITH_RESULTS')
 
-    const hard = missingCodes.length > 0 || missingRows.length > 0 || refErrors.length > 0
+    const hard = missingCodes.length > 0 || missingRows.length > 0 || refErrors.length > 0 || orphanMissingCodes.length > 0
     if(hard) hardFail++
 
     report.push({
@@ -167,6 +177,9 @@ const main = async () => {
       v2_rows: Object.keys(rows).length,
       missing_codes: missingCodes.length,
       missing_rows: missingRows.length,
+      orphan_recoverable_codes: recoverableCodes.size,
+      orphan_recovered_codes: orphanRecoveredCount,
+      orphan_unrecovered_codes: orphanMissingCodes.length,
       ref_errors: refErrors.slice(0, 5),
       hard_fail: hard,
       flags
@@ -180,16 +193,17 @@ const main = async () => {
   console.log(`\n=== VALIDATION SUMMARY (${report.length} projects) ===`)
   console.log(`HARD FAILURES (coverage / referential integrity): ${hardFail}`)
   console.log(`Total v1 results: ${sum('v1_results')}`)
-  console.log(`  survivable (should appear in v2): ${sum('survivable_results')}`)
-  console.log(`  dropped - orphan tag (not in current algorithms[]): ${sum('dropped_orphan_tag')}`)
-  console.log(`  dropped - no concept_identity (custom, no canonical): ${sum('dropped_no_identity')}`)
-  const orphanProjs = report.filter(r => r.dropped_orphan_tag > 0)
-  const zeroOut = report.filter(r => r.flags.includes('ZERO_OUT_WITH_RESULTS'))
-  console.log(`\nProjects with ANY orphan-tag drop: ${orphanProjs.length}`)
-  console.log(`Projects zeroed-out despite having v1 results: ${zeroOut.length}`)
-  console.log(`\n-- projects with orphan-tag drops (the reconfigured / mistagged class) --`)
-  for(const r of orphanProjs.sort((a, b) => b.dropped_orphan_tag - a.dropped_orphan_tag)) {
-    console.log(`  id=${r.id} dropped=${r.dropped_orphan_tag} survivable=${r.survivable_results} v2_cands=${r.v2_candidates} tags=${JSON.stringify(r.orphan_tags)} cfg=${JSON.stringify(r.configured_algo_ids)} | ${r.name.slice(0, 32)}`)
+  console.log(`  survivable (matched algo, expected in v2): ${sum('survivable_results')}`)
+  console.log(`  at-risk - orphan tag (not in current algorithms[]): ${sum('dropped_orphan_tag')}`)
+  console.log(`  at-risk - no concept_identity (custom, no canonical): ${sum('dropped_no_identity')}`)
+  console.log(`\nOrphan/no-identity RECOVERY (result-derived fallback):`)
+  console.log(`  recoverable codes: ${sum('orphan_recoverable_codes')}`)
+  console.log(`  recovered in v2:   ${sum('orphan_recovered_codes')}`)
+  console.log(`  STILL MISSING:     ${sum('orphan_unrecovered_codes')}`)
+  const orphanProjs = report.filter(r => r.dropped_orphan_tag > 0 || r.dropped_no_identity > 0)
+  console.log(`\n-- at-risk projects (recovered codes / recoverable) --`)
+  for(const r of orphanProjs.sort((a, b) => b.orphan_recoverable_codes - a.orphan_recoverable_codes)) {
+    console.log(`  id=${r.id} recovered=${r.orphan_recovered_codes}/${r.orphan_recoverable_codes} missing=${r.orphan_unrecovered_codes} v2_cands=${r.v2_candidates} tags=${JSON.stringify(r.orphan_tags)} | ${r.name.slice(0, 30)}`)
   }
   if(hardFail) {
     console.log(`\n-- HARD FAILURES --`)

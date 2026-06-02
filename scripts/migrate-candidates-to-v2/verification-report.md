@@ -95,14 +95,13 @@ the zeroed ones.
 ## Recommendations
 
 1. **GO** for the prod migration on data-integrity grounds.
-2. **Retain the pre-migration `pg_dump` permanently** (archive it). It is the only
-   recoverable copy of the 2,678 dropped raw results after migration.
-3. **(Recommended) Land a small normalizer fix first** to recover most of the loss:
-   when `algoById.get(algoId)` misses, fall back to `conceptIdentityByType[algoId]`
-   (the tags `ocl-search`/`ocl-ciel-bridge`/`ocl-semantic` are all valid identity types).
-   This recovers id=52, 132, 135, 61, 95, 114. It will NOT recover the `custom` ICD-API
-   projects (no `canonical_url` → no identity); those are demo/test data. Re-run the
-   dry-run + `validate.mjs` after the fix. Route to Sunny (snyaggarwal), PR3-C owner.
+2. **Retain the pre-migration `pg_dump` permanently** (archive it) — standard safety
+   net, even though the canonical + orphan-recovery fixes now bring preventable
+   drops to ~0.
+3. **DONE — both data-loss classes recovered** (see the two sections below):
+   the canonical fix eliminated the 1,703 no-identity drops, and the orphan-algo
+   `reference_source: 'result'` fallback recovered all 731 orphan-tag codes
+   (`validate.mjs`: 0 still-missing, 0 hard failures).
 
 ## Runbook corrections (found during rehearsal)
 
@@ -156,11 +155,19 @@ dump time (static snapshot), not a runtime read.
    (the app fetches target live; the migration can't, so it resolves at dump time).
    `migrate.mjs` is unchanged.
 
-Hand both to Sunny. **Still open: the 975 orphan-tag drops** (results tagged with an
-algorithm not in the project's current `algorithms[]` — reconfigured/mistagged
-projects: id 52, 132, 135, 61, 67, 55, 57, 95, 114). That's a separate normalizer
-fallback (`conceptIdentityByType[tag]` / result-derived identity), not a canonical
-issue — ~99% recoverable per earlier analysis if we choose to fix it.
+Hand both to Sunny.
+
+**RESOLVED — orphan-tag drops (`ocl_issues#2555`).** Results tagged with an algorithm
+not in the project's current `algorithms[]` (reconfigured/mistagged projects: id 52,
+55, 57, 61, 67, 95, 114, 132, 135) were dropped at the normalizer's `if(!algoDef)
+return`. Added a migration-only `reference_source: 'result'` fallback to
+`vendored/normalizers.js`: derive the concept identity from the result's own source
+— target-source results anchor to the project's target canonical (formal, visible +
+recommendable); non-target results key on their own generated source (correctly inert,
+never mis-surfaced). Measured: **731/731 recoverable codes now in v2, 0 still-missing,
+0 hard failures**, target/non-target keying verified correct. The remaining UI nicety
+(showing orphan-algo candidates in the *by-algorithm* view, which iterates configured
+algos only) is a separate small **app** PR — out of scope for this migration-tooling PR.
 
 ## Outstanding for ≥98% (Track C)
 

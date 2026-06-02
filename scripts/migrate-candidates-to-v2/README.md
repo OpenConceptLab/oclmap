@@ -25,9 +25,8 @@ for the architectural context.
    `BEGIN; UPDATE * N; COMMIT;` — a single transaction that applies all
    v2 blobs to the prod DB.
 
-Two migration-time fallbacks are applied to recover currently-dead data
-(neither changes any normalizer behavior; both classes of project are
-unreadable in the prod UI today):
+Three migration-time fallbacks are applied to recover currently-dead data
+(all classes are unreadable in the prod UI today):
 
 - **Sole-algo fallback** (~18 projects). Pre-2026 saves omit the
   per-entry `algorithm` field AND the `results[0].search_meta.algorithm`
@@ -37,6 +36,15 @@ unreadable in the prod UI today):
   `/orgs/WHO/sources/ICD-11-WHO/` (no version in URL) saved before
   `ocl_issues#2522` removed the silent `'HEAD'` default. Use `'HEAD'` as
   the migrate-time version so the projectContext builds.
+- **Orphan-algo result-derived recovery** (`ocl_issues#2555`, 9 projects,
+  731 codes). When an entry's algorithm tag isn't in the project's current
+  `algorithms[]` (reconfigured / mistagged project), the normalizer can't look
+  up a concept_identity, so it derives one from the RESULT itself: if the
+  result's source is the project's target source → anchor to the target
+  canonical+version (formal, visible/recommendable); otherwise key on its own
+  generated source (correctly NON-target, so the UI's target filter keeps it
+  inert rather than mis-surfacing it). See `vendored/normalizers.js`
+  `reference_source: 'result'`.
 
 ## Runbook
 
@@ -145,10 +153,11 @@ Verified against the 2026-06-02 prod snapshot:
 ## Files
 
 - `migrate.mjs` — the migration script (Node 22+, ESM). Self-contained; runs from any checkout.
-- `vendored/normalizers.js`, `vendored/conceptKey.js` — vendored normalizer (pinned
-  to the validated `315e9b0` version), so `migrate.mjs` doesn't depend on `src/`
-  (where the v2-only PR deleted `normalizeLegacyAllCandidates`). Dir is `vendored/`
-  rather than `lib/` because the root `.gitignore` ignores `lib/`.
+- `vendored/normalizers.js`, `vendored/conceptKey.js` — vendored normalizer (the
+  `315e9b0` version + the migration-only orphan-algo `reference_source: 'result'`
+  recovery, `ocl_issues#2555`), so `migrate.mjs` doesn't depend on `src/` (where the
+  v2-only PR deleted `normalizeLegacyAllCandidates`). Dir is `vendored/` rather than
+  `lib/` because the root `.gitignore` ignores `lib/`.
 - `dump-projects.sql` — the dump query with resolved formal canonicals.
 - `fix-algorithm-canonicals.sql` — one-time `--rw` fix of `algorithms` config so
   the live app keys concepts on the same formal canonicals as the migrated data.
@@ -160,6 +169,6 @@ Verified against the 2026-06-02 prod snapshot:
 ## After the migration
 
 This whole folder (including `vendored/`) can be deleted once the migration
-has run cleanly in prod and the v2-only oclmap is stable. The vendored
-`vendored/normalizers.js` is a frozen copy of the `315e9b0` normalizer
-(`normalizeLegacyAllCandidates`), which no longer exists in `src/`.
+has run cleanly in prod and the v2-only oclmap is stable. `vendored/normalizers.js`
+is the `315e9b0` normalizer (`normalizeLegacyAllCandidates`, no longer in `src/`)
+plus the migration-only orphan-algo recovery (`reference_source: 'result'`).

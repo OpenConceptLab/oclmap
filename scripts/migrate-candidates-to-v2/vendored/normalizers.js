@@ -81,6 +81,20 @@ const inferLookupStatus = (result) => {
  *                                            bridge_repo?: {canonical_url, version?} }
  * @returns {ConceptReference | null}
  */
+// Orphan-algo recovery (PR3-C / ocl_issues#2555): extract the OCL source path
+// (/owner-type/owner/sources/mnemonic/) and the source mnemonic from an OCL
+// url, host-agnostic (handles both relative and absolute api.* urls).
+const sourcePathOf = (u) => {
+  if (!u) return null
+  const parts = String(u).replace(/^https?:\/\/[^/]+/, '').split('/').filter(Boolean)
+  const i = parts.indexOf('sources')
+  return (i >= 0 && parts.length > i + 1) ? '/' + parts.slice(0, i + 2).join('/') + '/' : null
+}
+const sourceMnemonicOf = (u) => {
+  const p = sourcePathOf(u)
+  return p ? p.split('/').filter(Boolean).pop() : null
+}
+
 const resolveReference = (result, identityConfig, projectContext) => {
   if (!result || !identityConfig) return null
   const codeField = identityConfig.code_field || 'id'
@@ -112,6 +126,30 @@ const resolveReference = (result, identityConfig, projectContext) => {
       url = projectContext?.bridge_repo?.canonical_url
       version = projectContext?.bridge_repo?.version
       break
+    case 'result': {
+      // Orphan-algo recovery: the algorithm that produced this result is no
+      // longer in the project config, so there's no concept_identity to look
+      // up. Derive the concept's home from the RESULT itself. If it lives in
+      // the project's target source, anchor to the target canonical+version
+      // (formal — so it dedups and renders/recommends like any target concept);
+      // otherwise key on its own (generated) source so it stays correctly
+      // NON-target (the UI's target-repo filter keeps it inert instead of
+      // mis-surfacing a non-target concept as a mapping candidate).
+      const targetSrc = sourcePathOf(projectContext?.target_repo?.relative_url)
+      const targetMnem = sourceMnemonicOf(projectContext?.target_repo?.relative_url)
+      const resultSrc = sourcePathOf(result.url || result.ocl_url)
+      if (resultSrc && targetSrc && resultSrc === targetSrc) {
+        url = projectContext.target_repo.canonical_url
+        version = projectContext.target_repo.version
+      } else if (resultSrc) {
+        url = `https://ns.openconceptlab.org${resultSrc}`
+      } else if (result.source && targetMnem && result.source === targetMnem) {
+        // stub (no url) whose source mnemonic matches the project target source
+        url = projectContext.target_repo.canonical_url
+        version = projectContext.target_repo.version
+      }
+      break
+    }
     default:
       return null
   }
@@ -652,13 +690,14 @@ export const normalizeLegacyAllCandidates = (
 
   Object.entries(allCandidates).forEach(([algoId, rowEntries]) => {
     const algoDef = algoById.get(algoId)
-    if(!algoDef) return
-    const algoConfig = algoDef.concept_identity
+    // Orphan-algo recovery (PR3-C / ocl_issues#2555): when the tag isn't a
+    // configured algo (reconfigured / mistagged project) or yields no identity,
+    // fall back to a result-derived identity instead of dropping the entries.
+    const algoConfig = algoDef?.concept_identity
       ? algoDef
-      : (conceptIdentityByType[algoDef.type]
+      : (algoDef && conceptIdentityByType[algoDef.type]
         ? { ...algoDef, concept_identity: conceptIdentityByType[algoDef.type] }
-        : null)
-    if(!algoConfig) return
+        : { id: algoId, concept_identity: { reference_source: 'result', code_field: 'id', ocl_url_field: 'url' } })
 
     ;(rowEntries || []).forEach(rowEntry => {
       const idx = rowEntry?.row?.__index
