@@ -219,11 +219,11 @@ const CandidateList = ({rowViews, header, rowIndex, sortBy, order, setShowItem, 
   })
   // Helper: a rowView is mappable only when its concept belongs to the
   // project's target repo (cascade targets in bridge flows DO; bridge
-  // intermediaries don't). targetCanonical comes from buildProjectContext
-  // in MapProject — the same canonical the normalizer used to stamp the
-  // ConceptDefinition.reference.url, so the comparison is exact.
+  // intermediaries don't). The comparison uses canonical URL in the
+  // common case, but also tolerates canonical drift via the OCL
+  // relative-URL fallback.
   const isTargetRepoView = (view) => {
-    if(!targetCanonical) return true
+    if(!targetCanonical && !targetRelativeUrl) return true
     return conceptBelongsToTargetRepo(view?.conceptDefinition, targetCanonical, targetRelativeUrl)
   }
   const results = {total: onFetchMore ? rowsForTable.length : 1, results: rowsForTable}

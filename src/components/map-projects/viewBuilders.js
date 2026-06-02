@@ -25,7 +25,7 @@ const normalizeRelativeUrl = (url) => {
   return url.endsWith('/') ? url : `${url}/`
 }
 const normalizeCanonicalUrl = (url) => {
-  if(typeof url !== 'string') return ''
+  if(typeof url !== 'string' || url === '') return ''
   return url.endsWith('/') ? url : `${url}/`
 }
 const toNumberOrNull = (v) => {
@@ -47,7 +47,7 @@ export const conceptBelongsToTargetRepo = (conceptDefinition, targetCanonical, t
   if(canonicalUrlsEqual(conceptDefinition?.reference?.url, targetCanonical)) return true
   const relativeUrl = normalizeRelativeUrl(targetRelativeUrl)
   const oclUrl = conceptDefinition?.ocl_url || ''
-  return relativeUrl !== '' && typeof oclUrl === 'string' && oclUrl.startsWith(relativeUrl)
+  return relativeUrl !== '' && oclUrl.startsWith(relativeUrl)
 }
 
 /**
