@@ -46,10 +46,11 @@ be inspected, diffed, and re-run safely.
 
 > **IMPORTANT — read before running (verified 2026-06-02, see
 > `verification-report.md`):**
-> 1. **Run `migrate.mjs` from commit `315e9b0`**, NOT `main`. The v2-only PR
->    (`9f8f4b3`) deletes `normalizeLegacyAllCandidates`, so running from `main`
->    crashes on import. Use a detached worktree:
->    `git worktree add --detach /tmp/oclmap-migrate 315e9b0`.
+> 1. **`migrate.mjs` is self-contained.** It imports the normalizer from
+>    `./vendored/` (pinned to the validated `315e9b0` version), so
+>    `node migrate.mjs` runs from any checkout — including `main`, where the
+>    v2-only PR (`9f8f4b3`) deleted `normalizeLegacyAllCandidates` from `src/`.
+>    No special checkout or worktree needed.
 > 2. **Dump with `dump-projects.sql`** (not the bare query below) so concept_keys
 >    use the formal source canonical (matching the live app) instead of a
 >    generated `ns.openconceptlab.org` URL. Also apply `fix-algorithm-canonicals.sql`
@@ -72,14 +73,11 @@ time without coordination.
 cd scripts/migrate-candidates-to-v2
 mkdir -p input
 
-# 1. Dump with resolved formal canonicals (self-contained; read-only):
+# 1. Dump with resolved formal canonicals (read-only):
 ~/.ocl/bin/ocl-psql oclapi2 -t -A -f dump-projects.sql > input/projects.ndjson
 
-# 2. Run migrate.mjs FROM A 315e9b0 WORKTREE (normalizeLegacyAllCandidates is
-#    deleted on main). INPUT/OUTDIR point back at this folder:
-git -C ../.. worktree add --detach /tmp/oclmap-migrate 315e9b0   # once
-INPUT="$PWD/input/projects.ndjson" OUTDIR="$PWD/output" \
-  node /tmp/oclmap-migrate/scripts/migrate-candidates-to-v2/migrate.mjs
+# 2. Normalize to v2 (self-contained; runs from any checkout):
+node migrate.mjs
 
 # 3. Independently validate the transformation:
 node validate.mjs
@@ -110,9 +108,8 @@ T-0:03  Fix the live algorithms config (formal canonicals; app re-run consistenc
 T-0:04  Re-dump the live candidates (in case a save landed since the dry run):
           ~/.ocl/bin/ocl-psql oclapi2 -t -A -f dump-projects.sql \
             > input/projects.ndjson
-T-0:05  Run migrate.mjs (from the 315e9b0 worktree) + validate:
-          INPUT="$PWD/input/projects.ndjson" OUTDIR="$PWD/output" \
-            node /tmp/oclmap-migrate/scripts/migrate-candidates-to-v2/migrate.mjs
+T-0:05  Normalize to v2 + validate:
+          node migrate.mjs
           node validate.mjs        # confirm 0 hard failures
 T-0:07  Apply the migration (single BEGIN/COMMIT transaction):
           ~/.ocl/bin/ocl-psql oclapi2 --rw -f output/migrate.sql
@@ -147,7 +144,11 @@ Verified against the 2026-06-02 prod snapshot:
 
 ## Files
 
-- `migrate.mjs` — the migration script (Node 22+, ESM). Run from commit `315e9b0`.
+- `migrate.mjs` — the migration script (Node 22+, ESM). Self-contained; runs from any checkout.
+- `vendored/normalizers.js`, `vendored/conceptKey.js` — vendored normalizer (pinned
+  to the validated `315e9b0` version), so `migrate.mjs` doesn't depend on `src/`
+  (where the v2-only PR deleted `normalizeLegacyAllCandidates`). Dir is `vendored/`
+  rather than `lib/` because the root `.gitignore` ignores `lib/`.
 - `dump-projects.sql` — the dump query with resolved formal canonicals.
 - `fix-algorithm-canonicals.sql` — one-time `--rw` fix of `algorithms` config so
   the live app keys concepts on the same formal canonicals as the migrated data.
@@ -158,7 +159,7 @@ Verified against the 2026-06-02 prod snapshot:
 
 ## After the migration
 
-This whole folder can be deleted once the migration has run cleanly in
-prod and the v2-only oclmap is stable. The script imports
-`normalizers.js`'s `normalizeLegacyAllCandidates` function, which itself
-is deleted in the v2-only oclmap PR.
+This whole folder (including `vendored/`) can be deleted once the migration
+has run cleanly in prod and the v2-only oclmap is stable. The vendored
+`vendored/normalizers.js` is a frozen copy of the `315e9b0` normalizer
+(`normalizeLegacyAllCandidates`), which no longer exists in `src/`.
