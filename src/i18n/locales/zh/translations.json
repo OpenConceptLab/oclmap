@@ -519,6 +519,7 @@
     "ciel_bridge_terminology_candidates": "CIEL 桥接术语候选对象",
     "fetching": "正在获取...",
     "fetch_more": "获取更多",
+    "unrecognized_algorithm": "无法识别的算法",
     "source_code": "源代码",
     "class": "类",
     "datatype": "数据类型",

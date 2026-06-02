@@ -49,6 +49,7 @@ import AICandidatesAnalysis from './AICandidatesAnalysis'
 import AIAssistantButton from './AIAssistantButton'
 import {
   buildAlgorithmRowViews,
+  getOrphanAlgorithmIds,
   buildQualityRowViews,
   conceptBelongsToTargetRepo,
   sortRowViews,
@@ -530,8 +531,22 @@ const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCa
         ['hasCandidates', 'algo.order'],
         ['desc', 'asc']
       )
+      // A candidate's algorithm_id can fall outside the project's configured
+      // algorithms[] — the project was reconfigured after running algorithms,
+      // or the PR3-C v1->v2 migration tagged it with an id that isn't current.
+      // These "orphan-algo" candidates already show in the quality view and the
+      // AI payload (both gated by target-repo membership, never by
+      // algorithm_id), but the by-algorithm grouping above only iterates the
+      // configured algos — so they'd appear in no bucket here. Surface one
+      // bucket per orphan id, after all configured algos. Like the configured
+      // buckets, these keep the by-algo "full mix" (no target-repo filter);
+      // per-row mappability stays gated downstream as before.
+      const orphanAlgos = getOrphanAlgorithmIds(rowState, algosSelected.map(a => a.id)).map(id => ({
+        algo: { id, name: t('map_project.unrecognized_algorithm'), order: Infinity },
+        views: buildAlgorithmRowViews(rowState, conceptCache, id)
+      }))
       return {
-        byAlgoCandidates: sortedAlgos.map(({algo, views}) => ({
+        byAlgoCandidates: [...sortedAlgos, ...orphanAlgos].map(({algo, views}) => ({
           algo,
           // Sort the top-level (bridge intermediaries and standard candidates)
           // and, for each bridge, sort its nested cascade targets by the same

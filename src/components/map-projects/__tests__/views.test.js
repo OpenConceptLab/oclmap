@@ -17,6 +17,7 @@ import assert from 'node:assert/strict'
 
 import {
   buildAlgorithmRowViews,
+  getOrphanAlgorithmIds,
   buildQualityRowViews,
   candidateToRowView,
   conceptForMapping,
@@ -210,6 +211,66 @@ test('buildAlgorithmRowViews skips candidates whose ConceptDefinition is missing
     concept_rows: {}
   }
   assert.deepEqual(buildAlgorithmRowViews(rowState, {}, 'ocl-search'), [])
+})
+
+// ---------- getOrphanAlgorithmIds ----------
+
+test('getOrphanAlgorithmIds returns empty array when rowState is null', () => {
+  assert.deepEqual(getOrphanAlgorithmIds(null, ['ocl-search']), [])
+})
+
+test('getOrphanAlgorithmIds returns distinct candidate algorithm_ids not in the configured set', () => {
+  const rowState = {
+    candidates: {
+      c1: { id: 'c1', algorithm_id: 'ocl-search', concept_key: KEY_LOINC_GLUCOSE, type: 'standard' },
+      c2: { id: 'c2', algorithm_id: 'legacy-fuzzy', concept_key: KEY_LOINC_CHOL, type: 'standard' },
+      c3: { id: 'c3', algorithm_id: 'legacy-fuzzy', concept_key: KEY_LOINC_GLUCOSE, type: 'standard' },
+      c4: { id: 'c4', algorithm_id: 'ocl-bridge', concept_key: KEY_CIEL_BRIDGE, type: 'bridge' }
+    },
+    concept_rows: {}
+  }
+  // ocl-search & ocl-bridge are configured; legacy-fuzzy is the only orphan,
+  // de-duplicated across c2/c3.
+  assert.deepEqual(getOrphanAlgorithmIds(rowState, ['ocl-search', 'ocl-bridge']), ['legacy-fuzzy'])
+})
+
+test('getOrphanAlgorithmIds returns [] when every candidate algorithm_id is configured', () => {
+  const rowState = {
+    candidates: {
+      c1: { id: 'c1', algorithm_id: 'ocl-search', concept_key: KEY_LOINC_GLUCOSE, type: 'standard' }
+    },
+    concept_rows: {}
+  }
+  assert.deepEqual(getOrphanAlgorithmIds(rowState, ['ocl-search']), [])
+})
+
+test('getOrphanAlgorithmIds ignores candidates with a null/undefined algorithm_id', () => {
+  const rowState = {
+    candidates: {
+      c1: { id: 'c1', algorithm_id: null, concept_key: KEY_LOINC_GLUCOSE, type: 'standard' },
+      c2: { id: 'c2', concept_key: KEY_LOINC_CHOL, type: 'standard' },
+      c3: { id: 'c3', algorithm_id: 'orphan-x', concept_key: KEY_LOINC_GLUCOSE, type: 'standard' }
+    },
+    concept_rows: {}
+  }
+  assert.deepEqual(getOrphanAlgorithmIds(rowState, ['ocl-search']), ['orphan-x'])
+})
+
+test('getOrphanAlgorithmIds orphan id round-trips through buildAlgorithmRowViews into a renderable bucket', () => {
+  // The component appends a bucket per orphan id using buildAlgorithmRowViews
+  // with that id. Assert the full-mix bucket includes a non-target candidate.
+  const cache = { [KEY_LOINC_GLUCOSE]: defLOINCGlucose }
+  const rowState = {
+    candidates: {
+      c1: { id: 'c1', algorithm_id: 'orphan-x', concept_key: KEY_LOINC_GLUCOSE, type: 'standard', score: 0.7 }
+    },
+    concept_rows: {}
+  }
+  const [orphanId] = getOrphanAlgorithmIds(rowState, ['ocl-search'])
+  assert.equal(orphanId, 'orphan-x')
+  const views = buildAlgorithmRowViews(rowState, cache, orphanId)
+  assert.equal(views.length, 1)
+  assert.equal(views[0].candidate.id, 'c1')
 })
 
 // ---------- buildQualityRowViews ----------
