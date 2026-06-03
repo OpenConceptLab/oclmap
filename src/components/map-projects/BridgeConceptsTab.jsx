@@ -6,11 +6,15 @@ import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
+import IconButton from '@mui/material/IconButton';
+import Tooltip from '@mui/material/Tooltip';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import { useTranslation } from 'react-i18next';
 
 import ConceptHome from '../concepts/ConceptHome';
 import Breadcrumbs from '../common/Breadcrumbs';
-import { toParentURI } from '../../common/utils';
+import { toParentURI, toV3URL } from '../../common/utils';
 import { BLACK } from '../../common/colors';
 import { MAP_TYPE_CHIP_SX } from './Concept';
 
@@ -45,6 +49,7 @@ const ownerFromURL = url => {
 // compatible: also accepts `entry.bridgeConceptDefinition` for older call
 // sites that haven't migrated yet.
 const BridgeAccordionSummary = ({entry}) => {
+  const { t } = useTranslation()
   const def = entry?.conceptDefinition || entry?.bridgeConceptDefinition
   if(!def) return null
   const ocl_url = def.ocl_url
@@ -53,6 +58,8 @@ const BridgeAccordionSummary = ({entry}) => {
   const owner = def.owner || ownerFromURL(ocl_url)
   const owner_type = def.owner_type || owner_typeFromURL(ocl_url)
   const conceptStub = { id, retired: Boolean(def.retired) }
+  // toV3URL already prepends the SPA hash; pass the bare relative URL.
+  const termBrowserUrl = ocl_url ? toV3URL(ocl_url) : null
   return (
     <Box sx={{width: '100%'}}>
       <Stack
@@ -80,6 +87,25 @@ const BridgeAccordionSummary = ({entry}) => {
           {
             entry.algorithm_id &&
               <Chip size='small' label={entry.algorithm_id} variant='outlined' color='warning' />
+          }
+          {
+            termBrowserUrl && (
+              <Tooltip title={t('concept.open_in_term_browser')}>
+                <IconButton
+                  size='small'
+                  color='secondary'
+                  href={termBrowserUrl}
+                  target='_blank'
+                  rel='noopener noreferrer'
+                  // The summary is the accordion toggle; don't collapse/expand
+                  // when the user clicks the TermBrowser link.
+                  onClick={e => e.stopPropagation()}
+                  aria-label={t('concept.open_in_term_browser')}
+                >
+                  <OpenInNewIcon fontSize='small' />
+                </IconButton>
+              </Tooltip>
+            )
           }
         </Stack>
       </Stack>

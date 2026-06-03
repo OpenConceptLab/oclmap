@@ -38,7 +38,9 @@ const ConceptHeader = ({concept, repo, onClose, repoURL, onEdit, nested, loading
     }
   }
 
-  const termBrowserUrl = concept?.url ? toV3URL(`/#${concept.url}`) : null
+  // toV3URL already prepends the SPA hash (`/#`); pass the bare relative URL
+  // so we don't get a double-hash (`/#/#/...`) target.
+  const termBrowserUrl = concept?.url ? toV3URL(concept.url) : null
   const headerWrapperStyle = hideDragHandle
     ? {}
     : {cursor: 'move'}
@@ -123,6 +125,7 @@ const ConceptHeader = ({concept, repo, onClose, repoURL, onEdit, nested, loading
                   variant='outlined'
                   icon={<AssistantIcon fontSize='small' />}
                   label={t('map_project.ai_recommended')}
+                  sx={{padding: '4px'}}
                 />
             }
             {
@@ -133,6 +136,7 @@ const ConceptHeader = ({concept, repo, onClose, repoURL, onEdit, nested, loading
                   variant='outlined'
                   icon={<AssistantIcon fontSize='small' />}
                   label={t('map_project.ai_alternate')}
+                  sx={{padding: '4px'}}
                 />
             }
             {
@@ -142,6 +146,7 @@ const ConceptHeader = ({concept, repo, onClose, repoURL, onEdit, nested, loading
                   color='secondary'
                   variant='outlined'
                   label={t('concept.also_candidate_for', {code: crossRowCode})}
+                  sx={{padding: '4px'}}
                 />
             }
           </Stack>

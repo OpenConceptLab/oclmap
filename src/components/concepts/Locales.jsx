@@ -221,7 +221,7 @@ const Locales = ({ concept, locales, title, repo, effectiveLocales, collapsible 
         }
       </List>
       {
-        filterSet && hiddenCount > 0 && (
+        filterSet && (hiddenCount > 0 || showAll) && (
           <div style={{padding: '8px 16px', borderTop: '1px solid', borderColor: borderColor}}>
             <Button
               size='small'
@@ -231,8 +231,8 @@ const Locales = ({ concept, locales, title, repo, effectiveLocales, collapsible 
             >
               {
                 showAll
-                  ? t('concept.show_fewer_names', 'Show fewer')
-                  : t('concept.show_more_names', { defaultValue: 'See {{count}} more', count: hiddenCount })
+                  ? t('concept.show_fewer_locales')
+                  : t('concept.show_more_locales', { count: hiddenCount })
               }
             </Button>
           </div>
