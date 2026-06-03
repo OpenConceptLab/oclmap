@@ -121,6 +121,25 @@ const resolveReference = (result, identityConfig, projectContext) => {
 }
 
 /**
+ * Build the concept-detail URL for a custom lookup source, addressed by code.
+ *
+ * Mirrors the `$resolveReference` (Branch 2) fetch path in
+ * MapProject.ensureLoaded — same base + double-encode — so a code resolves to
+ * the identical URL whether it arrives with an `ocl_url` (direct branch) or via
+ * `$resolveReference`. The double-encode keeps cluster (`&`) and compound (`/`)
+ * codes addressable.
+ *
+ * @param {string} [lookupUrl]  lookupConfig.url — the custom lookup source
+ * @param {string} [code]       the concept code
+ * @returns {string|null}       the lookup-source concept URL, or null on missing input
+ */
+export const buildLookupConceptUrl = (lookupUrl, code) => {
+  if (!lookupUrl || !code) return null
+  const base = lookupUrl.endsWith('/') ? lookupUrl : `${lookupUrl}/`
+  return `${base}concepts/${encodeURIComponent(encodeURIComponent(code))}/`
+}
+
+/**
  * Build a ConceptDefinition from a concept-shaped result + a resolved reference.
  */
 const toConceptDefinition = (result, reference, identityConfig, { algorithmId } = {}) => {

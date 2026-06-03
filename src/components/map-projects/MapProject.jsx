@@ -99,7 +99,7 @@ import ProjectLogs from './ProjectLogs';
 import { useAlgos, ensureConceptIdentity } from './algorithms'
 import AutoMatchDialog from './AutoMatchDialog'
 import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
-import { normalizeAlgorithmInvocation, lookupStatusRank, buildRecommendableConceptEntry, stripConstantClassAndDatatype } from './normalizers'
+import { normalizeAlgorithmInvocation, lookupStatusRank, buildRecommendableConceptEntry, stripConstantClassAndDatatype, buildLookupConceptUrl } from './normalizers'
 import { parseConceptKey } from './conceptKey'
 import { getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId } from './projectTargetRepo'
 import { buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, resolveAICandidateID } from './viewBuilders.js'
@@ -3303,7 +3303,19 @@ const MapProject = () => {
       pending.push(promise)
 
       if(def?.ocl_url) {
-        directFetches.push({key, oclUrl: def.ocl_url})
+        // The target repo may be a definition-only canonical repo whose content
+        // is served from a configured custom lookup source (e.g. the public WHO
+        // ICD-11 repo, kept content-empty under WHO's license). Concepts that
+        // resolve to the target repo — notably ocl-bridge cascade targets, whose
+        // ocl_url points INTO the (empty) target repo — 404 on a direct GET.
+        // Divert those to the lookup source by code. Branch 2 ($resolveReference,
+        // below) already honors lookupConfig.url; this brings the direct-fetch
+        // branch in line. See ocl_issues#2558.
+        const tr = ctx?.target_repo
+        const divertedUrl = (lookupConfig?.url && tr && conceptBelongsToTargetRepo(def, tr.canonical_url, tr.relative_url))
+          ? buildLookupConceptUrl(lookupConfig.url, def.reference?.code)
+          : null
+        directFetches.push({key, oclUrl: divertedUrl || def.ocl_url})
       } else {
         try {
           const reference = parseConceptKey(key)
