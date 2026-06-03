@@ -523,6 +523,7 @@
     "ciel_bridge_terminology_candidates": "CIEL Bridge Terminology Candidates",
     "fetching": "Fetching...",
     "fetch_more": "Fetch More",
+    "unrecognized_algorithm": "Unrecognized algorithm",
     "source_code": "Source Code",
     "class": "Class",
     "datatype": "Datatype",

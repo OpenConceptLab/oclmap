@@ -113,6 +113,25 @@ export const buildAlgorithmRowViews = (rowState, conceptCache, algoId) => {
 }
 
 /**
+ * The distinct algorithm_ids present in rowState.candidates that are NOT in
+ * the project's configured algorithm set. These "orphan-algo" candidates are
+ * legitimate (a candidate's algorithm_id is a benign label, never a filter —
+ * membership is gated by target-repo elsewhere) and arise whenever a project
+ * is reconfigured after running algorithms, or via the PR3-C v1->v2 migration.
+ * The by-algorithm grouping iterates only configured algos, so these ids would
+ * otherwise have no bucket. Order is stable (first-seen) for deterministic
+ * rendering. configuredIds may be any iterable of algorithm ids.
+ */
+export const getOrphanAlgorithmIds = (rowState, configuredIds) => {
+  if(!rowState) return []
+  const configured = new Set(configuredIds || [])
+  const present = values(rowState.candidates || {})
+    .map(c => c.algorithm_id)
+    .filter(id => id != null && !configured.has(id))
+  return uniq(present)
+}
+
+/**
  * Quality-grouped view: iterate `RowState.concept_rows`. One entry per
  * concept_key (the per-row presence of a concept). Each entry exposes
  * its rerank_score plus a list of contributing candidates so the UI can
