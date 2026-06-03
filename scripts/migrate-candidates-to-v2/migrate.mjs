@@ -29,9 +29,15 @@ import { createInterface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 
+// Self-contained: the normalizer is vendored into ./vendored/ (pinned to the
+// 315e9b0 version this migration was written + validated against) so the
+// script runs from any checkout, including main where the v2-only PR
+// (9f8f4b3) deleted normalizeLegacyAllCandidates from src/. The whole folder
+// is deleted after the one-shot prod migration. (Not ./lib/ — root .gitignore
+// ignores lib/.)
 import {
   normalizeLegacyAllCandidates
-} from '../../src/components/map-projects/normalizers.js'
+} from './vendored/normalizers.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const INPUT = resolve(process.env.INPUT || join(__dirname, 'input/projects.ndjson'))
