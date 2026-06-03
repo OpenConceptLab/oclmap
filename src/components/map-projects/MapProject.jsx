@@ -3426,6 +3426,35 @@ const MapProject = () => {
     ensureLoadedRef.current = ensureLoaded
   }, [ensureLoaded])
 
+  // Lazily enrich a row's saved candidates when it is opened. The persisted
+  // v2 candidates payload intentionally carries sparse ConceptDefinitions
+  // ('partial'/'pending' — no descriptions, and for migrated projects no
+  // rerank_score); these are designed to be $lookup-resolved on demand. The
+  // refresh / auto-match path triggers that via mergeIntoRowMatchState ->
+  // ensureLoaded -> scheduleRerank, but the project LOAD path
+  // (fetchAndSetProject) deserializes straight into the cache without
+  // enriching. So a saved/migrated row shows blank candidate definitions and
+  // leaves them in the "Unranked" bucket until the user manually hits Refresh
+  // (OpenConceptLab/ocl_issues#2557). Mirror the merge path here: resolve the
+  // row's sparse defs, then rerank so scores land too. The explicit
+  // scheduleRerank is required because writeConceptCachePatch only auto-fires
+  // a rerank on a not-usable -> usable display_name transition — 'partial'
+  // defs already have a usable name, so resolving them alone never re-scores.
+  // ensureLoaded is idempotent + in-flight-deduped and we only fire for rows
+  // that still have sparse defs, so fully-loaded rows are a no-op.
+  React.useEffect(() => {
+    if(!isNumber(rowIndex)) return
+    const conceptRows = rowMatchStateRef.current?.[rowIndex]?.concept_rows
+    if(!conceptRows) return
+    const cache = conceptCacheRef.current || {}
+    const keysToLoad = Object.keys(conceptRows).filter(k => cache[k]?.lookup_status !== 'full')
+    if(keysToLoad.length && ensureLoadedRef.current) {
+      ensureLoadedRef.current(keysToLoad, rowIndex).then(() => {
+        if(scheduleRerankRef.current) scheduleRerankRef.current(rowIndex)
+      })
+    }
+  }, [rowIndex])
+
   const onFetchMoreCandidates = () => {
     const algoDef = getFirstAlgoDef()
     const rowEntry = rowMatchStateRef.current?.[rowIndex]
