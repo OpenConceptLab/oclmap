@@ -3141,18 +3141,39 @@ const MapProject = () => {
     return id || name || undefined
   }
 
+  // Non-candidate entry points (Search tab, mapped-target summary) don't know
+  // the active AI recommendation ids, but the panel should still show the same
+  // AI chip state as the current row. Fall back to the latest analysis
+  // available for this row when callers don't supply explicit ids.
+  const getCurrentRowAIIds = () => {
+    const rowAnalysis = analysis?.[rowIndex]
+    const analysisArray = Array.isArray(rowAnalysis) ? rowAnalysis : (rowAnalysis ? [rowAnalysis] : [])
+    const selectedAnalysis = analysisArray[analysisArray.length - 1]
+    if(!selectedAnalysis) return { recommendedId: undefined, alternateIds: [] }
+
+    const primary = selectedAnalysis?.output?.primary_candidate || selectedAnalysis?.primary_candidate
+    const recommendedId = resolveAICandidateID(primary, conceptCacheRef.current)
+    const alternateCandidates = selectedAnalysis?.output?.alternative_candidates || selectedAnalysis?.alternative_candidates || []
+    const alternateIds = [...new Set(alternateCandidates
+      .map(candidate => resolveAICandidateID(candidate, conceptCacheRef.current))
+      .filter(id => id && id !== recommendedId))]
+
+    return { recommendedId, alternateIds }
+  }
+
   const openConceptPanel = (concept, options = {}) => {
     if(!concept) {
       setShowItem(false)
       return
     }
+    const { recommendedId, alternateIds } = getCurrentRowAIIds()
     const payload = buildPanelPayload({
       concept,
       rowMatchState: isNumber(rowIndex) ? rowMatchStateRef.current[rowIndex] : null,
       conceptCache: conceptCacheRef.current,
       currentRowCode: options.currentRowCode || getCurrentRowSourceCode(),
-      AIRecommendedCandidateId: options.AIRecommendedCandidateId,
-      AIAlternateCandidateIds: options.AIAlternateCandidateIds,
+      AIRecommendedCandidateId: options.AIRecommendedCandidateId || recommendedId,
+      AIAlternateCandidateIds: options.AIAlternateCandidateIds || alternateIds,
       initialTab: options.initialTab,
       fromCrossTab: options.fromCrossTab,
     })
