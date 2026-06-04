@@ -34,11 +34,17 @@ import orderBy from 'lodash/orderBy'
 
 import ConceptIcon from '../concepts/ConceptIcon'
 import { isLikelyCanonicalUrl } from './algorithms'
+import RepoVersionSearchAutocomplete from '../repos/RepoVersionSearchAutocomplete'
 import APIService from '../../services/APIService';
+import { dropVersion } from '../../common/utils'
+import { getDefaultBridgeRepoVersion, isLLMBridgeRepoVersion } from './projectTargetRepo'
 
 // Cached lookup of a bridge source repo's canonical_url. Canonical URLs are
 // stable, so a single fetch per relative URL is sufficient for the session.
 const bridgeCanonicalCache = new Map()
+const bridgeVersionsCache = new Map()
+const BRIDGE_DEFAULT_RELATIVE_URL = { 'ocl-ciel-bridge': '/orgs/CIEL/sources/CIEL/' }
+
 const fetchBridgeCanonical = (url) => {
   if(!url) return Promise.resolve(null)
   if(bridgeCanonicalCache.has(url)) return bridgeCanonicalCache.get(url)
@@ -47,6 +53,24 @@ const fetchBridgeCanonical = (url) => {
     .catch(() => null)
   bridgeCanonicalCache.set(url, promise)
   return promise
+}
+
+const fetchBridgeVersions = (url) => {
+  const baseUrl = dropVersion(url) || url
+  if(!baseUrl) return Promise.resolve([])
+  if(bridgeVersionsCache.has(baseUrl)) return bridgeVersionsCache.get(baseUrl)
+  const promise = APIService.new().overrideURL(baseUrl).appendToUrl('versions/').get()
+    .then(r => r?.data || [])
+    .catch(() => [])
+  bridgeVersionsCache.set(baseUrl, promise)
+  return promise
+}
+
+const getLatestReleasedBridgeVersion = (versions) => {
+  if(!Array.isArray(versions) || versions.length === 0) return null
+  const explicitReleasedVersion = versions.find(version => version?.released)
+  if(explicitReleasedVersion) return explicitReleasedVersion
+  return versions.find(version => version?.id && version.id !== 'HEAD') || null
 }
 
 /**
@@ -94,6 +118,8 @@ export default function MultiAlgoSelector({
   const [expanded, setExpanded] = useState(() => new Map());
   const [errors, setErrors] = React.useState({})
   const [customAlgoMeta, setCustomAlgoMeta] = React.useState({})
+  const [bridgeVersionsByUrl, setBridgeVersionsByUrl] = React.useState({})
+  const [bridgeVersionsLoadedByUrl, setBridgeVersionsLoadedByUrl] = React.useState({})
 
   const normalizedValue = useMemo(() => {
     let changed = false;
@@ -176,7 +202,7 @@ export default function MultiAlgoSelector({
   React.useEffect(() => {
     for (const sel of value || []) {
       if(!sel?.type?.includes('bridge')) continue
-      const url = sel.target_repo_url
+      const url = sel.target_repo_url || BRIDGE_DEFAULT_RELATIVE_URL[sel?.type]
       if(!url) continue
       if(syncedBridgeUrlRef.current.get(sel.__key) === url) continue
       syncedBridgeUrlRef.current.set(sel.__key, url)
@@ -188,6 +214,30 @@ export default function MultiAlgoSelector({
       })
     }
   }, [value])
+
+  React.useEffect(() => {
+    for (const sel of value || []) {
+      if(!sel?.type?.includes('bridge')) continue
+      const url = sel.target_repo_url || BRIDGE_DEFAULT_RELATIVE_URL[sel?.type]
+      const baseUrl = dropVersion(url) || url
+      if(!baseUrl) continue
+      const loadedVersions = bridgeVersionsByUrl[baseUrl]
+      if(Array.isArray(loadedVersions)) {
+        const selectedVersion = loadedVersions.find(version => version?.id === sel?.target_repo_version)
+        if(!selectedVersion) {
+          const defaultVersion = getDefaultBridgeRepoVersion(loadedVersions)
+          if(defaultVersion?.id && defaultVersion.id !== sel?.target_repo_version) {
+            updateSelected(sel.__key, { target_repo_version: defaultVersion.id })
+          }
+        }
+        continue
+      }
+      fetchBridgeVersions(baseUrl).then(versions => {
+        setBridgeVersionsByUrl(prev => ({...prev, [baseUrl]: versions}))
+        setBridgeVersionsLoadedByUrl(prev => ({...prev, [baseUrl]: true}))
+      })
+    }
+  }, [value, bridgeVersionsByUrl])
 
   const removeSelected = (key) => {
     const next = (value || []).filter((v) => v.__key !== key);
@@ -239,7 +289,7 @@ export default function MultiAlgoSelector({
     onChange([...(value || []), defaults]);
     setExpanded((prev) => {
       const n = new Map(prev);
-      n.set(defaults.__key, algo.type === 'custom');
+      n.set(defaults.__key, algo.type === 'custom' || algo.type?.includes('bridge'));
       return n;
     });
   };
@@ -559,11 +609,32 @@ export default function MultiAlgoSelector({
                       <Stack spacing={1.5}>
                         {isCoreUser && (
                           <>
+                            {(() => {
+                              const bridgeSourceUrl = sel.target_repo_url ?? algo.target_repo_url ?? BRIDGE_DEFAULT_RELATIVE_URL[algo.type]
+                              const bridgeBaseUrl = dropVersion(bridgeSourceUrl) || bridgeSourceUrl
+                              const bridgeVersions = bridgeVersionsByUrl[bridgeBaseUrl] || []
+                              const bridgeVersionsLoaded = Boolean(bridgeVersionsLoadedByUrl[bridgeBaseUrl])
+                              const latestReleasedBridgeVersion = getLatestReleasedBridgeVersion(bridgeVersions)
+                              const hasSelectableBridgeVersions = bridgeVersions.some(isLLMBridgeRepoVersion)
+                              const selectedBridgeVersion = bridgeVersions.find(version => version?.id === sel.target_repo_version)
+                                || (sel.target_repo_version ? { id: sel.target_repo_version, version: sel.target_repo_version } : null)
+                              const bridgeVersionHelperText = bridgeSourceUrl
+                                ? (
+                                  !bridgeVersionsLoaded
+                                    ? t('map_project.loading_versions', 'Loading versions...')
+                                    : hasSelectableBridgeVersions
+                                    ? t('map_project.bridge_version_description', 'Only versions with LLM support can be selected for bridge matching.')
+                                    : t('map_project.bridge_version_unavailable', 'No bridge source versions with LLM support are available.')
+                                )
+                                : t('map_project.bridge_version_source_required', 'Set a bridge source URL before choosing a version.')
+
+                              return (
+                                <>
                             <TextField
                               fullWidth
                               label={t('map_project.bridge_source_url', 'Bridge Source URL')}
-                              value={sel.target_repo_url ?? algo.target_repo_url ?? '/orgs/CIEL/sources/CIEL/'}
-                              onChange={(e) => updateSelected(sel.__key, { target_repo_url: e.target.value })}
+                              value={bridgeSourceUrl}
+                              onChange={(e) => updateSelected(sel.__key, { target_repo_url: e.target.value, target_repo_version: '' })}
                               placeholder="/orgs/CIEL/sources/CIEL/"
                               helperText={t('map_project.bridge_source_url_description', 'The interface terminology to search through for bridge matching')}
                             />
@@ -581,9 +652,28 @@ export default function MultiAlgoSelector({
                               placeholder="https://CIELterminology.org"
                               helperText={t('map_project.bridge_canonical_url_description', 'Canonical URL of the bridge code system (leave blank to derive from the relative URL).')}
                             />
+                            <RepoVersionSearchAutocomplete
+                              versions={bridgeVersions}
+                              label={t('common.version')}
+                              size='small'
+                              value={selectedBridgeVersion}
+                              onChange={(id, item) => updateSelected(sel.__key, { target_repo_version: item?.id || '' })}
+                              helperText={bridgeVersionHelperText}
+                              getOptionDisabled={option => !isLLMBridgeRepoVersion(option)}
+                              getOptionRightText={option => {
+                                if(option?.id === latestReleasedBridgeVersion?.id)
+                                  return t('common.latest')
+                                if(!isLLMBridgeRepoVersion(option))
+                                  return t('map_project.not_vectorised')
+                                return ''
+                              }}
+                            />
                             {!sel.bridge_repo?.canonical_url && (
                               <Chip size='small' label={t('map_project.canonical_auto_derived', 'Auto-derived')} sx={{alignSelf: 'flex-start'}} />
                             )}
+                                </>
+                              )
+                            })()}
                           </>
                         )}
                         <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
@@ -709,4 +799,3 @@ function clampInt(value, min, max) {
 function eHasValue(value) {
   return Boolean(value && String(value).trim());
 }
-

@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  getDefaultBridgeRepoVersion,
   getDefaultTargetRepoVersion,
   getProjectTargetRepoVersion,
   getTargetRepoVersionFromUrl,
@@ -70,4 +71,34 @@ test('getDefaultTargetRepoVersion stays unset when multiple choices remain', () 
 test('hasSelectedTargetRepoVersion treats blank selections as invalid', () => {
   assert.equal(hasSelectedTargetRepoVersion(false), false)
   assert.equal(hasSelectedTargetRepoVersion({ id: 'HEAD' }), true)
+})
+
+test('getDefaultBridgeRepoVersion prefers the latest released llm version', () => {
+  const versions = [
+    { id: 'HEAD', released: false, match_algorithms: ['llm'] },
+    { id: '2.81', released: true, match_algorithms: ['exact', 'llm'] },
+    { id: '2.80', released: true, match_algorithms: ['llm'] }
+  ]
+
+  assert.deepEqual(getDefaultBridgeRepoVersion(versions), versions[1])
+})
+
+test('getDefaultBridgeRepoVersion falls back to the latest llm-enabled version when no release matches', () => {
+  const versions = [
+    { id: 'HEAD', released: false, match_algorithms: ['llm'] },
+    { id: '2.81', released: true, match_algorithms: ['exact'] },
+    { id: '2.80', released: false, match_algorithms: ['llm'] }
+  ]
+
+  assert.deepEqual(getDefaultBridgeRepoVersion(versions), versions[0])
+})
+
+test('getDefaultBridgeRepoVersion stays unset when no version supports llm', () => {
+  assert.equal(
+    getDefaultBridgeRepoVersion([
+      { id: 'HEAD', released: false, match_algorithms: ['exact'] },
+      { id: '2.81', released: true, match_algorithms: ['fts'] }
+    ]),
+    false
+  )
 })

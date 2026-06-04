@@ -4,6 +4,8 @@ export const getTargetRepoVersionFromUrl = url => {
   return parts[4] || ''
 }
 
+export const isLLMBridgeRepoVersion = version => version?.match_algorithms?.includes('llm')
+
 export const getDefaultTargetRepoVersion = versions => {
   if(!Array.isArray(versions) || versions.length === 0)
     return false
@@ -15,6 +17,17 @@ export const getDefaultTargetRepoVersion = versions => {
     return releasedVersions[0]
 
   return false
+}
+
+export const getDefaultBridgeRepoVersion = versions => {
+  if(!Array.isArray(versions) || versions.length === 0)
+    return false
+
+  const latestReleasedLLMVersion = versions.find(version => version?.released && isLLMBridgeRepoVersion(version))
+  if(latestReleasedLLMVersion)
+    return latestReleasedLLMVersion
+
+  return versions.find(isLLMBridgeRepoVersion) || false
 }
 
 export const getProjectTargetRepoVersion = projectData => {

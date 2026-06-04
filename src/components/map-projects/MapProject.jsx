@@ -488,7 +488,8 @@ const MapProject = () => {
       ctx.bridge_repo = {
         relative_url: bridgeRelativeUrl,
         canonical_url: explicitBridgeCanonical || `https://ns.openconceptlab.org${bridgeRelativeUrl}`,
-        canonical_url_source: explicitBridgeCanonical ? 'repo' : 'derived'
+        canonical_url_source: explicitBridgeCanonical ? 'repo' : 'derived',
+        ...(bridgeAlgo?.target_repo_version ? { version: bridgeAlgo.target_repo_version } : {})
       }
     }
     return ctx
