@@ -4209,6 +4209,7 @@ const MapProject = () => {
               service={getMatchAPIService()}
               repo={repoVersion}
               bridgeRepoURL={bridgeUrl}
+              bridgeRepoVersion={bridgeAlgo?.target_repo_version}
               limit={CANDIDATES_LIMIT}
               user={user}
               ref={bridgeRef}
