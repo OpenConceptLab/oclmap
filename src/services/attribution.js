@@ -18,6 +18,8 @@
  * consumer hint that maps a batched backend call to the rows it covered).
  */
 
+import isFunction from 'lodash/isFunction.js'
+
 export const REQUEST_SOURCE = {
   AUTOMATCH: 'automatch',
   MANUAL: 'mapper-ui-manual',
@@ -83,8 +85,6 @@ export const buildAttributionHeaders = ({
   }
 }
 
-const isFunction = value => typeof value === 'function'
-
 /**
  * Assemble the JSON-safe project config captured at run start
  * (AutomatchRun.config_snapshot). Strips function-valued algorithm fields
@@ -119,3 +119,44 @@ export const buildConfigSnapshot = ({
   template: template || null,
   ai_model: aiModel || null,
 })
+
+/**
+ * Derive AutomatchRun completion counts + status from the per-row algo stages
+ * captured during a run (oclapi2 PATCH /auto-match-runs/<id>/).
+ *
+ * Stage vocabulary (oclmap rowStageRef): -2 failed, -1 not run yet, 0 running,
+ * 1 done. A row is **completed** when ANY attempted algo finished (1) and
+ * **failed** when EVERY attempted algo failed (-2). Rows that never ran
+ * (-1/undefined — e.g. a run cancelled before reaching them) or were still in
+ * flight (0) count as NEITHER, so a cancelled run never over-reports
+ * completed_rows (ocl_online#115 review).
+ *
+ * @param {object}   [opts]
+ * @param {object[]} [opts.rowStages]  array indexed by row __index → {algoId: stage}
+ * @param {number[]} [opts.rowIndices] the run's intended row indices
+ * @param {string[]} [opts.algoIds]    the selected match-algorithm ids
+ * @param {boolean}  [opts.aborted]    whether the run was cancelled
+ * @returns {{completed_rows:number, failed_rows:number, completion_status:string}}
+ */
+export const summarizeRunCompletion = ({
+  rowStages = [],
+  rowIndices = [],
+  algoIds = [],
+  aborted = false,
+} = {}) => {
+  let completed = 0
+  let failed = 0
+  rowIndices.forEach(idx => {
+    const stage = rowStages[idx] || {}
+    const attempted = algoIds.map(id => stage[id]).filter(s => s !== undefined && s !== -1)
+    if(!attempted.length) return
+    if(attempted.some(s => s === 1)) completed += 1
+    else if(attempted.every(s => s === -2)) failed += 1
+  })
+  const total = rowIndices.length
+  let completion_status = 'completed'
+  if(aborted) completion_status = 'cancelled'
+  else if(completed === 0) completion_status = 'failed'
+  else if(completed < total) completion_status = 'partial'
+  return { completed_rows: completed, failed_rows: failed, completion_status }
+}

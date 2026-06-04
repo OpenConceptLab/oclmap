@@ -17,6 +17,7 @@ import assert from 'node:assert/strict'
 import {
   buildAttributionHeaders,
   buildConfigSnapshot,
+  summarizeRunCompletion,
   REQUEST_SOURCE,
   REQUEST_SOURCE_HEADER,
   EVENT_METADATA_HEADER,
@@ -119,4 +120,60 @@ test('buildConfigSnapshot tolerates empty input', () => {
   const snapshot = buildConfigSnapshot()
   assert.deepEqual(snapshot.algorithms, [])
   assert.equal(snapshot.encoder, null)
+})
+
+// ── summarizeRunCompletion ────────────────────────────────────────────────
+const ALGOS = ['ocl-search', 'ocl-semantic']
+
+test('all rows done → completed, full count', () => {
+  const rowStages = { 0: {'ocl-search': 1, 'ocl-semantic': 1}, 1: {'ocl-search': 1, 'ocl-semantic': 1} }
+  const r = summarizeRunCompletion({ rowStages, rowIndices: [0, 1], algoIds: ALGOS })
+  assert.deepEqual(r, { completed_rows: 2, failed_rows: 0, completion_status: 'completed' })
+})
+
+test('a row counts completed if ANY attempted algo finished (mixed done+failed)', () => {
+  const rowStages = { 0: {'ocl-search': 1, 'ocl-semantic': -2} }
+  const r = summarizeRunCompletion({ rowStages, rowIndices: [0], algoIds: ALGOS })
+  assert.equal(r.completed_rows, 1)
+  assert.equal(r.failed_rows, 0)
+})
+
+test('a row counts failed only when EVERY attempted algo failed', () => {
+  const rowStages = { 0: {'ocl-search': -2, 'ocl-semantic': -2}, 1: {'ocl-search': 1, 'ocl-semantic': 1} }
+  const r = summarizeRunCompletion({ rowStages, rowIndices: [0, 1], algoIds: ALGOS })
+  assert.deepEqual(r, { completed_rows: 1, failed_rows: 1, completion_status: 'partial' })
+})
+
+test('all rows failed → failed', () => {
+  const rowStages = { 0: {'ocl-search': -2}, 1: {'ocl-search': -2} }
+  const r = summarizeRunCompletion({ rowStages, rowIndices: [0, 1], algoIds: ['ocl-search'] })
+  assert.deepEqual(r, { completed_rows: 0, failed_rows: 2, completion_status: 'failed' })
+})
+
+test('cancelled run does NOT over-report: unattempted rows count as neither (review #2)', () => {
+  // rows 0,1 finished; rows 2,3 never reached (stage -1) before the user cancelled.
+  const rowStages = {
+    0: {'ocl-search': 1, 'ocl-semantic': 1},
+    1: {'ocl-search': 1, 'ocl-semantic': 1},
+    2: {'ocl-search': -1, 'ocl-semantic': -1},
+    3: {'ocl-search': -1, 'ocl-semantic': -1},
+  }
+  const r = summarizeRunCompletion({ rowStages, rowIndices: [0, 1, 2, 3], algoIds: ALGOS, aborted: true })
+  assert.equal(r.completed_rows, 2, 'only the 2 finished rows count as completed')
+  assert.equal(r.failed_rows, 0)
+  assert.equal(r.completion_status, 'cancelled')
+})
+
+test('in-flight rows (stage 0) at cancel count as neither completed nor failed', () => {
+  const rowStages = { 0: {'ocl-search': 1}, 1: {'ocl-search': 0} }
+  const r = summarizeRunCompletion({ rowStages, rowIndices: [0, 1], algoIds: ['ocl-search'], aborted: true })
+  assert.equal(r.completed_rows, 1)
+  assert.equal(r.failed_rows, 0)
+  assert.equal(r.completion_status, 'cancelled')
+})
+
+test('rows missing from rowStages are treated as unattempted', () => {
+  const r = summarizeRunCompletion({ rowStages: { 0: {'ocl-search': 1} }, rowIndices: [0, 9], algoIds: ['ocl-search'] })
+  assert.equal(r.completed_rows, 1)
+  assert.equal(r.completion_status, 'partial') // row 9 never ran → completed < total
 })

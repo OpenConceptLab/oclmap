@@ -68,7 +68,7 @@ import pick from 'lodash/pick'
 import { OperationsContext } from '../app/LayoutContext';
 
 import APIService, { isTransientNetworkError, retryWithBackoff } from '../../services/APIService';
-import { buildAttributionHeaders, buildConfigSnapshot } from '../../services/attribution'
+import { buildAttributionHeaders, buildConfigSnapshot, summarizeRunCompletion } from '../../services/attribution'
 import { highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, downloadObject, currentUserToken } from '../../common/utils';
 import { WHITE, SURFACE_COLORS } from '../../common/colors';
 
@@ -300,7 +300,10 @@ const MapProject = () => {
    */
   const mergeIntoRowMatchState = React.useCallback((rowIndex, normalized, options = {}) => {
     if(!normalized) return
-    const { append = false } = options
+    // isRunTraffic (ocl_online#105 Phase 5): true only when the merge originates
+    // from the bulk auto-match pipeline, so the ensureLoaded reads it triggers
+    // are attributed to the run; manual merges leave it false → mapper-ui-manual.
+    const { append = false, isRunTraffic = false } = options
     const { algorithm_response, candidates, concept_definitions, concept_rows } = normalized
     const incomingAlgoId = algorithm_response?.algorithm_id
 
@@ -395,7 +398,7 @@ const MapProject = () => {
         .filter(d => d && d.lookup_status !== 'full')
         .map(d => d.key)
       if(keysToLoad.length) {
-        ensureLoadedRef.current(keysToLoad, rowIndex).then(() => {
+        ensureLoadedRef.current(keysToLoad, rowIndex, isRunTraffic).then(() => {
           if(scheduleRerankRef.current) scheduleRerankRef.current(rowIndex)
         })
       }
@@ -1301,11 +1304,14 @@ const MapProject = () => {
 
   // ── ocl_online#105 Phase 5: AutomatchRun attribution ──────────────────────
   // Build the X-OCL-Request-Source + X-OCL-Event-Metadata headers for a single
-  // per-row backend call. Reads the active run id from the ref, so the same
-  // call sites used outside a run emit request_source='mapper-ui-manual'.
-  const attrHeaders = ({rowIndex, rowIndices, batchSize, algorithmId, clientAttemptN} = {}) =>
+  // per-row backend call. Attribution is by explicit ORIGIN, not ambient: only
+  // calls the bulk auto-match pipeline drives pass isRunTraffic, so a manual
+  // call (panel open, single rerun, per-row AI) that overlaps a running
+  // auto-match is correctly stamped 'mapper-ui-manual' — the active-run ref
+  // alone can't distinguish concurrent manual traffic from run traffic.
+  const attrHeaders = ({rowIndex, rowIndices, batchSize, algorithmId, clientAttemptN, isRunTraffic = false} = {}) =>
     buildAttributionHeaders({
-      runId: automatchRunRef.current?.id ?? null,
+      runId: isRunTraffic ? (automatchRunRef.current?.id ?? null) : null,
       projectId: params.projectId,
       rowIndex, rowIndices, batchSize, algorithmId, clientAttemptN,
     })
@@ -1350,23 +1356,15 @@ const MapProject = () => {
     const run = automatchRunRef.current
     automatchRunRef.current = null
     if(!run?.id) return
-    const stages = rowStageRef.current || []
-    const algoIds = run.algoIds?.length ? run.algoIds : map(selectedAlgos, 'id')
-    let failed = 0
-    forEach(intendedRows, _row => {
-      const rowStage = stages[_row.__index] || {}
-      const attempted = algoIds.map(id => rowStage[id]).filter(s => s !== undefined && s !== -1)
-      if(attempted.length && attempted.every(s => s === -2)) failed += 1
+    const payload = summarizeRunCompletion({
+      rowStages: rowStageRef.current || [],
+      rowIndices: map(intendedRows, '__index'),
+      algoIds: run.algoIds?.length ? run.algoIds : map(selectedAlgos, 'id'),
+      aborted: abortRef.current,
     })
-    const total = intendedRows.length
-    const completed = total - failed
-    let completionStatus = 'completed'
-    if(abortRef.current) completionStatus = 'cancelled'
-    else if(completed === 0 && failed > 0) completionStatus = 'failed'
-    else if(failed > 0) completionStatus = 'partial'
     try {
       await APIService.new().overrideURL('/auto-match-runs/' + run.id + '/')
-        .request('PATCH', {completed_rows: completed, failed_rows: failed, completion_status: completionStatus})
+        .request('PATCH', payload)
     } catch (_) { /* attribution is best-effort; never block on the PATCH */ }
   }
 
@@ -1583,7 +1581,7 @@ const MapProject = () => {
         const response = await service.post(
           payload,
           (algo.type === 'custom' && algo.url && algo.token) ? algo.token : null,
-          attrHeaders({rowIndices: map(rowBatch, '__index'), batchSize: rowBatch.length, algorithmId: algo.id}),
+          attrHeaders({rowIndices: map(rowBatch, '__index'), batchSize: rowBatch.length, algorithmId: algo.id, isRunTraffic: true}),
           {
             includeSearchMeta: true,
             ...(algo.query_params || {}),
@@ -1645,7 +1643,7 @@ const MapProject = () => {
                       // that flag was true — otherwise it's a per-algo native score
                       // (e.g. FAISS similarity × 100) masquerading as a rerank.
                       trustServerRerank: !isMultiAlgo
-                    }))
+                    }), {isRunTraffic: true})
                   })
                 }
               }
@@ -1800,7 +1798,7 @@ const MapProject = () => {
     for (let index = 0; index < _rows.length; index++) {
       if (abortRef.current) break;
 
-      await fetchRecommendation(_rows[index], resolvedPromptTemplate);
+      await fetchRecommendation(_rows[index], resolvedPromptTemplate, true);
     }
     const now = moment()
     setBulkAIAnalysisEndedAt(now)
@@ -1835,7 +1833,7 @@ const MapProject = () => {
             projectContext: buildProjectContext(),
             rowIndex: index,
             rawResponse: response
-          }))
+          }), {isRunTraffic: true})
         }
       })); // wait for completion
       await new Promise(resolve => setTimeout(resolve, 200)); // 1s delay
@@ -1872,7 +1870,7 @@ const MapProject = () => {
             projectContext: buildProjectContext(),
             rowIndex: _index,
             rawResponse: response
-          }))
+          }), {isRunTraffic: true})
         }
       })); // wait for completion
       await new Promise(resolve => setTimeout(resolve, 500)); // 1s delay
@@ -3041,7 +3039,7 @@ const MapProject = () => {
         q: query,
         rows: rerankRows,
         ...(encoderModel ? { encoder_model: encoderModel } : {})
-      }, null, attrHeaders({rowIndex: index, algorithmId: 'reranker'}))
+      }, null, attrHeaders({rowIndex: index, algorithmId: 'reranker', isRunTraffic: isBulk}))
 
       // Write rerank_score into the row's ConceptRows. matchRerankResultToKey
       // throws on canonical-identity miss; surface to the alert state so a
@@ -3331,8 +3329,9 @@ const MapProject = () => {
         },
         // ocl_online#105 Phase 5: attribution headers for the bridge $match,
         // applied by the premium component (react-bridge-match). Per-row here
-        // (single-row payload) → scalar row_index.
-        attrHeaders({rowIndex: __row.__index, algorithmId: bridgeAlgoId})
+        // (single-row payload) → scalar row_index. isBulk distinguishes a run
+        // call from a manual per-row bridge fetch.
+        attrHeaders({rowIndex: __row.__index, algorithmId: bridgeAlgoId, isRunTraffic: isBulk})
       )
     })
   }
@@ -3404,7 +3403,7 @@ const MapProject = () => {
     writeConceptCachePatch(key, { ...existing, lookup_status: 'failed' })
   }, [writeConceptCachePatch])
 
-  const ensureLoaded = React.useCallback(async (conceptKeys, logRowIndex) => {
+  const ensureLoaded = React.useCallback(async (conceptKeys, logRowIndex, isRunTraffic = false) => {
     if(!Array.isArray(conceptKeys) || conceptKeys.length === 0) return
     const ctx = buildProjectContext()
     const resolveNamespace = ctx?.namespace
@@ -3479,7 +3478,7 @@ const MapProject = () => {
           } else {
             service = service.overrideURL(oclUrl)
           }
-          const response = await service.request('GET', undefined, authToken, {query: {includeMappings: true, mappingBrief: true, mapTypes: 'SAME-AS,SAME AS,SAME_AS', verbose: true}, headers: attrHeaders({rowIndex: logRowIndex})})
+          const response = await service.request('GET', undefined, authToken, {query: {includeMappings: true, mappingBrief: true, mapTypes: 'SAME-AS,SAME AS,SAME_AS', verbose: true}, headers: attrHeaders({rowIndex: logRowIndex, isRunTraffic})})
           const data = response?.data
           if(data?.id) return data
           urlFetchCacheRef.current.delete(oclUrl)
@@ -3536,7 +3535,7 @@ const MapProject = () => {
         : {url: reference.url})
       resolvePromise = APIService.new()
         .overrideURL('/$resolveReference/')
-        .post(body, currentToken, attrHeaders({rowIndex: logRowIndex}), resolveNamespace ? {namespace: resolveNamespace} : undefined)
+        .post(body, currentToken, attrHeaders({rowIndex: logRowIndex, isRunTraffic}), resolveNamespace ? {namespace: resolveNamespace} : undefined)
         .then(async response => {
           const items = Array.isArray(response?.data) ? response.data : []
           await Promise.all(toResolve.map(async ({key, reference}, i) => {
@@ -4070,7 +4069,7 @@ const MapProject = () => {
     }
   }
 
-  const fetchRecommendation = async (_row, resolvedPromptTemplate = null) => {
+  const fetchRecommendation = async (_row, resolvedPromptTemplate = null, isBulk = false) => {
     let __row = row;
     let __index = rowIndex;
     if(isNumber(_row?.__index)){
@@ -4155,7 +4154,7 @@ const MapProject = () => {
             // bundled into the JSON bag. attrHeaders adds request_source + the bag.
             ...(promptTemplateRef?.key ? {'X-OCL-PROMPT-TEMPLATE-KEY': promptTemplateRef.key} : {}),
             ...(promptTemplateRef?.version ? {'X-OCL-PROMPT-TEMPLATE-VERSION': String(promptTemplateRef.version)} : {}),
-            ...attrHeaders({rowIndex: __index, clientAttemptN: attempt + 1}),
+            ...attrHeaders({rowIndex: __index, clientAttemptN: attempt + 1, isRunTraffic: isBulk}),
           }}),
           {
             maxRetries: 2,
