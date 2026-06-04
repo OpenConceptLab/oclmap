@@ -23,7 +23,7 @@ import Mappings from './Mappings'
 import Concept from './Concept'
 import MapButton from './MapButton'
 
-const Search = ({searchStr, setSearchStr, onSearch, repo, repoVersion, concepts, setShowItem, showItem, isSelectedForMap, onMap, response, facets, appliedFacets, setAppliedFacets, isLoading, filters, columns, defaultFilters, locales}) => {
+const Search = ({searchStr, setSearchStr, onSearch, repo, repoVersion, concepts, openConceptPanel, showItem, isSelectedForMap, onMap, response, facets, appliedFacets, setAppliedFacets, isLoading, filters, columns, defaultFilters, locales}) => {
   const { t } = useTranslation();
   const [openFilters, setOpenFilters] = React.useState(false)
   const [display, setDisplay] = React.useState('card')
@@ -162,10 +162,36 @@ const Search = ({searchStr, setSearchStr, onSearch, repo, repoVersion, concepts,
             }
           }}
           renderer={
-            props =>
-            isLoading ?
-              <Skeleton height={58} key={props?.key} /> :
-              <Concept {...props} onMap={onMap} isSelectedForMap={isSelectedForMap} repoVersion={repoVersion} noScore locales={locales} />
+            props => {
+              if(isLoading) return <Skeleton height={58} key={props?.key} />
+              // Bypass SearchResults.handleRowClick row-id lookup — its find
+              // matches by row.version_url/url/id, but the click id we send
+              // (conceptDefinition.ocl_url) is the unversioned URL while
+              // search results carry version_url. The find returns false and
+              // would close the panel. Pass the row straight to
+              // openConceptPanel, which checks the current row's candidates
+              // for cross-tab enrichment.
+              const row = props?.concept
+              const onCardClick = openConceptPanel
+                ? (event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    openConceptPanel(row, {fromCrossTab: true})
+                    setTimeout(() => { highlightTexts([row], null, false) }, 100)
+                  }
+                : props.onCardClick
+              return (
+                <Concept
+                  {...props}
+                  onCardClick={onCardClick}
+                  onMap={onMap}
+                  isSelectedForMap={isSelectedForMap}
+                  repoVersion={repoVersion}
+                  noScore
+                  locales={locales}
+                />
+              )
+            }
           }
           display={display}
           onDisplayChange={setDisplay}
@@ -180,7 +206,11 @@ const Search = ({searchStr, setSearchStr, onSearch, repo, repoVersion, concepts,
           loading={isLoading}
           resultContainerStyle={{height: 'calc(100vh - 602px)', overflow: 'auto'}}
           onShowItemSelect={item => {
-            setShowItem(item)
+            // fromCrossTab: true → openConceptPanel checks if this concept
+            // is also a candidate for the current row; if so, enriches the
+            // payload with multi-algo + bridge context and surfaces the
+            // "Also a candidate for [code]" chip in the header.
+            openConceptPanel(item, {fromCrossTab: true})
             setTimeout(() => {
               highlightTexts([item], null, false)
             }, 100)

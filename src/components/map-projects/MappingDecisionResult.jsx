@@ -18,7 +18,7 @@ import ConceptSummaryProperties from '../concepts/ConceptSummaryProperties'
 import MapButton from './MapButton'
 import Score from './Score'
 
-const MappingDecisionResult = ({targetConcept, row, rowIndex, mapTypes, allMapTypes, onMap, proposed, columns, repoVersion, onTargetClick, candidatesScore, setShowHighlights}) => {
+const MappingDecisionResult = ({targetConcept, row, rowIndex, mapTypes, allMapTypes, onMap, proposed, columns, repoVersion, openConceptPanel, candidatesScore}) => {
   const { t } = useTranslation();
   const parentParams = targetConcept?.url ? URIToParentParams(targetConcept.url) : {}
   const contributingAlgorithms = targetConcept?.contributingAlgorithms
@@ -155,7 +155,7 @@ const MappingDecisionResult = ({targetConcept, row, rowIndex, mapTypes, allMapTy
               <Typography component='div' sx={{color: 'rgba(0, 0, 0, 0.6)', fontSize: '12px'}}>{t('mapping.relationship')}</Typography>
               <MapButton options={allMapTypes} selected={mapTypes[rowIndex]} onClick={(event, applied, mapType) => onMap(event, targetConcept, !applied, mapType)} isMapped sx={{marginTop: '6px'}} mapOnly usedMapTypes={compact(values(mapTypes))} />
             </div>
-            <div style={{marginLeft: '24px', maxWidth: '45%', cursor: 'pointer'}} onClick={() => targetConcept?.url ? onTargetClick(targetConcept) : undefined}>
+            <div style={{marginLeft: '24px', maxWidth: '45%', cursor: 'pointer'}} onClick={() => targetConcept?.url ? openConceptPanel(targetConcept) : undefined}>
               <Typography component='span' sx={{color: 'rgba(0, 0, 0, 0.6)', fontSize: '12px'}}>{t('map_project.target_code')}</Typography>
               <div className='col-xs-12 padding-0'>
                 <ListItemText
@@ -188,8 +188,7 @@ const MappingDecisionResult = ({targetConcept, row, rowIndex, mapTypes, allMapTy
                         sx={{padding: '0px'}}
                         candidatesScore={candidatesScore}
                         secondaryScoreText={secondaryScoreText}
-                        setShowHighlights={setShowHighlights}
-                        onHighlightClick={() => setShowHighlights?.(targetConcept)}
+                        onScoreClick={openConceptPanel ? () => openConceptPanel(targetConcept, {initialTab: 'match'}) : undefined}
                       />
                       {
                         algoChipLabels.map(algoId => (

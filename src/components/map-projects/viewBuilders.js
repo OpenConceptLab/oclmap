@@ -324,18 +324,25 @@ export const conceptForMapping = (rowView) => {
  *   - {candidate, conceptRow} — the unified-model tuple
  *   - {search_meta: {search_normalized_score, search_score}} — the legacy
  *     concept shape (also produced by conceptForMapping projection).
- * Both shapes coexist while PR3-era cleanup is pending; the dialog passing
- * `conceptForMapping(tuple)` to setShowHighlights needs the legacy path.
+ * Both shapes coexist while PR3-era cleanup is pending; the legacy path is
+ * exercised by MatchDetailsPanel, which receives the conceptForMapping
+ * projection (a legacy concept shape with top-level search_meta).
  *
  * Pure — caller maps qualityBucket -> bucketColor via SCORES_COLOR.
  */
 export const getScoreDetails = (input = {}, candidatesScore = {}) => {
   const {candidate, conceptRow} = input || {}
-  if(!input?.search_meta && candidate?.search_meta?.search_score) {
-    candidate.search_meta.search_score = parseFloat(candidate.search_meta.search_score)
-    candidate.search_meta.search_normalized_score = candidate.search_meta.search_normalized_score ? parseFloat(candidate.search_meta.search_normalized_score) : candidate.search_meta.search_normalized_score
-  }
-  const searchMeta = input?.search_meta || candidate?.search_meta
+  // Read search_meta without mutating the (cache-backed) candidate. The old
+  // code parsed scores in place; toNumberOrNull below already coerces, so a
+  // read-only copy keeps this helper pure as its docstring claims.
+  const rawSearchMeta = input?.search_meta || candidate?.search_meta
+  const searchMeta = rawSearchMeta
+    ? {
+        ...rawSearchMeta,
+        search_score: toNumberOrNull(rawSearchMeta.search_score) ?? rawSearchMeta.search_score,
+        search_normalized_score: toNumberOrNull(rawSearchMeta.search_normalized_score) ?? rawSearchMeta.search_normalized_score,
+      }
+    : rawSearchMeta
   const rerankFloat = isNumber(conceptRow?.rerank_score)
     ? conceptRow.rerank_score
     : (toNumberOrNull(searchMeta?.search_normalized_score))

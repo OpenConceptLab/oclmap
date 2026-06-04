@@ -42,7 +42,7 @@ export const ScoreValueChip = ({ bucketColor, label, size='medium', showIndicato
   />
 )
 
-const Score = ({candidate, conceptRow, setShowHighlights, sx, isAIRecommended, isAIAlternate, candidatesScore, algoScoreFirst, size, onHighlightClick, secondaryScoreText}) => {
+const Score = ({candidate, conceptRow, onScoreClick, sx, isAIRecommended, isAIAlternate, candidatesScore, algoScoreFirst, size, secondaryScoreText}) => {
   const { t } = useTranslation();
   const {
     score,
@@ -59,14 +59,12 @@ const Score = ({candidate, conceptRow, setShowHighlights, sx, isAIRecommended, i
         sx={{color: bucketColor || 'rgba(0, 0, 0, 0.5)', padding: '0px', ...sx}}
         size='small'
         disabled={!hasRawScore && !hasPercentile}
-        onClick={setShowHighlights ? (event) => {
+        onClick={onScoreClick ? (event) => {
           event.preventDefault()
           event.stopPropagation()
-          // Caller (Concept.jsx) decides what payload to surface to the
-          // highlights dialog; pass through onHighlightClick if provided,
-          // otherwise default to no-op.
-          if(onHighlightClick) onHighlightClick(event)
-          else setShowHighlights({candidate, conceptRow})
+          // Opens the unified ConceptDetailsPanel with the Match Details
+          // tab focused (caller-supplied).
+          onScoreClick(event)
           return false
         } : undefined}
       >
@@ -89,9 +87,14 @@ const Score = ({candidate, conceptRow, setShowHighlights, sx, isAIRecommended, i
                 <span style={{display: 'flex', alignItems: 'center'}}>
                   <span>
                     {
+                      // Unified view normally shows the rerank percentile, but
+                      // rerank lands asynchronously after the raw algorithm
+                      // search. Until it does, fall back to the raw score so a
+                      // candidate isn't shown as a blank "—" — the chip swaps to
+                      // the percentile once rerank completes.
                       algoScoreFirst && hasRawScore
                         ? algoScore
-                        : (rerankScore || <span style={{opacity: 0.4}}>—</span>)
+                        : (rerankScore || (hasRawScore ? algoScore : <span style={{opacity: 0.4}}>—</span>))
                     }
                   </span>
                   {

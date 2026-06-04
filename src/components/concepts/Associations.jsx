@@ -47,7 +47,35 @@ const groupMappings = (orderedMappings, concept, mappings, forward) => {
 }
 
 
-const MappingCells = ({mapping, isIndirect}) => {
+// Match a mapping row against the panel's linked-concept set (the bridge/target
+// URL that connects this concept to the candidate the user clicked from). The
+// mapping's "target" can surface on several different fields depending on
+// direction (forward vs. reverse), shape (Mapping resource vs. hierarchy
+// entry), and how the cascade endpoint resolves it. Check all known carriers
+// — false negatives here mean no visual cue, which defeats the feature.
+const matchesLinkedConcept = (mapping, linkedSet) => {
+  if(!linkedSet || linkedSet.size === 0 || !mapping) return false
+  const candidateUrls = [
+    mapping.cascade_target_concept_url,
+    mapping.cascade_target_concept_url_resolved,
+    mapping.url,
+    mapping.version_url,
+    mapping.from_concept_url,
+    mapping.to_concept_url,
+    mapping.source_url,
+  ]
+  return candidateUrls.some(u => u && linkedSet.has(dropVersion(u)))
+}
+
+// Soft amber highlight for rows that link back to a panel-known concept
+// (bridge → target, or target → bridge). Explicit rgba (not a theme token —
+// the palette has no `warning.95` shade) so it reads as "noteworthy" without
+// competing with the table chrome. Applied per-cell because MUI's TableCell
+// paints its own background over the TableRow, so a row-level SX is hidden.
+const LINKED_BG = 'rgba(255, 179, 0, 0.16)'
+const LINKED_CELL_SX = {backgroundColor: LINKED_BG}
+
+const MappingCells = ({mapping, isIndirect, linkedSet, linkedConceptLabel}) => {
   const { t } = useTranslation()
   const conceptCodeAttr = 'cascade_target_concept_code'
   const conceptCodeName = 'cascade_target_concept_name'
@@ -63,23 +91,42 @@ const MappingCells = ({mapping, isIndirect}) => {
       (isIndirect ? t('mapping.from_concept_defined') : t('mapping.to_concept_defined')) :
       (isIndirect ? t('mapping.from_concept_not_defined') : t('mapping.to_concept_not_defined'))
   }
+  const isLinked = matchesLinkedConcept(mapping, linkedSet)
+  const cellSx = isLinked ? LINKED_CELL_SX : undefined
 
   return (
     <React.Fragment>
-      <TableCell>
-        <span style={{display: 'flex'}} className='searchable'>
-          <Tooltip title={getTitle()}>
-            <span>
-              <ConceptIcon selected={isDefinedInOCL} sx={{width: '10px', height: '10px', marginRight: '12px'}} />
-            </span>
-          </Tooltip>
-          { has(mapping, conceptCodeAttr) ? mapping[conceptCodeAttr] : mapping?.id }
+      <TableCell sx={cellSx}>
+        {/* Stack the linked-concept chip BELOW the dot+code (not inline to the
+            right) so the Code column stays narrow and the Name column keeps width. */}
+        <span style={{display: 'flex', flexDirection: 'column', alignItems: 'flex-start'}} className='searchable'>
+          <span style={{display: 'flex', alignItems: 'center'}}>
+            <Tooltip title={getTitle()}>
+              <span>
+                <ConceptIcon selected={isDefinedInOCL} sx={{width: '10px', height: '10px', marginRight: '12px'}} />
+              </span>
+            </Tooltip>
+            { has(mapping, conceptCodeAttr) ? mapping[conceptCodeAttr] : mapping?.id }
+          </span>
+          {
+            isLinked && linkedConceptLabel && (
+              <Tooltip title={linkedConceptLabel}>
+                <Chip
+                  size='small'
+                  label={linkedConceptLabel}
+                  color='warning'
+                  variant='outlined'
+                  sx={{marginTop: '4px', height: '18px', borderRadius: '4px', '.MuiChip-label': {padding: '0 6px', fontSize: '10px', fontWeight: 600}}}
+                />
+              </Tooltip>
+            )
+          }
         </span>
       </TableCell>
-      <TableCell>
+      <TableCell sx={cellSx}>
         { getConceptName(mapping, conceptCodeName) }
       </TableCell>
-      <TableCell align='left'>
+      <TableCell align='left' sx={cellSx}>
         {has(mapping, sourceAttr) ? get(mapping, sourceAttr) : URIToParentParams(mapping.url)?.repo}
       </TableCell>
     </React.Fragment>
@@ -87,12 +134,14 @@ const MappingCells = ({mapping, isIndirect}) => {
 }
 
 
-const AssociationRow = ({mappings, id, mapType, isSelf, isIndirect, hide}) => {
+const AssociationRow = ({mappings, id, mapType, isSelf, isIndirect, hide, linkedSet, linkedConceptLabel}) => {
   const { t } = useTranslation()
+  const firstMapping = get(mappings, 0)
+  const firstIsLinked = matchesLinkedConcept(firstMapping, linkedSet)
   return (
     <React.Fragment>
       <TableRow id={id || mapType} sx={hide ? {display: 'none'} : {}}>
-        <TableCell className='sticky-col' rowSpan={mappings?.length} align='left' sx={{verticalAlign: 'top', width: '10%', paddingLeft: '8px', top: '37px', zIndex: 1}}>
+        <TableCell className='sticky-col' rowSpan={mappings?.length} align='left' sx={{verticalAlign: 'top', width: '10%', paddingLeft: '8px', top: '37px', zIndex: 1, ...(firstIsLinked ? LINKED_CELL_SX : {})}}>
           <span className='flex-vertical-center'>
             <Tooltip placement='left' title={isIndirect ? t('mapping.inverse_mappings') : (isSelf ? t('mapping.self_mappings') : t('mapping.direct_mappings'))}>
               <Chip
@@ -113,15 +162,16 @@ const AssociationRow = ({mappings, id, mapType, isSelf, isIndirect, hide}) => {
           </span>
         </TableCell>
         {
-          !isEmpty(get(mappings, 0)) &&
-            <MappingCells mapping={get(mappings, 0)} isIndirect={isIndirect} />
+          !isEmpty(firstMapping) &&
+            <MappingCells mapping={firstMapping} isIndirect={isIndirect} linkedSet={linkedSet} linkedConceptLabel={linkedConceptLabel} />
         }
       </TableRow>
       {
         map(mappings?.slice(1), (mapping, index) => {
-          return (!mapping || isEmpty(mapping)) ? null : (
+          if(!mapping || isEmpty(mapping)) return null
+          return (
             <TableRow key={index} sx={hide ? {display: 'none'} : {}}>
-              <MappingCells mapping={mapping} isIndirect={isIndirect} />
+              <MappingCells mapping={mapping} isIndirect={isIndirect} linkedSet={linkedSet} linkedConceptLabel={linkedConceptLabel} />
             </TableRow>
           )
         })
@@ -132,7 +182,15 @@ const AssociationRow = ({mappings, id, mapType, isSelf, isIndirect, hide}) => {
 
 
 const borderColor = 'rgba(0, 0, 0, 0.12)'
-const Associations = ({concept, mappings, reverseMappings, ownerMappings, reverseOwnerMappings, onLoadOwnerMappings, loadingOwnerMappings}) => {
+const Associations = ({concept, mappings, reverseMappings, ownerMappings, reverseOwnerMappings, onLoadOwnerMappings, loadingOwnerMappings, linkedConceptUrls, linkedConceptLabel}) => {
+  // Build a version-stripped set of URLs we want to highlight as "linked
+  // back to the panel's other tab". Used for the bridge ↔ target visual
+  // affordance in the unified Concept Details Panel.
+  const linkedSet = React.useMemo(() => {
+    if(!Array.isArray(linkedConceptUrls) || linkedConceptUrls.length === 0) return null
+    const s = new Set(linkedConceptUrls.filter(Boolean).map(u => dropVersion(u)))
+    return s.size > 0 ? s : null
+  }, [linkedConceptUrls])
   const [scope, setScope] = React.useState('repo')
   const [orderedMappings, setOrderedMappings] = React.useState({});
   const [orderedOwnerMappings, setOrderedOwnerMappings] = React.useState({});
@@ -231,6 +289,8 @@ const Associations = ({concept, mappings, reverseMappings, ownerMappings, revers
                             mapType='SAME-AS'
                             mappings={oMappings.self}
                             isSelf
+                            linkedSet={linkedSet}
+                            linkedConceptLabel={linkedConceptLabel}
                           />
                         </React.Fragment>
                     })
@@ -242,6 +302,8 @@ const Associations = ({concept, mappings, reverseMappings, ownerMappings, revers
                         id='has-child'
                         mapType={t('mapping.has_child')}
                         isHierarchy
+                        linkedSet={linkedSet}
+                        linkedConceptLabel={linkedConceptLabel}
                       />
                   }
                   {
@@ -252,6 +314,8 @@ const Associations = ({concept, mappings, reverseMappings, ownerMappings, revers
                         mapType={t('mapping.has_parent')}
                         isHierarchy
                         isIndirect
+                        linkedSet={linkedSet}
+                        linkedConceptLabel={linkedConceptLabel}
                       />
                   }
                   {
@@ -266,6 +330,8 @@ const Associations = ({concept, mappings, reverseMappings, ownerMappings, revers
                                 key={mapType}
                                 mapType={mapType}
                                 mappings={oMappings.direct}
+                                linkedSet={linkedSet}
+                                linkedConceptLabel={linkedConceptLabel}
                               />
                           }
                         </React.Fragment>
@@ -285,6 +351,8 @@ const Associations = ({concept, mappings, reverseMappings, ownerMappings, revers
                                 mappings={oMappings.indirect}
                                 mapType={mapType}
                                 isIndirect
+                                linkedSet={linkedSet}
+                                linkedConceptLabel={linkedConceptLabel}
                               />
                           }
                         </React.Fragment>
@@ -352,6 +420,8 @@ const Associations = ({concept, mappings, reverseMappings, ownerMappings, revers
                                             key={mapType}
                                             mapType={mapType}
                                             mappings={oMappings.direct}
+                                            linkedSet={linkedSet}
+                                            linkedConceptLabel={linkedConceptLabel}
                                           />
                                       }
                                     </React.Fragment>
@@ -372,6 +442,8 @@ const Associations = ({concept, mappings, reverseMappings, ownerMappings, revers
                                             mapType={mapType}
                                             mappings={oMappings.indirect}
                                             isIndirect
+                                            linkedSet={linkedSet}
+                                            linkedConceptLabel={linkedConceptLabel}
                                           />
                                       }
                                     </React.Fragment>

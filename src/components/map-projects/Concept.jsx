@@ -27,8 +27,9 @@ const formatBridgeContributor = (entry) => {
 
 // Inline map-type chip — sized to fit the surrounding text line-height so
 // it doesn't disrupt vertical flow when embedded mid-sentence (e.g.
-// "CIEL:1234 ... [SAME-AS] LOINC:52767-1 ...").
-const MAP_TYPE_CHIP_SX = {
+// "CIEL:1234 ... [SAME-AS] LOINC:52767-1 ..."). Exported so the unified
+// ConceptDetailsPanel's Bridge Concepts tab uses the same styling.
+export const MAP_TYPE_CHIP_SX = {
   height: '18px',
   borderRadius: '4px',
   margin: '0 6px 0 0',
@@ -68,7 +69,7 @@ const getBestSynonym = (synonyms = []) => {
 };
 
 
-const Item = ({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition, bridgeContributors, contributingAlgorithms, contributingAlgorithmIds, setShowHighlights, onMap, isSelectedForMap, noScore, repoVersion, synonymPrefix, isAIRecommended, isAIAlternate, showAlgo, candidatesScore, algoScoreFirst, placeholderMap, bridgeChild}) => {
+const Item = ({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition, bridgeContributors, contributingAlgorithms, contributingAlgorithmIds, openConceptPanel, AIRecommendedCandidateId, AIAlternateCandidateIds, onMap, isSelectedForMap, noScore, repoVersion, synonymPrefix, isAIRecommended, isAIAlternate, showAlgo, candidatesScore, algoScoreFirst, placeholderMap, bridgeChild}) => {
   const conceptToMap = conceptForMapping({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition})
   const idLabel = conceptDefinition?.id || conceptDefinition?.reference?.code
   const sourceLabel = conceptDefinition?.source
@@ -76,12 +77,16 @@ const Item = ({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition
   const bridgePrefixLabel = bridgeConceptDefinition
     ? `${bridgeConceptDefinition.source || ''}:${bridgeConceptDefinition.id || bridgeConceptDefinition.reference?.code} ${bridgeConceptDefinition.display_name || ''}`.trim()
     : ''
-  // SearchHighlightsDialog reads concept.search_meta.search_highlight and
-  // calls getScoreDetails on the same shape. Project the tuple through
-  // conceptForMapping so the dialog gets the legacy concept shape it
-  // expects (search_meta.search_highlight comes from candidate.highlights).
-  const showHighlightsPayload = setShowHighlights
-    ? () => setShowHighlights(conceptToMap)
+  // Score chip click opens the unified ConceptDetailsPanel with the Match
+  // Details tab focused. openConceptPanel resolves the per-concept enrichment
+  // (multi-algo contributingAlgorithms, bridge contributors, AI flags) via
+  // the row's quality views; no rowView-shape coupling here.
+  const onScoreClick = openConceptPanel
+    ? () => openConceptPanel(conceptToMap, {
+        initialTab: 'match',
+        AIRecommendedCandidateId,
+        AIAlternateCandidateIds,
+      })
     : null
   const convergenceTooltip = (bridgeContributors || []).length
     ? bridgeContributors.map(formatBridgeContributor).filter(Boolean).join('\n')
@@ -207,13 +212,12 @@ const Item = ({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition
               size='small'
               candidate={candidate}
               conceptRow={conceptRow}
-              setShowHighlights={setShowHighlights}
+              onScoreClick={onScoreClick}
               isAIRecommended={isAIRecommended}
               isAIAlternate={isAIAlternate}
               candidatesScore={candidatesScore}
               algoScoreFirst={algoScoreFirst}
               secondaryScoreText={multiAlgoScoreText}
-              onHighlightClick={showHighlightsPayload}
             />
         }
         {
@@ -289,7 +293,13 @@ const legacyToRowView = (legacy) => {
       concept_class: legacy.concept_class,
       datatype: legacy.datatype,
       retired: legacy.retired,
-      properties: legacy.properties
+      properties: legacy.properties,
+      // `property` (singular) is the schema-specific dict (LOINC's
+      // COMPONENT/PROPERTY/TIME_ASPCT/...). ConceptSummaryProperties reads
+      // this directly. The search endpoint returns it under verbose=true,
+      // so forward it here or search rows render without their schema chips.
+      property: legacy.property,
+      extras: legacy.extras
     },
     conceptRow: {
       rerank_score: meta.search_normalized_score
@@ -308,7 +318,7 @@ const legacyToRowView = (legacy) => {
 // Legacy callers (Target Code column, decision tables, search results)
 // pass a flat concept-shape object instead — legacyToRowView wraps those
 // so a single render path covers both worlds while PR3 cleanup is pending.
-const Concept = ({_id, firstChild, lastChild, concept, setShowHighlights, isShown, onCardClick, onMap, isSelectedForMap, noScore, repoVersion, isAIRecommended, sx, notClickable, noSynonymPrefix, locales, showAlgo, candidatesScore, algoScoreFirst, asTarget, AIRecommendedCandidateId, AIAlternateCandidateIds, targetCanonical, targetRelativeUrl}) => {
+const Concept = ({_id, firstChild, lastChild, concept, openConceptPanel, isShown, onCardClick, onMap, isSelectedForMap, noScore, repoVersion, isAIRecommended, sx, notClickable, noSynonymPrefix, locales, showAlgo, candidatesScore, algoScoreFirst, asTarget, AIRecommendedCandidateId, AIAlternateCandidateIds, targetCanonical, targetRelativeUrl}) => {
   const rowView = concept?.conceptDefinition ? concept : legacyToRowView(concept)
   if(!rowView?.conceptDefinition) return null
   const { type, candidate, conceptDefinition, conceptRow, bridgeConceptDefinition, bridgeChildren, bridgeContributors, contributingAlgorithmIds, contributingAlgorithms } = rowView
@@ -354,18 +364,35 @@ const Concept = ({_id, firstChild, lastChild, concept, setShowHighlights, isShow
     const bridgeCode = conceptDefinition.reference?.code
     const isBridgeAIRecommended = AIRecommendedCandidateId && bridgeCode === AIRecommendedCandidateId
     const isBridgeAIAlternate = aiAlternateIds.includes(bridgeCode)
+    // Click the bridge intermediary header → open the panel for THIS bridge
+    // concept. openConceptPanel's buildPanelPayload detects it's a bridge
+    // intermediary and surfaces a "Bridge Children" tab. Bypass the SearchResults
+    // row-lookup since rowViews don't carry top-level url/version_url/id.
+    const onIntermediaryCardClick = openConceptPanel
+      ? (event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          openConceptPanel(rowView, {
+            AIRecommendedCandidateId,
+            AIAlternateCandidateIds,
+          })
+        }
+      : undefined
     return (
       <>
         {
           algoScoreFirst &&
             <ConceptItem
               {...baseProps}
+              onCardClick={onIntermediaryCardClick}
               candidate={candidate}
               conceptDefinition={conceptDefinition}
               conceptRow={conceptRow}
               repoVersion={repoVersion}
               synonymPrefix={synonymPrefix}
-              setShowHighlights={setShowHighlights}
+              openConceptPanel={openConceptPanel}
+              AIRecommendedCandidateId={AIRecommendedCandidateId}
+              AIAlternateCandidateIds={AIAlternateCandidateIds}
               // Bridge intermediary itself is NOT a target-repo concept and
               // can't be mapped — render a spacer instead of a MapButton.
               // Children below (cascade targets, which ARE in target_repo)
@@ -400,6 +427,26 @@ const Concept = ({_id, firstChild, lastChild, concept, setShowHighlights, isShow
                 const childCode = child.conceptDefinition?.reference?.code
                 const childAIRecommended = AIRecommendedCandidateId && childCode === AIRecommendedCandidateId
                 const childAIAlternate = aiAlternateIds.includes(childCode)
+                // Bridge children are nested inside the parent bridge row in
+                // Algo view, so SearchResults' `rows` (top-level rowViews
+                // only) doesn't contain them — its handleRowClick lookup
+                // returns false and would close the panel. Bypass that lookup
+                // by wiring a direct onCardClick that passes the child tuple
+                // (with the bridge intermediary attached) straight to
+                // openConceptPanel.
+                const onChildCardClick = openConceptPanel
+                  ? (event) => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      openConceptPanel({
+                        ...child,
+                        bridgeConceptDefinition: conceptDefinition,
+                      }, {
+                        AIRecommendedCandidateId,
+                        AIAlternateCandidateIds,
+                      })
+                    }
+                  : undefined
                 return <ConceptItem
                   key={`${index}-${child.candidate?.id}`}
                   {...baseProps}
@@ -409,13 +456,16 @@ const Concept = ({_id, firstChild, lastChild, concept, setShowHighlights, isShow
                   // cascade target. Bridge children always have a row above
                   // them (the intermediary), so always render the divider.
                   firstChild={false}
+                  onCardClick={onChildCardClick}
                   candidate={child.candidate}
                   conceptDefinition={child.conceptDefinition}
                   conceptRow={child.conceptRow}
                   bridgeConceptDefinition={conceptDefinition}
                   repoVersion={repoVersion}
                   synonymPrefix={synonymPrefix}
-                  setShowHighlights={setShowHighlights}
+                  openConceptPanel={openConceptPanel}
+                  AIRecommendedCandidateId={AIRecommendedCandidateId}
+                  AIAlternateCandidateIds={AIAlternateCandidateIds}
                   isSelectedForMap={isSelectedForMap}
                   onMap={onMap}
                   bridgeChild
@@ -449,7 +499,9 @@ const Concept = ({_id, firstChild, lastChild, concept, setShowHighlights, isShow
     contributingAlgorithmIds={contributingAlgorithmIds}
     repoVersion={repoVersion}
     synonymPrefix={synonymPrefix}
-    setShowHighlights={setShowHighlights}
+    openConceptPanel={openConceptPanel}
+    AIRecommendedCandidateId={AIRecommendedCandidateId}
+    AIAlternateCandidateIds={AIAlternateCandidateIds}
     isAIRecommended={isAIRecommended || isAIMatch}
     isAIAlternate={isAIAlternate}
     isSelectedForMap={effectiveIsSelectedForMap}
