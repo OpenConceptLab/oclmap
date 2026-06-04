@@ -2872,7 +2872,11 @@ const MapProject = () => {
     while(warmingUp) {
       if(abortRef.current) { setIsLoadingInDecisionView(false); return }
       try {
-        const response = await service.post(payload)
+        // ocl_online#105 Phase 5: the scispacy service records its own
+        // api_transactions (ocl-scispacy-loinc) via its AnalyticsMiddleware, so
+        // attribute the $match like the others. Per-row (single-row payload) →
+        // scalar row_index; isBulk distinguishes a run call from a manual one.
+        const response = await service.post(payload, null, attrHeaders({rowIndex: __row.__index, algorithmId: 'ocl-scispacy-loinc', isRunTraffic: isBulk}))
 
         // APIService resolves 5xx errors with error.response.data, so response
         // is the parsed body object — not the axios response. A 503 warming_up
