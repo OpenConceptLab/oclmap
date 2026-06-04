@@ -662,7 +662,9 @@
     "use_lexical_variants": "Use Lexical Variants",
     "use_lexical_variants_description": "Expand $match search to include English spelling variants (e.g. color/colour, leukemia/leukaemia) when matching concept names.",
     "ai_recommendation_failed_retry": "AI recommendation failed — click to retry",
-    "ai_recommendation_running": "AI recommendation running"
+    "ai_recommendation_running": "AI recommendation running",
+    "repo_url": "Repo URL",
+    "repo_version": "Repo Version"
   },
   "app": {
     "web_version": "Web Version",

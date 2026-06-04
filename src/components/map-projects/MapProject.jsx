@@ -514,7 +514,8 @@ const MapProject = () => {
         const bridgeAlgoFromApi = find(_algos, a => ['ocl-bridge', 'ocl-ciel-bridge'].includes(a.type))
         if(bridgeAlgoFromApi) {
           const bridgeUrl = bridgeAlgoFromApi.target_repo_url || '/orgs/CIEL/sources/CIEL/'
-          fetchMappedSources(bridgeUrl + 'latest/', sources =>
+          const bridgeVersion = bridgeAlgoFromApi.target_repo_version || 'latest'
+          fetchMappedSources(bridgeUrl + bridgeVersion + '/', sources =>
             setBridgeMappedSources(prev => ({...prev, [bridgeUrl]: sources})))
         }
       } catch {
@@ -1472,6 +1473,10 @@ const MapProject = () => {
     })
   }
 
+  const getAlgoLogExtras = algo => {
+    return {algo: algo.id, repo_url: algo.target_repo_url, ...(algo.target_repo_version ? {repo_version: algo.target_repo_version} : {})}
+  }
+
 
   const getRowsResults = async (rows, selectedAlgos) => {
     abortRef.current = false;
@@ -1517,13 +1522,13 @@ const MapProject = () => {
         );
         forEach(rowBatch, __row => {
           markAlgo(__row.__index, algo.id, 1)
-          log({action: 'algo_finished', extras: {algo: algo.id}}, __row.__index)
+          log({action: 'algo_finished', extras: getAlgoLogExtras(algo)}, __row.__index)
         })
         return response.data || [];
       } catch {
         forEach(rowBatch, __row => {
           markAlgo(__row.__index, algo.id, -2)
-          log({action: 'algo_failed', extras: {algo: algo.id}}, __row.__index)
+          log({action: 'algo_failed', extras: getAlgoLogExtras(algo)}, __row.__index)
         })
         return [];
       }
@@ -1739,7 +1744,7 @@ const MapProject = () => {
       await fetchBridgeCandidates(_rows[index], 0, undefined, undefined, undefined, false, true, ((response, payload) => {
         const index = payload.rows[0].__index
         const results = (isArray(response) ? response : response?.data)
-        log({action: 'algo_finished', extras: {algo: algo.id}}, index)
+        log({action: 'algo_finished', extras: getAlgoLogExtras(algo)}, index)
         markAlgo(index, algo.id, 1)
         // Route the bridge invocation through the normalizer (the per-row
         // path goes via onResponse, but the bulk path lives here).
@@ -1776,7 +1781,7 @@ const MapProject = () => {
       await fetchScispacyCandidates(_rows[index], false, false, true, (response => {
         const _index = _rows[index].__index
         const results = [{row: _rows[index], results: fromScispacyResultsToConcepts(get(response.data, index) || [])}]
-        log({action: 'algo_finished', extras: {algo: algo.id}}, _index)
+        log({action: 'algo_finished', extras: getAlgoLogExtras(algo)}, _index)
         markAlgo(_index, algo.id, 1)
         // Mirror the bulk-bridge wiring — the per-row scispacy path goes via
         // onResponse, but the bulk path lives here.
@@ -2647,9 +2652,11 @@ const MapProject = () => {
       setIsLoadingInDecisionView(true)
       const onResponse = (response, payload) => {
         const projectContext = buildProjectContext()
+        let _algo = getAlgoDef(algoId)
+        const logExtras = getAlgoLogExtras(_algo)
         if(response?.detail) {
           markAlgo(__row.__index, algoId, -2)
-          log({action: 'algo_failed', extras: {algo: algoId}}, __row.__index)
+          log({action: 'algo_failed', extras: logExtras}, __row.__index)
           setAlert({message: response.detail, severity: 'error'})
           mergeIntoRowMatchState(__row.__index, normalizeAlgorithmInvocation(null, {
             algorithmId: algoId,
@@ -2662,7 +2669,7 @@ const MapProject = () => {
           }))
           return
         }
-        log({action: 'algo_finished', extras: {algo: algoId}}, __row.__index)
+        log({action: 'algo_finished', extras: logExtras}, __row.__index)
         let data = isArray(response) ? response : (response?.data || [])
         if(offset === 0) {
           const results = algoId === 'ocl-scispacy-loinc' ? [{row: __row, results: fromScispacyResultsToConcepts(get(response.data, __row.__index) || [])}] : data
@@ -3241,7 +3248,7 @@ const MapProject = () => {
         },
         (response, errorMsg) => {
           markAlgo(__row.__index, bridgeAlgoId, -2)
-          log({action: 'algo_failed', extras: {algo: bridgeAlgoId}}, __row.__index)
+          log({action: 'algo_failed', extras: getAlgoLogExtras(bridgeAlgo)}, __row.__index)
           setAlert({message: response?.detail || errorMsg, severity: 'error'})
           setIsLoadingInDecisionView(false)
           resolve()

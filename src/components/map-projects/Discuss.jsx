@@ -156,6 +156,20 @@ const Discuss = ({ logs, onAdd }) => {
                         {getTitle(log)}
                       </Typography>
                       {
+                        ['algo_finished', 'algo_failed'].includes(log.action) && log.extras?.repo_url &&
+                          <>
+                            <Typography sx={{fontSize: '12px', color: 'rgba(0, 0, 0, 0.7)'}}>
+                              {t('map_project.repo_url')}: {log.extras.repo_url}
+                            </Typography>
+                            {
+                              log.extras.repo_version &&
+                                <Typography sx={{fontSize: '12px', color: 'rgba(0, 0, 0, 0.7)'}}>
+                                  {t('map_project.repo_version')}: {log.extras.repo_version}
+                                </Typography>
+                            }
+                          </>
+                      }
+                      {
                         log.action === 'AIRecommendation' && log?.extras?.model?.id &&
                           <Typography sx={{fontSize: '12px', color: 'rgba(0, 0, 0, 0.7)'}}>
                             {log.extras.model.name}

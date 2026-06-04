@@ -631,7 +631,9 @@
     "use_lexical_variants": "Usar variantes léxicas",
     "use_lexical_variants_description": "Amplíe la búsqueda $match para incluir variantes ortográficas en inglés (p. ej. color/colour, leukemia/leukaemia) al comparar nombres de conceptos.",
     "ai_recommendation_failed_retry": "Error en la recomendación de IA — haga clic para intentar de nuevo",
-    "ai_recommendation_running": "Recomendación de IA en curso"
+    "ai_recommendation_running": "Recomendación de IA en curso",
+    "repo_url": "URL del repositorio",
+    "repo_version": "Versión del repositorio"
   },
   "app": {
     "web_version": "Versión Web",
