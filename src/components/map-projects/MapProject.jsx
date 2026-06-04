@@ -68,6 +68,7 @@ import pick from 'lodash/pick'
 import { OperationsContext } from '../app/LayoutContext';
 
 import APIService, { isTransientNetworkError, retryWithBackoff } from '../../services/APIService';
+import { buildAttributionHeaders, buildConfigSnapshot } from '../../services/attribution'
 import { highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, downloadObject, currentUserToken } from '../../common/utils';
 import { WHITE, SURFACE_COLORS } from '../../common/colors';
 
@@ -199,6 +200,10 @@ const MapProject = () => {
   const abortRef = React.useRef(false);
   const isBulkMatchRunningRef = React.useRef(false);
   const bulkMatchAlgoIdsRef = React.useRef([]);
+  // ocl_online#105 Phase 5: the active AutomatchRun ({id, algoIds}) or null.
+  // A ref so every per-row backend call reads the run id synchronously without
+  // prop-drilling or re-renders; null outside a run → 'mapper-ui-manual'.
+  const automatchRunRef = React.useRef(null);
 
   const [row, setRow] = React.useState(false)
   const [loadingMatches, setLoadingMatches] = React.useState(false)
@@ -1294,6 +1299,77 @@ const MapProject = () => {
       APIService.new().overrideURL(project.url).appendToUrl('logs/').post({logs: {row_logs: logs, project_logs: newLogs}}).then(() => {})
   }
 
+  // ── ocl_online#105 Phase 5: AutomatchRun attribution ──────────────────────
+  // Build the X-OCL-Request-Source + X-OCL-Event-Metadata headers for a single
+  // per-row backend call. Reads the active run id from the ref, so the same
+  // call sites used outside a run emit request_source='mapper-ui-manual'.
+  const attrHeaders = ({rowIndex, rowIndices, batchSize, algorithmId, clientAttemptN} = {}) =>
+    buildAttributionHeaders({
+      runId: automatchRunRef.current?.id ?? null,
+      projectId: params.projectId,
+      rowIndex, rowIndices, batchSize, algorithmId, clientAttemptN,
+    })
+
+  // Create the AutomatchRun system-of-record at run start (oclapi2#876). The
+  // server stamps started_by / client_user_agent / client_ip itself, so we send
+  // only the run-start snapshot. Degrades gracefully: a failed create leaves the
+  // ref null and the auto-match run proceeds (per-row calls fall back to
+  // 'mapper-ui-manual') — run creation must never block matching.
+  const createAutomatchRun = async (selectedAlgos, intendedRows) => {
+    automatchRunRef.current = null
+    if(!project?.url || !intendedRows?.length) return
+    const withAI = Boolean(inAIAssistantGroup && autoRunAIAnalysis)
+    const body = {
+      intended_rows: intendedRows.length,
+      trigger_source: 'ui-auto-match',
+      config_snapshot: buildConfigSnapshot({
+        selectedAlgos,
+        encoderModel,
+        scoreConfig: candidatesScore,
+        filters: getFilters(),
+        template: withAI ? getPromptTemplateRef() : null,
+        aiModel: withAI ? (getSelectedAIModel()?.id || AIModel) : null,
+      }),
+    }
+    try {
+      const response = await APIService.new().overrideURL(project.url).appendToUrl('auto-match-runs/').post(body)
+      const id = response?.data?.id
+      if(id) automatchRunRef.current = {id, algoIds: map(selectedAlgos, 'id')}
+      else projectLog({action: 'automatch_run_create_failed', extras: {status: response?.status || 'no-id'}})
+    } catch (err) {
+      projectLog({action: 'automatch_run_create_failed', extras: {error: err?.message || 'unknown'}})
+    }
+  }
+
+  // PATCH the run to a terminal status at run end. completed/failed are derived
+  // from the per-row algo stages (rowStageRef: -2 failed, 1 done, -1 not run)
+  // over the rows we set out to process; a row counts as failed only when EVERY
+  // attempted algo failed for it. Never throws — a failed PATCH (or a run that
+  // was never created) must not surface to the user.
+  const completeAutomatchRun = async (selectedAlgos, intendedRows) => {
+    const run = automatchRunRef.current
+    automatchRunRef.current = null
+    if(!run?.id) return
+    const stages = rowStageRef.current || []
+    const algoIds = run.algoIds?.length ? run.algoIds : map(selectedAlgos, 'id')
+    let failed = 0
+    forEach(intendedRows, _row => {
+      const rowStage = stages[_row.__index] || {}
+      const attempted = algoIds.map(id => rowStage[id]).filter(s => s !== undefined && s !== -1)
+      if(attempted.length && attempted.every(s => s === -2)) failed += 1
+    })
+    const total = intendedRows.length
+    const completed = total - failed
+    let completionStatus = 'completed'
+    if(abortRef.current) completionStatus = 'cancelled'
+    else if(completed === 0 && failed > 0) completionStatus = 'failed'
+    else if(failed > 0) completionStatus = 'partial'
+    try {
+      await APIService.new().overrideURL('/auto-match-runs/' + run.id + '/')
+        .request('PATCH', {completed_rows: completed, failed_rows: failed, completion_status: completionStatus})
+    } catch (_) { /* attribution is best-effort; never block on the PATCH */ }
+  }
+
   const fetchRepo = (url, _repo) => APIService.new().overrideURL(url).get().then(response => setRepo(response.data?.id ? response.data : _repo))
 
   const fetchMappedSources = (url, setter) => {
@@ -1507,7 +1583,7 @@ const MapProject = () => {
         const response = await service.post(
           payload,
           (algo.type === 'custom' && algo.url && algo.token) ? algo.token : null,
-          null,
+          attrHeaders({rowIndices: map(rowBatch, '__index'), batchSize: rowBatch.length, algorithmId: algo.id}),
           {
             includeSearchMeta: true,
             ...(algo.query_params || {}),
@@ -1638,59 +1714,67 @@ const MapProject = () => {
         ? filter(rows, row => rowStatuses.unmapped.includes(row.__index))
         : filter(rows, row => !rowStatuses.reviewed.includes(row.__index))
 
-      bulkMatchAlgoIdsRef.current = map(_selectedAlgos, 'id')
-      // Reset all algo stages to -1 for every row before starting so that
-      // stages from a previous run don't make the "all algos done" check
-      // pass prematurely when only the first algo has finished.
-      setRowStage(prev => {
-        const next = { ...prev }
-        rowsToProcess.forEach(row => {
-          const rowId = row.__index
-          const rowState = { ...(next[rowId] || {}) }
-          _selectedAlgos.forEach(algo => { rowState[algo.id] = -1 })
-          next[rowId] = rowState
-        })
-        rowStageRef.current = next
-        return next
-      })
-      isBulkMatchRunningRef.current = true
+      // ocl_online#105 Phase 5: open the run record, then guarantee it is
+      // closed out (completed / partial / failed / cancelled) via the finally,
+      // even on cancel or an unexpected throw mid-pipeline.
+      await createAutomatchRun(_selectedAlgos, rowsToProcess)
       try {
-        for(const algo of _selectedAlgos) {
-          if(abortRef.current) break
-          if(['custom', 'ocl-search', 'ocl-semantic'].includes(algo.type))
-            await processWithConcurrency(repo, algo, rowsToProcess)
-          else if(['ocl-bridge', 'ocl-ciel-bridge'].includes(algo.type) && canBridge)
-            await fetchBulkBridgeCandidates(rowsToProcess, algo)
-          else if(algo.type === 'ocl-scispacy' && canScispacy)
-            await fetchBulkScispacyCandidates(rowsToProcess, algo)
-        }
-      } finally {
-        isBulkMatchRunningRef.current = false
-        bulkMatchAlgoIdsRef.current = []
-      }
-      if(_selectedAlgos.length)
-        await processRerankWithConcurrency(rowsToProcess, 2)
-      if(inAIAssistantGroup && autoRunAIAnalysis) {
-        await new Promise(resolve => setTimeout(resolve, 1000))
-        await runBulkAIAnalysis(rowsToProcess)
-      } else {
-        setIsLoadingInDecisionView(false)
-        setLoadingMatches(false)
-        setEndMatchingAt(moment())
-      }
-      if(!abortRef.current)
-        projectLog({
-          action: 'auto_match_finished',
-          extras: {
-            sub_actions: subActions,
-            ...(inAIAssistantGroup && autoRunAIAnalysis ? {
-              ai_assistant: {
-                model: getSelectedAIModel(),
-                prompt_template: getPromptTemplateRef()
-              }
-            } : {})
-          }
+        bulkMatchAlgoIdsRef.current = map(_selectedAlgos, 'id')
+        // Reset all algo stages to -1 for every row before starting so that
+        // stages from a previous run don't make the "all algos done" check
+        // pass prematurely when only the first algo has finished.
+        setRowStage(prev => {
+          const next = { ...prev }
+          rowsToProcess.forEach(row => {
+            const rowId = row.__index
+            const rowState = { ...(next[rowId] || {}) }
+            _selectedAlgos.forEach(algo => { rowState[algo.id] = -1 })
+            next[rowId] = rowState
+          })
+          rowStageRef.current = next
+          return next
         })
+        isBulkMatchRunningRef.current = true
+        try {
+          for(const algo of _selectedAlgos) {
+            if(abortRef.current) break
+            if(['custom', 'ocl-search', 'ocl-semantic'].includes(algo.type))
+              await processWithConcurrency(repo, algo, rowsToProcess)
+            else if(['ocl-bridge', 'ocl-ciel-bridge'].includes(algo.type) && canBridge)
+              await fetchBulkBridgeCandidates(rowsToProcess, algo)
+            else if(algo.type === 'ocl-scispacy' && canScispacy)
+              await fetchBulkScispacyCandidates(rowsToProcess, algo)
+          }
+        } finally {
+          isBulkMatchRunningRef.current = false
+          bulkMatchAlgoIdsRef.current = []
+        }
+        if(_selectedAlgos.length)
+          await processRerankWithConcurrency(rowsToProcess, 2)
+        if(inAIAssistantGroup && autoRunAIAnalysis) {
+          await new Promise(resolve => setTimeout(resolve, 1000))
+          await runBulkAIAnalysis(rowsToProcess)
+        } else {
+          setIsLoadingInDecisionView(false)
+          setLoadingMatches(false)
+          setEndMatchingAt(moment())
+        }
+        if(!abortRef.current)
+          projectLog({
+            action: 'auto_match_finished',
+            extras: {
+              sub_actions: subActions,
+              ...(inAIAssistantGroup && autoRunAIAnalysis ? {
+                ai_assistant: {
+                  model: getSelectedAIModel(),
+                  prompt_template: getPromptTemplateRef()
+                }
+              } : {})
+            }
+          })
+      } finally {
+        await completeAutomatchRun(_selectedAlgos, rowsToProcess)
+      }
     }, 1000)
   };
 
@@ -2957,7 +3041,7 @@ const MapProject = () => {
         q: query,
         rows: rerankRows,
         ...(encoderModel ? { encoder_model: encoderModel } : {})
-      })
+      }, null, attrHeaders({rowIndex: index, algorithmId: 'reranker'}))
 
       // Write rerank_score into the row's ConceptRows. matchRerankResultToKey
       // throws on canonical-identity miss; surface to the alert state so a
@@ -3244,7 +3328,11 @@ const MapProject = () => {
           setAlert({message: response?.detail || errorMsg, severity: 'error'})
           setIsLoadingInDecisionView(false)
           resolve()
-        }
+        },
+        // ocl_online#105 Phase 5: attribution headers for the bridge $match,
+        // applied by the premium component (react-bridge-match). Per-row here
+        // (single-row payload) → scalar row_index.
+        attrHeaders({rowIndex: __row.__index, algorithmId: bridgeAlgoId})
       )
     })
   }
@@ -3391,7 +3479,7 @@ const MapProject = () => {
           } else {
             service = service.overrideURL(oclUrl)
           }
-          const response = await service.request('GET', undefined, authToken, {query: {includeMappings: true, mappingBrief: true, mapTypes: 'SAME-AS,SAME AS,SAME_AS', verbose: true}})
+          const response = await service.request('GET', undefined, authToken, {query: {includeMappings: true, mappingBrief: true, mapTypes: 'SAME-AS,SAME AS,SAME_AS', verbose: true}, headers: attrHeaders({rowIndex: logRowIndex})})
           const data = response?.data
           if(data?.id) return data
           urlFetchCacheRef.current.delete(oclUrl)
@@ -3448,7 +3536,7 @@ const MapProject = () => {
         : {url: reference.url})
       resolvePromise = APIService.new()
         .overrideURL('/$resolveReference/')
-        .post(body, currentToken, null, resolveNamespace ? {namespace: resolveNamespace} : undefined)
+        .post(body, currentToken, attrHeaders({rowIndex: logRowIndex}), resolveNamespace ? {namespace: resolveNamespace} : undefined)
         .then(async response => {
           const items = Array.isArray(response?.data) ? response.data : []
           await Promise.all(toResolve.map(async ({key, reference}, i) => {
@@ -4061,7 +4149,14 @@ const MapProject = () => {
       const invokeTs = Date.now()
       try {
         const response = await retryWithBackoff(
-          attempt => service.request('POST', payload, undefined, {headers: {'X-OCL-REQUEST-IDEMPOTENCY-KEY': `${params.projectId}-${__index}-${attempt}-${invokeTs}`}}),
+          attempt => service.request('POST', payload, undefined, {headers: {
+            'X-OCL-REQUEST-IDEMPOTENCY-KEY': `${params.projectId}-${__index}-${attempt}-${invokeTs}`,
+            // Discrete headers (read into event_metadata by the middleware); not
+            // bundled into the JSON bag. attrHeaders adds request_source + the bag.
+            ...(promptTemplateRef?.key ? {'X-OCL-PROMPT-TEMPLATE-KEY': promptTemplateRef.key} : {}),
+            ...(promptTemplateRef?.version ? {'X-OCL-PROMPT-TEMPLATE-VERSION': String(promptTemplateRef.version)} : {}),
+            ...attrHeaders({rowIndex: __index, clientAttemptN: attempt + 1}),
+          }}),
           {
             maxRetries: 2,
             baseDelayMs: 3000,
