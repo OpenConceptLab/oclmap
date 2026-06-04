@@ -26,7 +26,8 @@ import {
   filterAndTrimNames,
   filterAndTrimDescriptions,
   primarySubtag,
-  uniqByPrimarySubtag
+  uniqByPrimarySubtag,
+  buildLookupConceptUrl
 } from '../normalizers.js'
 import { makeConceptKey, parseConceptKey, referencesEqual } from '../conceptKey.js'
 
@@ -1568,4 +1569,46 @@ test('buildRecommendableConceptEntry: union effectiveLocales=["pt","en"] surface
 
   const langs = entry.names.map(n => primarySubtag(n.locale)).sort()
   assert.deepEqual(langs, ['en', 'en', 'pt'])
+})
+
+// ---------- buildLookupConceptUrl ----------
+// URL builder used by MapProject.ensureLoaded to divert target-repo concept
+// fetches to the configured custom lookup source. ocl_issues#2558.
+// (The "should this divert?" predicate is conceptBelongsToTargetRepo in
+// viewBuilders.js; this helper only builds the lookup-source URL.)
+
+const LOOKUP_URL = '/orgs/OpenMRS-OCL-Squad/sources/ICD-11-WHO-Mapper/'
+
+test('buildLookupConceptUrl: builds a lookup-source concept URL by code', () => {
+  assert.equal(
+    buildLookupConceptUrl(LOOKUP_URL, 'BD11.Z'),
+    '/orgs/OpenMRS-OCL-Squad/sources/ICD-11-WHO-Mapper/concepts/BD11.Z/'
+  )
+})
+
+test('buildLookupConceptUrl: double-encodes cluster (&) and compound (/) codes', () => {
+  // Matches the $resolveReference (Branch 2) double-encode so both fetch paths
+  // address the same concept (verified against successful run fetches).
+  assert.equal(
+    buildLookupConceptUrl(LOOKUP_URL, 'ND92.1&XA55T2'),
+    '/orgs/OpenMRS-OCL-Squad/sources/ICD-11-WHO-Mapper/concepts/ND92.1%2526XA55T2/'
+  )
+  assert.equal(
+    buildLookupConceptUrl(LOOKUP_URL, 'GB4Y/MF8Y'),
+    '/orgs/OpenMRS-OCL-Squad/sources/ICD-11-WHO-Mapper/concepts/GB4Y%252FMF8Y/'
+  )
+})
+
+test('buildLookupConceptUrl: appends a trailing slash to the base when missing', () => {
+  assert.equal(
+    buildLookupConceptUrl('/orgs/X/sources/Y', 'QC00.5'),
+    '/orgs/X/sources/Y/concepts/QC00.5/'
+  )
+})
+
+test('buildLookupConceptUrl: returns null on missing input', () => {
+  assert.equal(buildLookupConceptUrl(undefined, 'BD11.Z'), null)
+  assert.equal(buildLookupConceptUrl('', 'BD11.Z'), null)
+  assert.equal(buildLookupConceptUrl(LOOKUP_URL, undefined), null)
+  assert.equal(buildLookupConceptUrl(LOOKUP_URL, ''), null)
 })
