@@ -17,8 +17,9 @@ import Breadcrumbs from '../common/Breadcrumbs'
 import { BLACK } from '../../common/colors'
 import ConceptManagementList from './ConceptManagementList'
 import MapButton from '../map-projects/MapButton'
+import { getScoreDetails, ScoreValueChip } from '../map-projects/Score'
 
-const ConceptHeader = ({concept, repo, onClose, repoURL, onEdit, nested, loading, onMap, isSelectedForMap, aiRecommended, aiAlternate, crossRowCode, hideClose, hideDragHandle}) => {
+const ConceptHeader = ({concept, repo, onClose, repoURL, onEdit, nested, loading, onMap, isSelectedForMap, aiRecommended, aiAlternate, crossRowCode, hideClose, hideDragHandle, candidatesScore}) => {
   const { t } = useTranslation()
   const [menu, setMenu] = React.useState(false)
   const [menuAnchorEl, setMenuAnchorEl] = React.useState(false)
@@ -45,6 +46,8 @@ const ConceptHeader = ({concept, repo, onClose, repoURL, onEdit, nested, loading
     ? {}
     : {cursor: 'move'}
   const headerWrapperId = hideDragHandle ? undefined : 'draggable-dialog-title'
+  const { hasPercentile, algoScore, rerankScore, bucketColor } = getScoreDetails(concept, candidatesScore)
+  const scoreLabel = rerankScore || algoScore
 
   return (
     <div className='col-xs-12 padding-0' style={headerWrapperStyle} id={headerWrapperId}>
@@ -104,6 +107,20 @@ const ConceptHeader = ({concept, repo, onClose, repoURL, onEdit, nested, loading
               onClick={(event, applied, mapType) => onMap(event, concept, !applied, mapType, true)}
               isMapped={isSelectedForMap(concept)}
               sx={{marginLeft: '8px'}}
+            />
+        }
+        {
+          !onMap && scoreLabel &&
+            <ScoreValueChip
+              size='small'
+              bucketColor={bucketColor}
+              label={scoreLabel}
+              sx={{
+                marginLeft: '8px',
+                backgroundColor: hasPercentile ? undefined : 'rgba(0, 0, 0, 0.08)',
+                color: 'surface.dark',
+                fontWeight: 600,
+              }}
             />
         }
       </span>
