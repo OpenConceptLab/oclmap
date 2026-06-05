@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import {
   getDefaultBridgeRepoVersion,
   getDefaultTargetRepoVersion,
+  getLatestReleasedBridgeVersion,
   getProjectTargetRepoVersion,
   getTargetRepoVersionFromUrl,
   getTargetRepoVersionId,
@@ -100,5 +101,45 @@ test('getDefaultBridgeRepoVersion stays unset when no version supports llm', () 
       { id: '2.81', released: true, match_algorithms: ['fts'] }
     ]),
     false
+  )
+})
+
+test('getDefaultBridgeRepoVersion ignores missing algorithm metadata', () => {
+  assert.equal(
+    getDefaultBridgeRepoVersion([
+      { id: 'HEAD', released: false },
+      { id: '2.81', released: true, match_algorithms: null }
+    ]),
+    false
+  )
+})
+
+test('getLatestReleasedBridgeVersion prefers the first explicitly released version', () => {
+  const versions = [
+    { id: 'HEAD', released: false },
+    { id: '2.81', released: true },
+    { id: '2.80', released: true }
+  ]
+
+  assert.deepEqual(getLatestReleasedBridgeVersion(versions), versions[1])
+})
+
+test('getLatestReleasedBridgeVersion falls back to the first non-HEAD version', () => {
+  const versions = [
+    { id: 'HEAD', released: false },
+    { id: '2.81', released: false },
+    { id: '2.80', released: false }
+  ]
+
+  assert.deepEqual(getLatestReleasedBridgeVersion(versions), versions[1])
+})
+
+test('getLatestReleasedBridgeVersion stays null when every option is HEAD-like', () => {
+  assert.equal(
+    getLatestReleasedBridgeVersion([
+      { id: 'HEAD', released: false },
+      { released: false }
+    ]),
+    null
   )
 })

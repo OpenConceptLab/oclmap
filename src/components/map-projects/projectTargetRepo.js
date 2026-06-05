@@ -30,6 +30,17 @@ export const getDefaultBridgeRepoVersion = versions => {
   return versions.find(isLLMBridgeRepoVersion) || false
 }
 
+export const getLatestReleasedBridgeVersion = versions => {
+  if(!Array.isArray(versions) || versions.length === 0)
+    return null
+
+  const explicitReleasedVersion = versions.find(version => version?.released)
+  if(explicitReleasedVersion)
+    return explicitReleasedVersion
+
+  return versions.find(version => version?.id && version.id !== 'HEAD') || null
+}
+
 export const getProjectTargetRepoVersion = projectData => {
   const versionFromUrl = getTargetRepoVersionFromUrl(projectData?.target_repo_url)
   return versionFromUrl || projectData?.target_repo?.source_version || ''

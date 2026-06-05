@@ -37,7 +37,11 @@ import { isLikelyCanonicalUrl } from './algorithms'
 import RepoVersionSearchAutocomplete from '../repos/RepoVersionSearchAutocomplete'
 import APIService from '../../services/APIService';
 import { dropVersion } from '../../common/utils'
-import { getDefaultBridgeRepoVersion, isLLMBridgeRepoVersion } from './projectTargetRepo'
+import {
+  getDefaultBridgeRepoVersion,
+  getLatestReleasedBridgeVersion,
+  isLLMBridgeRepoVersion
+} from './projectTargetRepo'
 
 // Cached lookup of a bridge source repo's canonical_url. Canonical URLs are
 // stable, so a single fetch per relative URL is sufficient for the session.
@@ -64,13 +68,6 @@ const fetchBridgeVersions = (url) => {
     .catch(() => [])
   bridgeVersionsCache.set(baseUrl, promise)
   return promise
-}
-
-const getLatestReleasedBridgeVersion = (versions) => {
-  if(!Array.isArray(versions) || versions.length === 0) return null
-  const explicitReleasedVersion = versions.find(version => version?.released)
-  if(explicitReleasedVersion) return explicitReleasedVersion
-  return versions.find(version => version?.id && version.id !== 'HEAD') || null
 }
 
 /**
