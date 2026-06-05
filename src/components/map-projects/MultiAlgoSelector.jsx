@@ -618,12 +618,12 @@ export default function MultiAlgoSelector({
                               const bridgeVersionHelperText = bridgeSourceUrl
                                 ? (
                                   !bridgeVersionsLoaded
-                                    ? t('map_project.loading_versions', 'Loading versions...')
+                                    ? t('map_project.loading_versions')
                                     : hasSelectableBridgeVersions
-                                    ? t('map_project.bridge_version_description', 'Only versions with LLM support can be selected for bridge matching.')
-                                    : t('map_project.bridge_version_unavailable', 'No bridge source versions with LLM support are available.')
+                                    ? t('map_project.bridge_version_description')
+                                    : t('map_project.bridge_version_unavailable')
                                 )
-                                : t('map_project.bridge_version_source_required', 'Set a bridge source URL before choosing a version.')
+                                : t('map_project.bridge_version_source_required')
 
                               return (
                                 <>
