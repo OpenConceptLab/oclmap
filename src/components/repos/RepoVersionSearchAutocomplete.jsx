@@ -16,7 +16,6 @@ const RepoVersionSearchAutocomplete = ({
   error,
   helperText,
   getOptionDisabled,
-  renderOptionLabel,
   getOptionRightText
 }) => {
   const [open, setOpen] = React.useState(false)
@@ -50,7 +49,7 @@ const RepoVersionSearchAutocomplete = ({
       required={required}
       onChange={(event, item) => handleChange(event, id || 'source', item)}
       renderOption={(props, option) => {
-        const labelContent = renderOptionLabel ? renderOptionLabel(option) : getLabel(option)
+        const labelContent = getLabel(option)
         const rightText = getOptionRightText ? getOptionRightText(option) : ''
 
         return (
