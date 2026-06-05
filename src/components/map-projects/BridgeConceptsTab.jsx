@@ -17,6 +17,9 @@ import Breadcrumbs from '../common/Breadcrumbs';
 import { toParentURI, toV3URL } from '../../common/utils';
 import { BLACK } from '../../common/colors';
 import { MAP_TYPE_CHIP_SX } from './Concept';
+import { getScoreDetails, ScoreValueChip } from './Score';
+import MapButton from './MapButton';
+import { conceptForMapping } from './viewBuilders.js';
 
 // Bridge Concepts tab — one accordion entry per bridge contributor that
 // converged on the same target concept (built by openConceptPanel.allBridgesFor).
@@ -48,7 +51,7 @@ const ownerFromURL = url => {
 // `entry.conceptDefinition` is the concept this row represents. Backward-
 // compatible: also accepts `entry.bridgeConceptDefinition` for older call
 // sites that haven't migrated yet.
-const BridgeAccordionSummary = ({entry}) => {
+const BridgeAccordionSummary = ({entry, candidatesScore, allowMapping, onMap, isSelectedForMap}) => {
   const { t } = useTranslation()
   const def = entry?.conceptDefinition || entry?.bridgeConceptDefinition
   if(!def) return null
@@ -60,6 +63,19 @@ const BridgeAccordionSummary = ({entry}) => {
   const conceptStub = { id, retired: Boolean(def.retired) }
   // toV3URL already prepends the SPA hash; pass the bare relative URL.
   const termBrowserUrl = ocl_url ? toV3URL(ocl_url) : null
+  const { hasPercentile, algoScore, rerankScore, bucketColor } = getScoreDetails({
+    candidate: entry?.candidate,
+    conceptRow: entry?.conceptRow,
+  }, candidatesScore)
+  const scoreLabel = rerankScore || algoScore
+  const conceptToMap = allowMapping && entry?.candidate
+    ? conceptForMapping({
+        candidate: entry.candidate,
+        conceptDefinition: def,
+        conceptRow: entry?.conceptRow,
+      })
+    : null
+  const isMapped = conceptToMap && isSelectedForMap ? isSelectedForMap(conceptToMap) : false
   return (
     <Box sx={{width: '100%'}}>
       <Stack
@@ -89,6 +105,20 @@ const BridgeAccordionSummary = ({entry}) => {
               <Chip size='small' label={entry.algorithm_id} variant='outlined' color='warning' />
           }
           {
+            scoreLabel && (
+              <ScoreValueChip
+                size='small'
+                bucketColor={bucketColor}
+                label={scoreLabel}
+                sx={{
+                  backgroundColor: hasPercentile ? undefined : 'rgba(0, 0, 0, 0.08)',
+                  color: 'surface.dark',
+                  fontWeight: 600,
+                }}
+              />
+            )
+          }
+          {
             termBrowserUrl && (
               <Tooltip title={t('concept.open_in_term_browser')}>
                 <IconButton
@@ -110,10 +140,35 @@ const BridgeAccordionSummary = ({entry}) => {
         </Stack>
       </Stack>
       {
-        def.display_name && (
-          <Typography sx={{fontSize: '22px', color: BLACK, marginTop: '4px'}} className='searchable'>
-            {def.display_name}
-          </Typography>
+        (def.display_name || conceptToMap) && (
+          <Stack
+            direction='row'
+            alignItems='flex-start'
+            justifyContent='space-between'
+            spacing={1}
+            sx={{marginTop: '4px', width: '100%'}}
+          >
+            <Typography sx={{fontSize: '22px', color: BLACK, flexGrow: 1, minWidth: 0}} className='searchable'>
+              {def.display_name}
+            </Typography>
+            {
+              conceptToMap && onMap && isSelectedForMap && (
+                <Box sx={{flexShrink: 0}} onClick={e => e.stopPropagation()}>
+                  <MapButton
+                    simple
+                    selected={entry?.candidate?.map_type || entry?.map_type}
+                    isMapped={isMapped}
+                    onClick={(event, applied, mapType) => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      onMap(event, conceptToMap, !applied, entry?.candidate?.map_type || mapType)
+                    }}
+                    sx={{marginLeft: '8px'}}
+                  />
+                </Box>
+              )
+            }
+          </Stack>
         )
       }
     </Box>
@@ -126,7 +181,16 @@ const BridgeAccordionSummary = ({entry}) => {
 //   - Bridge children (cascade targets a bridge resolves to, shape
 //     {conceptDefinition, ...})
 // Both shapes are accepted via BridgeAccordionSummary's def lookup.
-const BridgeConceptsTab = ({bridges, effectiveLocales, linkedConceptUrls, linkedConceptLabel}) => {
+const BridgeConceptsTab = ({
+  bridges,
+  effectiveLocales,
+  linkedConceptUrls,
+  linkedConceptLabel,
+  onMap,
+  isSelectedForMap,
+  allowMapping = false,
+  candidatesScore,
+}) => {
   if(!bridges?.length) return null
 
   return (
@@ -145,7 +209,13 @@ const BridgeConceptsTab = ({bridges, effectiveLocales, linkedConceptUrls, linked
                 }
               }}
             >
-              <BridgeAccordionSummary entry={entry} />
+              <BridgeAccordionSummary
+                entry={entry}
+                candidatesScore={candidatesScore}
+                allowMapping={allowMapping}
+                onMap={onMap}
+                isSelectedForMap={isSelectedForMap}
+              />
             </AccordionSummary>
             {/* Tint the expanded details with the Mapper page gray (surface.n96 /
                 BG_GRAY — the app body background) so the collapsible region reads as
@@ -166,11 +236,21 @@ const BridgeConceptsTab = ({bridges, effectiveLocales, linkedConceptUrls, linked
                   url: def?.ocl_url,
                   source: def?.source,
                   type: 'Concept',
+                  search_meta: {
+                    algorithm: entry?.candidate?.algorithm_id,
+                    search_score: entry?.candidate?.score,
+                    search_normalized_score: entry?.conceptRow?.rerank_score,
+                    search_highlight: entry?.candidate?.highlights,
+                    map_type: entry?.candidate?.map_type || entry?.map_type,
+                  },
                 }}
                 effectiveLocales={effectiveLocales}
                 linkedConceptUrls={linkedConceptUrls}
                 linkedConceptLabel={linkedConceptLabel}
                 onClose={() => {}}
+                onMap={allowMapping ? onMap : undefined}
+                isSelectedForMap={allowMapping ? isSelectedForMap : undefined}
+                candidatesScore={candidatesScore}
                 detailsStyle={{height: 'auto'}}
               />
             </AccordionDetails>

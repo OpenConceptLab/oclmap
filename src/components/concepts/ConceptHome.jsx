@@ -186,6 +186,7 @@ const ConceptHome = props => {
                         crossRowCode={props.crossRowCode}
                         hideClose={props.hideClose}
                         hideDragHandle={props.hideDragHandle}
+                        candidatesScore={props.candidatesScore}
                       />
                     </div>
                 }

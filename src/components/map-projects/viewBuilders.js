@@ -203,8 +203,12 @@ export const buildQualityRowViews = (rowState, conceptCache) => {
       .filter(c => c.type === 'bridge_child' && c !== primary)
       .map(c => {
         const bridgeDef = c.bridge_concept_key ? conceptCache?.[c.bridge_concept_key] : null
+        const bridgeCandidate = c?.parent_candidate_id ? allCandidates.find(a => a?.id === c.parent_candidate_id) : null
+        const bridgeConceptRow = c?.bridge_concept_key ? rowState?.concept_rows?.[c.bridge_concept_key] : null
         return bridgeDef ? {
           bridgeConceptDefinition: bridgeDef,
+          candidate: bridgeCandidate || c,
+          conceptRow: bridgeConceptRow,
           map_type: c.map_type,
           algorithm_id: c.algorithm_id
         } : null

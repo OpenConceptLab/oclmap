@@ -11,7 +11,7 @@
 //   - Concept Details                                    — always
 //   - Bridge Concept(s)  — if bridgeContributors.length OR bridge_concept present
 //   - Match Details      — if contributingAlgorithms.length OR search_meta has score/highlights
-import { buildQualityRowViews, conceptForMapping } from './viewBuilders.js'
+import { buildQualityRowViews, conceptForMapping, sortRowViews } from './viewBuilders.js'
 
 const identityKeyOf = concept => {
   if(!concept) return null
@@ -54,18 +54,19 @@ const detectBridgeIntermediary = (concept, rowMatchState, conceptCache) => {
   if(!intermediary) return null
   const intermediaryKey = intermediary.concept_key
   const childCandidates = allCandidates.filter(c => c.type === 'bridge_child' && c.bridge_concept_key === intermediaryKey)
-  const children = childCandidates
+  const children = sortRowViews(childCandidates
     .map(c => {
       const def = conceptCache[c.concept_key]
       if(!def) return null
       return {
         conceptDefinition: def,
         candidate: c,
+        conceptRow: rowMatchState?.concept_rows?.[c.concept_key],
         map_type: c.map_type,
         algorithm_id: c.algorithm_id,
       }
     })
-    .filter(Boolean)
+    .filter(Boolean), 'rerank_score', 'desc')
   return { intermediary, children }
 }
 
@@ -108,6 +109,12 @@ export const buildPanelPayload = ({
     const views = buildQualityRowViews(rowMatchState, conceptCache)
     const match = views.find(v => matchesConcept(v, normalized))
     if(match) {
+      const primaryBridgeCandidate = match?.candidate?.type === 'bridge_child' && match?.candidate?.parent_candidate_id
+        ? Object.values(rowMatchState.candidates || {}).find(c => c?.id === match.candidate.parent_candidate_id)
+        : undefined
+      const primaryBridgeConceptRow = match?.candidate?.bridge_concept_key
+        ? rowMatchState?.concept_rows?.[match.candidate.bridge_concept_key]
+        : undefined
       enrichment = {
         bridgeContributors: match.bridgeContributors || [],
         contributingAlgorithms: match.contributingAlgorithms || [],
@@ -115,6 +122,8 @@ export const buildPanelPayload = ({
         primaryCandidate: match.candidate,
         primaryConceptRow: match.conceptRow,
         primaryBridgeConceptDefinition: match.bridgeConceptDefinition,
+        primaryBridgeCandidate,
+        primaryBridgeConceptRow,
       }
     }
   }
@@ -158,7 +167,7 @@ export const buildPanelPayload = ({
 // Merges the primary bridge concept (the one the user clicked through, if any)
 // with the secondary bridge contributors from enrichment. Deduplicates by
 // bridge concept identity. Returns an array of
-//   {bridgeConceptDefinition, map_type, algorithm_id}
+//   {bridgeConceptDefinition, candidate?, conceptRow?, map_type, algorithm_id}
 // entries — same shape as bridgeContributors. Returns [] when no bridges.
 export const allBridgesFor = (payload) => {
   const enrichment = payload?.panelContext?.enrichment
@@ -170,6 +179,8 @@ export const allBridgesFor = (payload) => {
   if(primaryBridgeDef) {
     all.push({
       bridgeConceptDefinition: primaryBridgeDef,
+      candidate: enrichment?.primaryBridgeCandidate,
+      conceptRow: enrichment?.primaryBridgeConceptRow,
       map_type: primaryCandidate?.map_type,
       algorithm_id: primaryCandidate?.algorithm_id,
     })

@@ -75,6 +75,7 @@ const ConceptDetailsPanel = ({
 
   const enrichment = payload?.panelContext?.enrichment
   const isBridgeIntermediary = Boolean(payload?.panelContext?.isBridgeIntermediary)
+  const isBridgeTarget = Boolean(payload?.bridge_concept) && !isBridgeIntermediary
   const bridgeChildren = payload?.panelContext?.bridgeChildren || []
   const bridges = React.useMemo(() => allBridgesFor(payload), [payload])
 
@@ -108,8 +109,8 @@ const ConceptDetailsPanel = ({
 
   const tabs = React.useMemo(() => {
     const conceptLabel = isBridgeIntermediary
-      ? t('concept.tab_bridge_concept_details')
-      : t('concept.tab_concept_details')
+      ? t('concept.tab_bridge_concept')
+      : (isBridgeTarget ? t('mapping.toConcept') : t('concept.tab_concept_details'))
     const list = [{ key: 'concept', label: conceptLabel }]
     if(hasMiddleTab) {
       if(isBridgeIntermediary) {
@@ -130,7 +131,7 @@ const ConceptDetailsPanel = ({
     }
     if(hasMatchData) list.push({ key: 'match', label: t('search.search_highlight') })
     return list
-  }, [hasMiddleTab, hasMatchData, middleEntries.length, isBridgeIntermediary, t])
+  }, [hasMiddleTab, hasMatchData, middleEntries.length, isBridgeIntermediary, isBridgeTarget, t])
 
   const initialKey = React.useMemo(() => {
     if(payload?.initialTab && tabs.some(tab => tab.key === payload.initialTab))
@@ -242,8 +243,9 @@ const ConceptDetailsPanel = ({
                     : t('concept.linked_bridge_concept')
                 }
                 onClose={onClose}
-                onMap={onMap}
-                isSelectedForMap={isSelectedForMap}
+                onMap={panelRepo ? onMap : undefined}
+                isSelectedForMap={panelRepo ? isSelectedForMap : undefined}
+                candidatesScore={candidatesScore}
               />
             </Box>
           )
@@ -264,6 +266,10 @@ const ConceptDetailsPanel = ({
                     ? t('concept.linked_bridge_concept')
                     : t('concept.linked_target_concept')
                 }
+                onMap={onMap}
+                isSelectedForMap={isSelectedForMap}
+                allowMapping={isBridgeIntermediary}
+                candidatesScore={candidatesScore}
               />
             </Box>
           )
