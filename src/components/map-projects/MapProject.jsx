@@ -2993,7 +2993,13 @@ const MapProject = () => {
     return result.concept_key
   }
 
-  const rerank = async (_index, isBulk=false) => {
+  // isBulk drives the auto-propose side-effect (setAutoMatched) for the
+  // processRerankWithConcurrency path. isRunTraffic is attribution-only
+  // (ocl_online#105 Phase 5) and defaults to isBulk; the debounced
+  // scheduleRerank path passes isRunTraffic=true WITHOUT isBulk so a bulk-run
+  // rerank is attributed to the run without doubling the setAutoMatched side
+  // effect the explicit bulk call already performs.
+  const rerank = async (_index, isBulk=false, isRunTraffic=isBulk) => {
     const index = isNumber(_index) ? _index : rowIndex
     if(!isNumber(index)) return null
     if(inFlightRerankRef.current.has(index)) {
@@ -3043,7 +3049,7 @@ const MapProject = () => {
         q: query,
         rows: rerankRows,
         ...(encoderModel ? { encoder_model: encoderModel } : {})
-      }, null, attrHeaders({rowIndex: index, algorithmId: 'reranker', isRunTraffic: isBulk}))
+      }, null, attrHeaders({rowIndex: index, algorithmId: 'reranker', isRunTraffic}))
 
       // Write rerank_score into the row's ConceptRows. matchRerankResultToKey
       // throws on canonical-identity miss; surface to the alert state so a
@@ -3119,7 +3125,16 @@ const MapProject = () => {
   const scheduleRerank = (rowIndex) => {
     if(!isNumber(rowIndex)) return
     const stage = rowStageRef.current[rowIndex] || {}
-    if(isBulkMatchRunningRef.current && bulkMatchAlgoIdsRef.current.length > 0) {
+    // ocl_online#105 Phase 5: this debounced path does most of the reranking
+    // during a bulk auto-match (candidates stream in asynchronously, so the
+    // explicit processRerankWithConcurrency call rarely wins the race). Derive
+    // isRunTraffic from the SAME condition that decides bulk-vs-single gating
+    // below and pass it to rerank(), so the $rerank call is attributed to the
+    // active automatch_run_id (algorithm_id 'reranker') instead of defaulting
+    // to mapper-ui-manual. Internally consistent: if we treat this as a
+    // bulk-run rerank for gating, we attribute it to the run.
+    const isRunTraffic = Boolean(isBulkMatchRunningRef.current && bulkMatchAlgoIdsRef.current.length > 0)
+    if(isRunTraffic) {
       // Bulk auto-match: wait until all selected algos are done (success or failed) for this row.
       const allDone = bulkMatchAlgoIdsRef.current.every(id => stage[id] === 1 || stage[id] === -2)
       if(!allDone) return
@@ -3148,7 +3163,9 @@ const MapProject = () => {
       clearTimeout(rerankDebounceRef.current[rowIndex])
     rerankDebounceRef.current[rowIndex] = setTimeout(() => {
       delete rerankDebounceRef.current[rowIndex]
-      rerank(rowIndex)
+      // isBulk=false (don't double the setAutoMatched side-effect the explicit
+      // bulk rerank already performs); isRunTraffic carries the run attribution.
+      rerank(rowIndex, false, isRunTraffic)
     }, RERANK_DEBOUNCE_MS)
   }
   // Keep the forward-ref consumed by mergeIntoRowMatchState fresh so the
