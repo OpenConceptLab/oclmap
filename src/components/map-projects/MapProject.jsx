@@ -1474,6 +1474,9 @@ const MapProject = () => {
   }
 
   const getAlgoLogExtras = algo => {
+    if(!algo)
+      return {}
+
     return {algo: algo.id, repo_url: algo.target_repo_url, ...(algo.target_repo_version ? {repo_version: algo.target_repo_version} : {})}
   }
 
@@ -2652,8 +2655,7 @@ const MapProject = () => {
       setIsLoadingInDecisionView(true)
       const onResponse = (response, payload) => {
         const projectContext = buildProjectContext()
-        let _algo = getAlgoDef(algoId)
-        const logExtras = getAlgoLogExtras(_algo)
+        const logExtras = getAlgoLogExtras(getAlgoDef(algoId))
         if(response?.detail) {
           markAlgo(__row.__index, algoId, -2)
           log({action: 'algo_failed', extras: logExtras}, __row.__index)
