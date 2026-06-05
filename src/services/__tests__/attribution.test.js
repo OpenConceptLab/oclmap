@@ -71,6 +71,26 @@ test('manual call (no runId): mapper-ui-manual + no automatch_run_id', () => {
   assert.equal(m.row_index, '12')
 })
 
+// Regression guard for the ocl_online#115 reranker gap: the debounced
+// scheduleRerank path must attribute $rerank to the run. The 9-row prod
+// verification (automatch_run_id=1) found reranker landing as mapper-ui-manual
+// because the debounced rerank() call dropped the run flag — only the explicit
+// processRerankWithConcurrency call (isBulk=true) was attributed. These pin the
+// two-way contract the MapProject wiring now relies on.
+test('reranker during a run: automatch + algorithm_id=reranker + automatch_run_id', () => {
+  const h = buildAttributionHeaders({ runId: 1, projectId: 138, rowIndex: 2, algorithmId: 'reranker' })
+  assert.equal(h[REQUEST_SOURCE_HEADER], REQUEST_SOURCE.AUTOMATCH)
+  const m = meta(h)
+  assert.equal(m.automatch_run_id, '1')
+  assert.equal(m.algorithm_id, 'reranker')
+})
+
+test('reranker outside a run (manual): mapper-ui-manual + no automatch_run_id', () => {
+  const h = buildAttributionHeaders({ projectId: 138, rowIndex: 2, algorithmId: 'reranker' })
+  assert.equal(h[REQUEST_SOURCE_HEADER], REQUEST_SOURCE.MANUAL)
+  assert.ok(!('automatch_run_id' in meta(h)))
+})
+
 test('null/undefined fields are omitted from the bag', () => {
   const m = meta(buildAttributionHeaders({ runId: 1, projectId: 2, rowIndex: null, algorithmId: undefined }))
   assert.deepEqual(Object.keys(m).sort(), ['automatch_run_id', 'map_project_id'])
