@@ -513,15 +513,6 @@ const MapProject = () => {
         const response = await service.get();
         const _algos = response?.data?.results || []
         setApiAlgos(_algos);
-        const bridgeAlgoFromApi = find(_algos, a => ['ocl-bridge', 'ocl-ciel-bridge'].includes(a.type))
-        if(bridgeAlgoFromApi?.target_repo_url) {
-          const bridgeUrl = bridgeAlgoFromApi.target_repo_url
-          const bridgeVersion = bridgeAlgoFromApi.target_repo_version || ''
-          if(!bridgeVersion)
-            return
-          fetchMappedSources(bridgeUrl + bridgeVersion + '/', sources =>
-            setBridgeMappedSources(prev => ({...prev, [bridgeUrl]: sources})))
-        }
       } catch {
         // pass
       }
