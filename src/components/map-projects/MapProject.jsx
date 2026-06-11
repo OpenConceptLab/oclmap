@@ -101,7 +101,7 @@ import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
 import { normalizeAlgorithmInvocation, lookupStatusRank, buildRecommendableConceptEntry, stripConstantClassAndDatatype, buildLookupConceptUrl } from './normalizers'
 import { parseConceptKey } from './conceptKey'
 import { getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId } from './projectTargetRepo'
-import { buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, resolveAICandidateID } from './viewBuilders.js'
+import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, formatBridgeTargetDownloadEntry, resolveAICandidateID } from './viewBuilders.js'
 
 import './MapProject.scss'
 import '../common/ResizablePanel.scss'
@@ -2331,19 +2331,29 @@ const MapProject = () => {
     }
     const _derived = derivedAllCandidates()
     forEach(keys(_derived).sort(), algoId => {
-      const _candidates = _derived[algoId]
       let algoKey = algoId.replaceAll('-', '').replaceAll(' ', '').replaceAll('_', '').toLowerCase()
-      let __candidates = orderBy(find(_candidates, c => c.row?.__index === index)?.results || [], c => c?.search_meta?.search_normalized_score ?? rerankScoreByCode.get(c?.id) ?? -1, 'desc')
+      const isBridge = algoId.includes('bridge')
+      let __candidates
+      if(isBridge) {
+        const rowState = rowMatchStateRef.current?.[index]
+        __candidates = buildBridgeTargetDownloadEntries(rowState, conceptCacheRef.current, algoId)
+      } else {
+        const _candidates = _derived[algoId]
+        __candidates = orderBy(
+          find(_candidates, c => c.row?.__index === index)?.results || [],
+          c => c?.search_meta?.search_normalized_score ?? rerankScoreByCode.get(c?.id) ?? -1,
+          'desc'
+        )
+      }
       __candidates = times(CANDIDATES_LIMIT, i => __candidates[i])
       forEach(__candidates, (candidate, i) => {
-        if(candidate?.id) {
-          const isBridge = algoId.includes('bridge')
+        if(candidate?.id || candidate?.bridgeConceptId) {
           const unifiedScore = candidate?.search_meta?.search_normalized_score
             ?? rerankScoreByCode.get(candidate.id)
-          candidates[`__result_${algoKey}_${twoDigit(i + 1)}__`] = candidate?.id ?
+          candidates[`__result_${algoKey}_${twoDigit(i + 1)}__`] = (candidate?.id || candidate?.bridgeConceptId) ?
             (
               isBridge ?
-                bridgeRef.current?.getCandidateLabelForDownload(candidate) :
+                formatBridgeTargetDownloadEntry(candidate) :
                 compact([`${candidate.id}:${candidate.display_name}`, `Unified Score: ${unifiedScore}`, `Raw Score: ${candidate?.search_meta?.search_score}`]).join('\n')
             ) :
             null

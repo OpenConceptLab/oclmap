@@ -17,6 +17,8 @@ import assert from 'node:assert/strict'
 
 import {
   buildAlgorithmRowViews,
+  buildBridgeTargetDownloadEntries,
+  formatBridgeTargetDownloadEntry,
   getOrphanAlgorithmIds,
   buildQualityRowViews,
   candidateToRowView,
@@ -29,6 +31,7 @@ import {
 const KEY_LOINC_GLUCOSE = JSON.stringify(['http://loinc.org', '49494-3', null])
 const KEY_LOINC_CHOL    = JSON.stringify(['http://loinc.org', '2093-3', null])
 const KEY_CIEL_BRIDGE   = JSON.stringify(['https://CIELterminology.org', 'CIEL_12345', null])
+const KEY_CIEL_BRIDGE_2 = JSON.stringify(['https://CIELterminology.org', 'CIEL_6789', null])
 const KEY_CIEL_TARGET_VERSIONED = JSON.stringify(['https://CIELterminology.org', 'CIEL_12345', 'HEAD'])
 const KEY_SNOMED_BRIDGE = JSON.stringify(['http://snomed.info/sct', '74521008', null])
 
@@ -98,6 +101,20 @@ const defSnomedBridge = {
   owner: 'IHTSDO',
   retired: false,
   lookup_status: 'partial',
+  lookup_source_type: 'algorithm',
+  lookup_source: 'ocl-bridge'
+}
+
+const defCIELBridge2 = {
+  reference: { url: 'https://CIELterminology.org', code: 'CIEL_6789' },
+  key: KEY_CIEL_BRIDGE_2,
+  ocl_url: '/orgs/CIEL/sources/CIEL/concepts/CIEL_6789/',
+  id: 'CIEL_6789',
+  display_name: 'Packed cell volume',
+  source: 'CIEL',
+  owner: 'CIEL',
+  retired: false,
+  lookup_status: 'full',
   lookup_source_type: 'algorithm',
   lookup_source: 'ocl-bridge'
 }
@@ -201,6 +218,69 @@ test('buildAlgorithmRowViews: bridge with multiple cascade targets fans out 1 + 
     views[0].bridgeChildren.map(c => c.candidate.map_type).sort(),
     ['NARROWER-THAN', 'SAME-AS']
   )
+})
+
+test('buildBridgeTargetDownloadEntries de-dupes convergence by target and sorts by bridge raw first', () => {
+  const cache = {
+    [KEY_CIEL_BRIDGE]: defCIELBridge,
+    [KEY_CIEL_BRIDGE_2]: defCIELBridge2,
+    [KEY_LOINC_GLUCOSE]: defLOINCGlucose,
+    [KEY_LOINC_CHOL]: defLOINCChol,
+  }
+  const rowState = {
+    candidates: {
+      bridgeA: { id: 'bridgeA', algorithm_id: 'ocl-bridge', concept_key: KEY_CIEL_BRIDGE, type: 'bridge', score: 0.95 },
+      bridgeB: { id: 'bridgeB', algorithm_id: 'ocl-bridge', concept_key: KEY_CIEL_BRIDGE_2, type: 'bridge', score: 0.82 },
+      childA: { id: 'childA', algorithm_id: 'ocl-bridge', concept_key: KEY_LOINC_GLUCOSE, type: 'bridge_child', parent_candidate_id: 'bridgeA', bridge_concept_key: KEY_CIEL_BRIDGE, map_type: 'SAME-AS' },
+      childB: { id: 'childB', algorithm_id: 'ocl-bridge', concept_key: KEY_LOINC_GLUCOSE, type: 'bridge_child', parent_candidate_id: 'bridgeB', bridge_concept_key: KEY_CIEL_BRIDGE_2, map_type: 'SAME-AS' },
+      childC: { id: 'childC', algorithm_id: 'ocl-bridge', concept_key: KEY_LOINC_CHOL, type: 'bridge_child', parent_candidate_id: 'bridgeB', bridge_concept_key: KEY_CIEL_BRIDGE_2, map_type: 'NARROWER-THAN' },
+      directA: { id: 'directA', algorithm_id: 'ocl-search', concept_key: KEY_LOINC_GLUCOSE, type: 'standard', score: 0.91 },
+      directC: { id: 'directC', algorithm_id: 'ocl-search', concept_key: KEY_LOINC_CHOL, type: 'standard', score: 0.97 },
+    },
+    concept_rows: {
+      [KEY_LOINC_GLUCOSE]: { concept_key: KEY_LOINC_GLUCOSE, rerank_score: 98.6 },
+      [KEY_LOINC_CHOL]: { concept_key: KEY_LOINC_CHOL, rerank_score: 99.1 },
+    }
+  }
+
+  const out = buildBridgeTargetDownloadEntries(rowState, cache, 'ocl-bridge')
+  assert.equal(out.length, 2)
+  assert.equal(out[0].targetCode, '49494-3', 'higher bridge raw wins even when another target has higher unified score')
+  assert.equal(out[0].bridgeConceptId, 'CIEL_12345')
+  assert.equal(out[0].bridgeRawScore, 0.95)
+  assert.equal(out[0].targetRawScore, 0.91, 'uses the target quality row raw score when available')
+  assert.equal(out[0].alsoVia.length, 1)
+  assert.equal(out[0].alsoVia[0].bridgeConceptId, 'CIEL_6789')
+  assert.equal(out[1].targetCode, '2093-3')
+})
+
+test('formatBridgeTargetDownloadEntry emits regex-stable line 1 and convergence trail', () => {
+  const text = formatBridgeTargetDownloadEntry({
+    bridgeConceptId: 'CIEL_1235',
+    bridgeConceptName: 'Hematocrit',
+    bridgeRawScore: 0.95,
+    unifiedScore: 98.6,
+    targetRawScore: 0.91,
+    mapType: 'SAME-AS',
+    targetSource: 'LOINC',
+    targetCode: '4544-3',
+    targetName: 'Hematocrit [Volume Fraction]',
+    alsoVia: [{
+      bridgeConceptId: 'CIEL_6789',
+      bridgeConceptName: 'Packed cell volume',
+      bridgeRawScore: 0.82,
+      mapType: 'SAME-AS',
+    }]
+  })
+
+  const targetMatch = text.match(/-->\s*\[[^\]]*\]\s*-->\s*([^:\s]+):(\S+)/)
+  const mapTypeMatch = text.match(/-->\s*\[([^\]]+)\]\s*-->/)
+
+  assert.deepEqual(targetMatch?.slice(1), ['LOINC', '4544-3'])
+  assert.equal(mapTypeMatch?.[1], 'SAME-AS')
+  assert.match(text, /^CIEL_1235:Hematocrit --> \[SAME-AS\] --> LOINC:4544-3 Hematocrit \[Volume Fraction\]/)
+  assert.match(text, /Bridge Raw Score: 0.95 \| Target Unified Score: 98.6 \| Target Raw Score: 0.91/)
+  assert.match(text, /also via: CIEL_6789:Packed cell volume \[SAME-AS\] \(bridge raw 0.82\)/)
 })
 
 test('buildAlgorithmRowViews skips candidates whose ConceptDefinition is missing from cache', () => {

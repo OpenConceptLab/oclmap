@@ -112,6 +112,98 @@ export const buildAlgorithmRowViews = (rowState, conceptCache, algoId) => {
   }))
 }
 
+const compareBridgeDownloadRoutes = (a, b) => {
+  const bridgeRawDelta = (toNumberOrNull(b?.bridgeRawScore) ?? -Infinity) - (toNumberOrNull(a?.bridgeRawScore) ?? -Infinity)
+  if(bridgeRawDelta !== 0) return bridgeRawDelta
+  const unifiedDelta = (toNumberOrNull(b?.unifiedScore) ?? -Infinity) - (toNumberOrNull(a?.unifiedScore) ?? -Infinity)
+  if(unifiedDelta !== 0) return unifiedDelta
+  const leftId = a?.bridgeConceptId || ''
+  const rightId = b?.bridgeConceptId || ''
+  return leftId.localeCompare(rightId)
+}
+
+/**
+ * Build de-duplicated bridge-target download entries for one algorithm.
+ *
+ * The bridge algorithm emits one bridge candidate plus N bridge_child targets.
+ * CSV export, however, wants one TARGET per cell:
+ *   - grouped by target concept
+ *   - primary route = highest bridge raw score, then highest unified score
+ *   - additional bridge routes rendered as "also via" corroboration lines
+ */
+export const buildBridgeTargetDownloadEntries = (rowState, conceptCache, algoId) => {
+  if(!rowState) return []
+
+  const qualityViews = buildQualityRowViews(rowState, conceptCache)
+  const qualityByConceptKey = new Map()
+  qualityViews.forEach(view => {
+    uniq((view?.contributingCandidates || []).map(candidate => candidate?.concept_key).filter(Boolean))
+      .forEach(key => qualityByConceptKey.set(key, view))
+  })
+
+  const groupedByTarget = new Map()
+  buildAlgorithmRowViews(rowState, conceptCache, algoId).forEach(bridgeView => {
+    const bridgeDef = bridgeView?.conceptDefinition
+    const bridgeRawScore = toNumberOrNull(bridgeView?.candidate?.score)
+    ;(bridgeView?.bridgeChildren || []).forEach(child => {
+      const targetDef = child?.conceptDefinition
+      const targetKey = child?.candidate?.concept_key
+      if(!targetDef || !targetKey) return
+
+      const qualityView = qualityByConceptKey.get(targetKey)
+      const route = {
+        targetKey,
+        targetSource: targetDef?.source,
+        targetCode: targetDef?.id || targetDef?.reference?.code,
+        targetName: targetDef?.display_name,
+        mapType: child?.candidate?.map_type,
+        bridgeConceptId: bridgeDef?.id || bridgeDef?.reference?.code,
+        bridgeConceptName: bridgeDef?.display_name,
+        bridgeRawScore,
+        unifiedScore: toNumberOrNull(qualityView?.conceptRow?.rerank_score)
+          ?? toNumberOrNull(child?.conceptRow?.rerank_score),
+        // Bridge children don't carry their own raw score. Only surface a
+        // target raw score when the target also surfaced via a direct algo.
+        targetRawScore: toNumberOrNull(qualityView?.candidate?.score),
+      }
+
+      if(!groupedByTarget.has(targetKey)) groupedByTarget.set(targetKey, [])
+      groupedByTarget.get(targetKey).push(route)
+    })
+  })
+
+  return [...groupedByTarget.values()]
+    .map(routes => {
+      const ordered = [...routes].sort(compareBridgeDownloadRoutes)
+      const [primary, ...alsoVia] = ordered
+      return { ...primary, alsoVia }
+    })
+    .sort(compareBridgeDownloadRoutes)
+}
+
+export const formatBridgeTargetDownloadEntry = (entry) => {
+  if(!entry?.bridgeConceptId) return null
+  const firstLine = compact([
+    `${entry.bridgeConceptId}:${entry.bridgeConceptName || ''}`.trim(),
+    '-->',
+    `[${entry.mapType || ''}]`,
+    '-->',
+    compact([
+      entry.targetSource && entry.targetCode ? `${entry.targetSource}:${entry.targetCode}` : (entry.targetCode || entry.targetSource),
+      entry.targetName
+    ]).join(' ')
+  ]).join(' ')
+  const secondLine = compact([
+    isNumber(entry?.bridgeRawScore) ? `Bridge Raw Score: ${entry.bridgeRawScore}` : null,
+    isNumber(entry?.unifiedScore) ? `Target Unified Score: ${entry.unifiedScore}` : null,
+    isNumber(entry?.targetRawScore) ? `Target Raw Score: ${entry.targetRawScore}` : null,
+  ]).join(' | ')
+  const corroborationLines = (entry?.alsoVia || []).map(route =>
+    `also via: ${route.bridgeConceptId}:${route.bridgeConceptName || ''} [${route.mapType || ''}] (bridge raw ${route.bridgeRawScore})`
+  )
+  return compact([firstLine, secondLine, ...corroborationLines]).join('\n')
+}
+
 /**
  * The distinct algorithm_ids present in rowState.candidates that are NOT in
  * the project's configured algorithm set. These "orphan-algo" candidates are
