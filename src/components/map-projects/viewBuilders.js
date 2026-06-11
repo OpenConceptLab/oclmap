@@ -162,10 +162,9 @@ export const buildBridgeTargetDownloadEntries = (rowState, conceptCache, algoId)
         bridgeRawScore,
         unifiedScore: toNumberOrNull(qualityView?.conceptRow?.rerank_score)
           ?? toNumberOrNull(child?.conceptRow?.rerank_score),
-        // Bridge children don't carry their own raw score. Reuse the row's
-        // primary raw score when the target also surfaced elsewhere; fall back
-        // to the bridge raw score so every CSV cell stays fully populated.
-        targetRawScore: toNumberOrNull(qualityView?.candidate?.score) ?? bridgeRawScore,
+        // Bridge children don't carry their own raw score. Only surface a
+        // target raw score when the target also surfaced via a direct algo.
+        targetRawScore: toNumberOrNull(qualityView?.candidate?.score),
       }
 
       if(!groupedByTarget.has(targetKey)) groupedByTarget.set(targetKey, [])
@@ -196,8 +195,8 @@ export const formatBridgeTargetDownloadEntry = (entry) => {
   ]).join(' ')
   const secondLine = compact([
     isNumber(entry?.bridgeRawScore) ? `Bridge Raw Score: ${entry.bridgeRawScore}` : null,
-    isNumber(entry?.unifiedScore) ? `Unified Score: ${entry.unifiedScore}` : null,
-    isNumber(entry?.targetRawScore) ? `Raw Score: ${entry.targetRawScore}` : null,
+    isNumber(entry?.unifiedScore) ? `Target Unified Score: ${entry.unifiedScore}` : null,
+    isNumber(entry?.targetRawScore) ? `Target Raw Score: ${entry.targetRawScore}` : null,
   ]).join(' | ')
   const corroborationLines = (entry?.alsoVia || []).map(route =>
     `also via: ${route.bridgeConceptId}:${route.bridgeConceptName || ''} [${route.mapType || ''}] (bridge raw ${route.bridgeRawScore})`

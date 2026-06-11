@@ -279,7 +279,7 @@ test('formatBridgeTargetDownloadEntry emits regex-stable line 1 and convergence 
   assert.deepEqual(targetMatch?.slice(1), ['LOINC', '4544-3'])
   assert.equal(mapTypeMatch?.[1], 'SAME-AS')
   assert.match(text, /^CIEL_1235:Hematocrit --> \[SAME-AS\] --> LOINC:4544-3 Hematocrit \[Volume Fraction\]/)
-  assert.match(text, /Bridge Raw Score: 0.95 \| Unified Score: 98.6 \| Raw Score: 0.91/)
+  assert.match(text, /Bridge Raw Score: 0.95 \| Target Unified Score: 98.6 \| Target Raw Score: 0.91/)
   assert.match(text, /also via: CIEL_6789:Packed cell volume \[SAME-AS\] \(bridge raw 0.82\)/)
 })
 
