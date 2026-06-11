@@ -619,6 +619,7 @@
     "bridge_version_description": "Solo se pueden seleccionar versiones con compatibilidad con LLM para la coincidencia mediante Bridge.",
     "bridge_version_unavailable": "No hay versiones de la fuente de Bridge con compatibilidad con LLM disponibles.",
     "bridge_version_source_required": "Defina una URL de fuente de Bridge antes de elegir una versión.",
+    "bridge_version_reset": "La versión del repositorio de Bridge se cambió a {{version}} porque la versión seleccionada anteriormente ({{previous}}) ya no está disponible.",
     "not_vectorised": "No vectorizado",
     "advanced_settings": "Configuración avanzada",
     "resolution_namespace": "Espacio de nombres de resolución",

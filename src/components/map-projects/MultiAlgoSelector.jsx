@@ -33,6 +33,7 @@ import orderBy from 'lodash/orderBy'
 
 
 import ConceptIcon from '../concepts/ConceptIcon'
+import { OperationsContext } from '../app/LayoutContext'
 import { isLikelyCanonicalUrl } from './algorithms'
 import RepoVersionSearchAutocomplete from '../repos/RepoVersionSearchAutocomplete'
 import APIService from '../../services/APIService';
@@ -112,6 +113,7 @@ export default function MultiAlgoSelector({
   isCoreUser
 }) {
   const { t } = useTranslation()
+  const { setAlert } = React.useContext(OperationsContext)
   const [expanded, setExpanded] = useState(() => new Map());
   const [errors, setErrors] = React.useState({})
   const [customAlgoMeta, setCustomAlgoMeta] = React.useState({})
@@ -224,7 +226,17 @@ export default function MultiAlgoSelector({
         if(!selectedVersion) {
           const defaultVersion = getDefaultBridgeRepoVersion(loadedVersions)
           if(defaultVersion?.id && defaultVersion.id !== sel?.target_repo_version) {
+            const previousVersion = sel?.target_repo_version
             updateSelected(sel.__key, { target_repo_version: defaultVersion.id })
+            if(previousVersion && setAlert) {
+              setAlert({
+                message: t('map_project.bridge_version_reset', {
+                  version: defaultVersion.id,
+                  previous: previousVersion
+                }),
+                severity: 'warning'
+              })
+            }
           }
         }
         continue

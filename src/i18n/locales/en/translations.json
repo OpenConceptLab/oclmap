@@ -646,6 +646,7 @@
     "bridge_version_description": "Only versions with LLM support can be selected for bridge matching.",
     "bridge_version_unavailable": "No bridge source versions with LLM support are available.",
     "bridge_version_source_required": "Set a bridge source URL before choosing a version.",
+    "bridge_version_reset": "Bridge repo version changed to {{version}} because the previously selected version ({{previous}}) is no longer available.",
     "not_vectorised": "Not vectorised",
     "advanced_settings": "Advanced settings",
     "resolution_namespace": "Resolution Namespace",

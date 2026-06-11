@@ -644,6 +644,7 @@
     "bridge_version_description": "桥接匹配只能选择支持 LLM 的版本。",
     "bridge_version_unavailable": "没有可用于桥接源且支持 LLM 的版本。",
     "bridge_version_source_required": "请选择版本前先设置桥接源 URL。",
+    "bridge_version_reset": "桥接仓库版本已更改为 {{version}}，因为先前选择的版本（{{previous}}）已不可用。",
     "not_vectorised": "未向量化",
     "advanced_settings": "高级设置",
     "resolution_namespace": "解析命名空间",
