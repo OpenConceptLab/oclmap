@@ -18,6 +18,7 @@
     "hide": "Hide",
     "more": "More",
     "less": "Less",
+    "latest": "Latest",
     "read_more": "Read more",
     "read_less": "Read less",
     "refresh": "refresh",
@@ -641,6 +642,12 @@
     "bridge_canonical_short": "Bridge:",
     "bridge_canonical_url": "Bridge Canonical URL",
     "bridge_canonical_url_description": "Canonical URL of the bridge code system (leave blank to derive from the relative URL).",
+    "loading_versions": "Loading versions...",
+    "bridge_version_description": "Only versions with LLM support can be selected for bridge matching.",
+    "bridge_version_unavailable": "No bridge source versions with LLM support are available.",
+    "bridge_version_source_required": "Set a bridge source URL before choosing a version.",
+    "bridge_version_reset": "Bridge repo version changed to {{version}} because the previously selected version ({{previous}}) is no longer available.",
+    "not_vectorised": "Not vectorised",
     "advanced_settings": "Advanced settings",
     "resolution_namespace": "Resolution Namespace",
     "resolution_namespace_description": "Namespace passed to $resolveReference. When blank, defaults to {{owner}}. Drives which URL Registry entries apply when resolving canonical URLs.",
@@ -660,7 +667,9 @@
     "use_lexical_variants": "Use Lexical Variants",
     "use_lexical_variants_description": "Expand $match search to include English spelling variants (e.g. color/colour, leukemia/leukaemia) when matching concept names.",
     "ai_recommendation_failed_retry": "AI recommendation failed — click to retry",
-    "ai_recommendation_running": "AI recommendation running"
+    "ai_recommendation_running": "AI recommendation running",
+    "repo_url": "Repo URL",
+    "repo_version": "Repo Version"
   },
   "app": {
     "web_version": "Web Version",

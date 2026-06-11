@@ -56,6 +56,7 @@
     "last_updated_on": "Última actualización el",
     "last_updated": "Última actualización",
     "less": "Menos",
+    "latest": "Más reciente",
     "read_more": "Leer más",
     "read_less": "Leer menos",
     "go_to": "ir a",
@@ -614,6 +615,12 @@
     "bridge_canonical_short": "Bridge:",
     "bridge_canonical_url": "URL canónica de Bridge",
     "bridge_canonical_url_description": "URL canónica del sistema de códigos de Bridge (déjela en blanco para derivarla de la URL relativa).",
+    "loading_versions": "Cargando versiones...",
+    "bridge_version_description": "Solo se pueden seleccionar versiones con compatibilidad con LLM para la coincidencia mediante Bridge.",
+    "bridge_version_unavailable": "No hay versiones de la fuente de Bridge con compatibilidad con LLM disponibles.",
+    "bridge_version_source_required": "Defina una URL de fuente de Bridge antes de elegir una versión.",
+    "bridge_version_reset": "La versión del repositorio de Bridge se cambió a {{version}} porque la versión seleccionada anteriormente ({{previous}}) ya no está disponible.",
+    "not_vectorised": "No vectorizado",
     "advanced_settings": "Configuración avanzada",
     "resolution_namespace": "Espacio de nombres de resolución",
     "resolution_namespace_description": "Espacio de nombres que se pasa a $resolveReference. Si se deja en blanco, usa {{owner}} por defecto. Esto determina qué entradas del Registro de URL se aplican al resolver URL canónicas.",
@@ -629,7 +636,9 @@
     "use_lexical_variants": "Usar variantes léxicas",
     "use_lexical_variants_description": "Amplíe la búsqueda $match para incluir variantes ortográficas en inglés (p. ej. color/colour, leukemia/leukaemia) al comparar nombres de conceptos.",
     "ai_recommendation_failed_retry": "Error en la recomendación de IA — haga clic para intentar de nuevo",
-    "ai_recommendation_running": "Recomendación de IA en curso"
+    "ai_recommendation_running": "Recomendación de IA en curso",
+    "repo_url": "URL del repositorio",
+    "repo_version": "Versión del repositorio"
   },
   "app": {
     "web_version": "Versión Web",
