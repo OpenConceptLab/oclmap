@@ -580,6 +580,38 @@ const MapProject = () => {
     }
   }, [repoVersion, project])
 
+  React.useEffect(() => {
+    if(!bridgeEnabled || !bridgeAlgo?.id)
+      return
+
+    const bridgeUrl = bridgeAlgo?.target_repo_url
+    if(!bridgeUrl)
+      return
+
+    if(bridgeAlgo.target_repo_version) {
+      fetchMappedSources(bridgeUrl + bridgeAlgo.target_repo_version + '/', sources =>
+        setBridgeMappedSources(prev => ({...prev, [bridgeUrl]: sources})))
+      return
+    }
+
+    const resolveNamespace = namespace || get(project, 'owner_url') || owner
+    APIService.new()
+      .overrideURL('/$resolveReference/')
+      .post([{url: bridgeUrl}], currentUserToken(), null, resolveNamespace ? {namespace: resolveNamespace} : undefined)
+      .then(response => {
+        const resolvedVersion = get(response, 'data.0.result.version', '')
+        if(!resolvedVersion)
+          return
+
+        setAlgosSelected(prev => prev.map(algo =>
+          algo?.id === bridgeAlgo.id ? {...algo, target_repo_version: resolvedVersion} : algo
+        ))
+        fetchMappedSources(bridgeUrl + resolvedVersion + '/', sources =>
+          setBridgeMappedSources(prev => ({...prev, [bridgeUrl]: sources})))
+      })
+      .catch(() => {})
+  }, [bridgeEnabled, bridgeAlgo?.id, bridgeAlgo?.target_repo_url, bridgeAlgo?.target_repo_version, namespace, project, owner])
+
 
   const createProjectFromTemplate = () => {
     setLoadingProject(true)
