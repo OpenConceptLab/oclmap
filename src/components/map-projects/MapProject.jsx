@@ -101,7 +101,7 @@ import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
 import { normalizeAlgorithmInvocation, lookupStatusRank, buildRecommendableConceptEntry, stripConstantClassAndDatatype, buildLookupConceptUrl } from './normalizers'
 import { parseConceptKey } from './conceptKey'
 import { getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId } from './projectTargetRepo'
-import { buildAlgorithmRowViews, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, resolveAICandidateID } from './viewBuilders.js'
+import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, formatBridgeTargetDownloadEntry, resolveAICandidateID } from './viewBuilders.js'
 
 import './MapProject.scss'
 import '../common/ResizablePanel.scss'
@@ -2349,32 +2349,7 @@ const MapProject = () => {
       let __candidates
       if(isBridge) {
         const rowState = rowMatchStateRef.current?.[index]
-        const bridgeTargets = flatten(
-          buildAlgorithmRowViews(rowState, conceptCacheRef.current, algoId)
-            .map(rowView => (rowView?.bridgeChildren || []).map(child => {
-              const targetDef = child?.conceptDefinition
-              const bridgeDef = child?.bridgeConceptDefinition
-              return {
-                id: bridgeDef?.id || bridgeDef?.reference?.code,
-                display_name: bridgeDef?.display_name,
-                search_meta: {
-                  search_normalized_score: child?.conceptRow?.rerank_score,
-                  search_score: rowView?.candidate?.score
-                },
-                mappings: [{
-                  map_type: child?.candidate?.map_type,
-                  cascade_target_source_name: targetDef?.source,
-                  cascade_target_concept_code: targetDef?.id || targetDef?.reference?.code,
-                  cascade_target_concept_name: targetDef?.display_name
-                }]
-              }
-            }))
-        )
-        __candidates = orderBy(
-          bridgeTargets,
-          c => c?.search_meta?.search_normalized_score ?? -1,
-          'desc'
-        )
+        __candidates = buildBridgeTargetDownloadEntries(rowState, conceptCacheRef.current, algoId)
       } else {
         const _candidates = _derived[algoId]
         __candidates = orderBy(
@@ -2385,13 +2360,13 @@ const MapProject = () => {
       }
       __candidates = times(CANDIDATES_LIMIT, i => __candidates[i])
       forEach(__candidates, (candidate, i) => {
-        if(candidate?.id) {
+        if(candidate?.id || candidate?.bridgeConceptId) {
           const unifiedScore = candidate?.search_meta?.search_normalized_score
             ?? rerankScoreByCode.get(candidate.id)
-          candidates[`__result_${algoKey}_${twoDigit(i + 1)}__`] = candidate?.id ?
+          candidates[`__result_${algoKey}_${twoDigit(i + 1)}__`] = (candidate?.id || candidate?.bridgeConceptId) ?
             (
               isBridge ?
-                bridgeRef.current?.getCandidateLabelForDownload(candidate) :
+                formatBridgeTargetDownloadEntry(candidate) :
                 compact([`${candidate.id}:${candidate.display_name}`, `Unified Score: ${unifiedScore}`, `Raw Score: ${candidate?.search_meta?.search_score}`]).join('\n')
             ) :
             null
