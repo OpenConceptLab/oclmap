@@ -48,7 +48,6 @@ import {
 // stable, so a single fetch per relative URL is sufficient for the session.
 const bridgeCanonicalCache = new Map()
 const bridgeVersionsCache = new Map()
-const BRIDGE_DEFAULT_RELATIVE_URL = { 'ocl-ciel-bridge': '/orgs/CIEL/sources/CIEL/' }
 
 const fetchBridgeCanonical = (url) => {
   if(!url) return Promise.resolve(null)
@@ -201,7 +200,7 @@ export default function MultiAlgoSelector({
   React.useEffect(() => {
     for (const sel of value || []) {
       if(!sel?.type?.includes('bridge')) continue
-      const url = sel.target_repo_url || BRIDGE_DEFAULT_RELATIVE_URL[sel?.type]
+      const url = sel.target_repo_url
       if(!url) continue
       if(syncedBridgeUrlRef.current.get(sel.__key) === url) continue
       syncedBridgeUrlRef.current.set(sel.__key, url)
@@ -217,7 +216,7 @@ export default function MultiAlgoSelector({
   React.useEffect(() => {
     for (const sel of value || []) {
       if(!sel?.type?.includes('bridge')) continue
-      const url = sel.target_repo_url || BRIDGE_DEFAULT_RELATIVE_URL[sel?.type]
+      const url = sel.target_repo_url
       const baseUrl = dropVersion(url) || url
       if(!baseUrl) continue
       const loadedVersions = bridgeVersionsByUrl[baseUrl]
@@ -619,7 +618,7 @@ export default function MultiAlgoSelector({
                         {isCoreUser && (
                           <>
                             {(() => {
-                              const bridgeSourceUrl = sel.target_repo_url ?? algo.target_repo_url ?? BRIDGE_DEFAULT_RELATIVE_URL[algo.type]
+                              const bridgeSourceUrl = sel.target_repo_url ?? algo.target_repo_url ?? ''
                               const bridgeBaseUrl = dropVersion(bridgeSourceUrl) || bridgeSourceUrl
                               const bridgeVersions = bridgeVersionsByUrl[bridgeBaseUrl] || []
                               const bridgeVersionsLoaded = Boolean(bridgeVersionsLoadedByUrl[bridgeBaseUrl])
@@ -644,7 +643,7 @@ export default function MultiAlgoSelector({
                               label={t('map_project.bridge_source_url', 'Bridge Source URL')}
                               value={bridgeSourceUrl}
                               onChange={(e) => updateSelected(sel.__key, { target_repo_url: e.target.value, target_repo_version: '' })}
-                              placeholder="/orgs/CIEL/sources/CIEL/"
+                              placeholder="/orgs/<org>/sources/<source>/"
                               helperText={t('map_project.bridge_source_url_description', 'The interface terminology to search through for bridge matching')}
                             />
                             <TextField

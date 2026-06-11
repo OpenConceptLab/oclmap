@@ -19,6 +19,9 @@
 --
 -- Validated read-only against prod 2026-06-02: 51 custom algos -> formal,
 -- bridge -> CIELterminology.org, built-in types untouched.
+-- NOTE (#2560): this migration script intentionally preserves the legacy
+-- CIEL fallback for missing bridge target_repo_url values; the runtime/UI
+-- cleanup in oclmap removes that hard-coded fallback separately.
 --
 -- SAFETY: single transaction; idempotent (re-running is a no-op on already-fixed
 -- algos). Take the standard map_projects backup first. Apply with:

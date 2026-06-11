@@ -10,6 +10,9 @@
 --   (2) custom algo canonical_url       (ICD-11 -> formal, overriding stray variants;
 --                                        recovers custom algos that would otherwise drop)
 --   (3) bridge algo bridge_repo.canonical_url (from the bridge source)
+-- NOTE (#2560): this migration script intentionally preserves the legacy
+-- CIEL fallback for missing bridge target_repo_url values; the runtime/UI
+-- cleanup in oclmap removes that hard-coded fallback separately.
 --
 -- Rule: ICD-11 (any variant) -> http://id.who.int/icd/release/11/mms;
 --       else source's registered canonical_url (CIEL/LOINC/SNOMED-GPS);
