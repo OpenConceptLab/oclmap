@@ -101,7 +101,7 @@ import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
 import { normalizeAlgorithmInvocation, lookupStatusRank, buildRecommendableConceptEntry, stripConstantClassAndDatatype, buildLookupConceptUrl } from './normalizers'
 import { parseConceptKey } from './conceptKey'
 import { getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId } from './projectTargetRepo'
-import { buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, resolveAICandidateID } from './viewBuilders.js'
+import { buildAlgorithmRowViews, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, resolveAICandidateID } from './viewBuilders.js'
 
 import './MapProject.scss'
 import '../common/ResizablePanel.scss'
@@ -2344,13 +2344,48 @@ const MapProject = () => {
     }
     const _derived = derivedAllCandidates()
     forEach(keys(_derived).sort(), algoId => {
-      const _candidates = _derived[algoId]
       let algoKey = algoId.replaceAll('-', '').replaceAll(' ', '').replaceAll('_', '').toLowerCase()
-      let __candidates = orderBy(find(_candidates, c => c.row?.__index === index)?.results || [], c => c?.search_meta?.search_normalized_score ?? rerankScoreByCode.get(c?.id) ?? -1, 'desc')
+      const isBridge = algoId.includes('bridge')
+      let __candidates
+      if(isBridge) {
+        const rowState = rowMatchStateRef.current?.[index]
+        const bridgeTargets = flatten(
+          buildAlgorithmRowViews(rowState, conceptCacheRef.current, algoId)
+            .map(rowView => (rowView?.bridgeChildren || []).map(child => {
+              const targetDef = child?.conceptDefinition
+              const bridgeDef = child?.bridgeConceptDefinition
+              return {
+                id: bridgeDef?.id || bridgeDef?.reference?.code,
+                display_name: bridgeDef?.display_name,
+                search_meta: {
+                  search_normalized_score: child?.conceptRow?.rerank_score,
+                  search_score: rowView?.candidate?.score
+                },
+                mappings: [{
+                  map_type: child?.candidate?.map_type,
+                  cascade_target_source_name: targetDef?.source,
+                  cascade_target_concept_code: targetDef?.id || targetDef?.reference?.code,
+                  cascade_target_concept_name: targetDef?.display_name
+                }]
+              }
+            }))
+        )
+        __candidates = orderBy(
+          bridgeTargets,
+          c => c?.search_meta?.search_normalized_score ?? -1,
+          'desc'
+        )
+      } else {
+        const _candidates = _derived[algoId]
+        __candidates = orderBy(
+          find(_candidates, c => c.row?.__index === index)?.results || [],
+          c => c?.search_meta?.search_normalized_score ?? rerankScoreByCode.get(c?.id) ?? -1,
+          'desc'
+        )
+      }
       __candidates = times(CANDIDATES_LIMIT, i => __candidates[i])
       forEach(__candidates, (candidate, i) => {
         if(candidate?.id) {
-          const isBridge = algoId.includes('bridge')
           const unifiedScore = candidate?.search_meta?.search_normalized_score
             ?? rerankScoreByCode.get(candidate.id)
           candidates[`__result_${algoKey}_${twoDigit(i + 1)}__`] = candidate?.id ?
