@@ -483,14 +483,8 @@ const MapProject = () => {
     // URL captured on the algo's bridge_repo metadata (set via the
     // MultiAlgoSelector bridge canonical_url field, PR2b); fall back to the
     // derived form (https://ns.openconceptlab.org + relative_url) when only
-    // the relative URL is known. If target_repo_url is missing entirely —
-    // the algo was added without ever editing the bridge source URL field —
-    // fall back to the type's well-known default (matches the placeholder
-    // shown in MultiAlgoSelector). Without this fallback, normalization
-    // silently produces zero candidates for bridge-only flows.
-    const BRIDGE_DEFAULT_RELATIVE_URL = { 'ocl-ciel-bridge': '/orgs/CIEL/sources/CIEL/' }
+    // the relative URL is known.
     const bridgeRelativeUrl = bridgeAlgo?.target_repo_url
-      || BRIDGE_DEFAULT_RELATIVE_URL[bridgeAlgo?.type]
     if(bridgeAlgo && bridgeRelativeUrl) {
       const explicitBridgeCanonical = bridgeAlgo?.bridge_repo?.canonical_url
       ctx.bridge_repo = {
@@ -520,9 +514,11 @@ const MapProject = () => {
         const _algos = response?.data?.results || []
         setApiAlgos(_algos);
         const bridgeAlgoFromApi = find(_algos, a => ['ocl-bridge', 'ocl-ciel-bridge'].includes(a.type))
-        if(bridgeAlgoFromApi) {
-          const bridgeUrl = bridgeAlgoFromApi.target_repo_url || '/orgs/CIEL/sources/CIEL/'
-          const bridgeVersion = bridgeAlgoFromApi.target_repo_version || 'latest'
+        if(bridgeAlgoFromApi?.target_repo_url) {
+          const bridgeUrl = bridgeAlgoFromApi.target_repo_url
+          const bridgeVersion = bridgeAlgoFromApi.target_repo_version || ''
+          if(!bridgeVersion)
+            return
           fetchMappedSources(bridgeUrl + bridgeVersion + '/', sources =>
             setBridgeMappedSources(prev => ({...prev, [bridgeUrl]: sources})))
         }
@@ -4358,9 +4354,9 @@ const MapProject = () => {
     <div className='col-xs-12 padding-0' style={{borderRadius: '10px', width: 'calc(100vw - 32px)'}}>
       {
         (() => {
-          const bridgeUrl = bridgeAlgo?.target_repo_url || '/orgs/CIEL/sources/CIEL/'
+          const bridgeUrl = bridgeAlgo?.target_repo_url
           const mappedSrcs = bridgeMappedSources[bridgeUrl] || []
-          return Boolean(repoVersion?.url) && mappedSrcs.length > 0 &&
+          return Boolean(repoVersion?.url) && Boolean(bridgeUrl) && mappedSrcs.length > 0 &&
             <BridgeMatch
               service={getMatchAPIService()}
               repo={repoVersion}
