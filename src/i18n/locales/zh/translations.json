@@ -611,7 +611,7 @@
     "reranker_configuration_custom_option": "自定义模型名称",
     "reranker_configuration_custom_model": "自定义重排序器模型",
     "reranker_configuration_placeholder": "例如 BAAI/bge-reranker-v2-m3",
-    "refresh_candidates_tooltip": "刷新候选项",
+    "refresh_candidates_tooltip": "获取/刷新候选项",
     "group_candidates": "分组依据",
     "sort_candidates": "排序",
     "created_by_log": "<0>{{created_by}}</0> 在 <1>{{owner}}</1> 工作区创建了映射项目",

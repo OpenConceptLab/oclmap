@@ -657,7 +657,7 @@ const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCa
           }
           <Tooltip title={t('map_project.refresh_candidates_tooltip')}>
             <span>
-              <IconButton color='secondary' onClick={onRefreshClick} disabled={!areAlgoRun} size='small' sx={{margin: '0 4px'}}>
+              <IconButton color='secondary' onClick={onRefreshClick} disabled={rowStage !== undefined && !areAlgoRun} size='small' sx={{margin: '0 4px'}}>
                 <RefreshIcon />
               </IconButton>
             </span>

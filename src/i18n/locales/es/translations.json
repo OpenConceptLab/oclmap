@@ -586,7 +586,7 @@
     "reranker_configuration_custom_option": "Nombre de modelo personalizado",
     "reranker_configuration_custom_model": "Modelo de reranker personalizado",
     "reranker_configuration_placeholder": "p. ej. BAAI/bge-reranker-v2-m3",
-    "refresh_candidates_tooltip": "Actualizar candidatos",
+    "refresh_candidates_tooltip": "Recuperar/actualizar candidatos",
     "group_candidates": "Agrupar por",
     "sort_candidates": "Ordenar",
     "created_by_log": "<0>{{created_by}}</0> creó el proyecto de mapeo en el espacio de trabajo <1>{{owner}}</1>",
