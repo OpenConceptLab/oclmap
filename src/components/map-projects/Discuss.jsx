@@ -50,6 +50,11 @@ const Discuss = ({ logs, onAdd }) => {
     }
     if (log.action === 'exclude')
       return t('map_project.excluded')
+    if(log.action === 'map_type_changed') {
+      const oldMapType = log.extras?.old_map_type || log.extras?.oldMapType || '-'
+      const newMapType = log.extras?.new_map_type || log.extras?.newMapType || log.extras?.map_type || log.extras?.mapType || '-'
+      return <>Bulk map type changed from <b>{oldMapType}</b> to <b>{newMapType}</b> from the left input dataset panel.</>
+    }
     if(['AIRecommendation'].includes(log.action))
       return `${log.action}: ${log.description?.narrative || log.description}`
     if(['commented'].includes(log.action)) {
