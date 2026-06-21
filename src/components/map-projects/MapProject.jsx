@@ -224,7 +224,7 @@ const MapProject = () => {
 
   const [matchDialog, setMatchDialog] = React.useState(false)
   const [showItem, setShowItem] = React.useState(false)
-  const [autoMatchUnmappedOnly, setAutoMatchUnmappedOnly] = React.useState(true)
+  const [autoMatchScope, setAutoMatchScope] = React.useState('unmapped')
   const [autoRunAIAnalysis, setAutoRunAIAnalysis] = React.useState(false)
   const [alert, setAlert] = React.useState(false)
   const [columnVisibilityModel, setColumnVisibilityModel] = React.useState({})
@@ -1008,7 +1008,7 @@ const MapProject = () => {
     setDecisionTab('candidates')
     setSearchText('')
     setShowItem(false)
-    setAutoMatchUnmappedOnly(true)
+    setAutoMatchScope('unmapped')
     setAlert(false)
     setSelectedCandidatesScoreBucket(false)
     setScoreBucketSortBy('desc')
@@ -1591,6 +1591,16 @@ const MapProject = () => {
 
   const getRowsResults = async (rows, selectedAlgos) => {
     abortRef.current = false;
+    const selectedRowIndexes = getSelectedRowIndexes(rows)
+    const selectedRowIndexSet = new Set(selectedRowIndexes)
+    const isAutoMatchUnmappedOnly = autoMatchScope === 'unmapped'
+    const isAutoMatchAllRows = autoMatchScope === 'all'
+    const isAutoMatchSelectedRows = autoMatchScope === 'selected'
+    const selectedRowsLogExtras = isAutoMatchSelectedRows ? {
+      selected_rows_count: selectedRowIndexes.length,
+      row_indexes: selectedRowIndexes,
+      selected_row_indexes: selectedRowIndexes
+    } : {}
 
     // Function to process a single batch
     const processBatch = async (_repo, rowBatch, algo) => {
@@ -1729,8 +1739,10 @@ const MapProject = () => {
     let _selectedAlgos = filter(algosSelected, algo => selectedAlgos.includes(algo.id))
     let subActions = [...map(_selectedAlgos, algo => algo.name || algo.id)]
     subActions.push('reranker')
-    if(autoMatchUnmappedOnly)
+    if(isAutoMatchUnmappedOnly)
       subActions.push('unmatched_only')
+    if(isAutoMatchSelectedRows)
+      subActions.push('selected_rows')
     if(inAIAssistantGroup && autoRunAIAnalysis)
       subActions.push('with_ai_analysis')
 
@@ -1738,6 +1750,7 @@ const MapProject = () => {
       action: 'auto_match_started',
       extras: {
         sub_actions: subActions,
+        ...selectedRowsLogExtras,
         ...(inAIAssistantGroup && autoRunAIAnalysis ? {
           ai_assistant: {
             model: getSelectedAIModel(),
@@ -1747,13 +1760,25 @@ const MapProject = () => {
       }
     })
 
-    if(!autoMatchUnmappedOnly)
+    if(isAutoMatchAllRows)
       setRowStatuses(prev => ({...prev, readyForReview: []}))
+    if(isAutoMatchSelectedRows)
+      setRowStatuses(prev => ({
+        ...prev,
+        readyForReview: without(prev.readyForReview, ...selectedRowIndexes),
+        reviewed: without(prev.reviewed, ...selectedRowIndexes)
+      }))
 
     setTimeout(async () => {
-      const rowsToProcess = autoMatchUnmappedOnly
+      const rowsToProcess = isAutoMatchUnmappedOnly
         ? filter(rows, row => rowStatuses.unmapped.includes(row.__index))
-        : filter(rows, row => !rowStatuses.reviewed.includes(row.__index))
+        : filter(rows, row => {
+          if(isAutoMatchSelectedRows)
+            return selectedRowIndexSet.has(row.__index)
+          if(rowStatuses.reviewed.includes(row.__index))
+            return false
+          return true
+        })
 
       // ocl_online#105 Phase 5: open the run record, then guarantee it is
       // closed out (completed / partial / failed / cancelled) via the finally,
@@ -1805,6 +1830,7 @@ const MapProject = () => {
             action: 'auto_match_finished',
             extras: {
               sub_actions: subActions,
+              ...selectedRowsLogExtras,
               ...(inAIAssistantGroup && autoRunAIAnalysis ? {
                 ai_assistant: {
                   model: getSelectedAIModel(),
@@ -2043,6 +2069,7 @@ const MapProject = () => {
   const onGetCandidates = event => {
     event.stopPropagation()
     event.preventDefault()
+    setAutoMatchScope(getSelectedRowIndexes().length ? 'selected' : (rowStatuses.unmapped.length ? 'unmapped' : 'all'))
     setMatchDialog(true)
   }
 
@@ -2677,7 +2704,10 @@ const MapProject = () => {
     })
   }
 
-  const getSelectedRowIndexes = () => selectedRowIds.map(id => parseInt(id)).filter(Number.isFinite)
+  const getSelectedRowIndexes = (_rows = data) => {
+    const selectedIds = new Set(selectedRowIds.map(id => id?.toString()))
+    return _rows.filter(_row => selectedIds.has(_row.__index?.toString())).map(_row => _row.__index)
+  }
 
   const openBulkConfirm = action => {
     const indexes = getSelectedRowIndexes()
@@ -3934,10 +3964,11 @@ const MapProject = () => {
   const rows = getRows()
   const visibleRowIds = rows.map(_row => _row.__index)
   const visibleRowIdKey = visibleRowIds.join(',')
-  const selectedRowsCount = selectedRowIds.length
+  const selectedRowsCount = getSelectedRowIndexes(rows).length
   React.useEffect(() => {
     setSelectedRowIds(prev => {
-      const next = prev.filter(id => visibleRowIds.includes(parseInt(id)))
+      const visibleRowIdSet = new Set(visibleRowIds.map(id => id?.toString()))
+      const next = prev.filter(id => visibleRowIdSet.has(id?.toString()))
       return next.length === prev.length ? prev : next
     })
   }, [visibleRowIdKey])
@@ -4965,8 +4996,9 @@ const MapProject = () => {
             onSubmit={onGetCandidatesSubmit}
             {...{
               rowStatuses,
-              autoMatchUnmappedOnly,
-              setAutoMatchUnmappedOnly,
+              autoMatchScope,
+              setAutoMatchScope,
+              selectedRowCount: selectedRowsCount,
               autoRunAIAnalysis,
               setAutoRunAIAnalysis,
               AIModels,

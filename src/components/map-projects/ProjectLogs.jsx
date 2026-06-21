@@ -72,12 +72,15 @@ const ProjectLogs = ({onClose, logs, project}) => {
                </a>
              </span>
     if(['auto_match_started', 'auto_match_finished', 'auto_matched'].includes(log.action)) {
+      const subActions = map(log.extras?.sub_actions || [], formatSubAction).filter(subAction => log.extras?.selected_rows_count ? subAction !== 'Selected Rows' : true)
+      if(log.extras?.selected_rows_count)
+        subActions.push(`${log.extras.selected_rows_count.toLocaleString()} Selected Rows`)
       return <span>
                {startCase(log.action)}
                {
-                 log.extras?.sub_actions?.length ?
+                 subActions.length ?
                 <span style={{marginLeft: '4px'}}>
-                  {`(${map(log.extras.sub_actions, formatSubAction).join(', ')})`}
+                  {`(${subActions.join(', ')})`}
                 </span> :
                 null
                }

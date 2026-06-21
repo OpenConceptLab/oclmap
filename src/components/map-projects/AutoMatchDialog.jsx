@@ -28,9 +28,10 @@ import AIAssistantSelectorPanel from './AIAssistantSelectorPanel'
 const AutoMatchDialog = ({
   open,
   onClose,
-  autoMatchUnmappedOnly,
-  setAutoMatchUnmappedOnly,
+  autoMatchScope,
+  setAutoMatchScope,
   rowStatuses,
+  selectedRowCount,
   autoRunAIAnalysis,
   setAutoRunAIAnalysis,
   AIModels,
@@ -47,11 +48,31 @@ const AutoMatchDialog = ({
 }) => {
   const { t } = useTranslation()
   const [algos, setAlgos] = React.useState(true)
-  const selectedRows = autoMatchUnmappedOnly ? rowStatuses.unmapped.length : (rowStatuses.unmapped.length + rowStatuses.readyForReview.length)
+  const allRowsCount = rowStatuses.unmapped.length + rowStatuses.readyForReview.length
+  const rowsInSelectedScope = {
+    unmapped: rowStatuses.unmapped.length,
+    all: allRowsCount,
+    selected: selectedRowCount
+  }
+  const rowsToMatchCount = rowsInSelectedScope[autoMatchScope] || 0
   const totalRows = rowStatuses.unmapped.length + rowStatuses.readyForReview.length + rowStatuses.reviewed.length
+  const hasSelectedRows = selectedRowCount > 0
+  const hasUnmappedRows = rowStatuses.unmapped.length > 0
+
+  React.useEffect(() => {
+    if (autoMatchScope === 'unmapped' && !hasUnmappedRows) {
+      setAutoMatchScope('all')
+    }
+  }, [autoMatchScope, hasUnmappedRows, setAutoMatchScope])
 
   const getHelperTextForAutoMatchUnmapped = () => {
-    if (autoMatchUnmappedOnly) {
+    if (autoMatchScope === 'selected') {
+      if (hasSelectedRows) {
+        return t('map_project.auto_match_selected_rows_note', {count: selectedRowCount.toLocaleString()});
+      }
+      return '';
+    }
+    if (autoMatchScope === 'unmapped') {
       const count = rowStatuses.unmapped.length;
       if (count > 0) {
         return t('map_project.auto_match_unmapped_only_note', {count: count.toLocaleString()});
@@ -69,7 +90,7 @@ const AutoMatchDialog = ({
     return t('map_project.auto_match_note_no_counts');
   };
 
-  const isDisabled = !repoVersion?.version_url || selectedRows === 0 || (!algos && !autoRunAIAnalysis)
+  const isDisabled = !repoVersion?.version_url || rowsToMatchCount === 0 || (!algos && !autoRunAIAnalysis)
 
   return (
     <Dialog
@@ -98,22 +119,30 @@ const AutoMatchDialog = ({
           }
         </div>
         <FormControl sx={{marginTop: '16px'}}>
-          <FormLabel id="automatch-rows">{`${t('map_project.selected_rows')}: ${selectedRows.toLocaleString()} ${t('map_project.out_of')} ${totalRows.toLocaleString()}` }</FormLabel>
+          <FormLabel id="automatch-rows">{`${t('map_project.rows_to_match')}: ${rowsToMatchCount.toLocaleString()} ${t('map_project.out_of')} ${totalRows.toLocaleString()}` }</FormLabel>
           <RadioGroup
             row
             aria-labelledby="automatch-rows"
             name="automatch-rows"
-            onChange={() => setAutoMatchUnmappedOnly(!autoMatchUnmappedOnly)}
+            value={autoMatchScope}
+            onChange={event => setAutoMatchScope(event.target.value)}
           >
             <FormControlLabel
-              value="unmapped"
-              control={<Radio checked={autoMatchUnmappedOnly} />}
-              label={t('map_project.unmapped_only')}
+              value="all"
+              control={<Radio />}
+              label={`${t('map_project.all_rows')} (${allRowsCount.toLocaleString()})`}
             />
             <FormControlLabel
-              value="all"
-              control={<Radio checked={!autoMatchUnmappedOnly} />}
-              label={t('map_project.all_rows')}
+              value="unmapped"
+              disabled={!hasUnmappedRows}
+              control={<Radio />}
+              label={`${t('map_project.unmapped_only')} (${rowStatuses.unmapped.length.toLocaleString()})`}
+            />
+            <FormControlLabel
+              value="selected"
+              disabled={!hasSelectedRows}
+              control={<Radio />}
+              label={`${t('map_project.selected_rows')} (${selectedRowCount.toLocaleString()})`}
             />
           </RadioGroup>
         </FormControl>
