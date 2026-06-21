@@ -49,7 +49,12 @@ const Discuss = ({ logs, onAdd }) => {
       return description
     }
     if (log.action === 'exclude')
-      return t('map_project.excluded')
+      return log.extras?.bulk_action ? log.description : t('map_project.excluded')
+    if(log.action === 'map_type_changed') {
+      const oldMapType = log.extras?.old_map_type || log.extras?.oldMapType || '-'
+      const newMapType = log.extras?.new_map_type || log.extras?.newMapType || log.extras?.map_type || log.extras?.mapType || '-'
+      return t('map_project.bulk_log_map_type_changed', {oldMapType, newMapType})
+    }
     if(['AIRecommendation'].includes(log.action))
       return `${log.action}: ${log.description?.narrative || log.description}`
     if(['commented'].includes(log.action)) {
@@ -72,7 +77,7 @@ const Discuss = ({ logs, onAdd }) => {
       return <CommentIcon fontSize='small' color={color} />
     if(log.action === 'approved' || log.action === 'reviewed')
       return <ReviewedIcon fontSize='small' color={color} />
-    if(['mapped'].includes(log.action))
+    if(['mapped', 'map_type_changed'].includes(log.action))
       return <MapIcon fontSize='small' color={color} />
     if(['auto-matched'].includes(log.action))
       return <AutoMatchIcon fontSize='small' color={color} />
@@ -96,7 +101,7 @@ const Discuss = ({ logs, onAdd }) => {
       return 'error'
     if(['proposed'].includes(log.action))
       return 'warning'
-    if(['mapped', 'auto-matched', 'AIRecommendation', 'approved', 'reviewed', 'algo_finished', 'rerank_finished', 'lookup'].includes(log.action))
+    if(['mapped', 'map_type_changed', 'auto-matched', 'AIRecommendation', 'approved', 'reviewed', 'algo_finished', 'rerank_finished', 'lookup'].includes(log.action))
       return log.extras?.error ? 'error' : 'primary'
     return undefined
   }

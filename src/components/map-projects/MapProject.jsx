@@ -22,6 +22,12 @@ import Tooltip from '@mui/material/Tooltip';
 import Alert from '@mui/material/Alert';
 import Collapse from '@mui/material/Collapse';
 import Divider from '@mui/material/Divider';
+import Dialog from '@mui/material/Dialog';
+import DialogActions from '@mui/material/DialogActions';
+import DialogContent from '@mui/material/DialogContent';
+import DialogTitle from '@mui/material/DialogTitle';
+import MenuItem from '@mui/material/MenuItem';
+import Select from '@mui/material/Select';
 import { DataGrid } from '@mui/x-data-grid';
 
 
@@ -229,6 +235,9 @@ const MapProject = () => {
   const [filterModel, setFilterModel] = React.useState({ items: [] });
   const [retired, setRetired] = React.useState(false)
   const [showProjectLogs, setShowProjectLogs] = React.useState(false)
+  const [selectedRowIds, setSelectedRowIds] = React.useState([])
+  const [bulkConfirm, setBulkConfirm] = React.useState(false)
+  const [bulkMapType, setBulkMapType] = React.useState('SAME-AS')
 
   // repo state
   const [repo, setRepo] = React.useState(false)
@@ -838,7 +847,12 @@ const MapProject = () => {
         renderHeader: () => {
           if(isValidColumn) {
             const isFiltered = filterModel.items.some((item) => item.field === column.dataKey && item.value);
-            return <div>
+            return <div style={{display: 'flex', alignItems: 'flex-start'}}>
+                     {
+                       parseInt(idx) === 0 &&
+                         <span style={{display: 'inline-block', width: '32px', flexShrink: 0}} />
+                     }
+                     <div>
                      <div>
                        <span style={{ flexGrow: 1 }}>{column.original}</span>
                        {
@@ -858,6 +872,7 @@ const MapProject = () => {
                        }
                      </div>
                      <div><Chip color='warning' variant='outlined' size='small' label={column.label} sx={{fontSize: '12px', margin: '2px 0'}} /></div>
+                     </div>
                    </div>
           }
         },
@@ -2628,6 +2643,151 @@ const MapProject = () => {
       log({action: newValue || 'decision_changed', description: t('map_project.decision_changed_to_none'), extras: newValue ? {} : {decision: t('map_project.none')}})
   }
 
+  const getBulkActionLabel = action => {
+    const labels = {
+      approve: t('map_project.approve'),
+      rejected: t('map_project.reject'),
+      exclude: t('map_project.decision_exclude'),
+      clear: t('map_project.bulk_clear'),
+      map_type: t('map_project.bulk_change_map_type')
+    }
+    return labels[action] || action
+  }
+
+  const addBulkLogs = (indexes, action, description, extras = {}) => {
+    const createdAt = moment().toDate()
+    setLogs(prev => {
+      const next = {...prev}
+      indexes.forEach(index => {
+        const resolvedDescription = typeof description === 'function' ? description(index) : description
+        const resolvedExtras = typeof extras === 'function' ? extras(index) : extras
+        next[index] = [{
+          created_at: createdAt,
+          user: user.username || user.id,
+          action,
+          description: resolvedDescription,
+          extras: {
+            bulk_origin: 'mapper-left-panel-selection',
+            bulk_action: action,
+            ...resolvedExtras
+          }
+        }, ...(next[index] || [])]
+      })
+      return next
+    })
+  }
+
+  const getSelectedRowIndexes = () => selectedRowIds.map(id => parseInt(id)).filter(Number.isFinite)
+
+  const openBulkConfirm = action => {
+    const indexes = getSelectedRowIndexes()
+    if(!indexes.length)
+      return
+    setBulkConfirm({action, count: indexes.length})
+  }
+
+  const clearBulkSelection = () => {
+    setSelectedRowIds([])
+    setBulkConfirm(false)
+  }
+
+  const onBulkActionConfirm = () => {
+    const action = bulkConfirm?.action
+    const indexes = getSelectedRowIndexes()
+    const changed = []
+    const skipped = []
+
+    if(action === 'approve') {
+      indexes.forEach(index => {
+        if(decisions[index] && decisions[index] !== 'none')
+          changed.push(index)
+        else
+          skipped.push(index)
+      })
+      if(changed.length) {
+        setRowStatuses(prev => ({
+          ...prev,
+          reviewed: uniq([...prev.reviewed, ...changed]),
+          readyForReview: without(prev.readyForReview, ...changed),
+          unmapped: without(prev.unmapped, ...changed)
+        }))
+        addBulkLogs(changed, 'approved', t('map_project.bulk_log_approved'))
+      }
+    }
+
+    if(action === 'rejected') {
+      changed.push(...indexes)
+      setMapSelected(prev => ({...prev, ...Object.fromEntries(indexes.map(index => [index, null]))}))
+      setDecisions(prev => ({...prev, ...Object.fromEntries(indexes.map(index => [index, 'rejected']))}))
+      setProposed(prev => ({...prev, ...Object.fromEntries(indexes.map(index => [index, undefined]))}))
+      setRowStatuses(prev => ({
+        ...prev,
+        reviewed: without(prev.reviewed, ...indexes),
+        readyForReview: without(prev.readyForReview, ...indexes),
+        unmapped: uniq([...prev.unmapped, ...indexes])
+      }))
+      addBulkLogs(indexes, 'rejected', t('map_project.bulk_log_rejected'))
+    }
+
+    if(action === 'exclude') {
+      changed.push(...indexes)
+      setMapSelected(prev => ({...prev, ...Object.fromEntries(indexes.map(index => [index, null]))}))
+      setProposed(prev => ({...prev, ...Object.fromEntries(indexes.map(index => [index, undefined]))}))
+      setDecisions(prev => ({...prev, ...Object.fromEntries(indexes.map(index => [index, 'exclude']))}))
+      setRowStatuses(prev => ({
+        ...prev,
+        reviewed: without(prev.reviewed, ...indexes),
+        readyForReview: uniq([...prev.readyForReview, ...indexes]),
+        unmapped: without(prev.unmapped, ...indexes)
+      }))
+      addBulkLogs(indexes, 'exclude', t('map_project.bulk_log_excluded'))
+    }
+
+    if(action === 'clear') {
+      changed.push(...indexes)
+      setMapSelected(prev => ({...prev, ...Object.fromEntries(indexes.map(index => [index, null]))}))
+      setProposed(prev => ({...prev, ...Object.fromEntries(indexes.map(index => [index, undefined]))}))
+      setDecisions(prev => ({...prev, ...Object.fromEntries(indexes.map(index => [index, undefined]))}))
+      setRowStatuses(prev => ({
+        ...prev,
+        reviewed: without(prev.reviewed, ...indexes),
+        readyForReview: without(prev.readyForReview, ...indexes),
+        unmapped: uniq([...prev.unmapped, ...indexes])
+      }))
+      addBulkLogs(indexes, 'decision_changed', t('map_project.bulk_log_cleared'), {decision: t('map_project.none')})
+    }
+
+    if(action === 'map_type') {
+      indexes.forEach(index => {
+        if(mapSelected[index])
+          changed.push(index)
+        else
+          skipped.push(index)
+      })
+      if(changed.length) {
+        setMapTypes(prev => ({...prev, ...Object.fromEntries(changed.map(index => [index, bulkMapType]))}))
+        addBulkLogs(
+          changed,
+          'map_type_changed',
+          t('map_project.bulk_log_map_type_changed'),
+          index => ({
+            map_type: bulkMapType,
+            old_map_type: mapTypes[index] || 'SAME-AS',
+            new_map_type: bulkMapType
+          })
+        )
+      }
+    }
+
+    const severity = skipped.length && changed.length ? 'warning' : (changed.length ? 'success' : 'error')
+    setAlert({
+      severity,
+      duration: 4,
+      message: t('map_project.bulk_action_summary', {changed: changed.length, skipped: skipped.length})
+    })
+    clearBulkSelection()
+  }
+
   const selectedAlgoIds = map(algosSelected, 'id')
   const ensureRow = (prev, rowId, selectedAlgoIds, needsRerank) => {
     const base = prev[rowId] ?? {};
@@ -3772,6 +3932,20 @@ const MapProject = () => {
   const equalSplitView = Boolean(rowIndex !== undefined) || (configure && file?.name)
   const isSplitView = equalSplitView || (project?.id && showProjectLogs)
   const rows = getRows()
+  const visibleRowIds = rows.map(_row => _row.__index)
+  const visibleRowIdKey = visibleRowIds.join(',')
+  const selectedRowsCount = selectedRowIds.length
+  React.useEffect(() => {
+    setSelectedRowIds(prev => {
+      const next = prev.filter(id => visibleRowIds.includes(parseInt(id)))
+      return next.length === prev.length ? prev : next
+    })
+  }, [visibleRowIdKey])
+  const onDataGridCellClick = (params, event) => {
+    if(params.field === '__check__')
+      return
+    doubleClickCallback(params, event)
+  }
 
   const getConcept = (concept, returnSelf=true) => {
     let cached = (concept?.url || concept?.id) ? findConceptByIdOrURLFromCache(concept?.url || concept?.id) : false
@@ -4619,6 +4793,43 @@ const MapProject = () => {
                 }
                   </div>
               </div>
+              {
+                selectedRowsCount > 0 &&
+                  <div className='col-xs-12' style={{padding: '8px 14px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', backgroundColor: '#e9e4ff', borderTop: 'solid 1px rgba(76, 53, 255, 0.15)', borderBottom: 'solid 1px rgba(76, 53, 255, 0.15)'}}>
+                    <Typography component='span' sx={{fontSize: '14px', fontWeight: 600, color: 'surface.dark', marginRight: '8px'}}>
+                      {t('map_project.bulk_selected', {count: selectedRowsCount})}
+                    </Typography>
+                    <Button size='small' color='primary' variant='contained' startIcon={<DoneIcon fontSize='inherit' />} onClick={() => openBulkConfirm('approve')} sx={{textTransform: 'none'}}>
+                      {t('map_project.approve')}
+                    </Button>
+                    <Button size='small' color='error' variant='outlined' startIcon={<CloseIcon fontSize='inherit' />} onClick={() => openBulkConfirm('rejected')} sx={{textTransform: 'none', backgroundColor: WHITE}}>
+                      {t('map_project.reject')}
+                    </Button>
+                    <Button size='small' color='error' variant='contained' onClick={() => openBulkConfirm('exclude')} sx={{textTransform: 'none'}}>
+                      {t('map_project.decision_exclude')}
+                    </Button>
+                    <Button size='small' color='secondary' variant='outlined' startIcon={<ClearIcon fontSize='inherit' />} onClick={() => openBulkConfirm('clear')} sx={{textTransform: 'none', backgroundColor: WHITE}}>
+                      {t('map_project.bulk_clear')}
+                    </Button>
+                    <Divider orientation='vertical' flexItem sx={{margin: '0 4px'}} />
+                    <Select
+                      size='small'
+                      value={bulkMapType}
+                      onChange={event => setBulkMapType(event.target.value)}
+                      sx={{height: '32px', minWidth: '136px', backgroundColor: WHITE, fontSize: '13px'}}
+                    >
+                      {
+                        (allMapTypes?.length ? allMapTypes : ['SAME-AS']).map(option => <MenuItem key={option} value={option}>{option}</MenuItem>)
+                      }
+                    </Select>
+                    <Button size='small' color='primary' variant='outlined' onClick={() => openBulkConfirm('map_type')} sx={{textTransform: 'none', backgroundColor: WHITE}}>
+                      {t('map_project.bulk_change_map_type')}
+                    </Button>
+                    <Button size='small' color='secondary' onClick={clearBulkSelection} sx={{textTransform: 'none', marginLeft: 'auto'}}>
+                      {t('map_project.bulk_clear_selection')}
+                    </Button>
+                  </div>
+              }
               <Collapse in={Boolean(alert?.message)}>
                 <Alert
                   severity={alert?.severity || 'error'}
@@ -4642,7 +4853,11 @@ const MapProject = () => {
                   onFilterModelChange={(model) => setFilterModel(model)}
                   filterModel={filterModel}
                   resizeThrottleMs={100}
-                  onCellClick={doubleClickCallback}
+                  onCellClick={onDataGridCellClick}
+                  checkboxSelection
+                  disableRowSelectionOnClick
+                  rowSelectionModel={selectedRowIds}
+                  onRowSelectionModelChange={setSelectedRowIds}
                   sx={{
                     borderRadius: '0 0 10px 10px',
                     borderBottom: 'none',
@@ -4657,6 +4872,25 @@ const MapProject = () => {
                     '.MuiDataGrid-row .MuiDataGrid-cell': {
                       whiteSpace: 'pre-line',
                       padding: '4px 10px'
+                    },
+                    '.MuiDataGrid-columnHeaderCheckbox, .MuiDataGrid-cellCheckbox': {
+                      padding: '0 !important',
+                      width: '40px !important',
+                      minWidth: '40px !important',
+                      maxWidth: '40px !important',
+                      justifyContent: 'center',
+                      '.MuiCheckbox-root': {
+                        padding: 0
+                      }
+                    },
+                    '.MuiDataGrid-columnHeaderCheckbox .MuiDataGrid-columnHeaderTitleContainer': {
+                      justifyContent: 'center'
+                    },
+                    '.MuiDataGrid-columnHeaderCheckbox .MuiCheckbox-root': {
+                      marginLeft: '8px'
+                    },
+                    '.MuiDataGrid-columnHeaderCheckbox .MuiCheckbox-root .MuiSvgIcon-root, .MuiDataGrid-cellCheckbox .MuiCheckbox-root .MuiSvgIcon-root': {
+                      fontSize: '20px'
                     },
                     [`.MuiDataGrid-row[data-id="${rowIndex}"]`]: {
                       backgroundColor: 'primary.90'
@@ -4703,6 +4937,28 @@ const MapProject = () => {
               </div>
             </div>
         }
+          <Dialog open={Boolean(bulkConfirm)} onClose={() => setBulkConfirm(false)} maxWidth='xs' fullWidth>
+            <DialogTitle>{t('map_project.bulk_confirm_title')}</DialogTitle>
+            <DialogContent>
+              <Typography component='p' sx={{fontSize: '14px', color: 'surface.dark'}}>
+                {t('map_project.bulk_confirm_body', {action: getBulkActionLabel(bulkConfirm?.action), count: bulkConfirm?.count || 0})}
+              </Typography>
+              {
+                bulkConfirm?.action === 'map_type' &&
+                  <Typography component='p' sx={{fontSize: '13px', color: 'surface.nv60', marginTop: '8px'}}>
+                    {t('map_project.bulk_confirm_map_type', {mapType: bulkMapType})}
+                  </Typography>
+              }
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setBulkConfirm(false)} color='secondary' sx={{textTransform: 'none'}}>
+                {t('common.cancel')}
+              </Button>
+              <Button onClick={onBulkActionConfirm} color='primary' variant='contained' sx={{textTransform: 'none'}}>
+                {t('map_project.bulk_apply')}
+              </Button>
+            </DialogActions>
+          </Dialog>
           <AutoMatchDialog
             open={matchDialog}
             onClose={() => setMatchDialog(false)}
