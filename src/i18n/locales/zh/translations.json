@@ -534,7 +534,7 @@
     "bulk_log_rejected": "从左侧输入数据集面板批量拒绝。",
     "bulk_log_excluded": "从左侧输入数据集面板批量排除。",
     "bulk_log_cleared": "从左侧输入数据集面板批量清除。",
-    "bulk_log_map_type_changed": "从左侧输入数据集面板批量更改映射类型。",
+    "bulk_log_map_type_changed": "从左侧输入数据集面板批量将映射类型从 {{oldMapType}} 更改为 {{newMapType}}。",
     "review": "审查",
     "recommended_candidates": "推荐候选对象",
     "primary_candidate": "主要候选项",

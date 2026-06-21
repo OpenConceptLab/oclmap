@@ -542,7 +542,7 @@
     "bulk_log_rejected": "Bulk rejected from the left input dataset panel.",
     "bulk_log_excluded": "Bulk excluded from the left input dataset panel.",
     "bulk_log_cleared": "Bulk cleared from the left input dataset panel.",
-    "bulk_log_map_type_changed": "Bulk map type changed from the left input dataset panel.",
+    "bulk_log_map_type_changed": "Bulk map type changed from {{oldMapType}} to {{newMapType}} from the left input dataset panel.",
     "review": "Review",
     "recommended_candidates": "Recommended Candidates",
     "available_candidates": "Available Candidates",

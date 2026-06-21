@@ -2721,6 +2721,7 @@ const MapProject = () => {
       changed.push(...indexes)
       setMapSelected(prev => ({...prev, ...Object.fromEntries(indexes.map(index => [index, null]))}))
       setDecisions(prev => ({...prev, ...Object.fromEntries(indexes.map(index => [index, 'rejected']))}))
+      setProposed(prev => ({...prev, ...Object.fromEntries(indexes.map(index => [index, undefined]))}))
       setRowStatuses(prev => ({
         ...prev,
         reviewed: without(prev.reviewed, ...indexes),
