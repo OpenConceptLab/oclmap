@@ -2468,10 +2468,8 @@ const MapProject = () => {
       if(!appliedFacets[csvRow.__index] && !isEmpty(_filters) && _filters) {
         setAppliedFacets({...appliedFacets, [csvRow.__index]: getAppliedFacetFromQueryParam(_filters)})
       }
-      fetchAllCandidatesForRow(null, csvRow, 0, undefined, undefined, getAppliedFacetFromQueryParam(_filters))
       if(isEmpty(getFacetsForRow(csvRow.__index)))
         getFacets(true, csvRow.__index)
-
     }
 
     const el = document.querySelector(`div[data-id="${csvRow.__index}"]`)

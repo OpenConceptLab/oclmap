@@ -609,7 +609,7 @@
     "reranker_configuration_custom_option": "Custom model name",
     "reranker_configuration_custom_model": "Custom reranker model",
     "reranker_configuration_placeholder": "e.g. BAAI/bge-reranker-v2-m3",
-    "refresh_candidates_tooltip": "Refresh Candidates",
+    "refresh_candidates_tooltip": "Retrieve/Refresh Candidates",
     "group_candidates": "Group By",
     "sort_candidates": "Sort",
     "created_by_log": "<0>{{created_by}}</0> created mapping project in the <1>{{owner}}</1> workspace",
