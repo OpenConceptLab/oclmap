@@ -15,7 +15,9 @@ import {
   conceptBelongsToTargetRepo,
   getScoreDetails,
   conceptForMapping,
-  resolveAICandidateID
+  resolveAICandidateID,
+  getLatestAnalysisEntry,
+  getAIAnalysisCandidateIDs
 } from '../viewBuilders.js'
 
 const candidatesScore = { recommended: 80, available: 60 }
@@ -224,4 +226,35 @@ test('resolveAICandidateID: concept_key present but not in cache falls through t
 
 test('resolveAICandidateID: completely unidentified candidate returns null', () => {
   assert.equal(resolveAICandidateID({}, {}), null)
+})
+
+test('getLatestAnalysisEntry: returns the last entry from analysis history', () => {
+  const analysis = [{output: {recommendation: 'first'}}, {output: {recommendation: 'latest'}}]
+  assert.deepEqual(getLatestAnalysisEntry(analysis), analysis[1])
+  assert.equal(getLatestAnalysisEntry(null), null)
+})
+
+test('getAIAnalysisCandidateIDs: resolves primary + alternate ids from latest analysis entry', () => {
+  const analysis = [
+    {output: {primary_candidate: {canonical_reference: {code: 'OLD'}}}},
+    {
+      output: {
+        primary_candidate: {concept_key: 'k1'},
+        alternative_candidates: [
+          {canonical_reference: {code: 'ALT-1'}},
+          {concept_key: 'k2'},
+          {canonical_reference: {code: 'ALT-1'}},
+        ]
+      }
+    }
+  ]
+  const conceptCache = {
+    k1: {reference: {code: 'PRIMARY'}},
+    k2: {reference: {code: 'ALT-2'}},
+  }
+
+  const out = getAIAnalysisCandidateIDs(analysis, conceptCache)
+  assert.equal(out.primaryCandidateId, 'PRIMARY')
+  assert.deepEqual(out.alternateCandidateIds, ['ALT-1', 'ALT-2'])
+  assert.equal(out.latestAnalysis, analysis[1])
 })

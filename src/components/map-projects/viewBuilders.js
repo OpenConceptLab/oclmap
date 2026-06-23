@@ -488,3 +488,22 @@ export const resolveAICandidateID = (candidate, conceptCache) => {
     return conceptCache[candidate.concept_key].reference.code
   return candidate.canonical_reference?.code || null
 }
+
+export const getLatestAnalysisEntry = (analysisProp) => {
+  if(Array.isArray(analysisProp)) return analysisProp[analysisProp.length - 1]
+  return analysisProp || null
+}
+
+export const getAIAnalysisCandidateIDs = (analysisProp, conceptCache) => {
+  const latestAnalysis = getLatestAnalysisEntry(analysisProp)
+  const output = latestAnalysis?.output || latestAnalysis
+  const primaryCandidateId = resolveAICandidateID(output?.primary_candidate, conceptCache)
+  const alternateCandidateIds = uniq((output?.alternative_candidates || [])
+    .map(candidate => resolveAICandidateID(candidate, conceptCache))
+    .filter(id => id && id !== primaryCandidateId))
+  return {
+    latestAnalysis,
+    primaryCandidateId,
+    alternateCandidateIds
+  }
+}

@@ -84,7 +84,7 @@ import ConceptDetailsPanel from './ConceptDetailsPanel'
 import { buildPanelPayload } from './openConceptPanel'
 import LoaderDialog from '../common/LoaderDialog'
 import Error403 from '../errors/Error403'
-import { HEADERS, SEMANTIC_SEARCH_HEADERS, ROW_STATES, VIEWS, DECISION_TABS, ROW_STAGES, PROMPTS_KEY_DEFAULT, PROMPTS_ACTION_TYPE_DEFAULT } from './constants'
+import { HEADERS, SEMANTIC_SEARCH_HEADERS, ROW_STATES, VIEWS, DECISION_TABS, ROW_STAGES, PROMPTS_KEY_DEFAULT, PROMPTS_ACTION_TYPE_DEFAULT, SCORES_COLOR } from './constants'
 import MapProjectDeleteConfirmDialog from './MapProjectDeleteConfirmDialog';
 import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
@@ -107,7 +107,7 @@ import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
 import { normalizeAlgorithmInvocation, lookupStatusRank, buildRecommendableConceptEntry, stripConstantClassAndDatatype, buildLookupConceptUrl } from './normalizers'
 import { parseConceptKey } from './conceptKey'
 import { getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId } from './projectTargetRepo'
-import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, formatBridgeTargetDownloadEntry, resolveAICandidateID } from './viewBuilders.js'
+import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, formatBridgeTargetDownloadEntry, resolveAICandidateID, getScoreDetails, getAIAnalysisCandidateIDs } from './viewBuilders.js'
 
 import './MapProject.scss'
 import '../common/ResizablePanel.scss'
@@ -822,6 +822,20 @@ const MapProject = () => {
     return _columns
   }
 
+  const getRowStateLabel = index => VIEWS[getStateFromIndex(index)]?.label || ''
+
+  const getRowAIIndicatorMeta = (index, targetConcept) => {
+    const status = rowStageRef.current[index]?.recommend
+    const { latestAnalysis, primaryCandidateId, alternateCandidateIds } = getAIAnalysisCandidateIDs(analysis[index], conceptCacheRef.current)
+    const targetCode = targetConcept?.id || targetConcept?.reference?.code
+    return {
+      status,
+      latestAnalysis,
+      isPrimaryMatch: Boolean(targetCode && primaryCandidateId && targetCode === primaryCandidateId),
+      isAlternateMatch: Boolean(targetCode && alternateCandidateIds.includes(targetCode)),
+    }
+  }
+
   const getColumnsForTable = () => {
     let cols = []
     forEach(columns, (column, idx) => {
@@ -897,42 +911,156 @@ const MapProject = () => {
     cols.push({
       field: '_targetCode_',
       headerName: t('map_project.target_code'),
-      width: columnWidth['_targetCode_'] || 300,
+      width: columnWidth['_targetCode_'] || 360,
       renderCell: params => {
         const targetConcept = getConcept(mapSelected[params.row.__index])
+        const aiMeta = AI_ASSISTANT_API_URL ? getRowAIIndicatorMeta(params.row.__index, targetConcept) : null
         if(targetConcept?.id) {
-          return <Concept key={`${params.row.__index}-${targetConcept.id}`} sx={{padding: 0}} repoVersion={repoVersion} notClickable firstChild concept={targetConcept} noScore onCardClick={false} noSynonymPrefix asTarget />
+          return (
+            <span style={{display: 'flex', alignItems: 'flex-start', gap: '6px', width: '100%'}}>
+              {
+                aiMeta?.status === 0 ?
+                  <Tooltip title={t('map_project.ai_recommendation_running')}>
+                    <span style={{display: 'inline-flex', paddingTop: '7px'}}>
+                      <CircularProgress size={14} />
+                    </span>
+                  </Tooltip> :
+                aiMeta?.status === -2 ?
+                  <Tooltip title={t('map_project.ai_recommendation_failed_retry')}>
+                    <IconButton size='small' sx={{padding: '4px', marginTop: '3px'}} onClick={e => { e.stopPropagation(); fetchRecommendation(params.row) }}>
+                      <AssistantIcon color='error' fontSize='small' />
+                    </IconButton>
+                  </Tooltip> :
+                aiMeta?.latestAnalysis ?
+                  <Tooltip title={aiMeta.isPrimaryMatch ? t('map_project.ai_recommended') : (aiMeta.isAlternateMatch ? t('map_project.ai_alternate') : t('map_project.ai_analysis'))}>
+                    <span style={{display: 'inline-flex', paddingTop: '7px'}}>
+                      <AssistantIcon color={aiMeta.isPrimaryMatch ? 'primary' : 'warning'} fontSize='small' />
+                    </span>
+                  </Tooltip> :
+                null
+              }
+              <span style={{minWidth: 0, flex: 1}}>
+                <Concept key={`${params.row.__index}-${targetConcept.id}`} sx={{padding: 0}} repoVersion={repoVersion} notClickable firstChild concept={targetConcept} noScore onCardClick={false} noSynonymPrefix asTarget />
+              </span>
+            </span>
+          )
         }
       }
     })
-    if(AI_ASSISTANT_API_URL) {
-      cols.push({
-        field: '_aiRecommendStatus_',
-        headerName: '',
-        width: 48,
-        sortable: false,
-        filterable: false,
-        disableColumnMenu: true,
-        renderCell: params => {
-          const status = rowStageRef.current[params.row.__index]?.recommend
-          if(status === 0)
-            return (
-              <Tooltip title={t('map_project.ai_recommendation_running')}>
-                <CircularProgress size={16} />
-              </Tooltip>
-            )
-          if(status === -2)
-            return (
-              <Tooltip title={t('map_project.ai_recommendation_failed_retry')}>
-                <IconButton size='small' onClick={e => { e.stopPropagation(); fetchRecommendation(params.row) }}>
-                  <AssistantIcon color='error' fontSize='small' />
-                </IconButton>
-              </Tooltip>
-            )
-          return null
-        }
-      })
-    }
+    cols.push({
+      field: '_rowState_',
+      headerName: 'State',
+      width: columnWidth['_rowState_'] || 130,
+      valueGetter: (_, row) => getRowStateLabel(row.__index),
+      renderCell: params => {
+        const state = VIEWS[getStateFromIndex(params.row.__index)]
+        return (
+          <Chip
+            size='small'
+            icon={state?.icon}
+            label={state?.label || ''}
+            color={state?.color || 'default'}
+            variant='outlined'
+          />
+        )
+      }
+    })
+    cols.push({
+      field: '_matchQuality_',
+      headerName: t('map_project.group_by_match_quality'),
+      width: columnWidth['_matchQuality_'] || 160,
+      sortComparator: (_, __, cellA, cellB) => {
+        const aScore = getScoreDetails({search_meta: mapSelected[cellA.row.__index]?.search_meta}, candidatesScore).percentile ?? -1
+        const bScore = getScoreDetails({search_meta: mapSelected[cellB.row.__index]?.search_meta}, candidatesScore).percentile ?? -1
+        return aScore - bScore
+      },
+      valueGetter: (_, row) => {
+        const details = getScoreDetails({search_meta: mapSelected[row.__index]?.search_meta}, candidatesScore)
+        return details.qualityBucket ? startCase(details.qualityBucket) : ''
+      },
+      renderCell: params => {
+        const details = getScoreDetails({search_meta: mapSelected[params.row.__index]?.search_meta}, candidatesScore)
+        const label = details.qualityBucket ? startCase(details.qualityBucket) : 'Unranked'
+        return (
+          <Chip
+            size='small'
+            label={label}
+            sx={details.qualityBucket ? {backgroundColor: SCORES_COLOR[details.qualityBucket], color: '#111827'} : undefined}
+            variant={details.qualityBucket ? 'filled' : 'outlined'}
+          />
+        )
+      }
+    })
+    cols.push({
+      field: '_bestScore_',
+      headerName: t('search.search_score'),
+      width: columnWidth['_bestScore_'] || 130,
+      type: 'number',
+      valueGetter: (_, row) => getScoreDetails({search_meta: mapSelected[row.__index]?.search_meta}, candidatesScore).percentile,
+      renderCell: params => {
+        const details = getScoreDetails({search_meta: mapSelected[params.row.__index]?.search_meta}, candidatesScore)
+        return details.rerankScore || '-'
+      }
+    })
+    cols.push({
+      field: '_rawScore_',
+      headerName: t('search.search_raw_score'),
+      width: columnWidth['_rawScore_'] || 130,
+      type: 'number',
+      valueGetter: (_, row) => getScoreDetails({search_meta: mapSelected[row.__index]?.search_meta}, candidatesScore).score,
+      renderCell: params => {
+        const details = getScoreDetails({search_meta: mapSelected[params.row.__index]?.search_meta}, candidatesScore)
+        return details.algoScore || '-'
+      }
+    })
+    cols.push({
+      field: '_mapType_',
+      headerName: t('map_project.map_type'),
+      width: columnWidth['_mapType_'] || 150,
+      valueGetter: (_, row) => mapTypes[row.__index] || '',
+      renderCell: params => {
+        const mapType = mapTypes[params.row.__index]
+        return mapType ? (
+          <Chip
+            size='small'
+            label={mapType}
+            variant='outlined'
+            color='primary'
+          />
+        ) : null
+      }
+    })
+    cols.push({
+      field: '_algorithms_',
+      headerName: t('map_project.algorithms'),
+      width: columnWidth['_algorithms_'] || 220,
+      sortable: false,
+      valueGetter: (_, row) => {
+        const targetConcept = getConcept(mapSelected[row.__index])
+        const contributingAlgorithms = targetConcept?.search_meta?.contributing_algorithms || []
+        const contributingAlgorithmIds = targetConcept?.search_meta?.contributing_algorithm_ids || targetConcept?.contributingAlgorithmIds || []
+        return compact([
+          ...contributingAlgorithms.map(algo => algo?.algorithm_id),
+          ...contributingAlgorithmIds,
+          targetConcept?.search_meta?.algorithm
+        ]).join(', ')
+      },
+      renderCell: params => {
+        const targetConcept = getConcept(mapSelected[params.row.__index])
+        const contributingAlgorithms = targetConcept?.search_meta?.contributing_algorithms || []
+        const contributingAlgorithmIds = targetConcept?.search_meta?.contributing_algorithm_ids || targetConcept?.contributingAlgorithmIds || []
+        const algoIds = uniq(compact([
+          ...contributingAlgorithms.map(algo => algo?.algorithm_id),
+          ...contributingAlgorithmIds,
+          targetConcept?.search_meta?.algorithm
+        ]))
+        return (
+          <span style={{display: 'inline-flex', gap: '4px', flexWrap: 'wrap', padding: '4px 0'}}>
+            {algoIds.map(algoId => <Chip key={algoId} size='small' label={algoId} variant='outlined' color='warning' />)}
+          </span>
+        )
+      }
+    })
     return cols
   }
 
