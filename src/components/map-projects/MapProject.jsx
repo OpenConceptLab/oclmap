@@ -4879,8 +4879,9 @@ const MapProject = () => {
                       minWidth: '40px !important',
                       maxWidth: '40px !important',
                       justifyContent: 'center',
+                      alignItems: 'flex-start',
                       '.MuiCheckbox-root': {
-                        padding: 0
+                        padding: '4px 0 0 0'
                       }
                     },
                     '.MuiDataGrid-columnHeaderCheckbox .MuiDataGrid-columnHeaderTitleContainer': {
