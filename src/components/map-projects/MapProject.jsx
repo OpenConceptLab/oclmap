@@ -969,15 +969,8 @@ const MapProject = () => {
       field: '_matchQuality_',
       headerName: t('map_project.group_by_match_quality'),
       width: columnWidth['_matchQuality_'] || 160,
-      sortComparator: (_, __, cellA, cellB) => {
-        const aScore = getScoreDetails({search_meta: mapSelected[cellA.row.__index]?.search_meta}, candidatesScore).percentile ?? -1
-        const bScore = getScoreDetails({search_meta: mapSelected[cellB.row.__index]?.search_meta}, candidatesScore).percentile ?? -1
-        return aScore - bScore
-      },
-      valueGetter: (_, row) => {
-        const details = getScoreDetails({search_meta: mapSelected[row.__index]?.search_meta}, candidatesScore)
-        return details.qualityBucket ? startCase(details.qualityBucket) : ''
-      },
+      type: 'number',
+      valueGetter: (_, row) => getScoreDetails({search_meta: mapSelected[row.__index]?.search_meta}, candidatesScore).percentile ?? -1,
       renderCell: params => {
         const details = getScoreDetails({search_meta: mapSelected[params.row.__index]?.search_meta}, candidatesScore)
         const label = details.qualityBucket ? startCase(details.qualityBucket) : 'Unranked'
@@ -999,7 +992,7 @@ const MapProject = () => {
       valueGetter: (_, row) => getScoreDetails({search_meta: mapSelected[row.__index]?.search_meta}, candidatesScore).percentile,
       renderCell: params => {
         const details = getScoreDetails({search_meta: mapSelected[params.row.__index]?.search_meta}, candidatesScore)
-        return details.rerankScore || '-'
+        return details.rerankScore || ''
       }
     })
     cols.push({
@@ -1010,15 +1003,17 @@ const MapProject = () => {
       valueGetter: (_, row) => getScoreDetails({search_meta: mapSelected[row.__index]?.search_meta}, candidatesScore).score,
       renderCell: params => {
         const details = getScoreDetails({search_meta: mapSelected[params.row.__index]?.search_meta}, candidatesScore)
-        return details.algoScore || '-'
+        return details.algoScore || ''
       }
     })
     cols.push({
       field: '_mapType_',
       headerName: t('map_project.map_type'),
       width: columnWidth['_mapType_'] || 150,
-      valueGetter: (_, row) => mapTypes[row.__index] || '',
+      valueGetter: (_, row) => mapSelected[row.__index] ? (mapTypes[row.__index] || '') : '',
       renderCell: params => {
+        if(!mapSelected[params.row.__index])
+          return null
         const mapType = mapTypes[params.row.__index]
         return mapType ? (
           <Chip
