@@ -633,7 +633,7 @@
     "full_project_export": "Full Project Export",
     "select_an_algo": "Select an algorithm",
     "selected_rows": "Selected Rows",
-    "all_rows": "All Rows",
+    "unmapped_and_proposed": "Unmapped & Proposed",
     "rows_to_match": "Rows to Match",
     "out_of": "out of",
     "retrieve_candidates": "Retrieve Candidates",

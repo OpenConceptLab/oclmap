@@ -635,7 +635,7 @@
     "full_project_export": "完整项目导出",
     "select_an_algo": "选择算法",
     "selected_rows": "已选行",
-    "all_rows": "所有行",
+    "unmapped_and_proposed": "未映射和已提议",
     "rows_to_match": "要匹配的行",
     "out_of": "共",
     "retrieve_candidates": "获取候选项",

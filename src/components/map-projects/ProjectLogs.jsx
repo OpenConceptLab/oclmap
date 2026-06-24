@@ -70,9 +70,10 @@ const ProjectLogs = ({onClose, logs, project}) => {
                <a className='no-anchor-styles' style={{color: PRIMARY_COLORS.main, marginLeft: '4px'}} target='_blank' href={toV3URL(log.extras.collection_url)} rel="noreferrer">
                  {log.extras.id}
                </a>
-             </span>
+              </span>
     if(['auto_match_started', 'auto_match_finished', 'auto_matched'].includes(log.action)) {
-      const subActions = map(log.extras?.sub_actions || [], formatSubAction).filter(subAction => log.extras?.selected_rows_count ? subAction !== 'Selected Rows' : true)
+      const rawSubActions = (log.extras?.sub_actions || []).filter(subAction => log.extras?.selected_rows_count ? subAction !== 'selected_rows' : true)
+      const subActions = map(rawSubActions, formatSubAction)
       if(log.extras?.selected_rows_count)
         subActions.push(`${log.extras.selected_rows_count.toLocaleString()} Selected Rows`)
       return <span>

@@ -88,6 +88,7 @@ import { HEADERS, SEMANTIC_SEARCH_HEADERS, ROW_STATES, VIEWS, DECISION_TABS, ROW
 import MapProjectDeleteConfirmDialog from './MapProjectDeleteConfirmDialog';
 import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
+import { getRowsToProcess } from './autoMatchRows'
 import MatchSummaryCard from './MatchSummaryCard'
 import SearchField from './SearchField'
 import MappingDecisionResult from './MappingDecisionResult'
@@ -1009,6 +1010,7 @@ const MapProject = () => {
     setSearchText('')
     setShowItem(false)
     setAutoMatchScope('unmapped')
+    setSelectedRowIds([])
     setAlert(false)
     setSelectedCandidatesScoreBucket(false)
     setScoreBucketSortBy('desc')
@@ -1592,13 +1594,11 @@ const MapProject = () => {
   const getRowsResults = async (rows, selectedAlgos) => {
     abortRef.current = false;
     const selectedRowIndexes = getSelectedRowIndexes(rows)
-    const selectedRowIndexSet = new Set(selectedRowIndexes)
     const isAutoMatchUnmappedOnly = autoMatchScope === 'unmapped'
     const isAutoMatchAllRows = autoMatchScope === 'all'
     const isAutoMatchSelectedRows = autoMatchScope === 'selected'
     const selectedRowsLogExtras = isAutoMatchSelectedRows ? {
       selected_rows_count: selectedRowIndexes.length,
-      row_indexes: selectedRowIndexes,
       selected_row_indexes: selectedRowIndexes
     } : {}
 
@@ -1770,15 +1770,7 @@ const MapProject = () => {
       }))
 
     setTimeout(async () => {
-      const rowsToProcess = isAutoMatchUnmappedOnly
-        ? filter(rows, row => rowStatuses.unmapped.includes(row.__index))
-        : filter(rows, row => {
-          if(isAutoMatchSelectedRows)
-            return selectedRowIndexSet.has(row.__index)
-          if(rowStatuses.reviewed.includes(row.__index))
-            return false
-          return true
-        })
+      const rowsToProcess = getRowsToProcess(rows, rowStatuses, autoMatchScope, selectedRowIndexes)
 
       // ocl_online#105 Phase 5: open the run record, then guarantee it is
       // closed out (completed / partial / failed / cancelled) via the finally,
@@ -2705,6 +2697,7 @@ const MapProject = () => {
   }
 
   const getSelectedRowIndexes = (_rows = data) => {
+    if(!isArray(_rows)) return []
     const selectedIds = new Set(selectedRowIds.map(id => id?.toString()))
     return _rows.filter(_row => selectedIds.has(_row.__index?.toString())).map(_row => _row.__index)
   }

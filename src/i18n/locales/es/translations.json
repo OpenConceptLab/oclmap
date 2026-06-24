@@ -610,7 +610,7 @@
     "full_project_export": "Exportación completa del proyecto",
     "select_an_algo": "Seleccione un algoritmo",
     "selected_rows": "Filas seleccionadas",
-    "all_rows": "Todas las filas",
+    "unmapped_and_proposed": "No mapeadas y propuestas",
     "rows_to_match": "Filas para coincidir",
     "out_of": "de",
     "retrieve_candidates": "Recuperar candidatos",
