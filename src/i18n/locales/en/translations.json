@@ -442,6 +442,7 @@
     "not_recommended": "Not Recommended",
     "available": "Available",
     "recommended": "Recommended",
+    "state": "State",
     "unranked": "Unranked",
     "low_ranked": "Low Ranked",
     "field_configuration": "Field Configuration",

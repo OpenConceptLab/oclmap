@@ -17,3 +17,16 @@
 .unmatched-row {
     border-left: 8px solid #bdbdbd;
 }
+
+.MuiDataGrid-panel .MuiDataGrid-filterFormValueInput .MuiChip-root {
+    background-color: #e5e1e6 !important;
+    color: #47464f !important;
+}
+
+.MuiDataGrid-panel .MuiDataGrid-filterFormValueInput .MuiChip-root .MuiChip-label {
+    color: #47464f !important;
+}
+
+.MuiDataGrid-panel .MuiDataGrid-filterFormValueInput .MuiChip-root .MuiChip-deleteIcon {
+    color: #76758b !important;
+}

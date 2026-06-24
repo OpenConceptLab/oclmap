@@ -407,6 +407,7 @@
     "not_recommended": "No Recomendado",
     "available": "Disponible",
     "recommended": "Recomendado",
+    "state": "Estado",
     "unranked": "Sin Clasificar",
     "low_ranked": "De baja clasificación",
     "field_configuration": "Configuración de Campo",

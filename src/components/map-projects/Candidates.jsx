@@ -54,7 +54,7 @@ import {
   conceptBelongsToTargetRepo,
   sortRowViews,
   conceptForMapping,
-  resolveAICandidateID
+  getAIAnalysisCandidateIDs
 } from './viewBuilders.js'
 
 const getRowProgressLabel = (stageMap, algos) => {
@@ -452,21 +452,8 @@ const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCa
     ? undefined
     : analysisArray[analysisPage]
   const selectedAnalysisForGrouping = selectedAnalysis || analysisArray[analysisCount - 1]
-  const primary = selectedAnalysis?.output?.primary_candidate || selectedAnalysis?.primary_candidate
-  const AIRecommendedCandidateId = resolveAICandidateID(primary, conceptCache)
-  const alternateCandidates = selectedAnalysis?.output?.alternative_candidates || selectedAnalysis?.alternative_candidates || []
-  const AIAlternateCandidateIds = [...new Set(alternateCandidates
-    .map(candidate => resolveAICandidateID(candidate, conceptCache))
-    .filter(id => id && id !== AIRecommendedCandidateId))]
-  const groupedAnalysisPrimaryId = resolveAICandidateID(
-    selectedAnalysisForGrouping?.output?.primary_candidate || selectedAnalysisForGrouping?.primary_candidate,
-    conceptCache
-  )
-  const groupedAnalysisAlternateIds = [...new Set(
-    (selectedAnalysisForGrouping?.output?.alternative_candidates || selectedAnalysisForGrouping?.alternative_candidates || [])
-      .map(candidate => resolveAICandidateID(candidate, conceptCache))
-      .filter(id => id && id !== groupedAnalysisPrimaryId)
-  )]
+  const { primaryCandidateId: AIRecommendedCandidateId, alternateCandidateIds: AIAlternateCandidateIds } = getAIAnalysisCandidateIDs(selectedAnalysis, conceptCache)
+  const { primaryCandidateId: groupedAnalysisPrimaryId, alternateCandidateIds: groupedAnalysisAlternateIds } = getAIAnalysisCandidateIDs(selectedAnalysisForGrouping, conceptCache)
 
   // Quality (score-grouped) view shows ONLY target-repo concepts. Bridge
   // intermediaries live in algorithm view as metadata-about-the-target;
