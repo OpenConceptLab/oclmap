@@ -60,13 +60,17 @@ const AutoMatchDialog = ({
   const rowsToMatchCount = rowsInSelectedScope[autoMatchScope] || 0
   const hasSelectedRows = selectedRowCount > 0
   const hasUnmappedRows = rowStatuses.unmapped.length > 0
+  const hasApprovedRows = rowStatuses.reviewed.length > 0
   const isAllIncludingApproved = autoMatchScope === 'allIncludingApproved'
 
   React.useEffect(() => {
     if (autoMatchScope === 'unmapped' && !hasUnmappedRows) {
       setAutoMatchScope('all')
     }
-  }, [autoMatchScope, hasUnmappedRows, setAutoMatchScope])
+    if (autoMatchScope === 'allIncludingApproved' && !hasApprovedRows) {
+      setAutoMatchScope('all')
+    }
+  }, [autoMatchScope, hasApprovedRows, hasUnmappedRows, setAutoMatchScope])
 
   React.useEffect(() => {
     if(!open || !isAllIncludingApproved)
@@ -86,24 +90,22 @@ const AutoMatchDialog = ({
       value: 'unmapped',
       disabled: !hasUnmappedRows,
       label: `${t('map_project.unmapped_only')} (${rowStatuses.unmapped.length.toLocaleString()})`,
-      helperText: rowStatuses.unmapped.length > 0 ?
-        t('map_project.auto_match_unmapped_only_note', {count: rowStatuses.unmapped.length.toLocaleString()}) :
-        t('map_project.auto_match_unmapped_only_note_no_count')
-    },
-    {
-      value: 'allIncludingApproved',
-      disabled: false,
-      label: `${t('map_project.all_including_approved')} (${totalRows.toLocaleString()})`,
-      helperText: t('map_project.auto_match_all_including_approved_note', {
-        approvedCount: rowStatuses.reviewed.length.toLocaleString(),
-        proposedCount: rowStatuses.readyForReview.length.toLocaleString()
-      })
+      helperText: t('map_project.auto_match_unmapped_only_note')
     },
     {
       value: 'all',
       disabled: false,
       label: `${t('map_project.unmapped_and_proposed')} (${allRowsCount.toLocaleString()})`,
       helperText: t('map_project.auto_match_note', {
+        approvedCount: rowStatuses.reviewed.length.toLocaleString(),
+        proposedCount: rowStatuses.readyForReview.length.toLocaleString()
+      })
+    },
+    {
+      value: 'allIncludingApproved',
+      disabled: !hasApprovedRows,
+      label: `${t('map_project.all_including_approved')} (${totalRows.toLocaleString()})`,
+      helperText: t('map_project.auto_match_all_including_approved_note', {
         approvedCount: rowStatuses.reviewed.length.toLocaleString(),
         proposedCount: rowStatuses.readyForReview.length.toLocaleString()
       })

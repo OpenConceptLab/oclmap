@@ -508,7 +508,6 @@
     "stopping_gracefully": "正在优雅地停止...",
     "stop_processing": "停止处理",
     "auto_match_unmapped_only_note": "注意：只会匹配未映射的输入行。",
-    "auto_match_unmapped_only_note_no_count": "注意：只会匹配未映射的输入行。",
     "auto_match_note": "注意：这不会影响 {{approvedCount}} 个已批准的输入行，但会覆盖 {{proposedCount}} 个已提议的输入行",
     "auto_match_note_no_counts": "注意：这不会影响已批准的输入行，但会覆盖已提议的输入行",
     "auto_match_all_including_approved_note": "警告：这将从头重新运行每一条输入行，并覆盖 {{approvedCount}} 个已批准和 {{proposedCount}} 个已提议的决策。",

@@ -483,7 +483,6 @@
     "stopping_gracefully": "Deteniendo suavemente...",
     "stop_processing": "Detener Procesamiento",
     "auto_match_unmapped_only_note": "Nota: Solo se emparejarán las filas no mapeadas.",
-    "auto_match_unmapped_only_note_no_count": "Nota: Solo se emparejarán las filas no mapeadas.",
     "auto_match_note": "Nota: Esto no afectará {{approvedCount}} filas de entrada aprobadas pero sobrescribirá {{proposedCount}} filas de entrada propuestas",
     "auto_match_note_no_counts": "Nota: Esto no afectará las filas de entrada aprobadas pero sobrescribirá las filas de entrada propuestas",
     "auto_match_all_including_approved_note": "Advertencia: Esto volverá a ejecutar cada fila de entrada desde cero y sobrescribirá {{approvedCount}} decisiones aprobadas y {{proposedCount}} propuestas.",
