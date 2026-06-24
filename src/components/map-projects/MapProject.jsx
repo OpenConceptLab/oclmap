@@ -76,7 +76,7 @@ import { OperationsContext } from '../app/LayoutContext';
 import APIService, { isTransientNetworkError, retryWithBackoff } from '../../services/APIService';
 import { buildAttributionHeaders, buildConfigSnapshot, summarizeRunCompletion } from '../../services/attribution'
 import { highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, downloadObject, currentUserToken } from '../../common/utils';
-import { WHITE, SURFACE_COLORS } from '../../common/colors';
+import { WHITE, SURFACE_COLORS, TEXT_GRAY } from '../../common/colors';
 
 import { useDoubleClick } from '../common/useDoubleClick'
 import CloseIconButton from '../common/CloseIconButton';
@@ -824,6 +824,10 @@ const MapProject = () => {
 
   const getRowStateLabel = index => VIEWS[getStateFromIndex(index)]?.label || ''
   const getRowScoreDetails = index => getScoreDetails({search_meta: mapSelected[index]?.search_meta}, candidatesScore)
+  const getRowMatchQualityLabel = index => {
+    const qualityBucket = getRowScoreDetails(index).qualityBucket
+    return qualityBucket ? startCase(qualityBucket) : t('map_project.unranked')
+  }
 
   const getRowAIIndicatorMeta = (index, targetConcept) => {
     const status = rowStageRef.current[index]?.recommend
@@ -970,16 +974,17 @@ const MapProject = () => {
       field: '_matchQuality_',
       headerName: t('map_project.group_by_match_quality'),
       width: columnWidth['_matchQuality_'] || 160,
-      type: 'number',
-      valueGetter: (_, row) => getRowScoreDetails(row.__index).percentile ?? -1,
+      align: 'left',
+      headerAlign: 'left',
+      valueGetter: (_, row) => getRowMatchQualityLabel(row.__index),
       renderCell: params => {
         const details = getRowScoreDetails(params.row.__index)
-        const label = details.qualityBucket ? startCase(details.qualityBucket) : t('map_project.unranked')
+        const label = getRowMatchQualityLabel(params.row.__index)
         return (
           <Chip
             size='small'
             label={label}
-            sx={details.qualityBucket ? {backgroundColor: SCORES_COLOR[details.qualityBucket], color: '#111827'} : undefined}
+            sx={details.qualityBucket ? {backgroundColor: SCORES_COLOR[details.qualityBucket], color: TEXT_GRAY} : undefined}
             variant={details.qualityBucket ? 'filled' : 'outlined'}
           />
         )
@@ -989,6 +994,8 @@ const MapProject = () => {
       field: '_bestScore_',
       headerName: t('search.search_score'),
       width: columnWidth['_bestScore_'] || 130,
+      align: 'left',
+      headerAlign: 'left',
       type: 'number',
       valueGetter: (_, row) => getRowScoreDetails(row.__index).percentile,
       renderCell: params => {
@@ -1000,6 +1007,8 @@ const MapProject = () => {
       field: '_rawScore_',
       headerName: t('search.search_raw_score'),
       width: columnWidth['_rawScore_'] || 130,
+      align: 'left',
+      headerAlign: 'left',
       type: 'number',
       valueGetter: (_, row) => getRowScoreDetails(row.__index).score,
       renderCell: params => {
