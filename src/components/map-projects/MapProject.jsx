@@ -1729,6 +1729,7 @@ const MapProject = () => {
     const selectedRowIndexes = getSelectedRowIndexes(rows)
     const isAutoMatchUnmappedOnly = autoMatchScope === 'unmapped'
     const isAutoMatchAllRows = autoMatchScope === 'all'
+    const isAutoMatchAllIncludingApproved = autoMatchScope === 'allIncludingApproved'
     const isAutoMatchSelectedRows = autoMatchScope === 'selected'
     const selectedRowsLogExtras = isAutoMatchSelectedRows ? {
       selected_rows_count: selectedRowIndexes.length,
@@ -1874,6 +1875,8 @@ const MapProject = () => {
     subActions.push('reranker')
     if(isAutoMatchUnmappedOnly)
       subActions.push('unmatched_only')
+    if(isAutoMatchAllIncludingApproved)
+      subActions.push('including_approved')
     if(isAutoMatchSelectedRows)
       subActions.push('selected_rows')
     if(inAIAssistantGroup && autoRunAIAnalysis)
@@ -1895,6 +1898,8 @@ const MapProject = () => {
 
     if(isAutoMatchAllRows)
       setRowStatuses(prev => ({...prev, readyForReview: []}))
+    if(isAutoMatchAllIncludingApproved)
+      setRowStatuses(prev => ({...prev, readyForReview: [], reviewed: []}))
     if(isAutoMatchSelectedRows)
       setRowStatuses(prev => ({
         ...prev,

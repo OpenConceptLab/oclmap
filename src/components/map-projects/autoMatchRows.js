@@ -12,5 +12,8 @@ export const getRowsToProcess = (rows, rowStatuses, autoMatchScope, selectedRowI
   if(autoMatchScope === 'selected')
     return rows.filter(row => selectedIndexSet.has(row.__index))
 
+  if(autoMatchScope === 'allIncludingApproved')
+    return rows
+
   return rows.filter(row => !reviewedIndexes.has(row.__index))
 }

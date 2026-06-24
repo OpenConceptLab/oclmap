@@ -48,16 +48,19 @@ const AutoMatchDialog = ({
 }) => {
   const { t } = useTranslation()
   const [algos, setAlgos] = React.useState(true)
+  const [confirmAllIncludingApproved, setConfirmAllIncludingApproved] = React.useState(false)
   const allRowsCount = rowStatuses.unmapped.length + rowStatuses.readyForReview.length
+  const totalRows = rowStatuses.unmapped.length + rowStatuses.readyForReview.length + rowStatuses.reviewed.length
   const rowsInSelectedScope = {
     unmapped: rowStatuses.unmapped.length,
     all: allRowsCount,
+    allIncludingApproved: totalRows,
     selected: selectedRowCount
   }
   const rowsToMatchCount = rowsInSelectedScope[autoMatchScope] || 0
-  const totalRows = rowStatuses.unmapped.length + rowStatuses.readyForReview.length + rowStatuses.reviewed.length
   const hasSelectedRows = selectedRowCount > 0
   const hasUnmappedRows = rowStatuses.unmapped.length > 0
+  const isAllIncludingApproved = autoMatchScope === 'allIncludingApproved'
 
   React.useEffect(() => {
     if (autoMatchScope === 'unmapped' && !hasUnmappedRows) {
@@ -65,15 +68,19 @@ const AutoMatchDialog = ({
     }
   }, [autoMatchScope, hasUnmappedRows, setAutoMatchScope])
 
+  React.useEffect(() => {
+    if(!open || !isAllIncludingApproved)
+      setConfirmAllIncludingApproved(false)
+  }, [isAllIncludingApproved, open])
+
   const scopeOptions = [
     {
-      value: 'all',
-      disabled: false,
-      label: `${t('map_project.unmapped_and_proposed')} (${allRowsCount.toLocaleString()})`,
-      helperText: t('map_project.auto_match_note', {
-        approvedCount: rowStatuses.reviewed.length.toLocaleString(),
-        proposedCount: rowStatuses.readyForReview.length.toLocaleString()
-      })
+      value: 'selected',
+      disabled: !hasSelectedRows,
+      label: `${t('map_project.selected_rows')} (${selectedRowCount.toLocaleString()})`,
+      helperText: hasSelectedRows ?
+        t('map_project.auto_match_selected_rows_note', {count: selectedRowCount.toLocaleString()}) :
+        t('map_project.auto_match_selected_rows_note_no_count')
     },
     {
       value: 'unmapped',
@@ -84,16 +91,30 @@ const AutoMatchDialog = ({
         t('map_project.auto_match_unmapped_only_note_no_count')
     },
     {
-      value: 'selected',
-      disabled: !hasSelectedRows,
-      label: `${t('map_project.selected_rows')} (${selectedRowCount.toLocaleString()})`,
-      helperText: hasSelectedRows ?
-        t('map_project.auto_match_selected_rows_note', {count: selectedRowCount.toLocaleString()}) :
-        t('map_project.auto_match_selected_rows_note_no_count')
+      value: 'allIncludingApproved',
+      disabled: false,
+      label: `${t('map_project.all_including_approved')} (${totalRows.toLocaleString()})`,
+      helperText: t('map_project.auto_match_all_including_approved_note', {
+        approvedCount: rowStatuses.reviewed.length.toLocaleString(),
+        proposedCount: rowStatuses.readyForReview.length.toLocaleString()
+      })
+    },
+    {
+      value: 'all',
+      disabled: false,
+      label: `${t('map_project.unmapped_and_proposed')} (${allRowsCount.toLocaleString()})`,
+      helperText: t('map_project.auto_match_note', {
+        approvedCount: rowStatuses.reviewed.length.toLocaleString(),
+        proposedCount: rowStatuses.readyForReview.length.toLocaleString()
+      })
     }
   ]
 
-  const isDisabled = !repoVersion?.version_url || rowsToMatchCount === 0 || (!algos && !autoRunAIAnalysis)
+  const isDisabled =
+    !repoVersion?.version_url ||
+    rowsToMatchCount === 0 ||
+    (!algos && !autoRunAIAnalysis) ||
+    (isAllIncludingApproved && !confirmAllIncludingApproved)
 
   return (
     <Dialog
@@ -144,6 +165,21 @@ const AutoMatchDialog = ({
                       <FormHelperText sx={{margin: '0 0 0 32px'}}>
                         {option.helperText}
                       </FormHelperText>
+                  }
+                  {
+                    autoMatchScope === option.value && option.value === 'allIncludingApproved' &&
+                      <FormControlLabel
+                        sx={{marginLeft: '24px', marginTop: '4px'}}
+                        control={
+                          <Checkbox
+                            checked={confirmAllIncludingApproved}
+                            onChange={event => setConfirmAllIncludingApproved(event.target.checked)}
+                          />
+                        }
+                        label={t('map_project.auto_match_all_including_approved_confirm', {
+                          approvedCount: rowStatuses.reviewed.length.toLocaleString()
+                        })}
+                      />
                   }
                 </div>
               ))

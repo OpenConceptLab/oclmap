@@ -43,6 +43,17 @@ test('getRowsToProcess: all scope excludes reviewed rows and keeps unmapped plus
   assert.deepEqual(result.map(row => row.__index), [0, 1, 2])
 })
 
+test('getRowsToProcess: allIncludingApproved scope includes every row', () => {
+  const result = getRowsToProcess(
+    rows,
+    { unmapped: [0, 2], readyForReview: [1], reviewed: [3] },
+    'allIncludingApproved',
+    [3]
+  )
+
+  assert.deepEqual(result.map(row => row.__index), [0, 1, 2, 3])
+})
+
 test('getRowsToProcess: selected scope preserves table row order, not selection order', () => {
   const result = getRowsToProcess(
     rows,
