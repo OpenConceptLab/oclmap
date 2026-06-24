@@ -432,6 +432,7 @@
     "not_recommended": "不推荐",
     "available": "可用",
     "recommended": "推荐",
+    "state": "状态",
     "unranked": "未排名",
     "low_ranked": "低排名",
     "field_configuration": "字段配置",

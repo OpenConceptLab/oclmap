@@ -823,6 +823,7 @@ const MapProject = () => {
   }
 
   const getRowStateLabel = index => VIEWS[getStateFromIndex(index)]?.label || ''
+  const getRowScoreDetails = index => getScoreDetails({search_meta: mapSelected[index]?.search_meta}, candidatesScore)
 
   const getRowAIIndicatorMeta = (index, targetConcept) => {
     const status = rowStageRef.current[index]?.recommend
@@ -949,7 +950,7 @@ const MapProject = () => {
     })
     cols.push({
       field: '_rowState_',
-      headerName: 'State',
+      headerName: t('map_project.state'),
       width: columnWidth['_rowState_'] || 130,
       valueGetter: (_, row) => getRowStateLabel(row.__index),
       renderCell: params => {
@@ -970,10 +971,10 @@ const MapProject = () => {
       headerName: t('map_project.group_by_match_quality'),
       width: columnWidth['_matchQuality_'] || 160,
       type: 'number',
-      valueGetter: (_, row) => getScoreDetails({search_meta: mapSelected[row.__index]?.search_meta}, candidatesScore).percentile ?? -1,
+      valueGetter: (_, row) => getRowScoreDetails(row.__index).percentile ?? -1,
       renderCell: params => {
-        const details = getScoreDetails({search_meta: mapSelected[params.row.__index]?.search_meta}, candidatesScore)
-        const label = details.qualityBucket ? startCase(details.qualityBucket) : 'Unranked'
+        const details = getRowScoreDetails(params.row.__index)
+        const label = details.qualityBucket ? startCase(details.qualityBucket) : t('map_project.unranked')
         return (
           <Chip
             size='small'
@@ -989,9 +990,9 @@ const MapProject = () => {
       headerName: t('search.search_score'),
       width: columnWidth['_bestScore_'] || 130,
       type: 'number',
-      valueGetter: (_, row) => getScoreDetails({search_meta: mapSelected[row.__index]?.search_meta}, candidatesScore).percentile,
+      valueGetter: (_, row) => getRowScoreDetails(row.__index).percentile,
       renderCell: params => {
-        const details = getScoreDetails({search_meta: mapSelected[params.row.__index]?.search_meta}, candidatesScore)
+        const details = getRowScoreDetails(params.row.__index)
         return details.rerankScore || ''
       }
     })
@@ -1000,9 +1001,9 @@ const MapProject = () => {
       headerName: t('search.search_raw_score'),
       width: columnWidth['_rawScore_'] || 130,
       type: 'number',
-      valueGetter: (_, row) => getScoreDetails({search_meta: mapSelected[row.__index]?.search_meta}, candidatesScore).score,
+      valueGetter: (_, row) => getRowScoreDetails(row.__index).score,
       renderCell: params => {
-        const details = getScoreDetails({search_meta: mapSelected[params.row.__index]?.search_meta}, candidatesScore)
+        const details = getRowScoreDetails(params.row.__index)
         return details.algoScore || ''
       }
     })
@@ -3569,19 +3570,14 @@ const MapProject = () => {
   // AI chip state as the current row. Fall back to the latest analysis
   // available for this row when callers don't supply explicit ids.
   const getCurrentRowAIIds = () => {
-    const rowAnalysis = analysis?.[rowIndex]
-    const analysisArray = Array.isArray(rowAnalysis) ? rowAnalysis : (rowAnalysis ? [rowAnalysis] : [])
-    const selectedAnalysis = analysisArray[analysisArray.length - 1]
-    if(!selectedAnalysis) return { recommendedId: undefined, alternateIds: [] }
-
-    const primary = selectedAnalysis?.output?.primary_candidate || selectedAnalysis?.primary_candidate
-    const recommendedId = resolveAICandidateID(primary, conceptCacheRef.current)
-    const alternateCandidates = selectedAnalysis?.output?.alternative_candidates || selectedAnalysis?.alternative_candidates || []
-    const alternateIds = [...new Set(alternateCandidates
-      .map(candidate => resolveAICandidateID(candidate, conceptCacheRef.current))
-      .filter(id => id && id !== recommendedId))]
-
-    return { recommendedId, alternateIds }
+    const { primaryCandidateId, alternateCandidateIds } = getAIAnalysisCandidateIDs(
+      analysis?.[rowIndex],
+      conceptCacheRef.current
+    )
+    return {
+      recommendedId: primaryCandidateId ?? undefined,
+      alternateIds: alternateCandidateIds
+    }
   }
 
   const openConceptPanel = (concept, options = {}) => {
