@@ -4985,9 +4985,6 @@ const MapProject = () => {
                     <Button size='small' color='primary' variant='outlined' onClick={() => openBulkConfirm('map_type')} sx={{textTransform: 'none', backgroundColor: WHITE}}>
                       {t('map_project.bulk_change_map_type')}
                     </Button>
-                    <Button size='small' color='secondary' onClick={clearBulkSelection} sx={{textTransform: 'none', marginLeft: 'auto'}}>
-                      {t('map_project.bulk_clear_selection')}
-                    </Button>
                   </div>
               }
               <Collapse in={Boolean(alert?.message)}>
