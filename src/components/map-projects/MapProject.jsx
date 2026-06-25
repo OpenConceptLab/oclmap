@@ -1680,6 +1680,9 @@ const MapProject = () => {
           setMapTypes(p => ({...p, [rowIdx]: mapType}))
           log({action: 'auto-matched', extras: {repoVersion: repoVersion?.version_url || _repo.version_url, name: getConceptLabel(_concept), map_type: mapType}}, rowIdx)
         } else {
+          setMapSelected(prev => omit(prev, rowIdx))
+          setDecisions(prev => omit(prev, rowIdx))
+          setMapTypes(prev => omit(prev, rowIdx))
           prev.unmapped = uniq([...prev.unmapped, rowIdx])
         }
       })
