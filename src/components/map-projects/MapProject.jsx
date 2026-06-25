@@ -5013,6 +5013,7 @@ const MapProject = () => {
                   onCellClick={onDataGridCellClick}
                   checkboxSelection
                   disableRowSelectionOnClick
+                  indeterminateCheckboxAction="select"
                   rowSelectionModel={selectedRowIds}
                   onRowSelectionModelChange={setSelectedRowIds}
                   sx={{
