@@ -62,7 +62,7 @@ const createPendingRequest = () => new Promise(() => {})
 
 const handleAPIError = (error, raw=false) => {
   if(error?.response?.status === 401 && error?.response?.config?.url?.startsWith(getAPIURL())) {
-    logoutUser(true)
+    logoutUser(true, true)
     return { handled: true, result: undefined };
   }
 

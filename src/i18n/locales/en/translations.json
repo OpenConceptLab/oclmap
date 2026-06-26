@@ -149,7 +149,8 @@
     "signing_in": "Signing in...",
     "sign_in_success": "Successfully signed in.",
     "sign_in_error": "Unable to signin at the time.",
-    "update_password": "Update password"
+    "update_password": "Update password",
+    "session_expired": "Your session has expired. Please log in to continue."
   },
   "custom_attributes": {
     "label": "Custom attributes",

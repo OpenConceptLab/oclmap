@@ -661,27 +661,25 @@ export const logoutUser = (redirectToLogin, forced) => {
     localStorage.removeItem('user');
     localStorage.removeItem('visits');
   }
-  const callback = () => {
-    clearTokens()
 
-    if(redirectToLogin)
-      window.location.hash = '#/accounts/login';
-    else {
-      window.location.hash = '#/';
-      window.location.reload();
-    }
-  }
-  let redirectURL;
-  if(forced) {
-    redirectURL = window.location.origin + '/#/accounts/login?next=' + (window.location.origin + '/'+ window.location.hash)
-  }
+  const returnTo = window.location.origin + '/' + window.location.hash
+  if(forced)
+    sessionStorage.setItem('session_expired', 'true')
+
+  const redirectURL = forced ?
+    window.location.origin + '/#/signin?returnTo=' + encodeURIComponent(returnTo) :
+    undefined
   const logoutURL = getSSOLogoutURL(redirectURL)
-  if(logoutURL) {
-    clearTokens()
+
+  clearTokens()
+  if(logoutURL)
     window.location = logoutURL
+  else if(redirectToLogin)
+    window.location.href = getLoginURL(forced ? returnTo : undefined)
+  else {
+    window.location.hash = '#/';
+    window.location.reload();
   }
-  else
-    callback()
 }
 
 
@@ -815,14 +813,6 @@ export const isChrome = () => !!window.chrome && (!!window.chrome.webstore || !!
 export const isOpera = () => (!!window.opr && !!opr.addons) || !!window.opera || navigator.userAgent.indexOf(' OPR/') >= 0;
 
 export const isDeprecatedBrowser = () => isIE() || isOpera();
-
-export const isSSOEnabled = () => {
-  const redirectURL = window.LOGIN_REDIRECT_URL || process.env.LOGIN_REDIRECT_URL
-  const oidClientID = window.OIDC_RP_CLIENT_ID || process.env.OIDC_RP_CLIENT_ID
-  const oidClientSecret = window.OIDC_RP_CLIENT_SECRET || process.env.OIDC_RP_CLIENT_SECRET
-
-  return Boolean(redirectURL && oidClientID && oidClientSecret)
-}
 
 export const getLoginURL = returnTo => {
   const oidClientID = window.OIDC_RP_CLIENT_ID || process.env.OIDC_RP_CLIENT_ID

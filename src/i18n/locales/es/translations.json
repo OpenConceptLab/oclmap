@@ -150,7 +150,8 @@
     "signing_in": "Iniciando sesión...",
     "sign_in_success": "Ingreso exitoso.",
     "sign_in_error": "No se pudo iniciar sesión en este momento.",
-    "update_password": "Actualizar contraseña"
+    "update_password": "Actualizar contraseña",
+    "session_expired": "Su sesión ha expirado. Inicie sesión para continuar."
   },
   "concept": {
     "concepts": "Conceptos",

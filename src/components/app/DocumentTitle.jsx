@@ -7,11 +7,6 @@ const SITE_TITLE = getSiteTitle()
 
 /*eslint no-useless-escape: 0*/
 const TITLES = {
-  '/accounts/login': `Sign In - ${SITE_TITLE}`,
-  '/accounts/signup': `Sign Up - ${SITE_TITLE}`,
-  '/accounts/password/reset': `Password Reset - ${SITE_TITLE}`,
-  "/accounts/([a-zA-Z0-9\-\.\_\@]+)/password/reset/([a-zA-Z0-9\-\.\_\@]+)": `Change Password - ${SITE_TITLE}`,
-  "/accounts/([a-zA-Z0-9\-\.\_\@]+)/verify/([a-zA-Z0-9\-\.\_\@]+)": `Verify Email - ${SITE_TITLE}`,
   "/users/([a-zA-Z0-9\-\.\_\@]+)": `$1 - ${SITE_TITLE}`,
   "/users/([a-zA-Z0-9\-\.\_\@]+)/([a-zA-Z0-9\-\.\_\@]+)": `$1 - $2 - ${SITE_TITLE}`,
   "/orgs/([a-zA-Z0-9\-\.\_\@]+)": `$1 - ${SITE_TITLE}`,

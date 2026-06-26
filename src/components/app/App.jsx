@@ -15,6 +15,7 @@ import ErrorBoundary from '../errors/ErrorBoundary';
 import CheckAuth from './CheckAuth'
 import Footer from './Footer';
 import DocumentTitle from "./DocumentTitle"
+import SigninRedirect from './SigninRedirect'
 import './App.scss';
 import { hotjar } from 'react-hotjar';
 import APIService from '../../services/APIService'
@@ -133,6 +134,7 @@ const App = props => {
             ) : (
               <React.Fragment>
                 <Switch>
+                  <Route exact path="/signin" component={SigninRedirect} />
                   <Route exact path="/oidc/login" component={OIDLoginCallback} />
                   <AuthenticationRequiredRoute exact path='/' component={MapProjects} />
                   <AuthenticationRequiredRoute exact path='/map-projects' component={MapProjects} />
