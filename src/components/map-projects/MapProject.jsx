@@ -17,7 +17,6 @@ import IconButton from '@mui/material/IconButton'
 import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
 import Chip from '@mui/material/Chip';
-import FormControl from '@mui/material/FormControl';
 import Tooltip from '@mui/material/Tooltip';
 import Alert from '@mui/material/Alert';
 import Divider from '@mui/material/Divider';
@@ -25,8 +24,6 @@ import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
-import MenuItem from '@mui/material/MenuItem';
-import Select from '@mui/material/Select';
 import Snackbar from '@mui/material/Snackbar';
 import { DataGrid } from '@mui/x-data-grid';
 
@@ -57,7 +54,6 @@ import reject from 'lodash/reject'
 import uniq from 'lodash/uniq'
 import compact from 'lodash/compact'
 import flatten from 'lodash/flatten'
-import debounce from 'lodash/debounce'
 import keys from 'lodash/keys'
 import pickBy from 'lodash/pickBy'
 import every from 'lodash/every'
@@ -88,9 +84,9 @@ import { HEADERS, SEMANTIC_SEARCH_HEADERS, ROW_STATES, VIEWS, DECISION_TABS, ROW
 import MapProjectDeleteConfirmDialog from './MapProjectDeleteConfirmDialog';
 import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
+import DataGridControls from './DataGridControls'
 import { getRowsToProcess } from './autoMatchRows'
 import MatchSummaryCard from './MatchSummaryCard'
-import SearchField from './SearchField'
 import MappingDecisionResult from './MappingDecisionResult'
 import DecisionSelector from './DecisionSelector'
 import ReviewNote from './ReviewNote'
@@ -98,7 +94,6 @@ import Propose from './Propose'
 import Candidates from './Candidates'
 import Search from './Search'
 import Discuss from './Discuss'
-import ScoreBucketButton from './ScoreBucketButton'
 import Concept from './Concept'
 import ImportToCollection from './ImportToCollection'
 import ProjectLogs from './ProjectLogs';
@@ -238,6 +233,7 @@ const MapProject = () => {
   const [showProjectLogs, setShowProjectLogs] = React.useState(false)
   const [selectedRowIds, setSelectedRowIds] = React.useState([])
   const [bulkConfirm, setBulkConfirm] = React.useState(false)
+  const [bulkDecisionAction, setBulkDecisionAction] = React.useState('')
   const [bulkMapType, setBulkMapType] = React.useState('SAME-AS')
 
   const alertDuration = React.useMemo(() => {
@@ -2862,9 +2858,30 @@ const MapProject = () => {
     setBulkConfirm({action, count: indexes.length})
   }
 
+  const closeBulkConfirm = React.useCallback(() => {
+    setBulkConfirm(false)
+    setBulkDecisionAction('')
+  }, [])
+
+  const onBulkDecisionChange = event => {
+    const action = event.target.value
+    if(!action)
+      return
+    setBulkDecisionAction(action)
+    openBulkConfirm(action)
+  }
+
+  const onBulkMapTypeChange = event => {
+    const nextMapType = event.target.value
+    const indexes = getSelectedRowIndexes()
+    if(!indexes.length || nextMapType === bulkMapType)
+      return
+    setBulkConfirm({action: 'map_type', count: indexes.length, mapType: nextMapType})
+  }
+
   const clearBulkSelection = () => {
     setSelectedRowIds([])
-    setBulkConfirm(false)
+    closeBulkConfirm()
   }
 
   const onBulkActionConfirm = () => {
@@ -2934,6 +2951,7 @@ const MapProject = () => {
     }
 
     if(action === 'map_type') {
+      const nextMapType = bulkConfirm?.mapType || bulkMapType
       indexes.forEach(index => {
         if(mapSelected[index])
           changed.push(index)
@@ -2941,15 +2959,16 @@ const MapProject = () => {
           skipped.push(index)
       })
       if(changed.length) {
-        setMapTypes(prev => ({...prev, ...Object.fromEntries(changed.map(index => [index, bulkMapType]))}))
+        setBulkMapType(nextMapType)
+        setMapTypes(prev => ({...prev, ...Object.fromEntries(changed.map(index => [index, nextMapType]))}))
         addBulkLogs(
           changed,
           'map_type_changed',
           t('map_project.bulk_log_map_type_changed'),
           index => ({
-            map_type: bulkMapType,
+            map_type: nextMapType,
             old_map_type: mapTypes[index] || 'SAME-AS',
-            new_map_type: bulkMapType
+            new_map_type: nextMapType
           })
         )
       }
@@ -4889,116 +4908,28 @@ const MapProject = () => {
                   })
                 }
               </div>
-              <div className='col-xs-12' style={{padding: '12px 14px 8px 14px', display: 'flex', alignItems: 'center', backgroundColor: SURFACE_COLORS.main}}>
-                <FormControl sx={{minWidth: '16px'}}>
-                  <SearchField onChange={debounce(val => setSearchText(val || ''))} />
-                </FormControl>
-                <ScoreBucketButton
-                  selected={selectedCandidatesScoreBucket}
-                  onSort={() => setScoreBucketSortBy(scoreBucketSortBy === 'desc' ? 'asc' : 'desc')}
-                  sortBy={scoreBucketSortBy}
-                  onClick={bucket => setSelectedCandidatesScoreBucket(selectedCandidatesScoreBucket === bucket ? false : bucket)}
-                  recommended={recommendedCount}
-                  available={availableCount}
-                  low_ranked={lowRankedCount}
-                />
-                <div style={{display: 'inline-block'}}>
-                {
-                  selectedRowStatus === 'unmapped' &&
-                    <Chip
-                      label={`${t('map_project.rejected')} (${keys(pickBy(decisions, value => value === 'rejected')).length})`}
-                      color='error'
-                      size='small'
-                      variant={decisionFilters.includes('rejected') ? 'contained' : 'outlined'}
-                      icon={
-                        decisionFilters.includes('rejected') ?
-                          <CloseIcon fontSize='inherit' /> :
-                          <DoneIcon fontSize='inherit' />
-                      }
-                      onClick={
-                        () => setDecisionFilters(
-                          decisionFilters.includes('rejected') ?
-                            without(decisionFilters, 'rejected') :
-                            [...decisionFilters, 'rejected']
-                        )
-                      }
-                      sx={{margin: '4px'}}
-                    />
-
-                }
-                {
-                  ['reviewed', 'readyForReview'].includes(selectedRowStatus) &&
-                    <React.Fragment>
-                      {
-                        ['map', 'exclude', 'none', 'propose'].map(_decision => {
-                          const isApplied = decisionFilters.includes(_decision)
-                          const isExclude = _decision === 'exclude'
-                          const isNone = _decision === 'none'
-                          const isPropose = _decision === 'propose'
-                          const count = filter(keys(pickBy(decisions, value => isNone ? !value : value === _decision)), index => rowStatuses[selectedRowStatus].includes(parseInt(index))).length
-                          return (
-                            <Chip
-                              key={_decision}
-                              disabled={!count}
-                              label={`${t(`map_project.decision_${_decision}`) || startCase(_decision)} (${count})`}
-                              color={isExclude ? 'error' : (isNone ? 'secondary' : (isPropose ? 'warning' : 'primary'))}
-                              size='small'
-                              variant={isApplied ? 'contained' : 'outlined'}
-                              icon={
-                                isApplied ?
-                                  <CloseIcon fontSize='inherit' /> :
-                                  <DoneIcon fontSize='inherit' />
-                              }
-                              onClick={
-                                () => setDecisionFilters(
-                                  isApplied ?
-                                    without(decisionFilters, _decision) :
-                                    [...decisionFilters, _decision]
-                                )
-                              }
-                              sx={{margin: '4px'}}
-                            />
-                          )
-                        })
-                      }
-                    </React.Fragment>
-                }
-                  </div>
-              </div>
-              {
-                selectedRowsCount > 0 &&
-                  <div className='col-xs-12' style={{padding: '8px 14px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', backgroundColor: '#e9e4ff', borderTop: 'solid 1px rgba(76, 53, 255, 0.15)', borderBottom: 'solid 1px rgba(76, 53, 255, 0.15)'}}>
-                    <Typography component='span' sx={{fontSize: '14px', fontWeight: 600, color: 'surface.dark', marginRight: '8px'}}>
-                      {t('map_project.bulk_selected', {count: selectedRowsCount})}
-                    </Typography>
-                    <Button size='small' color='primary' variant='contained' startIcon={<DoneIcon fontSize='inherit' />} onClick={() => openBulkConfirm('approve')} sx={{textTransform: 'none'}}>
-                      {t('map_project.approve')}
-                    </Button>
-                    <Button size='small' color='error' variant='outlined' startIcon={<CloseIcon fontSize='inherit' />} onClick={() => openBulkConfirm('rejected')} sx={{textTransform: 'none', backgroundColor: WHITE}}>
-                      {t('map_project.reject')}
-                    </Button>
-                    <Button size='small' color='error' variant='contained' onClick={() => openBulkConfirm('exclude')} sx={{textTransform: 'none'}}>
-                      {t('map_project.decision_exclude')}
-                    </Button>
-                    <Button size='small' color='secondary' variant='outlined' startIcon={<ClearIcon fontSize='inherit' />} onClick={() => openBulkConfirm('clear')} sx={{textTransform: 'none', backgroundColor: WHITE}}>
-                      {t('map_project.bulk_clear')}
-                    </Button>
-                    <Divider orientation='vertical' flexItem sx={{margin: '0 4px'}} />
-                    <Select
-                      size='small'
-                      value={bulkMapType}
-                      onChange={event => setBulkMapType(event.target.value)}
-                      sx={{height: '32px', minWidth: '136px', backgroundColor: WHITE, fontSize: '13px'}}
-                    >
-                      {
-                        (allMapTypes?.length ? allMapTypes : ['SAME-AS']).map(option => <MenuItem key={option} value={option}>{option}</MenuItem>)
-                      }
-                    </Select>
-                    <Button size='small' color='primary' variant='outlined' onClick={() => openBulkConfirm('map_type')} sx={{textTransform: 'none', backgroundColor: WHITE}}>
-                      {t('map_project.bulk_change_map_type')}
-                    </Button>
-                  </div>
-              }
+              <DataGridControls
+                selectedRowStatus={selectedRowStatus}
+                selectedCandidatesScoreBucket={selectedCandidatesScoreBucket}
+                scoreBucketSortBy={scoreBucketSortBy}
+                onScoreBucketSort={() => setScoreBucketSortBy(scoreBucketSortBy === 'desc' ? 'asc' : 'desc')}
+                onScoreBucketClick={bucket => setSelectedCandidatesScoreBucket(selectedCandidatesScoreBucket === bucket ? false : bucket)}
+                recommendedCount={recommendedCount}
+                availableCount={availableCount}
+                lowRankedCount={lowRankedCount}
+                decisions={decisions}
+                decisionFilters={decisionFilters}
+                setDecisionFilters={setDecisionFilters}
+                rowStatuses={rowStatuses}
+                selectedRowsCount={selectedRowsCount}
+                bulkDecisionAction={bulkDecisionAction}
+                onBulkDecisionChange={onBulkDecisionChange}
+                bulkConfirm={bulkConfirm}
+                bulkMapType={bulkMapType}
+                onBulkMapTypeChange={onBulkMapTypeChange}
+                allMapTypes={allMapTypes}
+                onSearchTextChange={setSearchText}
+              />
               <Snackbar
                 open={Boolean(alert?.message)}
                 autoHideDuration={alertDuration}
@@ -5114,7 +5045,7 @@ const MapProject = () => {
               </div>
             </div>
         }
-          <Dialog open={Boolean(bulkConfirm)} onClose={() => setBulkConfirm(false)} maxWidth='xs' fullWidth>
+          <Dialog open={Boolean(bulkConfirm)} onClose={closeBulkConfirm} maxWidth='xs' fullWidth>
             <DialogTitle>{t('map_project.bulk_confirm_title')}</DialogTitle>
             <DialogContent>
               <Typography component='p' sx={{fontSize: '14px', color: 'surface.dark'}}>
@@ -5123,12 +5054,12 @@ const MapProject = () => {
               {
                 bulkConfirm?.action === 'map_type' &&
                   <Typography component='p' sx={{fontSize: '13px', color: 'surface.nv60', marginTop: '8px'}}>
-                    {t('map_project.bulk_confirm_map_type', {mapType: bulkMapType})}
+                    {t('map_project.bulk_confirm_map_type', {mapType: bulkConfirm?.mapType || bulkMapType, count: bulkConfirm?.count || 0})}
                   </Typography>
               }
             </DialogContent>
             <DialogActions>
-              <Button onClick={() => setBulkConfirm(false)} color='secondary' sx={{textTransform: 'none'}}>
+              <Button onClick={closeBulkConfirm} color='secondary' sx={{textTransform: 'none'}}>
                 {t('common.cancel')}
               </Button>
               <Button onClick={onBulkActionConfirm} color='primary' variant='contained' sx={{textTransform: 'none'}}>

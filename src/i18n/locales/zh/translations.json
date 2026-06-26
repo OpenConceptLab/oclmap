@@ -531,7 +531,7 @@
     "bulk_clear_selection": "清除选择",
     "bulk_confirm_title": "应用批量操作？",
     "bulk_confirm_body": "{{action}} 将应用于 {{count}} 个已选行。",
-    "bulk_confirm_map_type": "已映射的行将使用 {{mapType}}。",
+    "bulk_confirm_map_type": "{{count}} 个已选行将使用 {{mapType}}。",
     "bulk_apply": "应用",
     "bulk_action_summary": "已更新 {{changed}} 行，已跳过 {{skipped}} 行。",
     "bulk_log_approved": "从左侧输入数据集面板批量批准。",

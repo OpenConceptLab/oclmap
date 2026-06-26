@@ -539,7 +539,7 @@
     "bulk_clear_selection": "Clear selection",
     "bulk_confirm_title": "Apply bulk action?",
     "bulk_confirm_body": "{{action}} will be applied to {{count}} selected row(s).",
-    "bulk_confirm_map_type": "Mapped rows will use {{mapType}}.",
+    "bulk_confirm_map_type": "{{count}} selected row(s) will use {{mapType}}.",
     "bulk_apply": "Apply",
     "bulk_action_summary": "{{changed}} row(s) updated. {{skipped}} skipped.",
     "bulk_log_approved": "Bulk approved from the left input dataset panel.",

@@ -506,7 +506,7 @@
     "bulk_clear_selection": "Borrar selección",
     "bulk_confirm_title": "¿Aplicar acción masiva?",
     "bulk_confirm_body": "{{action}} se aplicará a {{count}} fila(s) seleccionada(s).",
-    "bulk_confirm_map_type": "Las filas mapeadas usarán {{mapType}}.",
+    "bulk_confirm_map_type": "{{count}} fila(s) seleccionada(s) usarán {{mapType}}.",
     "bulk_apply": "Aplicar",
     "bulk_action_summary": "{{changed}} fila(s) actualizada(s). {{skipped}} omitida(s).",
     "bulk_log_approved": "Aprobación masiva desde el panel izquierdo del conjunto de datos de entrada.",
