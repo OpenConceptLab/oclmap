@@ -549,6 +549,7 @@
     "bulk_log_map_type_changed": "Bulk map type changed from {{oldMapType}} to {{newMapType}} from the left input dataset panel.",
     "review": "Review",
     "recommended_candidates": "Recommended Candidates",
+    "no_candidates_found": "We could not find any candidates for this row.",
     "available_candidates": "Available Candidates",
     "unranked_candidates": "Unranked Candidates",
     "low_ranked_candidates": "Low Ranked Candidates",

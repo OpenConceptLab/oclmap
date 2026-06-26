@@ -519,6 +519,7 @@
     "primary_candidate": "Candidato principal",
     "alternate_candidates": "Candidatos alternativos",
     "rest": "Resto",
+    "no_candidates_found": "No pudimos encontrar candidatos para esta fila.",
     "available_candidates": "Candidatos Disponibles",
     "unranked_candidates": "Candidatos Sin Clasificar",
     "low_ranked_candidates": "Candidatos de baja clasificación",

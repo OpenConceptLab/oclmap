@@ -713,7 +713,7 @@ const Candidates = ({rowIndex, rowState, conceptCache, targetCanonical, targetRe
         <div className={openFilters ? 'col-xs-8' : 'col-xs-12'} style={{padding: 0, paddingLeft: openFilters ? '8px' : 0}}>
           {
             noCandidatesFound &&
-              <NoResults text='We could not find any candidates for this row.' height='300px' />
+              <NoResults text={t('map_project.no_candidates_found')} height='300px' />
           }
           <List
             sx={{

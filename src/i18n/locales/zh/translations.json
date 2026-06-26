@@ -544,6 +544,7 @@
     "primary_candidate": "主要候选项",
     "alternate_candidates": "备选候选项",
     "rest": "其余",
+    "no_candidates_found": "我们找不到此行的任何候选对象。",
     "available_candidates": "可用候选对象",
     "unranked_candidates": "未排名候选对象",
     "low_ranked_candidates": "低排名候选人",
