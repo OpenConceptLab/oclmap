@@ -2,8 +2,6 @@
 
 import React from 'react'
 import { useTranslation } from 'react-i18next';
-import Alert from '@mui/material/Alert';
-import Collapse from '@mui/material/Collapse';
 import IconButton from '@mui/material/IconButton'
 import ListSubheader from '@mui/material/ListSubheader';
 import List from '@mui/material/List';
@@ -20,7 +18,6 @@ import Tooltip from '@mui/material/Tooltip'
 
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import CloseIcon from '@mui/icons-material/Close';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SortIcon from '@mui/icons-material/Sort';
@@ -411,7 +408,7 @@ const CandidateList = ({rowViews, header, rowIndex, sortBy, order, openConceptPa
 //   conceptCache — project-wide ConceptDefinition store, keyed by concept_key.
 //   algosSelected — algorithm definitions (for headers/grouping).
 // (plans/unified-mapper-model.md "How the views map onto this model".)
-const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCanonical, targetRelativeUrl, openConceptPanel, showItem, isSelectedForMap, onMap, onFetchMore, isLoading, candidatesScore, repoVersion, analysis, onFetchRecommendation, appliedFacets, setAppliedFacets, filters, facets, columns, defaultFilters, locales, models, selectedModel, onModelChange, promptTemplates, promptTemplate, onPromptTemplateChange, onRefreshClick, rowStage, inAIAssistantGroup, algosSelected, isCoreUser}) => {
+const Candidates = ({rowIndex, rowState, conceptCache, targetCanonical, targetRelativeUrl, openConceptPanel, showItem, isSelectedForMap, onMap, onFetchMore, isLoading, candidatesScore, repoVersion, analysis, onFetchRecommendation, appliedFacets, setAppliedFacets, filters, facets, columns, defaultFilters, locales, models, selectedModel, onModelChange, promptTemplates, promptTemplate, onPromptTemplateChange, onRefreshClick, rowStage, inAIAssistantGroup, algosSelected, isCoreUser}) => {
   const { t } = useTranslation();
   const [sortBy, setSortBy] = React.useState('rerank_score')
   const [groupBy, setGroupBy] = React.useState('quality')
@@ -694,50 +691,32 @@ const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCa
 
   return (
     <div className='col-xs-12 padding-0'>
-      <Collapse in={Boolean(alert?.message)}>
-        <Alert
-          severity={alert?.severity || 'error'}
-          action={
-            <Button
-              aria-label="close"
-              color="inherit"
-              size="small"
-              onClick={() => setAlert(false)}
-            >
-              <CloseIcon fontSize="inherit" />
-            </Button>
-          }
-          sx={{ mb: 2 }}
-        >
-          {alert.message}
-        </Alert>
-      </Collapse>
-    <div className='col-xs-12 padding-0' style={{display: 'flex'}}>
-      {
-        !isEmpty(facets) &&
-          <div className='col-xs-4 padding-0' style={openFilters ? {borderRight: '1px solid lightgray'} : {width: 0, display: 'none'}}>
-            <SearchFilters
-              open={openFilters}
-              resource='concepts'
-              filters={facets}
-              appliedFilters={appliedFacets || {}}
-              onChange={setAppliedFacets}
-              repoDefaultFilters={filters}
-              defaultFilters={defaultFilters}
-              properties={repoVersion?.meta?.display?.concept_summary_properties}
-              propertyFilters={repoVersion?.filters}
-              heightToSubtract={523}
-              columns={columns}
-            />
-          </div>
-      }
-      <div className={openFilters ? 'col-xs-8' : 'col-xs-12'} style={{padding: 0, paddingLeft: openFilters ? '8px' : 0}}>
+      <div className='col-xs-12 padding-0' style={{display: 'flex'}}>
         {
-          noCandidatesFound &&
-            <NoResults text='We could not find any candidates for this row.' height='300px' />
+          !isEmpty(facets) &&
+            <div className='col-xs-4 padding-0' style={openFilters ? {borderRight: '1px solid lightgray'} : {width: 0, display: 'none'}}>
+              <SearchFilters
+                open={openFilters}
+                resource='concepts'
+                filters={facets}
+                appliedFilters={appliedFacets || {}}
+                onChange={setAppliedFacets}
+                repoDefaultFilters={filters}
+                defaultFilters={defaultFilters}
+                properties={repoVersion?.meta?.display?.concept_summary_properties}
+                propertyFilters={repoVersion?.filters}
+                heightToSubtract={523}
+                columns={columns}
+              />
+            </div>
         }
-        <List
-          sx={{
+        <div className={openFilters ? 'col-xs-8' : 'col-xs-12'} style={{padding: 0, paddingLeft: openFilters ? '8px' : 0}}>
+          {
+            noCandidatesFound &&
+              <NoResults text='We could not find any candidates for this row.' height='300px' />
+          }
+          <List
+            sx={{
             marginTop: '4px',
             width: '100%',
             position: 'relative',
@@ -980,16 +959,16 @@ const Candidates = ({rowIndex, alert, setAlert, rowState, conceptCache, targetCa
               </>
           }
         </List>
-        {
-          onFetchMore && canFetchMore &&
-            <div className='col-xs-12 padding-0' style={{textAlign: 'right', marginTop: '4px'}}>
-              <Button disabled={isLoading} size='small' variant='text' sx={{textTransform: 'none'}} onClick={onFetchMore}>
-                {isLoading ? t('map_project.fetching') : t('map_project.fetch_more')}
-              </Button>
-            </div>
-        }
+          {
+            onFetchMore && canFetchMore &&
+              <div className='col-xs-12 padding-0' style={{textAlign: 'right', marginTop: '4px'}}>
+                <Button disabled={isLoading} size='small' variant='text' sx={{textTransform: 'none'}} onClick={onFetchMore}>
+                  {isLoading ? t('map_project.fetching') : t('map_project.fetch_more')}
+                </Button>
+              </div>
+          }
+        </div>
       </div>
-    </div>
     </div>
 
   )

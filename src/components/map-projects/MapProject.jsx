@@ -20,7 +20,6 @@ import Chip from '@mui/material/Chip';
 import FormControl from '@mui/material/FormControl';
 import Tooltip from '@mui/material/Tooltip';
 import Alert from '@mui/material/Alert';
-import Collapse from '@mui/material/Collapse';
 import Divider from '@mui/material/Divider';
 import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
@@ -28,6 +27,7 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
 import MenuItem from '@mui/material/MenuItem';
 import Select from '@mui/material/Select';
+import Snackbar from '@mui/material/Snackbar';
 import { DataGrid } from '@mui/x-data-grid';
 
 
@@ -239,6 +239,18 @@ const MapProject = () => {
   const [selectedRowIds, setSelectedRowIds] = React.useState([])
   const [bulkConfirm, setBulkConfirm] = React.useState(false)
   const [bulkMapType, setBulkMapType] = React.useState('SAME-AS')
+
+  const alertDuration = React.useMemo(() => {
+    if(!alert?.duration)
+      return null
+    return alert.duration < 100 ? alert.duration * 1000 : alert.duration
+  }, [alert])
+
+  const onAlertClose = React.useCallback((_, reason) => {
+    if(reason === 'clickaway')
+      return
+    setAlert(false)
+  }, [])
 
   // repo state
   const [repo, setRepo] = React.useState(false)
@@ -4987,9 +4999,15 @@ const MapProject = () => {
                     </Button>
                   </div>
               }
-              <Collapse in={Boolean(alert?.message)}>
+              <Snackbar
+                open={Boolean(alert?.message)}
+                autoHideDuration={alertDuration}
+                onClose={onAlertClose}
+                anchorOrigin={{vertical: 'top', horizontal: 'center'}}
+              >
                 <Alert
                   severity={alert?.severity || 'error'}
+                  onClose={onAlertClose}
                   action={
                     <IconButton
                       aria-label="close"
@@ -5000,11 +5018,11 @@ const MapProject = () => {
                       <CloseIcon fontSize="inherit" />
                     </IconButton>
                   }
-                  sx={{ mb: 2 }}
+                  sx={{ width: '100%' }}
                 >
-                  {alert.message}
+                  {alert?.message}
                 </Alert>
-              </Collapse>
+              </Snackbar>
               <div style={{ width: '100%', height: project?.id ? 'calc(100vh - 263px)' : 'calc(100vh - 250px)' }}>
                 <DataGrid
                   onFilterModelChange={(model) => setFilterModel(model)}
@@ -5239,8 +5257,6 @@ const MapProject = () => {
                       candidatesScore={candidatesScore}
                       rowIndex={rowIndex}
                       rowStage={rowStageRef.current[rowIndex]}
-                      alert={alert}
-                      setAlert={setAlert}
                       rowState={rowMatchStateRef.current[rowIndex]}
                       conceptCache={conceptCache}
                       targetCanonical={buildProjectContext()?.target_repo?.canonical_url}
