@@ -23,8 +23,8 @@ const v5Theme = createTheme(theme, {
       ...COLORS.surface
     },
     "default": {
-      main: COLORS.surface.n96,
-      dark: COLORS.surface.n96,
+      main: COLORS.surface.light,
+      dark: COLORS.surface.dark,
       light: COLORS.secondary['40']
     },
   },
@@ -77,13 +77,13 @@ const v5Theme = createTheme(theme, {
     MuiButton: {
       variants: [
         {
-          props: { variant: "contained", color: COLORS.surface.n96 },
+          props: { variant: "contained", color: COLORS.surface.main },
           style: {
             color: theme.palette.getContrastText(COLORS.surface.n96)
           }
         },
         {
-          props: { variant: "outlined", color: COLORS.surface.n96 },
+          props: { variant: "outlined", color: COLORS.surface.main },
           style: {
             color: theme.palette.text.primary,
             borderColor:
