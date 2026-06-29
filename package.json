@@ -8,10 +8,9 @@
     "@airbrake/browser": "^2.1.9",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.0",
-    "@mui/icons-material": "^6.0.0",
-    "@mui/lab": "^6.0.0-beta.31",
-    "@mui/material": "^6.0.0",
-    "@mui/styles": "^6.0.0",
+    "@mui/icons-material": "^7.0.0",
+    "@mui/lab": "^7.0.0-beta.0",
+    "@mui/material": "^7.0.0",
     "@mui/x-data-grid": "^7.28.1",
     "axios": "^1.13.5",
     "core-js": "^3.41.0",
@@ -29,6 +28,9 @@
     "react-split": "^2.0.14",
     "stacktrace-js": "^2.0.2",
     "xlsx": "^0.18.5"
+  },
+  "overrides": {
+    "react-is": "^18.3.1"
   },
   "scripts": {
     "start": "./node_modules/webpack-dev-server/bin/webpack-dev-server.js --progress --host 0.0.0.0 --port ${WEB_PORT} --env API_URL=${API_URL} --env NODE_ENV=${NODE_ENV} --env RECAPTCHA_SITE_KEY=${RECAPTCHA_SITE_KEY} --env GA_ACCOUNT_ID=${GA_ACCOUNT_ID} --env HOTJAR_ID=${HOTJAR_ID} --env ERRBIT_URL=${ERRBIT_URL} --env ERRBIT_KEY=${ERRBIT_KEY} --env LOGIN_REDIRECT_URL=${LOGIN_REDIRECT_URL} --env OIDC_RP_CLIENT_ID=${OIDC_RP_CLIENT_ID} --env OIDC_RP_CLIENT_SECRET=${OIDC_RP_CLIENT_SECRET} --env OCL_ONLINE=${OCL_ONLINE} --env BRIDGE_MATCH_URL=${BRIDGE_MATCH_URL} --env AI_ASSISTANT_API_URL=${AI_ASSISTANT_API_URL} --env SCISPACY_LOINC_API_URL=${SCISPACY_LOINC_API_URL} --env OCL_ONLINE_API_URL=${OCL_ONLINE_API_URL} --mode ${NODE_ENV} --hot",
@@ -65,7 +67,7 @@
     "html-webpack-plugin": "^5.6.3",
     "mini-css-extract-plugin": "1.6.0",
     "prettier": "^3.0.0",
-    "react-is": "^16.13.1",
+    "react-is": "^18.3.1",
     "sass": "^1.86.0",
     "sass-loader": "^16.0.5",
     "style-loader": "^0.19.1",
