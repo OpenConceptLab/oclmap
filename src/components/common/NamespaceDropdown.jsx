@@ -71,14 +71,17 @@ const NamespaceDropdown = ({onChange, label, id, owner, backgroundColor, asOwner
             label={label}
             size={size || 'medium'}
             sx={{backgroundColor: backgroundColor || 'primary.contrastText'}}
-            InputProps={ selectedOption?.icon ? {
-              ...params.InputProps,
-              startAdornment: (
-                <InputAdornment position="start">
-                  {selectedOption.icon}
-                </InputAdornment>
-              )
-            } : params.InputProps}
+            slotProps={ selectedOption?.icon ? {
+              ...params.slotProps,
+              input: {
+                ...params.slotProps?.input,
+                startAdornment: (
+                  <InputAdornment position="start">
+                    {selectedOption.icon}
+                  </InputAdornment>
+                )
+              }
+            } : params.slotProps}
           />
         )
       }

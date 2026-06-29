@@ -33,8 +33,12 @@ const v5Theme = createTheme(theme, {
       defaultProps: {
         arrow: true,
         leaveDelay: 300,
-        TransitionComponent: Fade,
-        TransitionProps: { timeout: 300 }
+        slots: {
+          transition: Fade,
+        },
+        slotProps: {
+          transition: { timeout: 300 },
+        }
       }
     },
     MuiTextField: {

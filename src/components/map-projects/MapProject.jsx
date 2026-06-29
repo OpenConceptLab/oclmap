@@ -229,6 +229,7 @@ const MapProject = () => {
   const [logs, setLogs] = React.useState({})
   const [projectLogs, setProjectLogs] = React.useState([])
   const [filterModel, setFilterModel] = React.useState({ items: [] });
+  const [filterPanelAnchorEl, setFilterPanelAnchorEl] = React.useState(null)
   const [retired, setRetired] = React.useState(false)
   const [showProjectLogs, setShowProjectLogs] = React.useState(false)
   const [selectedRowIds, setSelectedRowIds] = React.useState([])
@@ -2851,6 +2852,28 @@ const MapProject = () => {
     return _rows.filter(_row => selectedIds.has(_row.__index?.toString())).map(_row => _row.__index)
   }
 
+  const rowSelectionModel = React.useMemo(() => ({
+    type: 'include',
+    ids: new Set(selectedRowIds),
+  }), [selectedRowIds])
+
+  const handleRowSelectionModelChange = React.useCallback((model) => {
+    setSelectedRowIds(Array.from(model?.ids || []))
+  }, [])
+
+  const handleGridPointerDownCapture = React.useCallback((event) => {
+    const headerButton = event.target?.closest?.('.MuiDataGrid-columnHeader button')
+    if(headerButton) {
+      setFilterPanelAnchorEl(headerButton)
+      return
+    }
+
+    const headerCell = event.target?.closest?.('.MuiDataGrid-columnHeader')
+    if(headerCell) {
+      setFilterPanelAnchorEl(headerCell)
+    }
+  }, [])
+
   const openBulkConfirm = action => {
     const indexes = getSelectedRowIndexes()
     if(!indexes.length)
@@ -4954,17 +4977,34 @@ const MapProject = () => {
                   {alert?.message}
                 </Alert>
               </Snackbar>
-              <div style={{ width: '100%', height: project?.id ? 'calc(100vh - 263px)' : 'calc(100vh - 250px)' }}>
+              <div
+                style={{ width: '100%', height: project?.id ? 'calc(100vh - 263px)' : 'calc(100vh - 250px)' }}
+                onPointerDownCapture={handleGridPointerDownCapture}
+              >
                 <DataGrid
                   onFilterModelChange={(model) => setFilterModel(model)}
                   filterModel={filterModel}
                   resizeThrottleMs={100}
                   onCellClick={onDataGridCellClick}
+                  rowSelection
                   checkboxSelection
+                  disableRowSelectionExcludeModel
                   disableRowSelectionOnClick
                   indeterminateCheckboxAction="select"
-                  rowSelectionModel={selectedRowIds}
-                  onRowSelectionModelChange={setSelectedRowIds}
+                  slotProps={{
+                    panel: {
+                      target: filterPanelAnchorEl,
+                    },
+                    filterPanel: {
+                      filterFormProps: {
+                        deleteIconProps: {
+                          sx: { display: 'none' },
+                        },
+                      },
+                    },
+                  }}
+                  rowSelectionModel={rowSelectionModel}
+                  onRowSelectionModelChange={handleRowSelectionModelChange}
                   sx={{
                     borderRadius: '0 0 10px 10px',
                     borderBottom: 'none',
@@ -5009,6 +5049,9 @@ const MapProject = () => {
                         height: '40px',
                         minHeight: '40px'
                       }
+                    },
+                    '.MuiDataGrid-filterFormDeleteIcon': {
+                      display: 'none'
                     }
                   }}
                   columnHeaderHeight={64}

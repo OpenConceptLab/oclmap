@@ -45,12 +45,17 @@ const ImportToCollection = ({ onImport, onClose, open, rowStatuses }) => {
     setTransformReferences(newValue === 'OpenMRSCascade')
   }
   const toggleSettings = () => setAdvancedSettings(!advancedSettings)
+  const handleClose = (event, reason) => {
+    if (reason === 'escapeKeyDown') {
+      return
+    }
+    onClose(event, reason)
+  }
 
   return (
     <Dialog
-      disableEscapeKeyDown
       open={open}
-      onClose={onClose}
+      onClose={handleClose}
       scroll='paper'
       sx={{
         '& .MuiDialog-paper': {

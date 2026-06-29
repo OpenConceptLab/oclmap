@@ -111,14 +111,17 @@ const RepoSearchAutocomplete = ({onChange, label, id, required, minCharactersFor
             variant="outlined"
             fullWidth
             size={size || 'medium'}
-            InputProps={{
-              ...params.InputProps,
-              endAdornment: (
-                <React.Fragment>
-                  {loading ? <CircularProgress color="inherit" size={20} /> : null}
-                  {params.InputProps.endAdornment}
-                </React.Fragment>
-              ),
+            slotProps={{
+              ...params.slotProps,
+              input: {
+                ...params.slotProps?.input,
+                endAdornment: (
+                  <React.Fragment>
+                    {loading ? <CircularProgress color="inherit" size={20} /> : null}
+                    {params.slotProps?.input?.endAdornment}
+                  </React.Fragment>
+                ),
+              },
             }}
           />
         )

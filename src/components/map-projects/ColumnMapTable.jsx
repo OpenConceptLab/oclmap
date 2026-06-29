@@ -8,7 +8,7 @@ import Autocomplete from '@mui/material/Autocomplete'
 import TextField from '@mui/material/TextField'
 import Switch from '@mui/material/Switch'
 import ListItemText from '@mui/material/ListItemText'
-import ValidIcon from '@mui/icons-material/CheckCircleOutline';
+import ValidIcon from '@mui/icons-material/CheckCircleOutlined';
 import InvalidIcon from '@mui/icons-material/CancelOutlined';
 import find from 'lodash/find';
 import map from 'lodash/map';

@@ -245,13 +245,16 @@ const LocaleAutoComplete = ({ cachedLocales, id, multiple, required, onChange, l
                   fullWidth={_fullWidth}
                   value={input}
                   onChange={event => setInput(event.target.value || '')}
-                  InputProps={{
-                    ...params.InputProps,
-                    endAdornment: (
-                      <React.Fragment>
-                        {params.InputProps.endAdornment}
-                      </React.Fragment>
-                    ),
+                  slotProps={{
+                    ...params.slotProps,
+                    input: {
+                      ...params.slotProps?.input,
+                      endAdornment: (
+                        <React.Fragment>
+                          {params.slotProps?.input?.endAdornment}
+                        </React.Fragment>
+                      ),
+                    },
                   }}
                 />
               )
