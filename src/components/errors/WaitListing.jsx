@@ -2,7 +2,6 @@ import React from 'react';
 import Button from '@mui/material/Button'
 import Container from '@mui/material/Container';
 import Box from '@mui/material/Box';
-import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import Paper from '@mui/material/Paper';
 
@@ -20,11 +19,23 @@ const WaitListing = ({ onSignup }) => {
         scrollBehavior: 'smooth',
       }}
     >
-      <Container maxWidth="lg">
+      <Container
+        maxWidth="lg"
+        disableGutters
+        sx={{
+          display: 'flex',
+          justifyContent: 'center',
+          width: '100%',
+        }}
+      >
         <Paper
           elevation={0}
           sx={{
             mx: 'auto',
+            width: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
             p: { xs: 1, sm: 1, md: 1 },
             borderRadius: 4,
             textAlign: 'center',
@@ -47,6 +58,8 @@ const WaitListing = ({ onSignup }) => {
               letterSpacing: '-0.02em',
               color: 'text.primary',
               fontSize: 'clamp(26px, 2.2vw, 56px)',
+              maxWidth: 980,
+              mx: 'auto',
               mb: { xs: 1.5, sm: 2 },
             }}
           >
@@ -67,7 +80,15 @@ const WaitListing = ({ onSignup }) => {
             Join the waitlist for early access to the OCL Mapper on OCL Online.
           </Typography>
 
-          <Stack direction="row" justifyContent="center" sx={{ mb: { xs: 2, sm: 3, md: 3, lg: 3 } }}>
+          <Box
+            sx={{
+              width: '100%',
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              mb: { xs: 2, sm: 3, md: 3, lg: 3 },
+            }}
+          >
             <Button
               href='https://docs.google.com/forms/d/e/1FAIpQLSed7ftI_eUt5fp-YQZM7z1YHRg5-7qz69gVImy2SlX4-73kOg/viewform'
               size="large"
@@ -85,7 +106,7 @@ const WaitListing = ({ onSignup }) => {
             >
               Sign up for Early Access
             </Button>
-          </Stack>
+          </Box>
           <Box
             component="img"
             src="mapper_landing_placeholder.png"
