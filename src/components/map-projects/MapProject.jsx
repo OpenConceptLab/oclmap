@@ -4738,6 +4738,15 @@ const MapProject = () => {
     }
   }
 
+  const getGridHeightFactor = () => {
+    let minFactor = 253
+    if(project?.id)
+      minFactor += 10
+    if(selectedRowIds?.length)
+      minFactor += 52
+    return minFactor
+  }
+
   return permissionDenied ? <Error403/> : (
     <div className='col-xs-12 padding-0' style={{borderRadius: '10px', width: 'calc(100vw - 32px)'}}>
       {
@@ -4979,7 +4988,7 @@ const MapProject = () => {
                 </Alert>
               </Snackbar>
               <div
-                style={{ width: '100%', height: project?.id ? 'calc(100vh - 263px)' : 'calc(100vh - 250px)' }}
+                style={{ width: '100%', height: `calc(100vh - ${getGridHeightFactor()}px)` }}
                 onPointerDownCapture={handleGridPointerDownCapture}
               >
                 <DataGrid
