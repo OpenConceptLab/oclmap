@@ -153,6 +153,12 @@ const Controls = ({project, onDownload, onSave, onDelete, owner, file, isSaving,
           </ListItemIcon>
           <ListItemText>{t('map_project.candidates_metadata')}</ListItemText>
         </MenuItem>
+        <MenuItem onClick={() => {setAnchorEl(null); onDownload('full_export');}} disabled={!isCoreUser}>
+          <ListItemIcon>
+            <JSONIcon sx={{fontSize: '1.25rem'}} />
+          </ListItemIcon>
+          <ListItemText>{t('map_project.full_project_export')}</ListItemText>
+        </MenuItem>
         <Divider />
         <MenuItem onClick={() => {setAnchorEl(null); onImport();}} disabled={!onImport || isRunningImport}>
           <ListItemIcon>
