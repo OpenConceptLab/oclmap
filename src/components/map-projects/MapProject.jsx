@@ -76,6 +76,7 @@ import { WHITE, SURFACE_COLORS, TEXT_GRAY } from '../../common/colors';
 
 import { useDoubleClick } from '../common/useDoubleClick'
 import CloseIconButton from '../common/CloseIconButton';
+import DataGridPageSelectionHeaderCheckbox from '../common/DataGridPageSelectionHeaderCheckbox'
 import ConceptDetailsPanel from './ConceptDetailsPanel'
 import { buildPanelPayload } from './openConceptPanel'
 import LoaderDialog from '../common/LoaderDialog'
@@ -4991,6 +4992,14 @@ const MapProject = () => {
                   disableRowSelectionExcludeModel
                   disableRowSelectionOnClick
                   indeterminateCheckboxAction="select"
+                  checkboxColDef={{
+                    renderHeader: () => (
+                      <DataGridPageSelectionHeaderCheckbox
+                        selectedRowIds={selectedRowIds}
+                        onSelectionChange={handleRowSelectionModelChange}
+                      />
+                    ),
+                  }}
                   slotProps={{
                     panel: {
                       target: filterPanelAnchorEl,
