@@ -120,8 +120,12 @@ const Discuss = ({ logs, onAdd }) => {
           padding: '4px 16px',
           marginBottom: 0,
           [`& .${timelineItemClasses.root}:before`]: {
-            flex: 0,
-            padding: 0,
+            flex: '0 !important',
+            padding: '0 !important',
+          },
+          [`& .${timelineItemClasses.missingOppositeContent}::before`]: {
+            flex: '0 !important',
+            padding: '0 !important',
           },
         }}
       >
