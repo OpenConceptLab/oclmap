@@ -987,8 +987,10 @@ const MapProject = () => {
       width: columnWidth['_matchQuality_'] || 160,
       align: 'left',
       headerAlign: 'left',
-      valueGetter: (_, row) => getRowMatchQualityLabel(row.__index),
+      valueGetter: (_, row) => mapSelected[row.__index] ? getRowMatchQualityLabel(row.__index) : '',
       renderCell: params => {
+        if(!mapSelected[params.row.__index])
+          return null
         const details = getRowScoreDetails(params.row.__index)
         const label = getRowMatchQualityLabel(params.row.__index)
         return (
