@@ -23,8 +23,6 @@ const v5Theme = createTheme(theme, {
       ...COLORS.surface
     },
     "default": {
-      main: COLORS.surface.light,
-      dark: COLORS.surface.dark,
       light: COLORS.secondary['40']
     },
   },
