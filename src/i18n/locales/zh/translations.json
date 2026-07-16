@@ -590,6 +590,7 @@
     "sort_by_unified_score": "按统一分数排序",
     "project_logs": "项目日志",
     "project_logs_tooltip": "查看项目日志",
+    "auto_saved_changes": "已自动保存更改",
     "saved_to_collection": "已保存到集合",
     "bridge_terminology_search": "Bridge 术语搜索<0>高级版</0>",
     "bridge_terminology_search_description": "包含 <0>CIEL 接口术语</0> 中的映射，以识别更多高质量候选项。仅适用于兼容的目标仓库和匹配算法。",
