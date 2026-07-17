@@ -92,7 +92,7 @@ const App = props => {
     if(isLoggedIn()) {
       window.location.hash = '#'  + pathname
     } else if(isOtherOCLClientURL(referrer) && !isLoggedIn()) {
-      const parts = hash.split('?')
+      const parts = hash ? hash.split('?') : referrer.split('?')
       let params = new URLSearchParams(parts[1])
       if(params.get('auth') === 'true') {
         window.location.href = getLoginURL(window.location.origin + '/#' + pathname)
