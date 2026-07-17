@@ -1031,13 +1031,29 @@ export const isV2URL = url => {
   return false
 }
 
+export const isCommunitySiteURL = url => {
+  if(!url)
+    return false
+  if(url.startsWith('https://openconceptlab.org'))
+    return true
+  if(url.startsWith('http://localhost:4006'))
+    return true
+  if(!url.includes('.openconceptlab.org'))
+    return false
+  if(url.startsWith('https://preview.'))
+    return true
+  return false
+}
+
+export const isOtherOCLClientURL = referrer => referrer && (isV3URL(referrer) || isV2URL(referrer) || isCommunitySiteURL(referrer))
+
 export const isRedirectingToLoginViaReferrer = location => {
   const { search, hash } = location
   const queryParams = new URLSearchParams(search)
   const referrer = queryParams.get('referrer')
   const parts = hash.split('?')
   let params = new URLSearchParams(parts[1])
-  return referrer && (isV3URL(referrer) || isV2URL(referrer)) && params.get('auth') === 'true'
+  return isOtherOCLClientURL(referrer) && params.get('auth') === 'true'
 }
 
 export const toCamelCase = str => {
