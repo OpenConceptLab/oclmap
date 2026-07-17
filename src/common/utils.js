@@ -1052,8 +1052,11 @@ export const isRedirectingToLoginViaReferrer = location => {
   const queryParams = new URLSearchParams(search)
   const referrer = queryParams.get('referrer')
   const parts = hash ? hash.split('?') : referrer?.split('?')
-  let params = new URLSearchParams(parts[1])
-  return isOtherOCLClientURL(referrer) && params.get('auth') === 'true'
+  if(parts?.length > 0) {
+    let params = new URLSearchParams(parts[1])
+    return isOtherOCLClientURL(referrer) && params.get('auth') === 'true'
+  }
+  return false
 }
 
 export const toCamelCase = str => {
