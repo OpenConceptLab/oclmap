@@ -242,7 +242,7 @@ const Controls = ({project, onDownload, onSave, onDelete, owner, file, isSaving,
           </ListItemIcon>
           <ListItemText>{t('map_project.candidates_metadata')}</ListItemText>
         </MenuItem>
-        <MenuItem onClick={() => {setAnchorEl(null); onDownload('full_export');}} disabled={!isCoreUser}>
+        <MenuItem onClick={() => {closeDownloadMenu(); onDownload('full_export');}} disabled={!isCoreUser}>
           <ListItemIcon>
             <JSONIcon sx={{fontSize: '1.25rem'}} />
           </ListItemIcon>
