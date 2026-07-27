@@ -2404,6 +2404,9 @@ const MapProject = () => {
       }
       downloadObject(JSON.stringify(projectData, undefined, 2), 'application/json', `${name}.candidates_metadata.json`)
       log = true
+    } else if (option === 'full_export') {
+      downloadObject(JSON.stringify(project, undefined, 2), 'application/json', `${name}.full_export.json`)
+      log = true
     }
     if(log)
       projectLog({action: 'downloaded', extras: {option: option}})

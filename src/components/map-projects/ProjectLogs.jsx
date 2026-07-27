@@ -30,6 +30,17 @@ import CloseIconButton from '../common/CloseIconButton';
 const ProjectLogs = ({onClose, logs, project}) => {
   const { t } = useTranslation()
 
+  const getDownloadTitle = option => {
+    if(option === 'csv')
+      return t('common.download_csv')
+    if(option === 'candidates_metadata')
+      return t('map_project.candidates_metadata')
+    if(option === 'full_export')
+      return t('map_project.full_project_export')
+
+    return option ? startCase(option) : startCase('downloaded')
+  }
+
   const getIconAndColor = log => {
     const action = log?.action?.toLowerCase()
     if(action === 'created')
@@ -71,6 +82,8 @@ const ProjectLogs = ({onClose, logs, project}) => {
                  {log.extras.id}
                </a>
               </span>
+    if(log.action === 'downloaded')
+      return getDownloadTitle(log.extras?.option)
     if(['auto_match_started', 'auto_match_finished', 'auto_matched'].includes(log.action)) {
       const rawSubActions = (log.extras?.sub_actions || []).filter(subAction => log.extras?.selected_rows_count ? subAction !== 'selected_rows' : true)
       const subActions = map(rawSubActions, formatSubAction)
