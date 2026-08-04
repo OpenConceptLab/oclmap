@@ -88,7 +88,7 @@ export const ensureConceptIdentity = (algo) => {
   return null
 }
 
-export const useAlgos = (t, toggles) => {
+export const useAlgos = t => {
   const algos = [
     {
       'id': 'ocl-semantic',

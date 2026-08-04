@@ -517,7 +517,7 @@ const MapProject = () => {
     return ctx
   }, [project, owner, repo, bridgeAlgo, namespace, selectedTargetRepoVersion])
 
-  const baseAlgos = useAlgos(t, toggles)
+  const baseAlgos = useAlgos(t)
   const [apiAlgos, setApiAlgos] = React.useState([]);
   React.useEffect(() => {
     if (!OCL_ONLINE_API_URL) return;
