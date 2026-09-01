@@ -5,7 +5,7 @@ const SigninRedirect = props => {
   useEffect(() => {
     const queryParams = new URLSearchParams(props.location?.search)
     const returnTo = queryParams.get('returnTo')
-    window.location.href = getLoginURL(returnTo)
+    getLoginURL(returnTo).then(url => { window.location.href = url })
   }, [])
 
   return <h4>Redirecting...</h4>

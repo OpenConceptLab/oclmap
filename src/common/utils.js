@@ -675,7 +675,7 @@ export const logoutUser = (redirectToLogin, forced) => {
   if(logoutURL)
     window.location = logoutURL
   else if(redirectToLogin)
-    window.location.href = getLoginURL(forced ? returnTo : undefined)
+    getLoginURL(forced ? returnTo : undefined).then(url => { window.location.href = url })
   else {
     window.location.hash = '#/';
     window.location.reload();
@@ -814,31 +814,87 @@ export const isOpera = () => (!!window.opr && !!opr.addons) || !!window.opera ||
 
 export const isDeprecatedBrowser = () => isIE() || isOpera();
 
-export const getLoginURL = returnTo => {
+const PKCE_CODE_VERIFIER_KEY = 'pkce_code_verifier'
+const OAUTH_STATE_KEY = 'oauth_state'
+
+const base64UrlEncode = buffer => {
+  const bytes = new Uint8Array(buffer)
+  let str = ''
+  for(let i = 0; i < bytes.byteLength; i++)
+    str += String.fromCharCode(bytes[i])
+  return window.btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+const generateSecureRandomString = (length = 64) => {
+  const array = new Uint8Array(length)
+  window.crypto.getRandomValues(array)
+  return base64UrlEncode(array.buffer)
+}
+
+const generateCodeChallenge = async codeVerifier => {
+  const data = new TextEncoder().encode(codeVerifier)
+  const digest = await window.crypto.subtle.digest('SHA-256', data)
+  return base64UrlEncode(digest)
+}
+
+const preparePKCECodeChallenge = async () => {
+  const codeVerifier = generateSecureRandomString(64)
+  sessionStorage.setItem(PKCE_CODE_VERIFIER_KEY, codeVerifier)
+  return generateCodeChallenge(codeVerifier)
+}
+
+// state is only meaningful for flows that echo it back (login/register); reset-password does not.
+const prepareOAuthState = () => {
+  const state = generateSecureRandomString(32)
+  sessionStorage.setItem(OAUTH_STATE_KEY, state)
+  return state
+}
+
+export const consumeStoredPKCECodeVerifier = () => {
+  const codeVerifier = sessionStorage.getItem(PKCE_CODE_VERIFIER_KEY)
+  sessionStorage.removeItem(PKCE_CODE_VERIFIER_KEY)
+  return codeVerifier
+}
+
+// Returns true when there's nothing to validate (flows like reset-password never sent a state).
+export const consumeAndValidateOAuthState = returnedState => {
+  const storedState = sessionStorage.getItem(OAUTH_STATE_KEY)
+  sessionStorage.removeItem(OAUTH_STATE_KEY)
+  return !returnedState || returnedState === storedState
+}
+
+export const getLoginURL = async returnTo => {
   const oidClientID = window.OIDC_RP_CLIENT_ID || process.env.OIDC_RP_CLIENT_ID
   let redirectURL = window.LOGIN_REDIRECT_URL || process.env.LOGIN_REDIRECT_URL
   redirectURL = redirectURL.replace(/([^:]\/)\/+/g, "$1");
   if(returnTo && returnTo.includes('/#/') && returnTo.split('/#/')[1])
     redirectURL = returnTo.replace('/#/', '/')
-  return `${getAPIURL()}/users/login/?client_id=${oidClientID}&state=fj8o3n7bdy1op5&nonce=13sfaed52le09&redirect_uri=${redirectURL}`
+  const codeChallenge = await preparePKCECodeChallenge()
+  const state = prepareOAuthState()
+  const nonce = generateSecureRandomString(32)
+  return `${getAPIURL()}/users/login/?client_id=${oidClientID}&state=${state}&nonce=${nonce}&redirect_uri=${redirectURL}&code_challenge=${codeChallenge}&code_challenge_method=S256`
 }
 
-export const getResetPasswordURL = returnTo => {
+export const getResetPasswordURL = async returnTo => {
   let redirectURL = returnTo || window.LOGIN_REDIRECT_URL || process.env.LOGIN_REDIRECT_URL
   const oidClientID = window.OIDC_RP_CLIENT_ID || process.env.OIDC_RP_CLIENT_ID
 
   redirectURL = redirectURL.replace(/([^:]\/)\/+/g, "$1");
 
-  return `${getAPIURL()}/users/password/reset/?client_id=${oidClientID}&redirect_uri=${redirectURL}`
+  const codeChallenge = await preparePKCECodeChallenge()
+  return `${getAPIURL()}/users/password/reset/?client_id=${oidClientID}&redirect_uri=${redirectURL}&code_challenge=${codeChallenge}&code_challenge_method=S256`
 }
 
-export const getRegisterURL = returnTo => {
+export const getRegisterURL = async returnTo => {
   let redirectURL = returnTo || window.LOGIN_REDIRECT_URL || process.env.LOGIN_REDIRECT_URL
   const oidClientID = window.OIDC_RP_CLIENT_ID || process.env.OIDC_RP_CLIENT_ID
 
   redirectURL = redirectURL.replace(/([^:]\/)\/+/g, "$1");
 
-  return `${getAPIURL()}/users/signup/?client_id=${oidClientID}&state=fj8o3n7bdy1op5&nonce=13sfaed52le09&redirect_uri=${redirectURL}`
+  const codeChallenge = await preparePKCECodeChallenge()
+  const state = prepareOAuthState()
+  const nonce = generateSecureRandomString(32)
+  return `${getAPIURL()}/users/signup/?client_id=${oidClientID}&state=${state}&nonce=${nonce}&redirect_uri=${redirectURL}&code_challenge=${codeChallenge}&code_challenge_method=S256`
 }
 
 
