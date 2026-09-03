@@ -564,7 +564,8 @@ export const getOpenMRSURL = () => {
 export const recordGAPageView = () => {
   /*eslint no-undef: 0*/
   ReactGA.initialize(window.GA_ACCOUNT_ID || process.env.GA_ACCOUNT_ID);
-  ReactGA.send({ hitType: "pageview", page: window.location.pathname + window.location.hash });
+  // Strip the query string from the hash so auth params (code, state, session_state) on the OIDC callback are not sent to GA
+  ReactGA.send({ hitType: "pageview", page: window.location.pathname + window.location.hash.split('?')[0] });
 }
 
 export const recordGAAction = (category, action, label) => {
