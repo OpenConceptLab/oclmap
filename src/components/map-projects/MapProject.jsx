@@ -87,6 +87,7 @@ import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
 import DataGridControls from './DataGridControls'
 import { getRowsToProcess } from './autoMatchRows'
+import { createAutosaveScheduler } from './autosave'
 import MatchSummaryCard from './MatchSummaryCard'
 import MappingDecisionResult from './MappingDecisionResult'
 import DecisionSelector from './DecisionSelector'
@@ -141,7 +142,6 @@ const MapProject = () => {
     const queryParams = new URLSearchParams(location.search)
     return queryParams.get('templateFrom')
   }, [location.search])
-  const AUTOSAVE_DELAY_MS = 5000
 
   const bridgeRef = React.useRef()
   const facetsRequestsRef = React.useRef({})
@@ -232,11 +232,17 @@ const MapProject = () => {
   const [projectLogs, setProjectLogs] = React.useState([])
   const logsRef = React.useRef({})
   const projectLogsRef = React.useRef([])
-  const autosaveTimerRef = React.useRef(null)
-  const autosaveReasonsRef = React.useRef([])
   const configSnapshotOnOpenRef = React.useRef(null)
   const isSavingRef = React.useRef(false)
   const projectIdRef = React.useRef(null)
+  const onSaveRef = React.useRef(null)
+  const autosaveSchedulerRef = React.useRef(null)
+  if(!autosaveSchedulerRef.current)
+    autosaveSchedulerRef.current = createAutosaveScheduler({
+      getProjectId: () => projectIdRef.current,
+      isSaving: () => isSavingRef.current,
+      onFire: reasons => onSaveRef.current({source: 'auto', closeConfigure: false, reasons})
+    })
   const [filterModel, setFilterModel] = React.useState({ items: [] });
   const [filterPanelAnchorEl, setFilterPanelAnchorEl] = React.useState(null)
   const [retired, setRetired] = React.useState(false)
@@ -274,9 +280,15 @@ const MapProject = () => {
     projectIdRef.current = project?.id
   }, [project])
 
+  // Autosave fires long after it was scheduled, so it must call the current
+  // onSave — an older render's closure would build the payload from state
+  // captured when the change happened rather than what is on screen now.
+  React.useEffect(() => {
+    onSaveRef.current = onSave
+  })
+
   React.useEffect(() => () => {
-    if(autosaveTimerRef.current)
-      clearTimeout(autosaveTimerRef.current)
+    autosaveSchedulerRef.current.cancel()
   }, [])
 
   // repo state
@@ -1404,11 +1416,8 @@ const MapProject = () => {
     const isAutoSave = saveSource === 'auto'
     if(isAutoSave && !project?.id)
       return
-    if(!isAutoSave && autosaveTimerRef.current) {
-      clearTimeout(autosaveTimerRef.current)
-      autosaveTimerRef.current = null
-      autosaveReasonsRef.current = []
-    }
+    if(!isAutoSave)
+      autosaveSchedulerRef.current.cancel()
     if(!repoVersion?.version_url || !selectedTargetRepoVersion) {
       setConfigure(true)
       setAlert({
@@ -1546,29 +1555,7 @@ const MapProject = () => {
       APIService.new().overrideURL(project.url).appendToUrl('logs/').post({logs: {row_logs: logsRef.current, project_logs: newLogs}}).then(() => {})
   }
 
-  const scheduleAutoSave = reason => {
-    if(!projectIdRef.current)
-      return
-
-    autosaveReasonsRef.current = uniq([...autosaveReasonsRef.current, reason])
-    if(autosaveTimerRef.current)
-      clearTimeout(autosaveTimerRef.current)
-
-    autosaveTimerRef.current = setTimeout(() => {
-      autosaveTimerRef.current = null
-      if(!projectIdRef.current) {
-        autosaveReasonsRef.current = []
-        return
-      }
-      if(isSavingRef.current) {
-        scheduleAutoSave(reason)
-        return
-      }
-      const reasons = autosaveReasonsRef.current
-      autosaveReasonsRef.current = []
-      onSave({source: 'auto', closeConfigure: false, reasons})
-    }, AUTOSAVE_DELAY_MS)
-  }
+  const scheduleAutoSave = reason => autosaveSchedulerRef.current.schedule(reason)
 
   // ── ocl_online#105 Phase 5: AutomatchRun attribution ──────────────────────
   // Build the X-OCL-Request-Source + X-OCL-Event-Metadata headers for a single
