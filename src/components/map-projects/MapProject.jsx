@@ -235,6 +235,8 @@ const MapProject = () => {
   const autosaveTimerRef = React.useRef(null)
   const autosaveReasonsRef = React.useRef([])
   const configSnapshotOnOpenRef = React.useRef(null)
+  const isSavingRef = React.useRef(false)
+  const projectIdRef = React.useRef(null)
   const [filterModel, setFilterModel] = React.useState({ items: [] });
   const [filterPanelAnchorEl, setFilterPanelAnchorEl] = React.useState(null)
   const [retired, setRetired] = React.useState(false)
@@ -263,6 +265,14 @@ const MapProject = () => {
   React.useEffect(() => {
     projectLogsRef.current = projectLogs
   }, [projectLogs])
+
+  React.useEffect(() => {
+    isSavingRef.current = isSaving
+  }, [isSaving])
+
+  React.useEffect(() => {
+    projectIdRef.current = project?.id
+  }, [project])
 
   React.useEffect(() => () => {
     if(autosaveTimerRef.current)
@@ -1537,7 +1547,7 @@ const MapProject = () => {
   }
 
   const scheduleAutoSave = reason => {
-    if(!project?.id)
+    if(!projectIdRef.current)
       return
 
     autosaveReasonsRef.current = uniq([...autosaveReasonsRef.current, reason])
@@ -1546,11 +1556,11 @@ const MapProject = () => {
 
     autosaveTimerRef.current = setTimeout(() => {
       autosaveTimerRef.current = null
-      if(!project?.id) {
+      if(!projectIdRef.current) {
         autosaveReasonsRef.current = []
         return
       }
-      if(isSaving) {
+      if(isSavingRef.current) {
         scheduleAutoSave(reason)
         return
       }
