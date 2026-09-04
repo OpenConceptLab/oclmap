@@ -44,6 +44,9 @@
      if(window.location.hash.startsWith('#state=')) {
        window.location = '/#/oidc/login/' + window.location.hash.replace('#', '?') + '&next=' + window.location.pathname;
      }
+     if(!window.location.hash && (window.location.search || '').includes('code=')) {
+       window.location = '/#/oidc/login/' + window.location.search + '&next=' + window.location.pathname;
+     }
      if(window.location.href.includes('/?session_state=')) {
        window.location = '/';
      }

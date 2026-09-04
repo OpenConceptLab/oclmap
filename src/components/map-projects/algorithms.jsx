@@ -88,7 +88,7 @@ export const ensureConceptIdentity = (algo) => {
   return null
 }
 
-export const useAlgos = (t, toggles) => {
+export const useAlgos = t => {
   const algos = [
     {
       'id': 'ocl-semantic',
@@ -102,7 +102,7 @@ export const useAlgos = (t, toggles) => {
       'query_params': {
         'semantic': true
       },
-      'disabled': !toggles.SEMANTIC_SEARCH_TOGGLE,
+      'disabled': false,
       'allow_multiple': false,
       'lookup_required': false,
       'concept_identity': CONCEPT_IDENTITY_BY_TYPE['ocl-semantic']

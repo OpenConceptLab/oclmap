@@ -60,7 +60,7 @@ const Error401 = () => {
       </div>
       <div className='col-xs-12'>
         <p style={{color: BLACK, fontSize: '16px', margin: 0}}>
-          {t('common.please')} {t('common.go_to')} <a className='no-anchor-styles' href={getLoginURL(window.location.href)} style={{cursor: 'pointer', color: PRIMARY_COLORS.main}}>{t('auth.sign_in')}</a> {t('common.or')} <a href={getRegisterURL()} className='no-anchor-styles' style={{color: PRIMARY_COLORS.main}}>{t('auth.register')}</a> {t('common.for_a_new_account')}.
+          {t('common.please')} {t('common.go_to')} <a className='no-anchor-styles' href='#' onClick={e => { e.preventDefault(); getLoginURL(window.location.href).then(url => { window.location.href = url }) }} style={{cursor: 'pointer', color: PRIMARY_COLORS.main}}>{t('auth.sign_in')}</a> {t('common.or')} <a href='#' onClick={e => { e.preventDefault(); getRegisterURL().then(url => { window.location.href = url }) }} className='no-anchor-styles' style={{color: PRIMARY_COLORS.main}}>{t('auth.register')}</a> {t('common.for_a_new_account')}.
         </p>
       </div>
     </div>

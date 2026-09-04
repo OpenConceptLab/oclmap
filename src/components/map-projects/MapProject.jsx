@@ -558,7 +558,7 @@ const MapProject = () => {
     return ctx
   }, [project, owner, repo, bridgeAlgo, namespace, selectedTargetRepoVersion])
 
-  const baseAlgos = useAlgos(t, toggles)
+  const baseAlgos = useAlgos(t)
   const [apiAlgos, setApiAlgos] = React.useState([]);
   React.useEffect(() => {
     if (!OCL_ONLINE_API_URL) return;
@@ -2526,6 +2526,9 @@ const MapProject = () => {
         })
       }
       downloadObject(JSON.stringify(projectData, undefined, 2), 'application/json', `${name}.candidates_metadata.json`)
+      log = true
+    } else if (option === 'full_export') {
+      downloadObject(JSON.stringify(project, undefined, 2), 'application/json', `${name}.full_export.json`)
       log = true
     }
     if(log)

@@ -71,8 +71,20 @@ const UserMenu = ({ isOpen, onClose }) => {
                 </ListItemButton>
               </List> :
               <div className='col-xs-12 padding-0' style={{marginBottom: '24px'}}>
-              <Button className='no-anchor-styles' label={t('auth.sign_in')} sx={{ backgroundColor: 'surface.s90', maxWidth: '100%', minWidth: '92px' }} href={getLoginURL(window.location.href)} component='a' />
-              <Link sx={{fontSize: '14px', marginLeft: '16px'}} label={t('auth.register')} href={getRegisterURL()} />
+              <Button
+                className='no-anchor-styles'
+                label={t('auth.sign_in')}
+                sx={{ backgroundColor: 'surface.s90', maxWidth: '100%', minWidth: '92px' }}
+                href='#'
+                component='a'
+                onClick={e => { e.preventDefault(); getLoginURL(window.location.href).then(url => { window.location.href = url }) }}
+              />
+              <Link
+                sx={{fontSize: '14px', marginLeft: '16px'}}
+                label={t('auth.register')}
+                href='#'
+                onClick={e => { e.preventDefault(); getRegisterURL().then(url => { window.location.href = url }) }}
+              />
             </div>
           }
         </div>
