@@ -1411,9 +1411,7 @@ const MapProject = () => {
   }
 
   const onSave = (options = {}) => {
-    const saveOptions = options?.preventDefault ? {} : options
-    const saveSource = saveOptions.source || 'manual'
-    const isAutoSave = saveSource === 'auto'
+    const isAutoSave = options.source === 'auto'
     if(isAutoSave && !project?.id)
       return
     if(!isAutoSave)
@@ -1430,8 +1428,8 @@ const MapProject = () => {
       })
       return
     }
-    const rowLogsForSave = saveOptions.logs || logsRef.current
-    const projectLogsForSave = saveOptions.projectLogs || projectLogsRef.current
+    const rowLogsForSave = options.logs || logsRef.current
+    const projectLogsForSave = options.projectLogs || projectLogsRef.current
     setIsSaving(true)
     const f = getFileObjectFromRows()
     const selected = map(mapSelected, (data, i) => {
@@ -1518,12 +1516,12 @@ const MapProject = () => {
           description: isAutoSave ? t('map_project.auto_saved_changes') : undefined,
           created_at: moment().toDate(),
           user: user.username || user.id,
-          extras: isAutoSave ? {reasons: saveOptions.reasons || []} : (isUpdate ? undefined : {project: response.data})
+          extras: isAutoSave ? {reasons: options.reasons || []} : (isUpdate ? undefined : {project: response.data})
         }
         const savedProjectLogs = [saveLog, ...projectLogsForSave]
         projectLogsRef.current = savedProjectLogs
         setProjectLogs(savedProjectLogs)
-        if(saveOptions.closeConfigure !== false) {
+        if(options.closeConfigure !== false) {
           configSnapshotOnOpenRef.current = null
           setConfigure(false)
         }
@@ -1538,6 +1536,10 @@ const MapProject = () => {
       }
     }).finally(() => setIsSaving(false))
   }
+
+  // onSave takes options, so it can't be bound to onClick directly — the click
+  // event would arrive where the options object is expected.
+  const onManualSave = () => onSave({source: 'manual'})
 
   const log = (data, index) => {
     let idx = index === undefined ? rowIndex : index
@@ -4815,7 +4817,7 @@ const MapProject = () => {
       setConfigure={setConfigureWithAutosave}
       columnVisibilityModel={columnVisibilityModel}
       setColumnVisibilityModel={setColumnVisibilityModel}
-      onSave={onSave}
+      onSave={onManualSave}
       isSaving={isSaving}
       candidatesScore={candidatesScore}
       onScoreChange={setCandidatesScore}
@@ -5007,7 +5009,7 @@ const MapProject = () => {
                     isCoreUser={isCoreUser}
                     project={project}
                     onDownload={onDownloadClick}
-                    onSave={onSave}
+                    onSave={onManualSave}
                     onDelete={() => setDeleteProject(true)}
                     owner={owner}
                     file={file}
