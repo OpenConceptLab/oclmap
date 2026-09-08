@@ -87,6 +87,7 @@ import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
 import DataGridControls from './DataGridControls'
 import { getRowsToProcess } from './autoMatchRows'
+import { createAutosaveScheduler } from './autosave'
 import MatchSummaryCard from './MatchSummaryCard'
 import MappingDecisionResult from './MappingDecisionResult'
 import DecisionSelector from './DecisionSelector'
@@ -229,6 +230,19 @@ const MapProject = () => {
   const [columnWidth, setColumnWidth] = React.useState({})
   const [logs, setLogs] = React.useState({})
   const [projectLogs, setProjectLogs] = React.useState([])
+  const logsRef = React.useRef({})
+  const projectLogsRef = React.useRef([])
+  const configSnapshotOnOpenRef = React.useRef(null)
+  const isSavingRef = React.useRef(false)
+  const projectIdRef = React.useRef(null)
+  const onSaveRef = React.useRef(null)
+  const autosaveSchedulerRef = React.useRef(null)
+  if(!autosaveSchedulerRef.current)
+    autosaveSchedulerRef.current = createAutosaveScheduler({
+      getProjectId: () => projectIdRef.current,
+      isSaving: () => isSavingRef.current,
+      onFire: reasons => onSaveRef.current({source: 'auto', closeConfigure: false, reasons})
+    })
   const [filterModel, setFilterModel] = React.useState({ items: [] });
   const [filterPanelAnchorEl, setFilterPanelAnchorEl] = React.useState(null)
   const [retired, setRetired] = React.useState(false)
@@ -248,6 +262,33 @@ const MapProject = () => {
     if(reason === 'clickaway')
       return
     setAlert(false)
+  }, [])
+
+  React.useEffect(() => {
+    logsRef.current = logs
+  }, [logs])
+
+  React.useEffect(() => {
+    projectLogsRef.current = projectLogs
+  }, [projectLogs])
+
+  React.useEffect(() => {
+    isSavingRef.current = isSaving
+  }, [isSaving])
+
+  React.useEffect(() => {
+    projectIdRef.current = project?.id
+  }, [project])
+
+  // Autosave fires long after it was scheduled, so it must call the current
+  // onSave — an older render's closure would build the payload from state
+  // captured when the change happened rather than what is on screen now.
+  React.useEffect(() => {
+    onSaveRef.current = onSave
+  })
+
+  React.useEffect(() => () => {
+    autosaveSchedulerRef.current.cancel()
   }, [])
 
   // repo state
@@ -666,8 +707,12 @@ const MapProject = () => {
       setFilters(response.data?.filters || {})
       if(response.data?.url) {
         APIService.new().overrideURL(response.data.url).appendToUrl('logs/').get().then(response => {
-          setLogs(response.data.logs?.row_logs || [])
-          setProjectLogs(response.data.logs?.project_logs || [])
+          const rowLogs = response.data.logs?.row_logs || []
+          const savedProjectLogs = response.data.logs?.project_logs || []
+          logsRef.current = rowLogs
+          projectLogsRef.current = savedProjectLogs
+          setLogs(rowLogs)
+          setProjectLogs(savedProjectLogs)
           projectLog({action: 'Opened'})
         })
       }
@@ -1365,7 +1410,12 @@ const MapProject = () => {
     })
   }
 
-  const onSave = () => {
+  const onSave = (options = {}) => {
+    const isAutoSave = options.source === 'auto'
+    if(isAutoSave && !project?.id)
+      return
+    if(!isAutoSave)
+      autosaveSchedulerRef.current.cancel()
     if(!repoVersion?.version_url || !selectedTargetRepoVersion) {
       setConfigure(true)
       setAlert({
@@ -1378,6 +1428,8 @@ const MapProject = () => {
       })
       return
     }
+    const rowLogsForSave = options.logs || logsRef.current
+    const projectLogsForSave = options.projectLogs || projectLogsRef.current
     setIsSaving(true)
     const f = getFileObjectFromRows()
     const selected = map(mapSelected, (data, i) => {
@@ -1459,31 +1511,53 @@ const MapProject = () => {
     service.then(response => {
       setIsSaving(false)
       if(response?.data?.id) {
-        projectLog({action: isUpdate ? 'Updated' : 'Created', extras: isUpdate ? undefined : {project: response.data}})
-        setConfigure(false)
+        const saveLog = {
+          action: isAutoSave ? 'Auto Saved' : (isUpdate ? 'Updated' : 'Created'),
+          description: isAutoSave ? t('map_project.auto_saved_changes') : undefined,
+          created_at: moment().toDate(),
+          user: user.username || user.id,
+          extras: isAutoSave ? {reasons: options.reasons || []} : (isUpdate ? undefined : {project: response.data})
+        }
+        const savedProjectLogs = [saveLog, ...projectLogsForSave]
+        projectLogsRef.current = savedProjectLogs
+        setProjectLogs(savedProjectLogs)
+        if(options.closeConfigure !== false) {
+          configSnapshotOnOpenRef.current = null
+          setConfigure(false)
+        }
         setProjectPromptTemplateKey(response.data?.prompt_template_key || getProjectPromptTemplateKey())
         setProject(response.data)
         if(response.data.url)
           history.push(response.data.url)
-        baseSetAlert({severity: 'success', message: t('map_project.successfully_saved'), duration: 2000})
+        if(!isAutoSave)
+          baseSetAlert({severity: 'success', message: t('map_project.successfully_saved'), duration: 2000})
 
-        APIService.new().overrideURL(response.data.url).appendToUrl('logs/').post({logs: {row_logs: logs, project_logs: projectLogs}}).then(() => {})
+        APIService.new().overrideURL(response.data.url).appendToUrl('logs/').post({logs: {row_logs: rowLogsForSave, project_logs: savedProjectLogs}}).then(() => {})
       }
-    })
+    }).finally(() => setIsSaving(false))
   }
+
+  // onSave takes options, so it can't be bound to onClick directly — the click
+  // event would arrive where the options object is expected.
+  const onManualSave = () => onSave({source: 'manual'})
 
   const log = (data, index) => {
     let idx = index === undefined ? rowIndex : index
-    setLogs(prev => ({...prev, [idx]: [{created_at: moment().toDate(), user: user.username || user.id, ...data}, ...(prev[idx] || [])]}))
+    const nextLogs = {...logsRef.current, [idx]: [{created_at: moment().toDate(), user: user.username || user.id, ...data}, ...(logsRef.current[idx] || [])]}
+    logsRef.current = nextLogs
+    setLogs(nextLogs)
   }
 
   const projectLog = data => {
     const newLog = {...data, created_at: moment().toDate(), user: user.username || user.id}
-    const newLogs = [newLog, ...projectLogs]
-    setProjectLogs(prev => [newLog, ...prev])
+    const newLogs = [newLog, ...projectLogsRef.current]
+    projectLogsRef.current = newLogs
+    setProjectLogs(newLogs)
     if(project?.url)
-      APIService.new().overrideURL(project.url).appendToUrl('logs/').post({logs: {row_logs: logs, project_logs: newLogs}}).then(() => {})
+      APIService.new().overrideURL(project.url).appendToUrl('logs/').post({logs: {row_logs: logsRef.current, project_logs: newLogs}}).then(() => {})
   }
+
+  const scheduleAutoSave = reason => autosaveSchedulerRef.current.schedule(reason)
 
   // ── ocl_online#105 Phase 5: AutomatchRun attribution ──────────────────────
   // Build the X-OCL-Request-Source + X-OCL-Event-Metadata headers for a single
@@ -1618,6 +1692,53 @@ const MapProject = () => {
     let allFilters = {...defaultFilters, ...omitBy(filters, value => !value)}
     return includeDefaultFilter ? allFilters : omit(allFilters, Object.keys(defaultFilters))
   }
+
+  const getConfigurationSnapshot = () => JSON.stringify({
+    owner,
+    name,
+    description,
+    repo_url: repo?.url,
+    repo_version_url: repoVersion?.version_url,
+    algorithms: map(algosSelected, algo => omit(algo, ['__key'])),
+    score_configuration: candidatesScore,
+    lookup_config: lookupConfig,
+    namespace,
+    encoder_model: encoderModel || DEFAULT_ENCODER_MODEL,
+    include_retired: retired,
+    filters: getFilters(),
+    prompt_template_key: getProjectPromptTemplateKey(),
+    prompt_output_locale: promptOutputLocale || '',
+    input_locale: inputLocale || '',
+    use_lexical_variants: Boolean(useLexicalVariants),
+    columns: map(columns, col => ({
+      dataKey: col.dataKey,
+      mapped: col.mapped,
+      hidden: columnVisibilityModel[col.dataKey] === false,
+      width: columnWidth[col.dataKey] || undefined,
+      ai_assistant_hidden: AIAssistantColumns[col.dataKey] === false
+    }))
+  })
+
+  const closeConfiguration = () => {
+    const openedSnapshot = configSnapshotOnOpenRef.current
+    const changed = openedSnapshot && openedSnapshot !== getConfigurationSnapshot()
+    setConfigure(false)
+    configSnapshotOnOpenRef.current = null
+    if(changed)
+      scheduleAutoSave('configuration_change')
+  }
+
+  const setConfigureWithAutosave = nextConfigure => {
+    if(nextConfigure)
+      setConfigure(true)
+    else
+      closeConfiguration()
+  }
+
+  React.useEffect(() => {
+    if(configure && !configSnapshotOnOpenRef.current)
+      configSnapshotOnOpenRef.current = getConfigurationSnapshot()
+  }, [configure])
 
   const getPayloadForMatching = (rows, _repo, _filters) => {
     return {
@@ -1984,6 +2105,8 @@ const MapProject = () => {
               } : {})
             }
           })
+        if(!abortRef.current)
+          scheduleAutoSave('auto_match')
       } finally {
         await completeAutomatchRun(_selectedAlgos, rowsToProcess)
       }
@@ -2647,7 +2770,7 @@ const MapProject = () => {
         conceptCacheRef.current = next
         setConceptCache(next)
       })
-    setConfigure(false)
+    closeConfiguration()
     setShowProjectLogs(false)
     setRow(csvRow)
     setSearchStr(getRowNameValue(csvRow) || '')
@@ -2724,6 +2847,7 @@ const MapProject = () => {
     const newRowStatuses = {...rowStatuses, reviewed: uniq([...rowStatuses.reviewed, rowIndex]), readyForReview: without(rowStatuses.readyForReview, rowIndex), unmapped: without(rowStatuses.unmapped, rowIndex)}
     setRowStatuses(newRowStatuses)
     log({'action': 'approved'})
+    scheduleAutoSave('decision_change')
     if(next){
       const nextRow = data[selectedRowStatus === 'all' ? rowIndex + 1 : find(rowStatuses[selectedRowStatus], idx => idx > rowIndex)]
       if(nextRow !== undefined)
@@ -2816,6 +2940,7 @@ const MapProject = () => {
     })
     if(newValue !== 'map' && !logged)
       log({action: newValue || 'decision_changed', description: t('map_project.decision_changed_to_none'), extras: newValue ? {} : {decision: t('map_project.none')}})
+    scheduleAutoSave('decision_change')
   }
 
   const getBulkActionLabel = action => {
@@ -2831,25 +2956,24 @@ const MapProject = () => {
 
   const addBulkLogs = (indexes, action, description, extras = {}) => {
     const createdAt = moment().toDate()
-    setLogs(prev => {
-      const next = {...prev}
-      indexes.forEach(index => {
-        const resolvedDescription = typeof description === 'function' ? description(index) : description
-        const resolvedExtras = typeof extras === 'function' ? extras(index) : extras
-        next[index] = [{
-          created_at: createdAt,
-          user: user.username || user.id,
-          action,
-          description: resolvedDescription,
-          extras: {
-            bulk_origin: 'mapper-left-panel-selection',
-            bulk_action: action,
-            ...resolvedExtras
-          }
-        }, ...(next[index] || [])]
-      })
-      return next
+    const next = {...logsRef.current}
+    indexes.forEach(index => {
+      const resolvedDescription = typeof description === 'function' ? description(index) : description
+      const resolvedExtras = typeof extras === 'function' ? extras(index) : extras
+      next[index] = [{
+        created_at: createdAt,
+        user: user.username || user.id,
+        action,
+        description: resolvedDescription,
+        extras: {
+          bulk_origin: 'mapper-left-panel-selection',
+          bulk_action: action,
+          ...resolvedExtras
+        }
+      }, ...(next[index] || [])]
     })
+    logsRef.current = next
+    setLogs(next)
   }
 
   const getSelectedRowIndexes = (_rows = data) => {
@@ -3009,6 +3133,8 @@ const MapProject = () => {
       duration: 4,
       message: t('map_project.bulk_action_summary', {changed: changed.length, skipped: skipped.length})
     })
+    if(changed.length)
+      scheduleAutoSave('decision_change')
     clearBulkSelection()
   }
 
@@ -4691,10 +4817,10 @@ const MapProject = () => {
       isValidColumnValue={isValidColumnValue}
       updateColumn={updateColumn}
       configure={configure}
-      setConfigure={setConfigure}
+      setConfigure={setConfigureWithAutosave}
       columnVisibilityModel={columnVisibilityModel}
       setColumnVisibilityModel={setColumnVisibilityModel}
-      onSave={onSave}
+      onSave={onManualSave}
       isSaving={isSaving}
       candidatesScore={candidatesScore}
       onScoreChange={setCandidatesScore}
@@ -4886,7 +5012,7 @@ const MapProject = () => {
                     isCoreUser={isCoreUser}
                     project={project}
                     onDownload={onDownloadClick}
-                    onSave={onSave}
+                    onSave={onManualSave}
                     onDelete={() => setDeleteProject(true)}
                     owner={owner}
                     file={file}
@@ -4898,14 +5024,14 @@ const MapProject = () => {
                     onProjectLogsClick={() => {
                       const newValue = !showProjectLogs
                       if(newValue) {
-                        setConfigure(false)
+                        closeConfiguration()
                         onCloseDecisions()
                       }
                       setShowProjectLogs(newValue)
                     }}
                     isProjectsLogOpen={showProjectLogs}
                     configure={configure}
-                    setConfigure={setConfigure}
+                    setConfigure={setConfigureWithAutosave}
                     onCopyClick={onCopyClick}
                   />
               }

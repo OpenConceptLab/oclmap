@@ -595,6 +595,7 @@
     "sort_by_unified_score": "Unified Score",
     "project_logs": "Project History",
     "project_logs_tooltip": "Project History",
+    "auto_saved_changes": "Auto saved changes",
     "saved_to_collection": "Saved to collection",
     "bridge_terminology_search": "Bridge terminology search<0>Premium</0>",
     "bridge_terminology_search_description": "Include mappings in the <0>CIEL Interface Terminology</0> to identify additional high quality candidates. Only available for compatible target repositories and matching algorithms.",

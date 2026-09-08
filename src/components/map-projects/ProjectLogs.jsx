@@ -47,6 +47,8 @@ const ProjectLogs = ({onClose, logs, project}) => {
       return [<i key="created" className="fa-brands fa-octopus-deploy" style={{color: PRIMARY_COLORS.main, fontSize: '1.25rem', width: '1em', height: '1em'}}></i>, 'primary']
     if(action === 'updated')
       return [<HistoryIcon key='update' color='warning' />, 'warning']
+    if(action === 'auto saved')
+      return [<HistoryIcon key='auto-save' color='primary' />, 'primary']
     if(action === 'saved_to_collection')
       return [<RepoIcon key='collection' selected noTooltip />, 'primary']
     if(action === 'opened')
@@ -108,12 +110,14 @@ const ProjectLogs = ({onClose, logs, project}) => {
                  <strong key={1} />,
                ]}
                values={{
-                 created_by: project.created_by || '',
+                 created_by: log.user || project.created_by || '',
                  owner: project.owner ? `${project.owner_type}:${project.owner}` : '',
                }}
              />
     }
 
+    if(log?.action?.toLowerCase() === 'auto saved')
+      return log.description || t('map_project.auto_saved_changes')
     if(log.description)
       return log.description
     return startCase(log.action)
