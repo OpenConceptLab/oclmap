@@ -3,6 +3,9 @@ import axios from 'axios';
 import {get, omit, isPlainObject, isString, defaults } from 'lodash';
 import { currentUserToken, getAPIURL, logoutUser, sleep } from '../common/utils';
 
+import packageJson from '../../package.json';
+
+
 const APIServiceProvider = {};
 const throttlingListeners = new Set();
 const RESOURCES = [
@@ -174,7 +177,7 @@ class APIService {
     const obj = defaults(headers, this.headers);
     if (token) obj['Authorization'] = `Token ${token}`;
     obj['INCLUDESEARCHLATEST'] = true
-    obj['X-OCL-CLIENT'] = 'oclmap/0.0.1-alpha';
+    obj['X-OCL-CLIENT'] = `oclmap/${packageJson.version}`;
     return obj;
   }
 
