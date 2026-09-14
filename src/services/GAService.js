@@ -3,10 +3,23 @@ import ReactGA from 'react-ga4';
 import { startCase } from 'lodash';
 import { OCL_CLIENT } from '../common/constants';
 
-const LINKED_DOMAINS = ['openconceptlab.org', 'preview.openconceptlab.org', 'app.v3.openconceptlab.org', 'app.openconceptlab.org'];
 const SIGNUP_FLOW_PENDING_KEY = 'signup_flow_pending';
 
 const gaId = () => window.GA_ACCOUNT_ID || process.env.GA_ACCOUNT_ID;
+
+// The marketing site only exists in prod, at these two domains, regardless
+// of which env this app itself is running in. v3./app. mirror this app's
+// own env (e.g. map.qa. -> app.v3.qa., map.qa. -> app.qa.).
+const linkedDomains = () => {
+  const host = window.location.host;
+
+  return [
+    'openconceptlab.org',
+    'preview.openconceptlab.org',
+    host.replace('map.', 'app.v3.'),
+    host.replace('map.', 'app.'),
+  ];
+};
 
 const initialize = options => {
   /*eslint no-undef: 0*/
@@ -15,7 +28,7 @@ const initialize = options => {
 
 const GAService = {
   recordPageView() {
-    initialize({ gtagOptions: { linker: { domains: LINKED_DOMAINS } } });
+    initialize({ gtagOptions: { linker: { domains: linkedDomains() } } });
     ReactGA.send({ hitType: 'pageview', page: window.location.pathname + window.location.hash.split('?')[0] });
   },
 
