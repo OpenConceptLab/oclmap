@@ -33,7 +33,8 @@ ADD start.sh /app/
 RUN chmod +x start.sh
 
 ADD set_build_version.sh /app/
-RUN chmod +X set_build_version.sh
+ADD release_version.sh /app/
+RUN chmod +X set_build_version.sh release_version.sh
 
 ARG SOURCE_COMMIT
 RUN ["bash", "-c", "./set_build_version.sh"]
