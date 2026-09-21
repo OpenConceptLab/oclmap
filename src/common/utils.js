@@ -272,6 +272,21 @@ export const refreshCurrentUserCache = callback => {
   });
 }
 
+export const refreshCurrentUserCapabilitiesCache = callback => {
+  APIService.user().get(null, null, {includeCapabilities: true}).then(response => {
+    if(response.status === 200) {
+      const currentUser = getCurrentUser()
+      if(currentUser) {
+        localStorage.setItem('user', JSON.stringify({
+          ...currentUser,
+          capabilities: response.data?.capabilities || []
+        }));
+      }
+      if(callback) callback(response);
+    }
+  });
+}
+
 export const replaceCurrentUserCacheWith = data => localStorage.setItem('user', JSON.stringify(data));
 
 export const formatByteSize = bytes => {

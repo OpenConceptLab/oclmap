@@ -508,6 +508,7 @@
     "preview_quota_used_of_limit": "{{used}} of {{limit}} used",
     "preview_estimate_note": "This run will use {{used}} of your {{remaining}} remaining match operations.",
     "preview_estimate_will_truncate": "Your preview quota covers {{allowed}} more row(s). We'll match the first {{allowed}} of the {{requested}} rows you've selected.",
+    "preview_estimate_no_rows_left": "No more rows are left in your preview quota. You can keep reviewing, editing, and exporting this project.",
     "ai_assistant_limit_reached": "You've used all of your preview AI Assistant calls. Matching will continue without AI analysis for the remaining rows.",
     "preview_limit_title_rows": "You've used this project's preview rows",
     "preview_limit_title_match_operations": "You've used your preview match operations",

@@ -498,6 +498,7 @@
     "preview_quota_used_of_limit": "已用 {{used}} / {{limit}}",
     "preview_estimate_note": "本次运行将消耗你剩余 {{remaining}} 次匹配操作中的 {{used}} 次。",
     "preview_estimate_will_truncate": "你的预览额度还可处理 {{allowed}} 行。我们将匹配你所选 {{requested}} 行中的前 {{allowed}} 行。",
+    "preview_estimate_no_rows_left": "你的预览额度已没有可处理的行。你仍可以继续审核、编辑和导出此项目。",
     "ai_assistant_limit_reached": "你的预览版 AI 助手调用次数已用完。匹配将继续进行，剩余行不再进行 AI 分析。",
     "preview_limit_title_rows": "本项目的预览行数已用完",
     "preview_limit_title_match_operations": "预览匹配操作次数已用完",

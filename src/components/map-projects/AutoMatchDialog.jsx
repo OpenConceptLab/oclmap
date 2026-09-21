@@ -79,6 +79,7 @@ const AutoMatchDialog = ({
     (min, n) => min === null ? n : Math.min(min, n), null
   )
   const willTruncate = effectiveRowCap !== null && rowsToMatchCount > effectiveRowCap
+  const isPreviewQuotaExhausted = willTruncate && effectiveRowCap <= 0
   const isPreviewLimited = operationsRemaining !== null || rowsRemaining !== null
 
   React.useEffect(() => {
@@ -138,6 +139,7 @@ const AutoMatchDialog = ({
   const isDisabled =
     !repoVersion?.version_url ||
     rowsToMatchCount === 0 ||
+    isPreviewQuotaExhausted ||
     (!algos && !autoRunAIAnalysis) ||
     (isAllIncludingApproved && !confirmAllIncludingApproved)
 
@@ -160,18 +162,13 @@ const AutoMatchDialog = ({
         <CloseIconButton onClick={onClose} />
       </DialogTitle>
       <DialogContent>
-        <div className='col-xs-12 padding-0' style={{display: 'flex', alignItems: 'center', fontSize: '1rem'}}>
-          {t('map_project.target_repository')}
-          {
-            repoVersion?.id &&
-              <RepoChip repo={repoVersion} hideType sx={{marginLeft: '16px'}} />
-          }
-        </div>
         {
           isPreviewLimited && rowsToMatchCount > 0 &&
-            <Alert severity={willTruncate ? 'warning' : 'info'} sx={{marginTop: '10px'}}>
+            <Alert severity={isPreviewQuotaExhausted ? 'error' : (willTruncate ? 'warning' : 'info')} sx={{marginBottom: '8px'}}>
               {
-                willTruncate ?
+                isPreviewQuotaExhausted ?
+                  t('map_project.preview_estimate_no_rows_left') :
+                  willTruncate ?
                   t('map_project.preview_estimate_will_truncate', {
                     allowed: Math.max(effectiveRowCap, 0).toLocaleString(),
                     requested: rowsToMatchCount.toLocaleString()
@@ -183,6 +180,13 @@ const AutoMatchDialog = ({
               }
             </Alert>
         }
+        <div className='col-xs-12 padding-0' style={{display: 'flex', alignItems: 'center', fontSize: '1rem'}}>
+          {t('map_project.target_repository')}
+          {
+            repoVersion?.id &&
+              <RepoChip repo={repoVersion} hideType sx={{marginLeft: '16px'}} />
+          }
+        </div>
         <FormControl sx={{marginTop: '10px'}}>
           <FormLabel id="automatch-rows" sx={{color: 'rgba(0, 0, 0, 0.87)'}}>{`${t('map_project.rows_to_match')}: ${rowsToMatchCount.toLocaleString()} ${t('map_project.out_of')} ${totalRows.toLocaleString()}` }</FormLabel>
           <RadioGroup

@@ -71,7 +71,7 @@ import { OperationsContext } from '../app/LayoutContext';
 
 import APIService, { isTransientNetworkError, retryWithBackoff } from '../../services/APIService';
 import { buildAttributionHeaders, buildConfigSnapshot, summarizeRunCompletion } from '../../services/attribution'
-import { highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, hasCapability, getMapperPreview, downloadObject, currentUserToken } from '../../common/utils';
+import { highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, hasCapability, getMapperPreview, downloadObject, currentUserToken, refreshCurrentUserCapabilitiesCache } from '../../common/utils';
 import { WHITE, SURFACE_COLORS, TEXT_GRAY } from '../../common/colors';
 
 import { useDoubleClick } from '../common/useDoubleClick'
@@ -137,6 +137,10 @@ const MapProject = () => {
   const { t } = useTranslation();
   const { toggles, setAlert: baseSetAlert } = React.useContext(OperationsContext);
   const user = getCurrentUser()
+  const [, setMapperQuotaCacheVersion] = React.useState(0)
+  const refreshMapperQuotaCache = React.useCallback(() => {
+    refreshCurrentUserCapabilitiesCache(() => setMapperQuotaCacheVersion(version => version + 1))
+  }, [])
   const params = useParams()
   const history = useHistory()
   const location = useLocation()
@@ -1538,6 +1542,8 @@ const MapProject = () => {
         }
         setProjectPromptTemplateKey(response.data?.prompt_template_key || getProjectPromptTemplateKey())
         setProject(response.data)
+        if(!isUpdate)
+          refreshMapperQuotaCache()
         if(response.data.url)
           history.push(response.data.url)
         if(!isAutoSave)
@@ -2156,6 +2162,7 @@ const MapProject = () => {
           scheduleAutoSave('auto_match')
       } finally {
         await completeAutomatchRun(_selectedAlgos, rowsToProcess)
+        refreshMapperQuotaCache()
       }
     }, 1000)
   };
@@ -3208,7 +3215,7 @@ const MapProject = () => {
   };
   const restoreRefreshRowStage = rowId => {
     if(!Object.prototype.hasOwnProperty.call(refreshRowStageSnapshotRef.current, rowId))
-      return
+      return false
     const snapshot = refreshRowStageSnapshotRef.current[rowId]
     delete refreshRowStageSnapshotRef.current[rowId]
     setRowStage(prev => {
@@ -3219,10 +3226,14 @@ const MapProject = () => {
         delete next[rowId]
       return next
     })
+    return true
   }
   const clearRefreshRowStageSnapshot = rowId => {
-    if(Object.prototype.hasOwnProperty.call(refreshRowStageSnapshotRef.current, rowId))
+    if(Object.prototype.hasOwnProperty.call(refreshRowStageSnapshotRef.current, rowId)) {
       delete refreshRowStageSnapshotRef.current[rowId]
+      return true
+    }
+    return false
   }
   const isPreviewLimitError = response =>
     Boolean(response?.error_code && response.error_code.startsWith('mapper_'))
@@ -3232,8 +3243,8 @@ const MapProject = () => {
       return false
     setAlert({message: response?.detail || t('unknown_error'), severity: 'error'})
     setIsLoadingInDecisionView(false)
-    if(isNumber(rowId))
-      restoreRefreshRowStage(rowId)
+    if(isNumber(rowId) && restoreRefreshRowStage(rowId))
+      refreshMapperQuotaCache()
     return true
   }
 
@@ -3352,7 +3363,8 @@ const MapProject = () => {
         if(response?.detail) {
           if(handlePreviewLimitError(response, __row.__index))
             return
-          clearRefreshRowStageSnapshot(__row.__index)
+          if(clearRefreshRowStageSnapshot(__row.__index))
+            refreshMapperQuotaCache()
           markAlgo(__row.__index, algoId, -2)
           log({action: 'algo_failed', extras: logExtras}, __row.__index)
           setAlert({message: response.detail, severity: 'error'})
@@ -3414,7 +3426,8 @@ const MapProject = () => {
           markAlgo(__row.__index, nextAlgo.id, 0)
           fetchAllCandidatesForRow(nextAlgo.id, __row, offset, _retired, scrollToBottom, _filters, forceReload)
         } else {
-          clearRefreshRowStageSnapshot(__row.__index)
+          if(clearRefreshRowStageSnapshot(__row.__index))
+            refreshMapperQuotaCache()
           const currentAlgo = algoId ? getAlgoDef(algoId) : null
           // Single-algo native path: $match's reranker:true returns scores
           // inline, so mergeIntoRowMatchState already wrote rerank_score on
@@ -3528,7 +3541,8 @@ const MapProject = () => {
           if(isError) {
             if(handlePreviewLimitError(response, __row.__index))
               return response
-            clearRefreshRowStageSnapshot(__row.__index)
+            if(clearRefreshRowStageSnapshot(__row.__index))
+              refreshMapperQuotaCache()
             markAlgo(__row.__index, 'ocl-scispacy-loinc', -2)
             log({action: 'algo_failed', extras: {algo: 'ocl-scispacy-loinc', status: response?.status, detail: response?.detail}}, __row.__index)
             setAlert({
@@ -3969,7 +3983,8 @@ const MapProject = () => {
             resolve()
             return
           }
-          clearRefreshRowStageSnapshot(__row.__index)
+          if(clearRefreshRowStageSnapshot(__row.__index))
+            refreshMapperQuotaCache()
           markAlgo(__row.__index, bridgeAlgoId, -2)
           log({action: 'algo_failed', extras: getAlgoLogExtras(bridgeAlgo)}, __row.__index)
           setAlert({message: response?.detail || errorMsg, severity: 'error'})
@@ -4878,6 +4893,9 @@ const MapProject = () => {
         const errorMessage = err?.detail || err?.response?.data?.detail || err?.message || t('unknown_error')
         setAlert({message: errorMessage, severity: 'error'})
         return false
+      } finally {
+        if(!isBulk)
+          refreshMapperQuotaCache()
       }
     } else {
       markAlgo(__index, 'recommend', analysis[__index]?.length > 0 ? 1 : -3)
