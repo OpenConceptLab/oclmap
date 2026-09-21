@@ -7,19 +7,17 @@ import Typography from '@mui/material/Typography'
 
 import { getMapperPreview } from '../../common/utils'
 
-// One-time allowance (no reset date, R2/R18) across four independent caps.
-// A null limit on any meter means unlimited (grandfathered/manually-granted users).
 const MapperQuotaChip = ({size = 'small'}) => {
   const { t } = useTranslation()
   const preview = getMapperPreview()
   const { rowsPerProject, matchOperations, aiAssistantCalls, projects } = preview
 
-  if(!preview.hasAccess || rowsPerProject.limit === null) return null
+  if(!preview.hasAccess || rowsPerProject.unlimited) return null
 
   const nearLimit = rowsPerProject.limit > 0 && rowsPerProject.remaining <= Math.ceil(rowsPerProject.limit * 0.2)
   const atLimit = rowsPerProject.remaining === 0
 
-  const meterLine = (labelKey, meter) => meter.limit === null ? null : (
+  const meterLine = (labelKey, meter) => meter.unlimited ? null : (
     <Typography key={labelKey} variant='caption' component='div'>
       {t(labelKey)}: {t('map_project.preview_quota_used_of_limit', {used: meter.used, limit: meter.limit})}
     </Typography>

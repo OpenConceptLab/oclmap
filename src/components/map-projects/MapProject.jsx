@@ -2078,13 +2078,10 @@ const MapProject = () => {
     setTimeout(async () => {
       let rowsToProcess = getRowsToProcess(rows, rowStatuses, autoMatchScope, selectedRowIndexes)
 
-      // Pre-truncate to the remaining preview quota (core.capabilities) rather than
-      // letting the whole run fail at createAutomatchRun. Row count is not the match
-      // meter (TQ6): one match operation per row per configured algorithm.
       const preview = getMapperPreview()
       const algorithmCount = Math.max(_selectedAlgos.length, 1)
-      const rowsRemaining = preview.rowsPerProject.limit === null ? null : preview.rowsPerProject.remaining
-      const rowsCapByOperations = preview.matchOperations.limit === null ?
+      const rowsRemaining = preview.rowsPerProject.unlimited ? null : preview.rowsPerProject.remaining
+      const rowsCapByOperations = preview.matchOperations.unlimited ?
         null : Math.floor(preview.matchOperations.remaining / algorithmCount)
       const effectiveRowCap = [rowsRemaining, rowsCapByOperations].filter(n => n !== null).reduce(
         (min, n) => min === null ? n : Math.min(min, n), null

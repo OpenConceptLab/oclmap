@@ -72,8 +72,8 @@ const AutoMatchDialog = ({
   const preview = getMapperPreview()
   const algorithmCount = Math.max(algosSelected.length, 1)
   const estimatedOperations = rowsToMatchCount * algorithmCount
-  const operationsRemaining = preview.matchOperations.limit === null ? null : preview.matchOperations.remaining
-  const rowsRemaining = preview.rowsPerProject.limit === null ? null : preview.rowsPerProject.remaining
+  const operationsRemaining = preview.matchOperations.unlimited ? null : preview.matchOperations.remaining
+  const rowsRemaining = preview.rowsPerProject.unlimited ? null : preview.rowsPerProject.remaining
   const rowsCapByOperations = operationsRemaining === null ? null : Math.floor(operationsRemaining / algorithmCount)
   const effectiveRowCap = [rowsRemaining, rowsCapByOperations].filter(n => n !== null).reduce(
     (min, n) => min === null ? n : Math.min(min, n), null

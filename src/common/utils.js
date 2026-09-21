@@ -1122,14 +1122,8 @@ export const toCamelCase = str => {
     .replace(/^(.)/, (m) => m.toLowerCase());
 }
 
-// `capability` here is a Django permission string (e.g. 'users.mapper_use'), carried in the
-// separate `permissions` list on GET /user/?includeCapabilities=true - not `capabilities`,
-// which is the numeric {name, limit, used} usage list getMapperPreview reads below.
 export const hasCapability = (user, capability) => Boolean((user || getCurrentUser())?.permissions?.includes(capability))
 
-// The Mapper preview is a one-time allowance (no reset date) across four independent caps.
-// `capabilities` comes from GET /user/?includeCapabilities=true - a list of {name, limit, used}
-// entries (see core.capabilities in oclapi2), not a dict keyed by name.
 export const getMapperPreview = () => {
   const user = getCurrentUser()
   const capabilities = user?.capabilities || []
@@ -1137,7 +1131,8 @@ export const getMapperPreview = () => {
     const entry = capabilities.find(c => c.name === key) || {}
     const limit = entry.limit === undefined ? null : entry.limit
     const used = entry.used || 0
-    return {limit, used, remaining: limit === null ? null : Math.max(limit - used, 0)}
+    const unlimited = limit === 0
+    return {limit, used, unlimited, remaining: unlimited ? null : Math.max((limit || 0) - used, 0)}
   }
   return {
     hasAccess: hasCapability(user, 'users.mapper_use'),
