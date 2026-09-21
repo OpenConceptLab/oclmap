@@ -14,6 +14,7 @@ import RadioGroup from '@mui/material/RadioGroup';
 import Radio from '@mui/material/Radio';
 import FormLabel from '@mui/material/FormLabel';
 import Chip from '@mui/material/Chip'
+import Alert from '@mui/material/Alert';
 
 import DoubleArrowIcon from '@mui/icons-material/DoubleArrow';
 
@@ -24,6 +25,7 @@ import TagCountLabel from '../common/TagCountLabel'
 import RepoChip from '../repos/RepoVersionChip'
 import AIAssistantButton from './AIAssistantButton'
 import AIAssistantSelectorPanel from './AIAssistantSelectorPanel'
+import { getMapperPreview } from '../../common/utils'
 
 
 const AutoMatchDialog = ({
@@ -63,6 +65,21 @@ const AutoMatchDialog = ({
   const hasUnmappedRows = rowStatuses.unmapped.length > 0
   const hasApprovedRows = rowStatuses.reviewed.length > 0
   const isAllIncludingApproved = autoMatchScope === 'allIncludingApproved'
+
+  // One-time allowance (R2, no reset). Row count is NOT the match meter (TQ6):
+  // one operation per row per configured algorithm, fanned out across however
+  // many algorithms are selected below.
+  const preview = getMapperPreview()
+  const algorithmCount = Math.max(algosSelected.length, 1)
+  const estimatedOperations = rowsToMatchCount * algorithmCount
+  const operationsRemaining = preview.matchOperations.limit === null ? null : preview.matchOperations.remaining
+  const rowsRemaining = preview.rowsPerProject.limit === null ? null : preview.rowsPerProject.remaining
+  const rowsCapByOperations = operationsRemaining === null ? null : Math.floor(operationsRemaining / algorithmCount)
+  const effectiveRowCap = [rowsRemaining, rowsCapByOperations].filter(n => n !== null).reduce(
+    (min, n) => min === null ? n : Math.min(min, n), null
+  )
+  const willTruncate = effectiveRowCap !== null && rowsToMatchCount > effectiveRowCap
+  const isPreviewLimited = operationsRemaining !== null || rowsRemaining !== null
 
   React.useEffect(() => {
     if (autoMatchScope === 'unmapped' && !hasUnmappedRows) {
@@ -150,6 +167,22 @@ const AutoMatchDialog = ({
               <RepoChip repo={repoVersion} hideType sx={{marginLeft: '16px'}} />
           }
         </div>
+        {
+          isPreviewLimited && rowsToMatchCount > 0 &&
+            <Alert severity={willTruncate ? 'warning' : 'info'} sx={{marginTop: '10px'}}>
+              {
+                willTruncate ?
+                  t('map_project.preview_estimate_will_truncate', {
+                    allowed: Math.max(effectiveRowCap, 0).toLocaleString(),
+                    requested: rowsToMatchCount.toLocaleString()
+                  }) :
+                  t('map_project.preview_estimate_note', {
+                    used: estimatedOperations.toLocaleString(),
+                    remaining: operationsRemaining !== null ? operationsRemaining.toLocaleString() : rowsRemaining.toLocaleString()
+                  })
+              }
+            </Alert>
+        }
         <FormControl sx={{marginTop: '10px'}}>
           <FormLabel id="automatch-rows" sx={{color: 'rgba(0, 0, 0, 0.87)'}}>{`${t('map_project.rows_to_match')}: ${rowsToMatchCount.toLocaleString()} ${t('map_project.out_of')} ${totalRows.toLocaleString()}` }</FormLabel>
           <RadioGroup

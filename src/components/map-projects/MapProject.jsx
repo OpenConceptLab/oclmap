@@ -71,7 +71,7 @@ import { OperationsContext } from '../app/LayoutContext';
 
 import APIService, { isTransientNetworkError, retryWithBackoff } from '../../services/APIService';
 import { buildAttributionHeaders, buildConfigSnapshot, summarizeRunCompletion } from '../../services/attribution'
-import { highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, downloadObject, currentUserToken } from '../../common/utils';
+import { highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, hasCapability, getMapperPreview, downloadObject, currentUserToken } from '../../common/utils';
 import { WHITE, SURFACE_COLORS, TEXT_GRAY } from '../../common/colors';
 
 import { useDoubleClick } from '../common/useDoubleClick'
@@ -101,6 +101,8 @@ import ImportToCollection from './ImportToCollection'
 import ProjectLogs from './ProjectLogs';
 import { useAlgos, ensureConceptIdentity } from './algorithms'
 import AutoMatchDialog from './AutoMatchDialog'
+import PreviewLimitDialog from './PreviewLimitDialog'
+import MapperQuotaChip from './MapperQuotaChip'
 import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
 import { normalizeAlgorithmInvocation, lookupStatusRank, buildRecommendableConceptEntry, stripConstantClassAndDatatype, buildLookupConceptUrl } from './normalizers'
 import { parseConceptKey } from './conceptKey'
@@ -202,12 +204,17 @@ const MapProject = () => {
   const promptTemplatesFetchedRef = React.useRef(false)
 
   const abortRef = React.useRef(false);
+  // ai_assistant.calls is a one-time allowance (no reset, R2) - once exhausted it
+  // stays exhausted for the rest of the session, so this is never reset per-run.
+  const aiQuotaExhaustedRef = React.useRef(false);
   const isBulkMatchRunningRef = React.useRef(false);
   const bulkMatchAlgoIdsRef = React.useRef([]);
   // ocl_online#105 Phase 5: the active AutomatchRun ({id, algoIds}) or null.
   // A ref so every per-row backend call reads the run id synchronously without
   // prop-drilling or re-renders; null outside a run → 'mapper-ui-manual'.
   const automatchRunRef = React.useRef(null);
+
+  const [previewLimit, setPreviewLimit] = React.useState(null) // {errorCode, limit, used} or null
 
   const [row, setRow] = React.useState(false)
   const [loadingMatches, setLoadingMatches] = React.useState(false)
@@ -512,7 +519,7 @@ const MapProject = () => {
   const AI_ASSISTANT_API_URL = window.AI_ASSISTANT_API_URL || process.env.AI_ASSISTANT_API_URL
   const SCISPACY_API_URL = window.SCISPACY_LOINC_API_URL || process.env.SCISPACY_LOINC_API_URL
   const OCL_ONLINE_API_URL = window.OCL_ONLINE_API_URL || process.env.OCL_ONLINE_API_URL
-  const inAIAssistantGroup = Boolean(hasAuthGroup(user, 'mapper_ai_assistant') && AI_ASSISTANT_API_URL)
+  const inAIAssistantGroup = Boolean(hasCapability(user, 'users.mapper_ai_assistant') && AI_ASSISTANT_API_URL)
   const isCoreUser = hasAuthGroup(user, 'core_user')
   const CANDIDATES_LIMIT = 15
   const canBridge = bridgeRef?.current?.canBridge()
@@ -1504,12 +1511,15 @@ const MapProject = () => {
     const isUpdate = Boolean(project?.id)
     let service = APIService.new().overrideURL(owner).appendToUrl('map-projects/')
     if(isUpdate)
-      service = service.appendToUrl(project.id + '/').put(formData, null, {"Content-Type": "multipart/form-data"})
+      service = service.appendToUrl(project.id + '/')
+        .put(formData, null, {"Content-Type": "multipart/form-data"}, undefined, true)
     else
-      service = service.post(formData, null, {"Content-Type": "multipart/form-data"})
+      service = service.post(formData, null, {"Content-Type": "multipart/form-data"}, undefined, true)
 
     service.then(response => {
       setIsSaving(false)
+      const status = response?.response?.status || response?.status
+      const errorData = response?.response?.data || (response?.data?.id ? null : response?.data)
       if(response?.data?.id) {
         const saveLog = {
           action: isAutoSave ? 'Auto Saved' : (isUpdate ? 'Updated' : 'Created'),
@@ -1533,6 +1543,10 @@ const MapProject = () => {
           baseSetAlert({severity: 'success', message: t('map_project.successfully_saved'), duration: 2000})
 
         APIService.new().overrideURL(response.data.url).appendToUrl('logs/').post({logs: {row_logs: rowLogsForSave, project_logs: savedProjectLogs}}).then(() => {})
+      } else if(status === 403 && errorData?.error_code) {
+        setPreviewLimit({errorCode: errorData.error_code, limit: errorData.limit, used: errorData.used})
+      } else {
+        baseSetAlert({severity: 'error', message: errorData?.detail || t('unknown_error'), duration: 8000})
       }
     }).finally(() => setIsSaving(false))
   }
@@ -1573,11 +1587,14 @@ const MapProject = () => {
       rowIndex, rowIndices, batchSize, algorithmId, clientAttemptN,
     })
 
-  // Create the AutomatchRun system-of-record at run start (oclapi2#876). The
-  // server stamps started_by / client_user_agent / client_ip itself, so we send
-  // only the run-start snapshot. Degrades gracefully: a failed create leaves the
-  // ref null and the auto-match run proceeds (per-row calls fall back to
-  // 'mapper-ui-manual') — run creation must never block matching.
+  // Create the AutomatchRun system-of-record at run start (oclapi2#876), which
+  // is also the preview-cap enforcement chokepoint (core.caps): the server
+  // rejects the whole run with 403 + error_code when it would cross the
+  // per-project row cap or the user's match-operations cap. That case must
+  // abort the run and tell the user why. Any OTHER failure (network blip,
+  // unexpected shape) degrades gracefully as before — the ref stays null and
+  // the run proceeds with per-row calls falling back to 'mapper-ui-manual';
+  // run-creation telemetry must never block matching on its own.
   const createAutomatchRun = async (selectedAlgos, intendedRows) => {
     automatchRunRef.current = null
     if(!project?.url || !intendedRows?.length) return
@@ -1595,10 +1612,23 @@ const MapProject = () => {
       }),
     }
     try {
-      const response = await APIService.new().overrideURL(project.url).appendToUrl('auto-match-runs/').post(body)
-      const id = response?.data?.id
-      if(id) automatchRunRef.current = {id, algoIds: map(selectedAlgos, 'id')}
-      else projectLog({action: 'automatch_run_create_failed', extras: {status: response?.status || 'no-id'}})
+      const response = await APIService.new().overrideURL(project.url).appendToUrl('auto-match-runs/')
+        .post(body, null, {}, undefined, true)
+      const status = response?.response?.status || response?.status
+      const data = response?.response?.data || response?.data
+      const id = data?.id
+      if(id) {
+        automatchRunRef.current = {id, algoIds: map(selectedAlgos, 'id')}
+        return
+      }
+      if(status === 403 && data?.error_code) {
+        abortRef.current = true
+        setLoadingMatches(false)
+        setIsLoadingInDecisionView(false)
+        setPreviewLimit({errorCode: data.error_code, limit: data.limit, used: data.used})
+        return
+      }
+      projectLog({action: 'automatch_run_create_failed', extras: {status: status || 'no-id'}})
     } catch (err) {
       projectLog({action: 'automatch_run_create_failed', extras: {error: err?.message || 'unknown'}})
     }
@@ -2044,7 +2074,24 @@ const MapProject = () => {
       }))
 
     setTimeout(async () => {
-      const rowsToProcess = getRowsToProcess(rows, rowStatuses, autoMatchScope, selectedRowIndexes)
+      let rowsToProcess = getRowsToProcess(rows, rowStatuses, autoMatchScope, selectedRowIndexes)
+
+      // Pre-truncate to the remaining preview quota (core.caps) rather than letting
+      // the whole run fail at createAutomatchRun. Row count is not the match meter
+      // (TQ6): one match operation per row per configured algorithm.
+      const preview = getMapperPreview()
+      const algorithmCount = Math.max(_selectedAlgos.length, 1)
+      const rowsRemaining = preview.rowsPerProject.limit === null ? null : preview.rowsPerProject.remaining
+      const rowsCapByOperations = preview.matchOperations.limit === null ?
+        null : Math.floor(preview.matchOperations.remaining / algorithmCount)
+      const effectiveRowCap = [rowsRemaining, rowsCapByOperations].filter(n => n !== null).reduce(
+        (min, n) => min === null ? n : Math.min(min, n), null
+      )
+      if(effectiveRowCap !== null && rowsToProcess.length > effectiveRowCap) {
+        const requested = rowsToProcess.length
+        rowsToProcess = rowsToProcess.slice(0, Math.max(effectiveRowCap, 0))
+        projectLog({action: 'auto_match_pre_truncated', extras: {requested, allowed: effectiveRowCap}})
+      }
 
       // ocl_online#105 Phase 5: open the run record, then guarantee it is
       // closed out (completed / partial / failed / cancelled) via the finally,
@@ -2134,6 +2181,9 @@ const MapProject = () => {
     }
     for (let index = 0; index < _rows.length; index++) {
       if (abortRef.current) break;
+      // AI quota exhausted mid-run: stop calling the AI step only. Matching
+      // itself already finished before this loop starts, so nothing else aborts.
+      if (aiQuotaExhaustedRef.current) break;
 
       await fetchRecommendation(_rows[index], resolvedPromptTemplate, true);
     }
@@ -4402,7 +4452,12 @@ const MapProject = () => {
       const service = APIService.new()
       service.URL = AI_ASSISTANT_API_URL
       service.appendToUrl('/match/models/').get().then(response => {
-        if(response?.detail) {
+        // The AI Assistant service being unreachable resolves to a plain error
+        // string (APIService swallows network errors into error.message, not an
+        // object), so response.data is undefined here — guard for an actual
+        // array rather than just `response?.detail`, or AIModels becomes
+        // undefined and every `.length`/`.map()` on it downstream crashes.
+        if(!Array.isArray(response?.data)) {
           return
         }
         setAIModels(response.data)
@@ -4749,6 +4804,13 @@ const MapProject = () => {
           }
         )
         let timestamp = moment().toDate()
+        if(response?.error_code === 'ai_assistant_calls_limit_reached') {
+          aiQuotaExhaustedRef.current = true
+          markAlgo(__index, 'recommend', -3)
+          log({created_at: timestamp, action: 'AIRecommendationLimitReached', extras: {model: selectedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}})
+          setAlert({message: t('map_project.ai_assistant_limit_reached'), severity: 'warning'})
+          return false
+        }
         if(response?.detail) {
           markAlgo(__index, 'recommend', -2)
           log({created_at: timestamp, action: 'AIRecommendation', description: response.detail, extras: {error: response.detail, model: selectedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}})
@@ -4769,6 +4831,13 @@ const MapProject = () => {
         setAnalysis(prev => ({...prev, [__index]: [...(prev[__index] || []), newEntry]}))
         return true
       } catch (err) {
+        if((err?.error_code || err?.response?.data?.error_code) === 'ai_assistant_calls_limit_reached') {
+          aiQuotaExhaustedRef.current = true
+          markAlgo(__index, 'recommend', -3)
+          log({created_at: moment().toDate(), action: 'AIRecommendationLimitReached', extras: {model: selectedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}})
+          setAlert({message: t('map_project.ai_assistant_limit_reached'), severity: 'warning'})
+          return false
+        }
         markAlgo(__index, 'recommend', -2)
         const errorMessage = err?.detail || err?.response?.data?.detail || err?.message || t('unknown_error')
         setAlert({message: errorMessage, severity: 'error'})
@@ -4934,6 +5003,9 @@ const MapProject = () => {
                         {name}
                       </span>
                   }
+                  <span style={{marginRight: '8px'}}>
+                    <MapperQuotaChip />
+                  </span>
                   <Button
                     variant='contained'
                     size='small'
@@ -5281,6 +5353,13 @@ const MapProject = () => {
               algosSelected,
               isCoreUser
             }}
+          />
+          <PreviewLimitDialog
+            open={Boolean(previewLimit)}
+            onClose={() => setPreviewLimit(null)}
+            errorCode={previewLimit?.errorCode}
+            limit={previewLimit?.limit}
+            used={previewLimit?.used}
           />
       </Paper>
       <Paper component="div" className={isSplitView ? 'col-xs-6 split padding-0 split-appear' : 'col-xs-6 padding-0'} sx={{boxShadow: 'none', p: 0, backgroundColor: WHITE, borderRadius: '10px', border: 'solid 0.3px', borderColor: 'surface.nv80', opacity: isSplitView ? 1 : 0, height: 'calc(100vh - 100px) !important', overflow: 'auto'}}>
