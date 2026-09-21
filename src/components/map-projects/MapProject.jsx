@@ -1588,13 +1588,15 @@ const MapProject = () => {
     })
 
   // Create the AutomatchRun system-of-record at run start (oclapi2#876), which
-  // is also the preview-cap enforcement chokepoint (core.caps): the server
-  // rejects the whole run with 403 + error_code when it would cross the
-  // per-project row cap or the user's match-operations cap. That case must
-  // abort the run and tell the user why. Any OTHER failure (network blip,
-  // unexpected shape) degrades gracefully as before — the ref stays null and
-  // the run proceeds with per-row calls falling back to 'mapper-ui-manual';
-  // run-creation telemetry must never block matching on its own.
+  // is also the rows_per_project cap enforcement chokepoint (core.capabilities):
+  // the server rejects the whole run with 403 + error_code when it would cross
+  // the per-project row cap. That case must abort the run and tell the user why.
+  // match-operations is metered separately, per row-algorithm pair, by each
+  // $match call the run fires below - not here, to avoid double-counting.
+  // Any OTHER failure (network blip, unexpected shape) degrades gracefully as
+  // before — the ref stays null and the run proceeds with per-row calls
+  // falling back to 'mapper-ui-manual'; run-creation telemetry must never
+  // block matching on its own.
   const createAutomatchRun = async (selectedAlgos, intendedRows) => {
     automatchRunRef.current = null
     if(!project?.url || !intendedRows?.length) return
@@ -2076,9 +2078,9 @@ const MapProject = () => {
     setTimeout(async () => {
       let rowsToProcess = getRowsToProcess(rows, rowStatuses, autoMatchScope, selectedRowIndexes)
 
-      // Pre-truncate to the remaining preview quota (core.caps) rather than letting
-      // the whole run fail at createAutomatchRun. Row count is not the match meter
-      // (TQ6): one match operation per row per configured algorithm.
+      // Pre-truncate to the remaining preview quota (core.capabilities) rather than
+      // letting the whole run fail at createAutomatchRun. Row count is not the match
+      // meter (TQ6): one match operation per row per configured algorithm.
       const preview = getMapperPreview()
       const algorithmCount = Math.max(_selectedAlgos.length, 1)
       const rowsRemaining = preview.rowsPerProject.limit === null ? null : preview.rowsPerProject.remaining
