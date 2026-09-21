@@ -716,6 +716,7 @@ const MapProject = () => {
         setLoadingProject(false)
         return
       }
+      refreshMapperQuotaCache()
       setFilters(response.data?.filters || {})
       if(response.data?.url) {
         APIService.new().overrideURL(response.data.url).appendToUrl('logs/').get().then(response => {
