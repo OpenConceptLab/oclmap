@@ -213,6 +213,7 @@ const MapProject = () => {
   // A ref so every per-row backend call reads the run id synchronously without
   // prop-drilling or re-renders; null outside a run → 'mapper-ui-manual'.
   const automatchRunRef = React.useRef(null);
+  const refreshRowStageSnapshotRef = React.useRef({});
 
   const [previewLimit, setPreviewLimit] = React.useState(null) // {errorCode, limit, used} or null
 
@@ -2841,15 +2842,9 @@ const MapProject = () => {
   }
 
   const onRefreshClick = () => {
-    // Drop this row's candidates from rowMatchState so the re-fetch
-    // doesn't short-circuit on the existing algorithm_responses entries.
-    setRowMatchState(prev => {
-      if(!prev?.[rowIndex]) return prev
-      const next = { ...prev }
-      delete next[rowIndex]
-      rowMatchStateRef.current = next
-      return next
-    })
+    refreshRowStageSnapshotRef.current[rowIndex] = rowStageRef.current?.[rowIndex]
+      ? {...rowStageRef.current[rowIndex]}
+      : null
     fetchAllCandidatesForRow(getFirstAlgoDef()?.id, row, 0, undefined, undefined, undefined, true)
   }
 
@@ -3211,6 +3206,36 @@ const MapProject = () => {
       return { ...prev, [rowId]: row };
     });
   };
+  const restoreRefreshRowStage = rowId => {
+    if(!Object.prototype.hasOwnProperty.call(refreshRowStageSnapshotRef.current, rowId))
+      return
+    const snapshot = refreshRowStageSnapshotRef.current[rowId]
+    delete refreshRowStageSnapshotRef.current[rowId]
+    setRowStage(prev => {
+      const next = {...prev}
+      if(snapshot)
+        next[rowId] = snapshot
+      else
+        delete next[rowId]
+      return next
+    })
+  }
+  const clearRefreshRowStageSnapshot = rowId => {
+    if(Object.prototype.hasOwnProperty.call(refreshRowStageSnapshotRef.current, rowId))
+      delete refreshRowStageSnapshotRef.current[rowId]
+  }
+  const isPreviewLimitError = response =>
+    Boolean(response?.error_code && response.error_code.startsWith('mapper_'))
+
+  const handlePreviewLimitError = (response, rowId) => {
+    if(!isPreviewLimitError(response))
+      return false
+    setAlert({message: response?.detail || t('unknown_error'), severity: 'error'})
+    setIsLoadingInDecisionView(false)
+    if(isNumber(rowId))
+      restoreRefreshRowStage(rowId)
+    return true
+  }
 
   const getAlgoDef = algoId => {
     const algo = find(algosSelected, {id: algoId})
@@ -3325,6 +3350,9 @@ const MapProject = () => {
         const projectContext = buildProjectContext()
         const logExtras = getAlgoLogExtras(getAlgoDef(algoId))
         if(response?.detail) {
+          if(handlePreviewLimitError(response, __row.__index))
+            return
+          clearRefreshRowStageSnapshot(__row.__index)
           markAlgo(__row.__index, algoId, -2)
           log({action: 'algo_failed', extras: logExtras}, __row.__index)
           setAlert({message: response.detail, severity: 'error'})
@@ -3386,6 +3414,7 @@ const MapProject = () => {
           markAlgo(__row.__index, nextAlgo.id, 0)
           fetchAllCandidatesForRow(nextAlgo.id, __row, offset, _retired, scrollToBottom, _filters, forceReload)
         } else {
+          clearRefreshRowStageSnapshot(__row.__index)
           const currentAlgo = algoId ? getAlgoDef(algoId) : null
           // Single-algo native path: $match's reranker:true returns scores
           // inline, so mergeIntoRowMatchState already wrote rerank_score on
@@ -3497,6 +3526,9 @@ const MapProject = () => {
             || response?.status >= 400
             || (response && response.data === undefined && response.status !== 200)
           if(isError) {
+            if(handlePreviewLimitError(response, __row.__index))
+              return response
+            clearRefreshRowStageSnapshot(__row.__index)
             markAlgo(__row.__index, 'ocl-scispacy-loinc', -2)
             log({action: 'algo_failed', extras: {algo: 'ocl-scispacy-loinc', status: response?.status, detail: response?.detail}}, __row.__index)
             setAlert({
@@ -3933,6 +3965,11 @@ const MapProject = () => {
           resolve()
         },
         (response, errorMsg) => {
+          if(handlePreviewLimitError(response, __row.__index)) {
+            resolve()
+            return
+          }
+          clearRefreshRowStageSnapshot(__row.__index)
           markAlgo(__row.__index, bridgeAlgoId, -2)
           log({action: 'algo_failed', extras: getAlgoLogExtras(bridgeAlgo)}, __row.__index)
           setAlert({message: response?.detail || errorMsg, severity: 'error'})
