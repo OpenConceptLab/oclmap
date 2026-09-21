@@ -86,7 +86,7 @@ import MapProjectDeleteConfirmDialog from './MapProjectDeleteConfirmDialog';
 import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
 import DataGridControls from './DataGridControls'
-import { getRowsToProcess } from './autoMatchRows'
+import { getPreviewEligibleRowIndexes, getRowsToProcess } from './autoMatchRows'
 import { createAutosaveScheduler } from './autosave'
 import MatchSummaryCard from './MatchSummaryCard'
 import MappingDecisionResult from './MappingDecisionResult'
@@ -137,7 +137,7 @@ const MapProject = () => {
   const { t } = useTranslation();
   const { toggles, setAlert: baseSetAlert } = React.useContext(OperationsContext);
   const user = getCurrentUser()
-  const [, setMapperQuotaCacheVersion] = React.useState(0)
+  const [mapperQuotaCacheVersion, setMapperQuotaCacheVersion] = React.useState(0)
   const refreshMapperQuotaCache = React.useCallback(() => {
     refreshCurrentUserCapabilitiesCache(() => setMapperQuotaCacheVersion(version => version + 1))
   }, [])
@@ -2083,9 +2083,10 @@ const MapProject = () => {
       }))
 
     setTimeout(async () => {
-      let rowsToProcess = getRowsToProcess(rows, rowStatuses, autoMatchScope, selectedRowIndexes)
-
       const preview = getMapperPreview()
+      const previewEligibleRowIndexes = getPreviewEligibleRowIndexes(rows, preview)
+      let rowsToProcess = getRowsToProcess(rows, rowStatuses, autoMatchScope, selectedRowIndexes, previewEligibleRowIndexes)
+
       const algorithmCount = Math.max(_selectedAlgos.length, 1)
       const rowsRemaining = preview.rowsPerProject.unlimited ? null : preview.rowsPerProject.remaining
       const rowsCapByOperations = preview.matchOperations.unlimited ?
@@ -2802,6 +2803,8 @@ const MapProject = () => {
   }
 
   const onCSVRowSelect = csvRow => {
+    if(!isRowPreviewEligible(csvRow))
+      return
     if(edit?.length > 0)
       return
 
@@ -3027,10 +3030,31 @@ const MapProject = () => {
     setLogs(next)
   }
 
+  const previewEligibleRowIndexes = React.useMemo(
+    () => getPreviewEligibleRowIndexes(data, getMapperPreview()),
+    [data, mapperQuotaCacheVersion]
+  )
+  const previewEligibleRowIndexSet = React.useMemo(
+    () => Array.isArray(previewEligibleRowIndexes) ? new Set(previewEligibleRowIndexes.map(id => id?.toString())) : null,
+    [previewEligibleRowIndexes]
+  )
+  const isRowPreviewEligible = React.useCallback(
+    rowOrId => {
+      if(!previewEligibleRowIndexSet)
+        return true
+      const id = typeof rowOrId === 'object' ? rowOrId?.__index : rowOrId
+      return previewEligibleRowIndexSet.has(id?.toString())
+    },
+    [previewEligibleRowIndexSet]
+  )
+
   const getSelectedRowIndexes = (_rows = data) => {
     if(!isArray(_rows)) return []
     const selectedIds = new Set(selectedRowIds.map(id => id?.toString()))
-    return _rows.filter(_row => selectedIds.has(_row.__index?.toString())).map(_row => _row.__index)
+    return _rows
+      .filter(_row => selectedIds.has(_row.__index?.toString()))
+      .filter(_row => isRowPreviewEligible(_row))
+      .map(_row => _row.__index)
   }
 
   const rowSelectionModel = React.useMemo(() => ({
@@ -3039,8 +3063,9 @@ const MapProject = () => {
   }), [selectedRowIds])
 
   const handleRowSelectionModelChange = React.useCallback((model) => {
-    setSelectedRowIds(Array.from(model?.ids || []))
-  }, [])
+    const ids = Array.from(model?.ids || [])
+    setSelectedRowIds(ids.filter(id => isRowPreviewEligible(id)))
+  }, [isRowPreviewEligible])
 
   const handleGridPointerDownCapture = React.useCallback((event) => {
     const headerButton = event.target?.closest?.('.MuiDataGrid-columnHeader button')
@@ -4384,12 +4409,14 @@ const MapProject = () => {
   React.useEffect(() => {
     setSelectedRowIds(prev => {
       const visibleRowIdSet = new Set(visibleRowIds.map(id => id?.toString()))
-      const next = prev.filter(id => visibleRowIdSet.has(id?.toString()))
+      const next = prev.filter(id => visibleRowIdSet.has(id?.toString()) && isRowPreviewEligible(id))
       return next.length === prev.length ? prev : next
     })
-  }, [visibleRowIdKey])
+  }, [visibleRowIdKey, isRowPreviewEligible])
   const onDataGridCellClick = (params, event) => {
     if(params.field === '__check__')
+      return
+    if(!isRowPreviewEligible(params?.id))
       return
     doubleClickCallback(params, event)
   }
@@ -5327,12 +5354,21 @@ const MapProject = () => {
                     },
                     '.MuiDataGrid-filterFormDeleteIcon': {
                       display: 'none'
+                    },
+                    '.MuiDataGrid-row.preview-disabled-row': {
+                      opacity: 0.48,
+                      backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                      cursor: 'not-allowed'
+                    },
+                    '.MuiDataGrid-row.preview-disabled-row .MuiDataGrid-cell': {
+                      color: 'text.disabled'
                     }
                   }}
                   columnHeaderHeight={64}
                   onColumnWidthChange={(params) => params?.colDef?.field ? setColumnWidth({...columnWidth, [params?.colDef?.field]: params.width}) : null}
                   getRowHeight={() => 'auto'}
                   getRowId={row => row.__index}
+                  isRowSelectable={params => isRowPreviewEligible(params?.id)}
                   rows={rows}
                   columns={columnsForTable}
                   pageSizeOptions={[100]}
@@ -5353,11 +5389,12 @@ const MapProject = () => {
                   getRowClassName={params => {
                     const index = params?.row?.__index
                     const targetConcept = mapSelected[index]
+                    const disabledClass = isRowPreviewEligible(index) ? '' : ' preview-disabled-row'
                     if(targetConcept) {
                       const score = targetConcept?.search_meta?.search_normalized_score
-                      return getCandidateBucket(score) + '-row'
+                      return getCandidateBucket(score) + '-row' + disabledClass
                     } else
-                      return 'unmatched-row'
+                      return 'unmatched-row' + disabledClass
                   }}
                 />
               </div>
@@ -5405,7 +5442,8 @@ const MapProject = () => {
               repoVersion,
               inAIAssistantGroup,
               algosSelected,
-              isCoreUser
+              isCoreUser,
+              previewEligibleRowIndexes
             }}
           />
           <PreviewLimitDialog

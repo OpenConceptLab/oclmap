@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { getRowsToProcess } from '../autoMatchRows.js'
+import { getPreviewEligibleRowIndexes, getRowsToProcess } from '../autoMatchRows.js'
 
 const rows = [
   { __index: 0, label: 'zero' },
@@ -9,6 +9,18 @@ const rows = [
   { __index: 2, label: 'two' },
   { __index: 3, label: 'three' }
 ]
+
+test('getPreviewEligibleRowIndexes: returns fixed first rows in upload order', () => {
+  const result = getPreviewEligibleRowIndexes(rows, { rowsPerProject: { limit: 2 } })
+
+  assert.deepEqual(result, [0, 1])
+})
+
+test('getPreviewEligibleRowIndexes: unlimited preview returns null eligibility filter', () => {
+  const result = getPreviewEligibleRowIndexes(rows, { rowsPerProject: { unlimited: true } })
+
+  assert.equal(result, null)
+})
 
 test('getRowsToProcess: unmapped scope includes only unmapped rows', () => {
   const result = getRowsToProcess(
@@ -63,6 +75,30 @@ test('getRowsToProcess: selected scope preserves table row order, not selection 
   )
 
   assert.deepEqual(result.map(row => row.__index), [1, 3])
+})
+
+test('getRowsToProcess: preview eligibility excludes rows outside the fixed upload-order allowance', () => {
+  const result = getRowsToProcess(
+    rows,
+    { unmapped: [0, 1, 2, 3], readyForReview: [], reviewed: [] },
+    'allIncludingApproved',
+    [],
+    [0, 1]
+  )
+
+  assert.deepEqual(result.map(row => row.__index), [0, 1])
+})
+
+test('getRowsToProcess: selected scope ignores selected rows outside preview eligibility', () => {
+  const result = getRowsToProcess(
+    rows,
+    { unmapped: [0, 1, 2, 3], readyForReview: [], reviewed: [] },
+    'selected',
+    [1, 3],
+    [0, 1, 2]
+  )
+
+  assert.deepEqual(result.map(row => row.__index), [1])
 })
 
 test('getRowsToProcess: invalid rows input returns empty array', () => {

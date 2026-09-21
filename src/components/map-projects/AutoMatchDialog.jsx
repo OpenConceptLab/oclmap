@@ -47,23 +47,37 @@ const AutoMatchDialog = ({
   onSubmit,
   inAIAssistantGroup,
   algosSelected,
-  isCoreUser
+  isCoreUser,
+  previewEligibleRowIndexes
 }) => {
   const { t } = useTranslation()
   const [algos, setAlgos] = React.useState(true)
   const [confirmAllIncludingApproved, setConfirmAllIncludingApproved] = React.useState(false)
-  const allRowsCount = rowStatuses.unmapped.length + rowStatuses.readyForReview.length
-  const totalRows = rowStatuses.unmapped.length + rowStatuses.readyForReview.length + rowStatuses.reviewed.length
+  const previewEligibleRowIndexSet = React.useMemo(
+    () => Array.isArray(previewEligibleRowIndexes) ? new Set(previewEligibleRowIndexes.map(id => id?.toString())) : null,
+    [previewEligibleRowIndexes]
+  )
+  const countEligible = React.useCallback(
+    rowIndexes => previewEligibleRowIndexSet ?
+      rowIndexes.filter(index => previewEligibleRowIndexSet.has(index?.toString())).length :
+      rowIndexes.length,
+    [previewEligibleRowIndexSet]
+  )
+  const unmappedRowsCount = countEligible(rowStatuses.unmapped)
+  const readyForReviewRowsCount = countEligible(rowStatuses.readyForReview)
+  const reviewedRowsCount = countEligible(rowStatuses.reviewed)
+  const allRowsCount = unmappedRowsCount + readyForReviewRowsCount
+  const totalRows = allRowsCount + reviewedRowsCount
   const rowsInSelectedScope = {
-    unmapped: rowStatuses.unmapped.length,
+    unmapped: unmappedRowsCount,
     all: allRowsCount,
     allIncludingApproved: totalRows,
     selected: selectedRowCount
   }
   const rowsToMatchCount = rowsInSelectedScope[autoMatchScope] || 0
   const hasSelectedRows = selectedRowCount > 0
-  const hasUnmappedRows = rowStatuses.unmapped.length > 0
-  const hasApprovedRows = rowStatuses.reviewed.length > 0
+  const hasUnmappedRows = unmappedRowsCount > 0
+  const hasApprovedRows = reviewedRowsCount > 0
   const isAllIncludingApproved = autoMatchScope === 'allIncludingApproved'
 
   // One-time allowance (R2, no reset). Row count is NOT the match meter (TQ6):
@@ -109,7 +123,7 @@ const AutoMatchDialog = ({
     {
       value: 'unmapped',
       disabled: !hasUnmappedRows,
-      count: rowStatuses.unmapped.length,
+      count: unmappedRowsCount,
       label: t('map_project.unmapped_only'),
       helperText: t('map_project.auto_match_unmapped_only_note')
     },
@@ -119,8 +133,8 @@ const AutoMatchDialog = ({
       count: allRowsCount,
       label: t('map_project.unmapped_and_proposed'),
       helperText: t('map_project.auto_match_note', {
-        approvedCount: rowStatuses.reviewed.length.toLocaleString(),
-        proposedCount: rowStatuses.readyForReview.length.toLocaleString()
+        approvedCount: reviewedRowsCount.toLocaleString(),
+        proposedCount: readyForReviewRowsCount.toLocaleString()
       })
     },
     {
@@ -130,8 +144,8 @@ const AutoMatchDialog = ({
       label: t('map_project.all_including_approved'),
       warning: true,
       helperText: t('map_project.auto_match_all_including_approved_note', {
-        approvedCount: rowStatuses.reviewed.length.toLocaleString(),
-        proposedCount: rowStatuses.readyForReview.length.toLocaleString()
+        approvedCount: reviewedRowsCount.toLocaleString(),
+        proposedCount: readyForReviewRowsCount.toLocaleString()
       })
     }
   ]
@@ -221,7 +235,7 @@ const AutoMatchDialog = ({
                           />
                         }
                         label={t('map_project.auto_match_all_including_approved_confirm', {
-                          approvedCount: rowStatuses.reviewed.length.toLocaleString()
+                          approvedCount: reviewedRowsCount.toLocaleString()
                         })}
                       />
                   }
