@@ -84,17 +84,23 @@ const AutoMatchDialog = ({
   // one operation per row per configured algorithm, fanned out across however
   // many algorithms are selected below.
   const preview = getMapperPreview()
-  const algorithmCount = Math.max(algosSelected.length, 1)
+  const algorithmCount = algos ? Math.max(algosSelected.length, 1) : 0
   const estimatedOperations = rowsToMatchCount * algorithmCount
   const operationsRemaining = preview.matchOperations.unlimited ? null : preview.matchOperations.remaining
   const rowsRemaining = preview.rowsPerProject.unlimited ? null : preview.rowsPerProject.remaining
-  const rowsCapByOperations = operationsRemaining === null ? null : Math.floor(operationsRemaining / algorithmCount)
-  const effectiveRowCap = [rowsRemaining, rowsCapByOperations].filter(n => n !== null).reduce(
+  const rowsCapByOperations = (operationsRemaining === null || algorithmCount === 0) ?
+    null : Math.floor(operationsRemaining / algorithmCount)
+  // One $invoke per row, so the AI cap is a flat count - only applies when AI
+  // analysis is actually going to run.
+  const aiCallsRemaining = preview.aiAssistantCalls.unlimited ? null : preview.aiAssistantCalls.remaining
+  const rowsCapByAICalls = autoRunAIAnalysis ? aiCallsRemaining : null
+  const effectiveRowCap = [rowsRemaining, rowsCapByOperations, rowsCapByAICalls].filter(n => n !== null).reduce(
     (min, n) => min === null ? n : Math.min(min, n), null
   )
   const willTruncate = effectiveRowCap !== null && rowsToMatchCount > effectiveRowCap
   const isPreviewQuotaExhausted = willTruncate && effectiveRowCap <= 0
-  const isPreviewLimited = operationsRemaining !== null || rowsRemaining !== null
+  const isPreviewLimited = operationsRemaining !== null || rowsRemaining !== null ||
+    (autoRunAIAnalysis && aiCallsRemaining !== null)
 
   React.useEffect(() => {
     if (autoMatchScope === 'unmapped' && !hasUnmappedRows) {

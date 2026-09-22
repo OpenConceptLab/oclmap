@@ -2099,9 +2099,9 @@ const MapProject = () => {
       const previewEligibleRowIndexes = getPreviewEligibleRowIndexes(rows, preview)
       let rowsToProcess = getRowsToProcess(rows, rowStatuses, autoMatchScope, selectedRowIndexes, previewEligibleRowIndexes)
 
-      const algorithmCount = Math.max(_selectedAlgos.length, 1)
+      const algorithmCount = _selectedAlgos.length
       const rowsRemaining = preview.rowsPerProject.unlimited ? null : preview.rowsPerProject.remaining
-      const rowsCapByOperations = preview.matchOperations.unlimited ?
+      const rowsCapByOperations = (preview.matchOperations.unlimited || algorithmCount === 0) ?
         null : Math.floor(preview.matchOperations.remaining / algorithmCount)
       const effectiveRowCap = [rowsRemaining, rowsCapByOperations].filter(n => n !== null).reduce(
         (min, n) => min === null ? n : Math.min(min, n), null
