@@ -42,12 +42,11 @@ class OIDLoginCallback extends React.Component {
             localStorage.removeItem('server_configs')
             localStorage.setItem('token', res.data.access_token)
             localStorage.setItem('id_token', res.data.id_token)
-            const sessionExpired = sessionStorage.getItem('session_expired')
             sessionStorage.removeItem('session_expired')
             setAlert({
               duration: 2000,
-              severity: sessionExpired ? 'info' : 'success',
-              message: sessionExpired ? this.props.t('auth.session_expired') : this.props.t('auth.sign_in_success')
+              severity: 'success',
+              message: this.props.t('auth.sign_in_success')
             })
             this.cacheUserData()
           } else {
