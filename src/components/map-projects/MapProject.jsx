@@ -3466,8 +3466,8 @@ const MapProject = () => {
           markAlgo(__row.__index, nextAlgo.id, 0)
           fetchAllCandidatesForRow(nextAlgo.id, __row, offset, _retired, scrollToBottom, _filters, forceReload)
         } else {
-          if(clearRefreshRowStageSnapshot(__row.__index))
-            refreshMapperQuotaCache()
+          clearRefreshRowStageSnapshot(__row.__index)
+          refreshMapperQuotaCache()
           const currentAlgo = algoId ? getAlgoDef(algoId) : null
           // Single-algo native path: $match's reranker:true returns scores
           // inline, so mergeIntoRowMatchState already wrote rerank_score on
@@ -3581,8 +3581,8 @@ const MapProject = () => {
           if(isError) {
             if(handlePreviewLimitError(response, __row.__index, 'ocl-scispacy-loinc'))
               return response
-            if(clearRefreshRowStageSnapshot(__row.__index))
-              refreshMapperQuotaCache()
+            clearRefreshRowStageSnapshot(__row.__index)
+            refreshMapperQuotaCache()
             markAlgo(__row.__index, 'ocl-scispacy-loinc', -2)
             log({action: 'algo_failed', extras: {algo: 'ocl-scispacy-loinc', status: response?.status, detail: response?.detail}}, __row.__index)
             setAlert({
@@ -4023,8 +4023,8 @@ const MapProject = () => {
             resolve()
             return
           }
-          if(clearRefreshRowStageSnapshot(__row.__index))
-            refreshMapperQuotaCache()
+          clearRefreshRowStageSnapshot(__row.__index)
+          refreshMapperQuotaCache()
           markAlgo(__row.__index, bridgeAlgoId, -2)
           log({action: 'algo_failed', extras: getAlgoLogExtras(bridgeAlgo)}, __row.__index)
           setAlert({message: response?.detail || errorMsg, severity: 'error'})
