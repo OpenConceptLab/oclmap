@@ -2,8 +2,10 @@ export const getPreviewEligibleRowIndexes = (rows, preview) => {
   if(!Array.isArray(rows))
     return []
   const rowsPerProject = preview?.rowsPerProject || {}
-  if(rowsPerProject.unlimited || rowsPerProject.limit === null || rowsPerProject.limit === undefined)
+  if(rowsPerProject.unlimited)
     return null
+  if(rowsPerProject.limit === null || rowsPerProject.limit === undefined)
+    return []
   return rows.slice(0, Math.max(rowsPerProject.limit, 0)).map(row => row.__index)
 }
 

@@ -22,6 +22,12 @@ test('getPreviewEligibleRowIndexes: unlimited preview returns null eligibility f
   assert.equal(result, null)
 })
 
+test('getPreviewEligibleRowIndexes: missing capability (limit null) blocks every row', () => {
+  const result = getPreviewEligibleRowIndexes(rows, { rowsPerProject: { limit: null } })
+
+  assert.deepEqual(result, [])
+})
+
 test('getRowsToProcess: unmapped scope includes only unmapped rows', () => {
   const result = getRowsToProcess(
     rows,
