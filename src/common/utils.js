@@ -277,10 +277,12 @@ export const refreshCurrentUserCapabilitiesCache = callback => {
     if(response.status === 200) {
       const currentUser = getCurrentUser()
       if(currentUser) {
-        localStorage.setItem('user', JSON.stringify({
-          ...currentUser,
-          capabilities: response.data?.capabilities || []
-        }));
+        const updates = {}
+        ['capabilities', 'permissions'].forEach(key => {
+          if(response.data && Object.prototype.hasOwnProperty.call(response.data, key))
+            updates[key] = response.data[key]
+        })
+        localStorage.setItem('user', JSON.stringify({...currentUser, ...updates}));
       }
       if(callback) callback(response);
     }
