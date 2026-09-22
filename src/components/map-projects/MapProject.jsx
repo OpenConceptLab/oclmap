@@ -3275,13 +3275,16 @@ const MapProject = () => {
   const isPreviewLimitError = response =>
     Boolean(response?.error_code && response.error_code.startsWith('mapper_'))
 
-  const handlePreviewLimitError = (response, rowId) => {
+  const handlePreviewLimitError = (response, rowId, algoId) => {
     if(!isPreviewLimitError(response))
       return false
     setAlert({message: response?.detail || t('unknown_error'), severity: 'error'})
     setIsLoadingInDecisionView(false)
-    if(isNumber(rowId) && restoreRefreshRowStage(rowId))
+    if(isNumber(rowId)) {
+      if(!restoreRefreshRowStage(rowId) && algoId)
+        markAlgo(rowId, algoId, -2)
       refreshMapperQuotaCache()
+    }
     return true
   }
 
@@ -3398,10 +3401,10 @@ const MapProject = () => {
         const projectContext = buildProjectContext()
         const logExtras = getAlgoLogExtras(getAlgoDef(algoId))
         if(response?.detail) {
-          if(handlePreviewLimitError(response, __row.__index))
+          if(handlePreviewLimitError(response, __row.__index, algoId))
             return
-          if(clearRefreshRowStageSnapshot(__row.__index))
-            refreshMapperQuotaCache()
+          clearRefreshRowStageSnapshot(__row.__index)
+          refreshMapperQuotaCache()
           markAlgo(__row.__index, algoId, -2)
           log({action: 'algo_failed', extras: logExtras}, __row.__index)
           setAlert({message: response.detail, severity: 'error'})
@@ -3576,7 +3579,7 @@ const MapProject = () => {
             || response?.status >= 400
             || (response && response.data === undefined && response.status !== 200)
           if(isError) {
-            if(handlePreviewLimitError(response, __row.__index))
+            if(handlePreviewLimitError(response, __row.__index, 'ocl-scispacy-loinc'))
               return response
             if(clearRefreshRowStageSnapshot(__row.__index))
               refreshMapperQuotaCache()
@@ -4016,7 +4019,7 @@ const MapProject = () => {
           resolve()
         },
         (response, errorMsg) => {
-          if(handlePreviewLimitError(response, __row.__index)) {
+          if(handlePreviewLimitError(response, __row.__index, bridgeAlgoId)) {
             resolve()
             return
           }
