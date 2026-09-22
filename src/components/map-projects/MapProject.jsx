@@ -1553,7 +1553,7 @@ const MapProject = () => {
         APIService.new().overrideURL(response.data.url).appendToUrl('logs/').post({logs: {row_logs: rowLogsForSave, project_logs: savedProjectLogs}}).then(() => {})
       } else if(status === 403 && errorData?.error_code) {
         setPreviewLimit({errorCode: errorData.error_code, limit: errorData.limit, used: errorData.used})
-      } else {
+      } else if(!isAutoSave && status !== 429 && status !== 401) {
         baseSetAlert({severity: 'error', message: errorData?.detail || t('unknown_error'), duration: 8000})
       }
     }).finally(() => setIsSaving(false))
