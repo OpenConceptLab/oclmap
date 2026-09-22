@@ -23,6 +23,14 @@ const CAP_COPY_KEY = {
   mapper_projects_limit_reached: 'projects',
   mapper_org_projects_denied: 'org_projects',
   mapper_access_denied: 'access',
+  mapper_custom_algorithms_denied: 'custom_algorithms',
+  mapper_ai_assistant_denied: 'ai_assistant',
+  // Never entitled (no cap configured at all) is a different condition from
+  // having used up a real allowance, and needs its own copy per capability.
+  mapper_rows_per_project_not_entitled: 'rows_not_entitled',
+  mapper_match_operations_not_entitled: 'match_operations_not_entitled',
+  mapper_projects_not_entitled: 'projects_not_entitled',
+  ai_assistant_calls_not_entitled: 'ai_assistant',
 }
 
 const PreviewLimitDialog = ({open, onClose, errorCode, limit, used}) => {
