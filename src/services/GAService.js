@@ -36,6 +36,10 @@ const GAService = {
     this.recordEvent(action, { event_category: category, event_label: label });
   },
 
+  recordActionEvent(category, action, label, params = {}) {
+    this.recordEvent(action, { event_category: category, event_label: label || startCase(action), ...params });
+  },
+
   recordSignupStart() {
     sessionStorage.setItem(SIGNUP_FLOW_PENDING_KEY, '1');
     this.recordEvent('signup_start', { event_category: 'auth', event_label: 'signup_start' });
