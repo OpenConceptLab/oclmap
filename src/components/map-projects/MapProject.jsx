@@ -1951,6 +1951,17 @@ const MapProject = () => {
             ...extraParams
           }
         );
+        // service.post() resolves (not throws) on a 403, so check explicitly.
+        // abortRef.current halts the rest of the run instead of draining it.
+        if(isPreviewLimitError(response)) {
+          forEach(rowBatch, __row => {
+            markAlgo(__row.__index, algo.id, -2)
+            log({action: 'algo_failed', extras: getAlgoLogExtras(algo)}, __row.__index)
+          })
+          handlePreviewLimitError(response)
+          abortRef.current = true
+          return [];
+        }
         forEach(rowBatch, __row => {
           markAlgo(__row.__index, algo.id, 1)
           log({action: 'algo_finished', extras: getAlgoLogExtras(algo)}, __row.__index)
