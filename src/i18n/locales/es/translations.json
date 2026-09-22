@@ -472,6 +472,7 @@
     "preview_quota_ai_calls": "Llamadas al Asistente de IA",
     "preview_quota_used_of_limit": "{{used}} de {{limit}} usados",
     "preview_estimate_note": "Esta ejecución usará {{used}} de tus {{remaining}} operaciones de coincidencia restantes.",
+    "preview_estimate_rows_note": "Esta ejecución usará {{used}} de tus {{remaining}} filas de vista previa restantes.",
     "preview_estimate_will_truncate": "Tu cuota de vista previa cubre {{allowed}} fila(s) más. Asignaremos las primeras {{allowed}} de las {{requested}} filas que seleccionaste.",
     "preview_estimate_no_rows_left": "No quedan más filas en tu cuota de vista previa. Puedes seguir revisando, editando y exportando este proyecto.",
     "ai_assistant_limit_reached": "Has usado todas tus llamadas de vista previa al Asistente de IA. La asignación continuará sin análisis de IA para las filas restantes.",

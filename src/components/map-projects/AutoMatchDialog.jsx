@@ -193,9 +193,14 @@ const AutoMatchDialog = ({
                     allowed: Math.max(effectiveRowCap, 0).toLocaleString(),
                     requested: rowsToMatchCount.toLocaleString()
                   }) :
+                  operationsRemaining !== null ?
                   t('map_project.preview_estimate_note', {
                     used: estimatedOperations.toLocaleString(),
-                    remaining: operationsRemaining !== null ? operationsRemaining.toLocaleString() : rowsRemaining.toLocaleString()
+                    remaining: operationsRemaining.toLocaleString()
+                  }) :
+                  t('map_project.preview_estimate_rows_note', {
+                    used: rowsToMatchCount.toLocaleString(),
+                    remaining: rowsRemaining.toLocaleString()
                   })
               }
             </Alert>
