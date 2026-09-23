@@ -1164,6 +1164,8 @@ export const getMapperPreview = () => {
 }
 
 export const getNewProjectBlockReason = (preview = getMapperPreview()) => {
+  if(isAdminUser())
+    return null
   if(!preview.hasAccess) return 'access'
   const { projects } = preview
   if(projects.limit === null || projects.limit === undefined) return 'projects_not_entitled'
