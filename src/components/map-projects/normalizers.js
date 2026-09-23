@@ -5,7 +5,7 @@
  *
  * Splits the legacy flat candidate-shaped object returned by match algorithms
  * into four entities:
- *   - AlgorithmResponse: raw algorithm output (preserved verbatim)
+ *   - AlgorithmResponse: raw algorithm output (payload only, see toStoredResponse)
  *   - Candidate:         a claim that a concept matches a row, per algorithm
  *   - ConceptDefinition: project-wide canonical concept data (lives in conceptCache)
  *   - ConceptRow:        per-row presence of a concept (rerank_score lives here)
@@ -30,9 +30,28 @@ const newId = () => {
   return `id-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
+// Keys that mark an HTTP (axios) response rather than a payload. None of them
+// is stored: `config` is the request, headers included; `request` is the XHR.
+const HTTP_RESPONSE_KEYS = ['config', 'headers', 'request']
+
+const isHttpResponse = (value) =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value) &&
+  HTTP_RESPONSE_KEYS.some(key => key in value)
+
 /**
- * Create an AlgorithmResponse entity wrapping the raw algorithm output.
- * Preserves the response untouched so debug/audit views can render it later.
+ * Reduce an algorithm's HTTP response to what is stored with the project: the
+ * body (`data`) and the HTTP `status`. Values that aren't HTTP responses, such
+ * as arrays of `{row, results}` or a parsed error body, are already payload and
+ * are returned unchanged.
+ */
+export const toStoredResponse = (response) => {
+  if (!isHttpResponse(response)) return response
+  return { data: response.data, status: response.status }
+}
+
+/**
+ * Create an AlgorithmResponse entity wrapping the raw algorithm output. Keeps
+ * the payload (see toStoredResponse) so debug/audit views can render it later.
  */
 export const createAlgorithmResponse = (rawResponse, algorithmId, options = {}) => {
   const { status = 'success', error, rowIndex } = options
@@ -40,10 +59,50 @@ export const createAlgorithmResponse = (rawResponse, algorithmId, options = {}) 
     id: newId(),
     algorithm_id: algorithmId,
     row_index: rowIndex,
-    raw: rawResponse,
+    raw: toStoredResponse(rawResponse),
     received_at: new Date().toISOString(),
     status,
     ...(error ? { error } : {})
+  }
+}
+
+/**
+ * Return a copy of rowMatchState with every AlgorithmResponse's `raw` reduced
+ * by toStoredResponse. Rows saved before that reduction can still hold full
+ * HTTP responses, so this runs on project load and again before save.
+ */
+export const toStoredRowMatchState = (rowMatchState) => {
+  const stored = {}
+  for (const [rowIndex, row] of Object.entries(rowMatchState || {})) {
+    if (!row?.algorithm_responses) {
+      stored[rowIndex] = row
+      continue
+    }
+    const algorithmResponses = {}
+    for (const [id, ar] of Object.entries(row.algorithm_responses)) {
+      algorithmResponses[id] = isHttpResponse(ar?.raw) ? { ...ar, raw: toStoredResponse(ar.raw) } : ar
+    }
+    stored[rowIndex] = { ...row, algorithm_responses: algorithmResponses }
+  }
+  return stored
+}
+
+/**
+ * Build the v2 `candidates` wire format that onSave persists. Concept identity
+ * lives in concept_definitions[] (deduped by key); per-row state lives in
+ * rows{}, reduced by toStoredRowMatchState. The derived `key` field is stripped
+ * from each def (re-attached on load) per plans/unified-mapper-model.md.
+ */
+export const serializeCandidates = (rowMatchState, conceptCache) => {
+  const conceptDefinitions = []
+  for (const [defKey, def] of Object.entries(conceptCache || {})) {
+    const { key: _runtimeKey, ...defWithoutKey } = def  // eslint-disable-line no-unused-vars
+    conceptDefinitions.push([defKey, defWithoutKey])
+  }
+  return {
+    mapper_schema_version: 2,
+    concept_definitions: conceptDefinitions,
+    rows: toStoredRowMatchState(rowMatchState)
   }
 }
 
@@ -337,7 +396,8 @@ export const normalizeAlgoResult = (result, ctx = {}) => {
  * @param {number} ctx.rowIndex
  * @param {string} [ctx.status='success']
  * @param {string} [ctx.error]
- * @param {*}      [ctx.rawResponse]             Override stored raw (defaults to rawPayload).
+ * @param {*}      [ctx.rawResponse]             Override stored raw (defaults to rawPayload);
+ *                                               reduced by toStoredResponse.
  */
 export const normalizeAlgorithmInvocation = (rawPayload, ctx = {}) => {
   const {

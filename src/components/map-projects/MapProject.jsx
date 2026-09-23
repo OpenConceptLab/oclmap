@@ -103,7 +103,7 @@ import ProjectLogs from './ProjectLogs';
 import { useAlgos, ensureConceptIdentity } from './algorithms'
 import AutoMatchDialog from './AutoMatchDialog'
 import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
-import { normalizeAlgorithmInvocation, lookupStatusRank, buildRecommendableConceptEntry, stripConstantClassAndDatatype, buildLookupConceptUrl } from './normalizers'
+import { normalizeAlgorithmInvocation, lookupStatusRank, buildRecommendableConceptEntry, stripConstantClassAndDatatype, buildLookupConceptUrl, serializeCandidates, toStoredRowMatchState } from './normalizers'
 import { parseConceptKey } from './conceptKey'
 import { getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId } from './projectTargetRepo'
 import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, formatBridgeTargetDownloadEntry, resolveAICandidateID, getScoreDetails, getAIAnalysisCandidateIDs } from './viewBuilders.js'
@@ -775,7 +775,7 @@ const MapProject = () => {
         for(const [defKey, def] of (savedCandidates.concept_definitions || [])) {
           _cache[defKey] = { ...def, key: defKey }
         }
-        Object.assign(_rowMatchState, savedCandidates.rows || {})
+        Object.assign(_rowMatchState, toStoredRowMatchState(savedCandidates.rows))
         // Reconstruct rowStage UI markers from rowMatchState:
         //   rerank: 1 if any concept_row has a rerank_score, else -1
         //   recommend: 1 if response.data.analysis[idx] is non-empty, else -1
@@ -1447,21 +1447,8 @@ const MapProject = () => {
         concept: getConcept(data)
       }
     })
-    // v2 wire format: serialize rowMatchState + conceptCache directly.
-    // Concept identity lives in concept_definitions[] (deduped by key);
-    // per-row state lives in rows{}. The derived `key` field is stripped
-    // from each def (re-attached on load) per plans/unified-mapper-model.md.
-    const conceptDefinitions = []
-    const cache = conceptCacheRef.current || {}
-    for(const [defKey, def] of Object.entries(cache)) {
-      const { key: _runtimeKey, ...defWithoutKey } = def  // eslint-disable-line no-unused-vars
-      conceptDefinitions.push([defKey, defWithoutKey])
-    }
-    const candidates = {
-      mapper_schema_version: 2,
-      concept_definitions: conceptDefinitions,
-      rows: rowMatchStateRef.current || {}
-    }
+    // v2 wire format: rowMatchState + conceptCache (see serializeCandidates).
+    const candidates = serializeCandidates(rowMatchStateRef.current, conceptCacheRef.current)
     const formData = new FormData();
     formData.append('file', f);
     formData.append('candidates', JSON.stringify(candidates))
