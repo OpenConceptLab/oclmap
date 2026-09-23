@@ -4,8 +4,9 @@ on:
   push:
     branches: [ "main" ]
 
-permissions:
-  contents: write
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   AWS_REGION: "us-east-2"                     # set this to your preferred AWS region, e.g. us-west-1
@@ -49,10 +50,6 @@ jobs:
     name: Build and push image
     runs-on: ubuntu-latest
 
-    #permissions:
-    #  packages: write
-    #  contents: read
-
     steps:
     - name: Checkout repo
       uses: actions/checkout@v3
@@ -89,6 +86,8 @@ jobs:
     runs-on: ubuntu-latest
     name: Release
     environment: rc
+    permissions:
+      contents: write
     steps:
       - name: Checkout repo
         uses: actions/checkout@v3
