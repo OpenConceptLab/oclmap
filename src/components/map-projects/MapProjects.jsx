@@ -30,7 +30,7 @@ import ContentCopy from '@mui/icons-material/ContentCopy';
 import DeleteOutlined from '@mui/icons-material/DeleteOutlined';
 
 import APIService from '../../services/APIService'
-import { getCurrentUser, getMapperPreview, getNewProjectBlockReason } from '../../common/utils'
+import { getCurrentUser, getMapperPreview, getNewProjectBlockReason, refreshCurrentUserCapabilitiesCache } from '../../common/utils'
 
 import OwnerIcon from '../common/OwnerIcon'
 import NoResults from '../search/NoResults';
@@ -41,6 +41,10 @@ const MapProjects = () => {
   const history = useHistory()
 
   const user = getCurrentUser()
+  const [, setQuotaCacheVersion] = React.useState(0)
+  const refreshMapperQuotaCache = React.useCallback(() => {
+    refreshCurrentUserCapabilitiesCache(() => setQuotaCacheVersion(version => version + 1))
+  }, [])
   const newProjectBlockReason = getNewProjectBlockReason(getMapperPreview())
   const canCreateProject = !newProjectBlockReason
   const [loading, setLoading] = React.useState([])
@@ -263,7 +267,7 @@ const MapProjects = () => {
       </Paper>
       {
         deleteProject?.id &&
-          <MapProjectDeleteConfirmDialog open={Boolean(deleteProject?.id)} onClose={onProjectDelete} project={deleteProject} />
+          <MapProjectDeleteConfirmDialog open={Boolean(deleteProject?.id)} onClose={onProjectDelete} onDeleted={refreshMapperQuotaCache} project={deleteProject} />
       }
     </div>
   )

@@ -5653,7 +5653,7 @@ const MapProject = () => {
     </Split>
       {
         deleteProject && project?.id &&
-          <MapProjectDeleteConfirmDialog open={deleteProject} onClose={() => setDeleteProject(false)} project={project} />
+          <MapProjectDeleteConfirmDialog open={deleteProject} onClose={() => setDeleteProject(false)} onDeleted={refreshMapperQuotaCache} project={project} />
       }
       <ConceptDetailsPanel
         payload={showItem}
