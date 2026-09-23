@@ -6,6 +6,7 @@ import * as XLSX from 'xlsx';
 import moment from 'moment'
 import Split from 'react-split';
 import BridgeMatch from '../../services/LazyLoader'
+import GAService from '../../services/GAService'
 
 import { useParams, useHistory, useLocation } from 'react-router-dom'
 
@@ -1403,6 +1404,7 @@ const MapProject = () => {
   const downloadImportReport = importId => {
     if(!importId)
       return
+    GAService.recordActionEvent('MapProject Download', 'download_import_report')
     APIService.new().overrideURL('/importers/bulk-import/').get(null, null, {task: importId, result: 'json'}).then(res => {
       if(get(res, 'data')) {
         downloadObject(JSON.stringify(res.data, undefined, 2), 'application/json', `${importId}.json`)
@@ -1502,6 +1504,8 @@ const MapProject = () => {
       formData.append('input_locales', JSON.stringify([inputLocale]))
     formData.append('use_lexical_variants', useLexicalVariants)
     const isUpdate = Boolean(project?.id)
+    if(!isAutoSave)
+      GAService.recordUpsertEvent('MapProject', isUpdate, 'map_project')
     let service = APIService.new().overrideURL(owner).appendToUrl('map-projects/')
     if(isUpdate)
       service = service.appendToUrl(project.id + '/').put(formData, null, {"Content-Type": "multipart/form-data"})
@@ -1871,6 +1875,12 @@ const MapProject = () => {
       selected_rows_count: selectedRowIndexes.length,
       selected_row_indexes: selectedRowIndexes
     } : {}
+    GAService.recordActionEvent('MapProject', 'auto_match', undefined, {
+      scope: autoMatchScope,
+      selected_rows_count: selectedRowIndexes.length,
+      algorithm_count: selectedAlgos.length,
+      run_ai_analysis: Boolean(inAIAssistantGroup && autoRunAIAnalysis)
+    })
 
     // Function to process a single batch
     const processBatch = async (_repo, rowBatch, algo) => {
@@ -2118,6 +2128,10 @@ const MapProject = () => {
   }, [conceptCache]);
 
   const runBulkAIAnalysis = async (_rows) => {
+    GAService.recordActionEvent('MapProject', 'ai_assistant_run', undefined, {
+      mode: 'bulk',
+      row_count: _rows.length
+    })
     setLoadingMatches(true)
     setBulkAIAnalysisStartedAt(moment())
     let resolvedPromptTemplate
@@ -2510,10 +2524,12 @@ const MapProject = () => {
   const onDownloadClick = option => {
     let log = false
     if(option === 'csv') {
+      GAService.recordActionEvent('MapProject Download', 'download_csv')
       const workbook = getWorkbook()
       XLSX.writeFile(workbook, `${name || t('map_project.matched')}.${moment().format('YYYYMMDDHHmmss')}.csv`, { compression: true });
       log = true
     } else if (option === 'candidates_metadata') {
+      GAService.recordActionEvent('MapProject Download', 'download_candidates_metadata')
       let projectData = {
         project: getProjectMetadata(),
         rows: map(rows, _row => {
@@ -2528,6 +2544,7 @@ const MapProject = () => {
       downloadObject(JSON.stringify(projectData, undefined, 2), 'application/json', `${name}.candidates_metadata.json`)
       log = true
     } else if (option === 'full_export') {
+      GAService.recordActionEvent('MapProject Download', 'download_full_export')
       downloadObject(JSON.stringify(project, undefined, 2), 'application/json', `${name}.full_export.json`)
       log = true
     }
@@ -2744,9 +2761,11 @@ const MapProject = () => {
     })
   }
 
-  const onCSVRowSelect = csvRow => {
+  const onCSVRowSelect = (csvRow, options = {}) => {
     if(edit?.length > 0)
       return
+    if(options.source !== 'approve_next')
+      GAService.recordActionEvent('MapProject', 'row_click')
 
     const matched = get(find(matchedConcepts, concept => concept.row.__index === csvRow.__index), 'results.0') || mapSelected[csvRow.__index]
     let url = matched?.url
@@ -2792,6 +2811,7 @@ const MapProject = () => {
   }
 
   const onRefreshClick = () => {
+    GAService.recordActionEvent('MapProject', 'refresh_candidates')
     // Drop this row's candidates from rowMatchState so the re-fetch
     // doesn't short-circuit on the existing algorithm_responses entries.
     setRowMatchState(prev => {
@@ -2813,6 +2833,7 @@ const MapProject = () => {
   const onMap = (event, concept, unmap=false, mapType='SAME-AS', closeConcept=false) => {
     event.preventDefault()
     event.stopPropagation()
+    GAService.recordActionEvent('MapProject', unmap ? 'manual_unmap' : 'manual_map', undefined, { map_type: mapType })
     _onMap(concept, unmap, mapType)
     setRowStatuses(prev => {
       prev.reviewed = without(prev.reviewed, rowIndex)
@@ -2844,6 +2865,7 @@ const MapProject = () => {
   }
 
   const onReviewDone = (next = false) => {
+    GAService.recordActionEvent('MapProject', 'approve', undefined, { next: Boolean(next) })
     const newRowStatuses = {...rowStatuses, reviewed: uniq([...rowStatuses.reviewed, rowIndex]), readyForReview: without(rowStatuses.readyForReview, rowIndex), unmapped: without(rowStatuses.unmapped, rowIndex)}
     setRowStatuses(newRowStatuses)
     log({'action': 'approved'})
@@ -2851,7 +2873,7 @@ const MapProject = () => {
     if(next){
       const nextRow = data[selectedRowStatus === 'all' ? rowIndex + 1 : find(rowStatuses[selectedRowStatus], idx => idx > rowIndex)]
       if(nextRow !== undefined)
-        setTimeout(() => onCSVRowSelect(nextRow), 300)
+        setTimeout(() => onCSVRowSelect(nextRow, {source: 'approve_next'}), 300)
     }
   }
 
@@ -2897,6 +2919,9 @@ const MapProject = () => {
   }
 
   const onDecisionChange = (event, newValue) => {
+    GAService.recordActionEvent('MapProject', 'decision_change', undefined, { decision: newValue || 'none' })
+    if(newValue === 'rejected')
+      GAService.recordActionEvent('MapProject', 'reject')
     let logged = false
     if(newValue === 'rejected') {
       let selected = mapSelected[rowIndex]
@@ -3040,6 +3065,10 @@ const MapProject = () => {
   const onBulkActionConfirm = () => {
     const action = bulkConfirm?.action
     const indexes = getSelectedRowIndexes()
+    GAService.recordActionEvent('MapProject', `bulk_${action}`, undefined, {
+      count: indexes.length,
+      map_type: action === 'map_type' ? (bulkConfirm?.mapType || bulkMapType) : undefined
+    })
     const changed = []
     const skipped = []
 
@@ -4174,6 +4203,13 @@ const MapProject = () => {
   const search = (event, page, pageSize, includeRetired, appliedFilters) => {
     if(!searchStr)
       return
+    GAService.recordActionEvent('MapProject Search', 'search_concepts', undefined, {
+      term: searchStr,
+      page: page || 1,
+      page_size: pageSize || 25,
+      include_retired: includeRetired === undefined ? retired : includeRetired,
+      has_filters: !isEmpty(appliedFilters || appliedFacets[rowIndex])
+    })
     setIsLoadingInDecisionView(true)
     getLookupService().get(lookupConfig?.token, null, {
       includeSearchMeta: true,
@@ -4667,6 +4703,8 @@ const MapProject = () => {
     const alreadyAnalyzed = isAutoMatch && existingAnalyses.length > 0
     const v2 = isNumber(__index) ? buildV2RecommendationPayload(__index) : null
     if(isNumber(__index) && repoVersion && !alreadyAnalyzed && (v2?.recommendable_concepts?.length || 0) > 0) {
+      if(!isBulk)
+        GAService.recordActionEvent('MapProject', 'ai_assistant_run', undefined, { mode: 'single' })
       markAlgo(__index, 'recommend', 0)
       let rowData = prepareRow(__row, true, true)
 
@@ -5437,6 +5475,7 @@ const MapProject = () => {
                       defaultFilters={getAppliedFacetFromQueryParam(getFilters())}
                       filters={getFilters()}
                       setAppliedFacets={(filters) => {
+                        GAService.recordActionEvent('MapProject Search', 'search_filter_change')
                         setAppliedFacets({...appliedFacets, [rowIndex]: filters})
                         search(null, null, null, null, filters)
                       }}

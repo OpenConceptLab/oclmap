@@ -12,6 +12,7 @@ import AssistantIcon from '@mui/icons-material/Assistant';
 
 import ConceptIcon from '../concepts/ConceptIcon'
 import { getScoreDetails as pureGetScoreDetails } from './viewBuilders.js'
+import GAService from '../../services/GAService'
 
 
 // Wrap the pure getScoreDetails (from viewBuilders.js) with the
@@ -62,6 +63,7 @@ const Score = ({candidate, conceptRow, onScoreClick, sx, isAIRecommended, isAIAl
         onClick={onScoreClick ? (event) => {
           event.preventDefault()
           event.stopPropagation()
+          GAService.recordActionEvent('MapProject', 'score_click')
           // Opens the unified ConceptDetailsPanel with the Match Details
           // tab focused (caller-supplied).
           onScoreClick(event)

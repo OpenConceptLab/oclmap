@@ -1,3 +1,6 @@
+import packageJson from '../../package.json';
+
+export const OCL_CLIENT = `oclmap/${packageJson.version}`;
 export const LANGUAGES = [
   {locale: 'en', name: 'English'},
   {locale: 'es', name: "Español"},
