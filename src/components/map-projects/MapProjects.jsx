@@ -30,7 +30,7 @@ import ContentCopy from '@mui/icons-material/ContentCopy';
 import DeleteOutlined from '@mui/icons-material/DeleteOutlined';
 
 import APIService from '../../services/APIService'
-import { getCurrentUser } from '../../common/utils'
+import { getCurrentUser, getMapperPreview, getNewProjectBlockReason } from '../../common/utils'
 
 import OwnerIcon from '../common/OwnerIcon'
 import NoResults from '../search/NoResults';
@@ -41,6 +41,8 @@ const MapProjects = () => {
   const history = useHistory()
 
   const user = getCurrentUser()
+  const newProjectBlockReason = getNewProjectBlockReason(getMapperPreview())
+  const canCreateProject = !newProjectBlockReason
   const [loading, setLoading] = React.useState([])
   const [projects, setProjects] = React.useState([])
   const [deleteProject, setDeleteProject] = React.useState(null)
@@ -77,7 +79,7 @@ const MapProjects = () => {
   const onCopyClick = (event, project) => {
     event.preventDefault()
     event.stopPropagation()
-    if(project?.url) {
+    if(project?.url && canCreateProject) {
       history.push(`/map-projects/new?templateFrom=${encodeURIComponent(project.url)}`)
     }
   }
@@ -120,9 +122,20 @@ const MapProjects = () => {
             <Typography component='span' sx={{fontSize: '28px', color: 'surface.dark', fontWeight: 600, display: 'flex', alignItems: 'center'}}>
               {t('map_project.mapping_projects')}
             </Typography>
-            <Button variant='contained' color='primary' startIcon={<AddIcon />} href='#/map-projects/new' sx={{textTransform: 'none'}}>
-              {t('map_project.new_map_project')}
-            </Button>
+            <Tooltip title={canCreateProject ? '' : t(`map_project.preview_limit_title_${newProjectBlockReason}`)}>
+              <span>
+                <Button
+                  variant='contained'
+                  color='primary'
+                  startIcon={<AddIcon />}
+                  disabled={!canCreateProject}
+                  {...(canCreateProject ? {href: '#/map-projects/new'} : {})}
+                  sx={{textTransform: 'none'}}
+                >
+                  {t('map_project.new_map_project')}
+                </Button>
+              </span>
+            </Tooltip>
           </div>
         </Paper>
         <Paper component="div" className='col-xs-12' sx={{boxShadow: 'none', padding: '16px', borderRadius: '10px 10px 0 0'}}>
@@ -236,7 +249,7 @@ const MapProjects = () => {
             anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
             transformOrigin={{ vertical: 'top', horizontal: 'right' }}
           >
-            <MenuItem onClick={onMenuCopyClick}>
+            <MenuItem onClick={onMenuCopyClick} disabled={!canCreateProject}>
               <ListItemIcon><ContentCopy fontSize="small" /></ListItemIcon>
               <ListItemText>{t('map_project.create_similar')}</ListItemText>
             </MenuItem>

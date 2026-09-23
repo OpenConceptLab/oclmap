@@ -7,7 +7,7 @@ import moment from 'moment'
 import Split from 'react-split';
 import BridgeMatch from '../../services/LazyLoader'
 
-import { useParams, useHistory, useLocation } from 'react-router-dom'
+import { useParams, useHistory, useLocation, Redirect } from 'react-router-dom'
 
 import Paper from '@mui/material/Paper'
 import Button from '@mui/material/Button';
@@ -71,7 +71,7 @@ import { OperationsContext } from '../app/LayoutContext';
 
 import APIService, { isTransientNetworkError, retryWithBackoff } from '../../services/APIService';
 import { buildAttributionHeaders, buildConfigSnapshot, summarizeRunCompletion } from '../../services/attribution'
-import { highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, hasCapability, getMapperPreview, downloadObject, currentUserToken, refreshCurrentUserCapabilitiesCache } from '../../common/utils';
+import { highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, hasCapability, getMapperPreview, getNewProjectBlockReason, downloadObject, currentUserToken, refreshCurrentUserCapabilitiesCache } from '../../common/utils';
 import { WHITE, SURFACE_COLORS, TEXT_GRAY } from '../../common/colors';
 
 import { useDoubleClick } from '../common/useDoubleClick'
@@ -526,9 +526,10 @@ const MapProject = () => {
   const OCL_ONLINE_API_URL = window.OCL_ONLINE_API_URL || process.env.OCL_ONLINE_API_URL
   const inAIAssistantGroup = Boolean(hasCapability(user, 'users.mapper_ai_assistant') && AI_ASSISTANT_API_URL)
   const isCoreUser = hasAuthGroup(user, 'core_user')
+  const isStaffOrSuperuser = Boolean(user?.is_staff || user?.is_superuser)
   const CANDIDATES_LIMIT = 15
   const canBridge = bridgeRef?.current?.canBridge()
-  const canScispacy = Boolean(canBridge && SCISPACY_API_URL && toggles.SCISPACY_LOINC_TOGGLE === true)
+  const canScispacy = Boolean((isCoreUser || isStaffOrSuperuser) && canBridge && SCISPACY_API_URL && toggles.SCISPACY_LOINC_TOGGLE === true)
   const isMultiAlgo = algosSelected.length > 1
   const scispacyEnabled = find(algosSelected, {type: 'ocl-scispacy'})
   const bridgeAlgo = find(algosSelected, a => ['ocl-bridge', 'ocl-ciel-bridge'].includes(a.type))
@@ -632,11 +633,21 @@ const MapProject = () => {
     if(templateFromProjectURL) {
       createProjectFromTemplate()
     }
+    refreshMapperQuotaCache()
   }, [])
 
   React.useEffect(() => {
     setPermissionDenied(false)
   }, [params.projectId])
+
+  const newProjectBlockReason = (!params.projectId && !project?.id)
+    ? getNewProjectBlockReason(getMapperPreview())
+    : null
+
+  React.useEffect(() => {
+    if(newProjectBlockReason)
+      baseSetAlert({severity: 'error', message: t(`map_project.preview_limit_title_${newProjectBlockReason}`), duration: 8000})
+  }, [newProjectBlockReason])
 
   React.useEffect(() => {
     const isDefaultApplied = isRepoDefaultFilterApplied(repoVersion)
@@ -5043,7 +5054,7 @@ const MapProject = () => {
     return minFactor
   }
 
-  return permissionDenied ? <Error403/> : (
+  return permissionDenied ? <Error403/> : newProjectBlockReason ? <Redirect to='/' /> : (
     <div className='col-xs-12 padding-0' style={{borderRadius: '10px', width: 'calc(100vw - 32px)'}}>
       {
         (() => {

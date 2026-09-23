@@ -277,7 +277,7 @@ export const refreshCurrentUserCapabilitiesCache = callback => {
     if(response.status === 200) {
       const currentUser = getCurrentUser()
       if(currentUser) {
-        const updates = {}
+        const updates = {};
         ['capabilities', 'permissions'].forEach(key => {
           if(response.data && Object.prototype.hasOwnProperty.call(response.data, key))
             updates[key] = response.data[key]
@@ -1161,6 +1161,14 @@ export const getMapperPreview = () => {
     matchOperations: toMeter('mapper.match_operations'),
     aiAssistantCalls: toMeter('ai_assistant.calls'),
   }
+}
+
+export const getNewProjectBlockReason = (preview = getMapperPreview()) => {
+  if(!preview.hasAccess) return 'access'
+  const { projects } = preview
+  if(projects.limit === null || projects.limit === undefined) return 'projects_not_entitled'
+  if(!projects.unlimited && projects.remaining <= 0) return 'projects'
+  return null
 }
 
 
