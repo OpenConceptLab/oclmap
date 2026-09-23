@@ -694,5 +694,11 @@
     "target_owner": "Propietario de destino",
     "view_canonical_url_registry": "Ver registro de URL canónicas"
   },
-  "unknown_error": "Error desconocido"
+  "unknown_error": "Error desconocido",
+  "announcement": {
+    "title": "¡Te damos la bienvenida a la vista previa pública de OCL Mapper!",
+    "text": "Pruébalo ahora, antes del lanzamiento completo que llegará pronto.",
+    "link_label": "Más información",
+    "dismiss": "Descartar"
+  }
 }

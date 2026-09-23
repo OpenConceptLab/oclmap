@@ -12,6 +12,7 @@ import { getCurrentUser } from '../../common/utils';
 import './Header.scss';
 import HeaderControls from './HeaderControls';
 import LeftMenu from './LeftMenu'
+import AnnouncementBanner from './AnnouncementBanner';
 
 
 const DrawerHeader = styled('div')(({ theme }) => ({
@@ -69,6 +70,7 @@ const Header = props => {
       </AppBar>
       <Box component="main" sx={{ flexGrow: 1, paddingTop: 0, paddingBottom: 1.25, paddingLeft: 2, paddingRight: 2 }}>
         <DrawerHeader />
+        <AnnouncementBanner />
         {
           props.children
         }

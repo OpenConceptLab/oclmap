@@ -698,5 +698,11 @@
     "web_version": "Web Version",
     "api_version": "API Version"
   },
-  "unknown_error": "Unknown error"
+  "unknown_error": "Unknown error",
+  "announcement": {
+    "title": "Welcome to the public preview of the OCL Mapper!",
+    "text": "Try it now, ahead of the full release coming soon.",
+    "link_label": "Learn more",
+    "dismiss": "Dismiss"
+  }
 }
