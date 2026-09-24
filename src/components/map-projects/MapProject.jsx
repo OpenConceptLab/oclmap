@@ -533,6 +533,12 @@ const MapProject = () => {
   const inAIAssistantGroup = Boolean(hasCapability(user, 'users.mapper_ai_assistant') && AI_ASSISTANT_API_URL)
   const isCoreUser = hasAuthGroup(user, 'core_user')
   const isStaffOrSuperuser = Boolean(user?.is_staff || user?.is_superuser)
+  // Choosing the AI model / prompt template is for core, staff, early access
+  // and unlimited-AI users; preview users get the default template and model.
+  const canSelectAIModel = Boolean(
+    isCoreUser || isStaffOrSuperuser || hasAuthGroup(user, 'early_access') ||
+    getMapperPreview().aiAssistantCalls.unlimited
+  )
   const CANDIDATES_LIMIT = 15
   const canBridge = bridgeRef?.current?.canBridge()
   const canScispacy = Boolean((isCoreUser || isStaffOrSuperuser) && canBridge && SCISPACY_API_URL && toggles.SCISPACY_LOINC_TOGGLE === true)
@@ -4643,7 +4649,7 @@ const MapProject = () => {
   }, [AIModels, getDefaultAIModelId])
 
   const fetchPromptTemplates = React.useCallback((models = AIModels) => {
-    if(!AI_ASSISTANT_API_URL || !isCoreUser)
+    if(!AI_ASSISTANT_API_URL || !canSelectAIModel)
       return
 
     const service = APIService.new()
@@ -4655,7 +4661,7 @@ const MapProject = () => {
       }
       setPromptTemplates(response.data || [])
     })
-  }, [AIModels, AI_ASSISTANT_API_URL, isCoreUser])
+  }, [AIModels, AI_ASSISTANT_API_URL, canSelectAIModel])
 
   const fetchPromptTemplateByKey = React.useCallback((key, models = AIModels) => {
     if(!AI_ASSISTANT_API_URL || !key)
@@ -4679,14 +4685,14 @@ const MapProject = () => {
     if(promptTemplatesFetchedRef.current) return
     promptTemplatesFetchedRef.current = true
 
-    if(isCoreUser)
+    if(canSelectAIModel)
       fetchPromptTemplates(AIModels)
     else
       fetchPromptTemplateByKey(getConfiguredPromptTemplateKey(), AIModels)
-  }, [AIModels, AI_ASSISTANT_API_URL, fetchPromptTemplateByKey, fetchPromptTemplates, getConfiguredPromptTemplateKey, isCoreUser])
+  }, [AIModels, AI_ASSISTANT_API_URL, fetchPromptTemplateByKey, fetchPromptTemplates, getConfiguredPromptTemplateKey, canSelectAIModel])
 
   React.useEffect(() => {
-    if(!isCoreUser || !promptTemplates?.length)
+    if(!canSelectAIModel || !promptTemplates?.length)
       return
 
     const configuredKey = getConfiguredPromptTemplateKey()
@@ -4696,7 +4702,7 @@ const MapProject = () => {
 
     setPromptTemplate(nextTemplate)
     setAIModel(getDefaultAIModelId(nextTemplate))
-  }, [getConfiguredPromptTemplateKey, getDefaultAIModelId, isCoreUser, promptTemplates])
+  }, [getConfiguredPromptTemplateKey, getDefaultAIModelId, canSelectAIModel, promptTemplates])
 
   const resolvePromptTemplateForInvocation = React.useCallback(async (template = promptTemplate) => {
     const key = template?.key || getConfiguredPromptTemplateKey()
@@ -4925,7 +4931,7 @@ const MapProject = () => {
         }
       }
 
-      if(promptOutputLocale && isCoreUser)
+      if(promptOutputLocale && canSelectAIModel)
         payload.variables.output_locale = promptOutputLocale
 
       const service = APIService.new()
@@ -5057,6 +5063,7 @@ const MapProject = () => {
       bridgeEnabled={bridgeEnabled}
       canBridge={canBridge}
       isCoreUser={isCoreUser}
+      canSelectAIModel={canSelectAIModel}
       canScispacy={canScispacy}
       scispacyEnabled={scispacyEnabled}
       setAIAssistantColumns={setAIAssistantColumns}
@@ -5516,7 +5523,7 @@ const MapProject = () => {
               repoVersion,
               inAIAssistantGroup,
               algosSelected,
-              isCoreUser,
+              canSelectAIModel,
               previewEligibleRowIndexes,
               matchAlgorithmIds
             }}
@@ -5659,6 +5666,7 @@ const MapProject = () => {
                       inAIAssistantGroup={inAIAssistantGroup}
                       algosSelected={algosSelected}
                       isCoreUser={isCoreUser}
+                      canSelectAIModel={canSelectAIModel}
                     />
                 }
                 {

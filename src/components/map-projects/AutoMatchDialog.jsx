@@ -23,7 +23,6 @@ import map from 'lodash/map'
 import CloseIconButton from '../common/CloseIconButton'
 import TagCountLabel from '../common/TagCountLabel'
 import RepoChip from '../repos/RepoVersionChip'
-import AIAssistantButton from './AIAssistantButton'
 import AIAssistantSelectorPanel from './AIAssistantSelectorPanel'
 import { getMapperPreview } from '../../common/utils'
 import { getRowCapByMatchOperations } from './autoMatchRows'
@@ -48,7 +47,7 @@ const AutoMatchDialog = ({
   onSubmit,
   inAIAssistantGroup,
   algosSelected,
-  isCoreUser,
+  canSelectAIModel,
   previewEligibleRowIndexes,
   matchAlgorithmIds
 }) => {
@@ -301,28 +300,16 @@ const AutoMatchDialog = ({
                 {t('map_project.run_ai_analysis_note')}
               </FormHelperText>
               {
-                autoRunAIAnalysis && (
-                  isCoreUser ?
-                    <AIAssistantSelectorPanel
-                      promptTemplates={promptTemplates}
-                      promptTemplate={promptTemplate}
-                      onPromptTemplateChange={setPromptTemplate}
-                      models={AIModels}
-                      selectedModel={AIModel}
-                      onModelChange={setAIModel}
-                      sx={{marginTop: '12px', marginLeft: '12px'}}
-                    /> :
-                    <AIAssistantButton
-                      models={AIModels}
-                      selected={AIModel}
-                      onClick={() => {}}
-                      sx={{marginTop: '12px', marginLeft: '12px'}}
-                      onModelChange={setAIModel}
-                      popperProps={{
-                        sx: {zIndex: 1500}
-                      }}
-                    />
-                )
+                autoRunAIAnalysis && canSelectAIModel &&
+                  <AIAssistantSelectorPanel
+                    promptTemplates={promptTemplates}
+                    promptTemplate={promptTemplate}
+                    onPromptTemplateChange={setPromptTemplate}
+                    models={AIModels}
+                    selectedModel={AIModel}
+                    onModelChange={setAIModel}
+                    sx={{marginTop: '12px', marginLeft: '12px'}}
+                  />
               }
             </>
         }

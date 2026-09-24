@@ -52,7 +52,7 @@ const AIAssistantButton = ({
   onClick,
   onModelChange,
   popperProps,
-  isCoreUser,
+  canSelectModel = false,
   promptTemplates,
   promptTemplate,
   onPromptTemplateChange,
@@ -121,7 +121,7 @@ const AIAssistantButton = ({
   const otherOptions = filter(models, {is_recommended: false})
   const offerExistingAnalysis = hasExistingAnalysis && !isAnalysisOpen
 
-  if (isCoreUser && promptTemplates?.length) {
+  if (canSelectModel && promptTemplates?.length) {
     return (
       <React.Fragment>
         <Button
@@ -204,17 +204,21 @@ const AIAssistantButton = ({
         >
           {t('map_project.ai_assistant')}
         </Button>
-        <Button
-          size="small"
-          aria-controls={open ? 'split-button-menu' : undefined}
-          aria-expanded={open ? 'true' : undefined}
-          aria-label="select merge strategy"
-          aria-haspopup="menu"
-          onClick={handleToggle}
-          sx={{minWidth: 'auto !important', padding: '0px !important'}}
-        >
-          <ArrowDropDownIcon />
-        </Button>
+        {
+          // Preview users run the default model; only the model picker is hidden.
+          canSelectModel &&
+            <Button
+              size="small"
+              aria-controls={open ? 'split-button-menu' : undefined}
+              aria-expanded={open ? 'true' : undefined}
+              aria-label="select merge strategy"
+              aria-haspopup="menu"
+              onClick={handleToggle}
+              sx={{minWidth: 'auto !important', padding: '0px !important'}}
+            >
+              <ArrowDropDownIcon />
+            </Button>
+        }
       </ButtonGroup>
       <Popper
         sx={{
@@ -249,7 +253,7 @@ const AIAssistantButton = ({
                       </>
                   }
                   {
-                    orderBy(recommendedOptions, 'name').length > 0 &&
+                    canSelectModel && orderBy(recommendedOptions, 'name').length > 0 &&
                       <>
                         <ListSubheader sx={{fontSize: '12px', lineHeight: '32px', backgroundColor: 'rgb(237, 237, 237)'}}>
                           {t('map_project.recommended')}
@@ -262,7 +266,7 @@ const AIAssistantButton = ({
                       </>
                   }
                   {
-                    otherOptions.length > 0 &&
+                    canSelectModel && otherOptions.length > 0 &&
                       <>
                         <ListSubheader sx={{fontSize: '12px', lineHeight: '32px', backgroundColor: 'rgb(237, 237, 237)'}}>
                           {t('map_project.all_options')}
