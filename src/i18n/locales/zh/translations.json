@@ -486,7 +486,6 @@
     "rejected": "已拒绝",
     "preview_splash_headline": "将你的术语映射到 LOINC、SNOMED CT、CIEL 和 ICD-11 —— 由 AI 完成初步匹配。",
     "preview_splash_subhead": "OCL Mapper 读取本地临床术语表，提出经过排序的标准术语匹配建议，并附带每条建议的依据。",
-    "preview_splash_footnote": "每个 OCL 账户都包含 Mapper 预览版：1 个项目、25 行自动匹配、100 次匹配操作和 6 次 AI 助手调用 —— 无需信用卡。",
     "preview_splash_sign_in_cta": "登录并开始映射",
     "preview_splash_register_cta": "创建免费账户",
     "preview_quota_chip": "预览：每个项目 {{limit}} 行",
