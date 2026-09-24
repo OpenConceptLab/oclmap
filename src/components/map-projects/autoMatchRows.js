@@ -53,3 +53,16 @@ export const getRowCapByMatchOperations = (matchOperations, matchAlgorithmCount)
     return null
   return Math.floor(Math.max(matchOperations.remaining || 0, 0) / matchAlgorithmCount)
 }
+
+// How many consecutive rows may fail, for a reason other than AI quota, before
+// a run's AI step gives up. The AI Assistant charges each call before the model
+// runs, so while the AI service is down every further call would spend the
+// user's quota for nothing. A single bad row doesn't stop the step.
+const AI_FAILURES_BEFORE_STOP = 2
+
+export const shouldStopAIStep = ({ quotaExhausted = false, failuresInARow = 0 } = {}) =>
+  quotaExhausted || failuresInARow >= AI_FAILURES_BEFORE_STOP
+
+// The same key for every retry of one AI request: the AI Assistant charges a
+// key once, and serves a call that already succeeded again for free.
+export const getAIRequestIdempotencyKey = (projectId, rowIndex, requestedAt) => `${projectId}-${rowIndex}-${requestedAt}`

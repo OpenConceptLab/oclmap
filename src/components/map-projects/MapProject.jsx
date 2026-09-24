@@ -87,7 +87,7 @@ import MapProjectDeleteConfirmDialog from './MapProjectDeleteConfirmDialog';
 import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
 import DataGridControls from './DataGridControls'
-import { getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations } from './autoMatchRows'
+import { getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep, getAIRequestIdempotencyKey } from './autoMatchRows'
 import { createAutosaveScheduler } from './autosave'
 import MatchSummaryCard from './MatchSummaryCard'
 import MappingDecisionResult from './MappingDecisionResult'
@@ -213,6 +213,9 @@ const MapProject = () => {
   // ai_assistant.calls is a one-time allowance (no reset, R2) - once exhausted it
   // stays exhausted for the rest of the session, so this is never reset per-run.
   const aiQuotaExhaustedRef = React.useRef(false);
+  // Consecutive rows whose AI step failed for a reason other than quota. Reset
+  // at the start of each run's AI step (see shouldStopAIStep).
+  const aiFailuresInARowRef = React.useRef(0);
   const isBulkMatchRunningRef = React.useRef(false);
   // A run that hits a preview limit mid-way stops sending $match but still
   // finishes (rerank, AI, autosave) - unlike abortRef, which is the user's Stop.
@@ -2265,11 +2268,13 @@ const MapProject = () => {
       setAlert({message: err?.message || t('unknown_error'), severity: 'error'})
       return
     }
+    aiFailuresInARowRef.current = 0
     for (let index = 0; index < _rows.length; index++) {
       if (abortRef.current) break;
-      // AI quota exhausted mid-run: stop calling the AI step only. Matching
-      // itself already finished before this loop starts, so nothing else aborts.
-      if (aiQuotaExhaustedRef.current) break;
+      // AI quota exhausted, or the AI service failing row after row: stop calling
+      // the AI step only. Matching itself already finished before this loop
+      // starts, so nothing else aborts.
+      if (shouldStopAIStep({quotaExhausted: aiQuotaExhaustedRef.current, failuresInARow: aiFailuresInARowRef.current})) break;
 
       await fetchRecommendation(_rows[index], resolvedPromptTemplate, true);
     }
@@ -4995,7 +5000,7 @@ const MapProject = () => {
       try {
         const response = await retryWithBackoff(
           attempt => service.request('POST', payload, undefined, {headers: {
-            'X-OCL-REQUEST-IDEMPOTENCY-KEY': `${params.projectId}-${__index}-${attempt}-${invokeTs}`,
+            'X-OCL-REQUEST-IDEMPOTENCY-KEY': getAIRequestIdempotencyKey(params.projectId, __index, invokeTs),
             // Discrete headers (read into event_metadata by the middleware); not
             // bundled into the JSON bag. attrHeaders adds request_source + the bag.
             ...(promptTemplateRef?.key ? {'X-OCL-PROMPT-TEMPLATE-KEY': promptTemplateRef.key} : {}),
@@ -5024,12 +5029,14 @@ const MapProject = () => {
         }
         if(response?.detail) {
           markAlgo(__index, 'recommend', -2)
+          aiFailuresInARowRef.current += 1
           log({created_at: timestamp, action: 'AIRecommendation', description: response.detail, extras: {error: response.detail, model: selectedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}})
           setAlert({message: response.detail, severity: 'error'})
           return false
         }
 
         markAlgo(__index, 'recommend', 1)
+        aiFailuresInARowRef.current = 0
         log({created_at: timestamp, action: 'AIRecommendation', description: get(response.data, 'output.rationale') || get(response.data, 'rationale'), extras: {...response.data, model: selectedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}}, __index)
         const resolvedTemplate = response.data?.template || {}
         const resolvedVersion = resolvedTemplate.version || promptTemplateRef?.version || null
@@ -5048,6 +5055,7 @@ const MapProject = () => {
           return false
         }
         markAlgo(__index, 'recommend', -2)
+        aiFailuresInARowRef.current += 1
         const errorMessage = err?.detail || err?.response?.data?.detail || err?.message || t('unknown_error')
         setAlert({message: errorMessage, severity: 'error'})
         return false
