@@ -197,3 +197,18 @@ test('rows missing from rowStages are treated as unattempted', () => {
   assert.equal(r.completed_rows, 1)
   assert.equal(r.completion_status, 'partial') // row 9 never ran → completed < total
 })
+
+test('run stopped for match quota → partial (not cancelled), finished rows kept', () => {
+  const rowStages = {
+    0: {'ocl-search': 1},
+    1: {'ocl-search': -2},
+    2: {'ocl-search': -1},
+  }
+  const r = summarizeRunCompletion({ rowStages, rowIndices: [0, 1, 2], algoIds: ['ocl-search'], stoppedForQuota: true })
+  assert.deepEqual(r, { completed_rows: 1, failed_rows: 1, completion_status: 'partial' })
+})
+
+test('user cancel wins over a quota stop', () => {
+  const r = summarizeRunCompletion({ rowStages: {0: {'ocl-search': 1}}, rowIndices: [0], algoIds: ['ocl-search'], aborted: true, stoppedForQuota: true })
+  assert.equal(r.completion_status, 'cancelled')
+})

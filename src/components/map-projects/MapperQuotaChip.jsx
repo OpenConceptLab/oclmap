@@ -12,10 +12,13 @@ const MapperQuotaChip = ({size = 'small'}) => {
   const preview = getMapperPreview()
   const { rowsPerProject, matchOperations, aiAssistantCalls, projects } = preview
 
-  if(!preview.hasAccess || rowsPerProject.unlimited) return null
+  if(!preview.hasAccess || rowsPerProject.unlimited || rowsPerProject.limit === null) return null
 
-  const nearLimit = rowsPerProject.limit > 0 && rowsPerProject.remaining <= Math.ceil(rowsPerProject.limit * 0.2)
-  const atLimit = rowsPerProject.remaining === 0
+  // Rows per project is a cap (the first N rows of each project), not a
+  // spendable quota, so the warning colors follow match operations.
+  const nearLimit = !matchOperations.unlimited && matchOperations.limit > 0 &&
+    matchOperations.remaining <= Math.ceil(matchOperations.limit * 0.2)
+  const atLimit = !matchOperations.unlimited && matchOperations.limit !== null && matchOperations.remaining === 0
 
   const meterLine = (labelKey, meter) => meter.unlimited ? null : (
     <Typography key={labelKey} variant='caption' component='div'>
@@ -31,7 +34,9 @@ const MapperQuotaChip = ({size = 'small'}) => {
             {t('map_project.preview_quota_tooltip_title')}
           </Typography>
           {meterLine('map_project.preview_quota_projects', projects)}
-          {meterLine('map_project.preview_quota_rows', rowsPerProject)}
+          <Typography variant='caption' component='div'>
+            {t('map_project.preview_quota_rows')}: {t('map_project.preview_quota_rows_cap', {limit: rowsPerProject.limit})}
+          </Typography>
           {meterLine('map_project.preview_quota_match_operations', matchOperations)}
           {meterLine('map_project.preview_quota_ai_calls', aiAssistantCalls)}
         </Box>
@@ -41,7 +46,7 @@ const MapperQuotaChip = ({size = 'small'}) => {
         size={size}
         variant='outlined'
         color={atLimit ? 'error' : (nearLimit ? 'warning' : 'default')}
-        label={t('map_project.preview_quota_chip', {remaining: rowsPerProject.remaining, limit: rowsPerProject.limit})}
+        label={t('map_project.preview_quota_chip', {limit: rowsPerProject.limit})}
       />
     </Tooltip>
   )

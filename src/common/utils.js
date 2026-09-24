@@ -1151,13 +1151,20 @@ export const getMapperPreview = () => {
     const unlimited = limit === 0
     return {limit, used, unlimited, remaining: unlimited ? null : Math.max((limit || 0) - used, 0)}
   }
+  // Rows per project is a cap, not a quota: `used` is a lifetime counter that
+  // never drops when a project is deleted, and the server checks the project's
+  // own rows. Only the cap is exposed, so nothing reads a "rows left" figure.
+  const toCap = key => {
+    const { limit, unlimited } = toMeter(key)
+    return {limit, unlimited}
+  }
   return {
     hasAccess: hasCapability(user, 'users.mapper_use'),
     hasAIAssistant: hasCapability(user, 'users.mapper_ai_assistant'),
     hasCustomAlgorithms: hasCapability(user, 'users.mapper_custom_algorithms'),
     hasOrgProjects: hasCapability(user, 'users.mapper_org_projects'),
     projects: toMeter('mapper.projects'),
-    rowsPerProject: toMeter('mapper.rows_per_project'),
+    rowsPerProject: toCap('mapper.rows_per_project'),
     matchOperations: toMeter('mapper.match_operations'),
     aiAssistantCalls: toMeter('ai_assistant.calls'),
   }

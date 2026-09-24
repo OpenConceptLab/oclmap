@@ -30,3 +30,26 @@ export const getRowsToProcess = (rows, rowStatuses, autoMatchScope, selectedRowI
 
   return eligibleRows.filter(row => !reviewedIndexes.has(row.__index))
 }
+
+// Whether a run of this algorithm calls OCL's $match and so spends
+// mapper.match_operations. scispacy and custom algorithms with their own url
+// hit other services; a bridge the user can't run is skipped entirely.
+export const spendsMatchQuota = (algo, { canBridge = false } = {}) => {
+  if(!algo?.type)
+    return false
+  if(algo.type === 'ocl-scispacy')
+    return false
+  if(algo.type === 'custom')
+    return !algo.url
+  if(['ocl-bridge', 'ocl-ciel-bridge'].includes(algo.type))
+    return Boolean(canBridge)
+  return true
+}
+
+// Rows a run can match before it runs out of match operations: each row costs
+// one operation per $match-spending algorithm. null when there is no cap.
+export const getRowCapByMatchOperations = (matchOperations, matchAlgorithmCount) => {
+  if(!matchOperations || matchOperations.unlimited || !matchAlgorithmCount)
+    return null
+  return Math.floor(Math.max(matchOperations.remaining || 0, 0) / matchAlgorithmCount)
+}

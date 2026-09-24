@@ -26,6 +26,7 @@ import RepoChip from '../repos/RepoVersionChip'
 import AIAssistantButton from './AIAssistantButton'
 import AIAssistantSelectorPanel from './AIAssistantSelectorPanel'
 import { getMapperPreview } from '../../common/utils'
+import { getRowCapByMatchOperations } from './autoMatchRows'
 
 
 const AutoMatchDialog = ({
@@ -48,7 +49,8 @@ const AutoMatchDialog = ({
   inAIAssistantGroup,
   algosSelected,
   isCoreUser,
-  previewEligibleRowIndexes
+  previewEligibleRowIndexes,
+  matchAlgorithmIds
 }) => {
   const { t } = useTranslation()
   const [algos, setAlgos] = React.useState(true)
@@ -80,27 +82,52 @@ const AutoMatchDialog = ({
   const hasApprovedRows = reviewedRowsCount > 0
   const isAllIncludingApproved = autoMatchScope === 'allIncludingApproved'
 
-  // One-time allowance (R2, no reset). Row count is NOT the match meter (TQ6):
-  // one operation per row per configured algorithm, fanned out across however
-  // many algorithms are selected below.
+  // One-time allowance (R2, no reset). Each row costs one match operation per
+  // selected algorithm that calls $match (TQ6); scispacy, custom algorithms
+  // with their own url and a bridge the user can't run don't spend any.
   const preview = getMapperPreview()
-  const algorithmCount = algos ? Math.max(algosSelected.length, 1) : 0
-  const estimatedOperations = rowsToMatchCount * algorithmCount
-  const operationsRemaining = preview.matchOperations.unlimited ? null : preview.matchOperations.remaining
-  const rowsRemaining = preview.rowsPerProject.unlimited ? null : preview.rowsPerProject.remaining
-  const rowsCapByOperations = (operationsRemaining === null || algorithmCount === 0) ?
-    null : Math.floor(operationsRemaining / algorithmCount)
+  const matchAlgorithmIdSet = React.useMemo(() => new Set(matchAlgorithmIds || []), [matchAlgorithmIds])
+  const matchAlgorithmCount = algos ? algosSelected.filter(algo => matchAlgorithmIdSet.has(algo.id)).length : 0
+  const operationsRemaining = (preview.matchOperations.unlimited || !matchAlgorithmCount) ? null : preview.matchOperations.remaining
+  const rowCap = getRowCapByMatchOperations(preview.matchOperations, matchAlgorithmCount)
+  const willTruncate = rowCap !== null && rowsToMatchCount > rowCap
+  const isPreviewQuotaExhausted = willTruncate && rowCap <= 0
+  const rowsThisRun = willTruncate ? rowCap : rowsToMatchCount
+  const estimatedOperations = rowsThisRun * matchAlgorithmCount
   // One $invoke per row. The AI quota never caps rows: once it runs out, the
   // rest of the run is matched without AI recommendations.
-  const effectiveRowCap = [rowsRemaining, rowsCapByOperations].filter(n => n !== null).reduce(
-    (min, n) => min === null ? n : Math.min(min, n), null
-  )
-  const willTruncate = effectiveRowCap !== null && rowsToMatchCount > effectiveRowCap
-  const isPreviewQuotaExhausted = willTruncate && effectiveRowCap <= 0
-  const rowsThisRun = willTruncate ? Math.max(effectiveRowCap, 0) : rowsToMatchCount
   const aiCallsRemaining = preview.aiAssistantCalls.unlimited ? null : preview.aiAssistantCalls.remaining
-  const aiRowsCovered = (autoRunAIAnalysis && aiCallsRemaining !== null) ? Math.min(aiCallsRemaining, rowsThisRun) : null
-  const isPreviewLimited = operationsRemaining !== null || rowsRemaining !== null || aiRowsCovered !== null
+  const aiRowsCovered = (inAIAssistantGroup && autoRunAIAnalysis && aiCallsRemaining !== null) ? Math.min(aiCallsRemaining, rowsThisRun) : null
+  const getPreviewEstimate = () => {
+    if(isPreviewQuotaExhausted)
+      return t('map_project.preview_estimate_no_operations_left')
+    const parts = []
+    if(operationsRemaining !== null)
+      parts.push(t('map_project.preview_estimate_match', {
+        rows: rowsThisRun.toLocaleString(),
+        algorithms: matchAlgorithmCount.toLocaleString(),
+        used: estimatedOperations.toLocaleString(),
+        remaining: operationsRemaining.toLocaleString()
+      }))
+    if(willTruncate)
+      parts.push(t('map_project.preview_estimate_will_truncate', {
+        allowed: rowsThisRun.toLocaleString(),
+        requested: rowsToMatchCount.toLocaleString()
+      }))
+    if(aiRowsCovered !== null) {
+      if(aiRowsCovered >= rowsThisRun)
+        parts.push(t('map_project.preview_estimate_ai_all', {count: rowsThisRun.toLocaleString()}))
+      else if(aiRowsCovered === 0)
+        parts.push(t('map_project.preview_estimate_ai_none'))
+      else
+        parts.push(t('map_project.preview_estimate_ai_partial', {
+          covered: aiRowsCovered.toLocaleString(),
+          rest: (rowsThisRun - aiRowsCovered).toLocaleString()
+        }))
+    }
+    return parts.join(' ')
+  }
+  const previewEstimate = rowsToMatchCount > 0 && (operationsRemaining !== null || aiRowsCovered !== null) ? getPreviewEstimate() : ''
 
   React.useEffect(() => {
     if (autoMatchScope === 'unmapped' && !hasUnmappedRows) {
@@ -183,26 +210,9 @@ const AutoMatchDialog = ({
       </DialogTitle>
       <DialogContent>
         {
-          isPreviewLimited && rowsToMatchCount > 0 && (willTruncate || operationsRemaining !== null || rowsRemaining !== null) &&
+          previewEstimate &&
             <Alert severity={isPreviewQuotaExhausted ? 'error' : (willTruncate ? 'warning' : 'info')} sx={{marginBottom: '8px'}}>
-              {
-                isPreviewQuotaExhausted ?
-                  t('map_project.preview_estimate_no_rows_left') :
-                  willTruncate ?
-                  t('map_project.preview_estimate_will_truncate', {
-                    allowed: Math.max(effectiveRowCap, 0).toLocaleString(),
-                    requested: rowsToMatchCount.toLocaleString()
-                  }) :
-                  operationsRemaining !== null ?
-                  t('map_project.preview_estimate_note', {
-                    used: estimatedOperations.toLocaleString(),
-                    remaining: operationsRemaining.toLocaleString()
-                  }) :
-                  t('map_project.preview_estimate_rows_note', {
-                    used: rowsToMatchCount.toLocaleString(),
-                    remaining: rowsRemaining.toLocaleString()
-                  })
-              }
+              {previewEstimate}
             </Alert>
         }
         <div className='col-xs-12 padding-0' style={{display: 'flex', alignItems: 'center', fontSize: '1rem'}}>

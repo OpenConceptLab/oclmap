@@ -86,7 +86,7 @@ import MapProjectDeleteConfirmDialog from './MapProjectDeleteConfirmDialog';
 import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
 import DataGridControls from './DataGridControls'
-import { getPreviewEligibleRowIndexes, getRowsToProcess } from './autoMatchRows'
+import { getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations } from './autoMatchRows'
 import { createAutosaveScheduler } from './autosave'
 import MatchSummaryCard from './MatchSummaryCard'
 import MappingDecisionResult from './MappingDecisionResult'
@@ -212,6 +212,12 @@ const MapProject = () => {
   // stays exhausted for the rest of the session, so this is never reset per-run.
   const aiQuotaExhaustedRef = React.useRef(false);
   const isBulkMatchRunningRef = React.useRef(false);
+  // A run that hits a preview limit mid-way stops sending $match but still
+  // finishes (rerank, AI, autosave) - unlike abortRef, which is the user's Stop.
+  // Holds the limit's error_code, or null.
+  const matchQuotaStopRef = React.useRef(null);
+  // The at-limit dialog opens once per run, not once per failed request.
+  const runPreviewLimitShownRef = React.useRef(false);
   const bulkMatchAlgoIdsRef = React.useRef([]);
   // ocl_online#105 Phase 5: the active AutomatchRun ({id, algoIds}) or null.
   // A ref so every per-row backend call reads the run id synchronously without
@@ -530,6 +536,7 @@ const MapProject = () => {
   const CANDIDATES_LIMIT = 15
   const canBridge = bridgeRef?.current?.canBridge()
   const canScispacy = Boolean((isCoreUser || isStaffOrSuperuser) && canBridge && SCISPACY_API_URL && toggles.SCISPACY_LOINC_TOGGLE === true)
+  const matchAlgorithmIds = map(filter(algosSelected, algo => spendsMatchQuota(algo, {canBridge})), 'id')
   const isMultiAlgo = algosSelected.length > 1
   const scispacyEnabled = find(algosSelected, {type: 'ocl-scispacy'})
   const bridgeAlgo = find(algosSelected, a => ['ocl-bridge', 'ocl-ciel-bridge'].includes(a.type))
@@ -1343,6 +1350,20 @@ const MapProject = () => {
     }
 
     setData(_data);
+    if(!isResuming) {
+      // Preview projects hold the first N rows of the spreadsheet; say so at
+      // import instead of surprising the user at Auto Match.
+      const { rowsPerProject } = getMapperPreview()
+      if(!rowsPerProject.unlimited && isNumber(rowsPerProject.limit) && _data.length > rowsPerProject.limit)
+        baseSetAlert({
+          severity: 'info',
+          duration: 10000,
+          message: t('map_project.preview_rows_activated_notice', {
+            limit: rowsPerProject.limit.toLocaleString(),
+            total: _data.length.toLocaleString()
+          })
+        })
+    }
     if(!isResuming)
       setRowStatuses(prev => {
         prev.unmapped = map(_data, '__index')
@@ -1669,6 +1690,7 @@ const MapProject = () => {
       rowIndices: map(intendedRows, '__index'),
       algoIds: run.algoIds?.length ? run.algoIds : map(selectedAlgos, 'id'),
       aborted: abortRef.current,
+      stoppedForQuota: Boolean(matchQuotaStopRef.current),
     })
     try {
       await APIService.new().overrideURL('/auto-match-runs/' + run.id + '/')
@@ -1913,6 +1935,8 @@ const MapProject = () => {
 
   const getRowsResults = async (rows, selectedAlgos) => {
     abortRef.current = false;
+    matchQuotaStopRef.current = null;
+    runPreviewLimitShownRef.current = false;
     const selectedRowIndexes = getSelectedRowIndexes(rows)
     const isAutoMatchUnmappedOnly = autoMatchScope === 'unmapped'
     const isAutoMatchAllRows = autoMatchScope === 'all'
@@ -1929,6 +1953,8 @@ const MapProject = () => {
         setLoadingMatches(false)
         return []
       };
+      if (matchQuotaStopRef.current && spendsMatchQuota(algo, {canBridge}))
+        return []
 
       const payload = getPayloadForMatching(rowBatch, _repo)
       payload.rows = filter(payload.rows, row => values(omit(row, '__index')).length > 0)
@@ -1963,14 +1989,14 @@ const MapProject = () => {
           }
         );
         // service.post() resolves (not throws) on a 403, so check explicitly.
-        // abortRef.current halts the rest of the run instead of draining it.
+        // handlePreviewLimitError sets matchQuotaStopRef, which stops the rest
+        // of the $match requests but lets the run finish with what it has.
         if(isPreviewLimitError(response)) {
           forEach(rowBatch, __row => {
             markAlgo(__row.__index, algo.id, -2)
             log({action: 'algo_failed', extras: getAlgoLogExtras(algo)}, __row.__index)
           })
           handlePreviewLimitError(response)
-          abortRef.current = true
           return [];
         }
         forEach(rowBatch, __row => {
@@ -2003,6 +2029,10 @@ const MapProject = () => {
             setLoadingMatches(false)
             return
           };
+          if (matchQuotaStopRef.current && spendsMatchQuota(algo, {canBridge})) {
+            queue.length = 0
+            break
+          }
           const rowBatch = queue.shift();
           const promise = processBatch(_repo, rowBatch, algo).then((data) => {
             // Populate rowMatchState before any consumer (setStateViews /
@@ -2042,7 +2072,8 @@ const MapProject = () => {
         }
 
         // Wait for at least one request to complete before continuing
-        await Promise.race(activeRequests);
+        if (activeRequests.size > 0)
+          await Promise.race(activeRequests);
       }
     };
 
@@ -2110,17 +2141,15 @@ const MapProject = () => {
       const previewEligibleRowIndexes = getPreviewEligibleRowIndexes(rows, preview)
       let rowsToProcess = getRowsToProcess(rows, rowStatuses, autoMatchScope, selectedRowIndexes, previewEligibleRowIndexes)
 
-      const algorithmCount = _selectedAlgos.length
-      const rowsRemaining = preview.rowsPerProject.unlimited ? null : preview.rowsPerProject.remaining
-      const rowsCapByOperations = (preview.matchOperations.unlimited || algorithmCount === 0) ?
-        null : Math.floor(preview.matchOperations.remaining / algorithmCount)
-      const effectiveRowCap = [rowsRemaining, rowsCapByOperations].filter(n => n !== null).reduce(
-        (min, n) => min === null ? n : Math.min(min, n), null
-      )
-      if(effectiveRowCap !== null && rowsToProcess.length > effectiveRowCap) {
+      // Rows per project is already applied by previewEligibleRowIndexes; the
+      // only spendable cap is match operations, counted over the algorithms
+      // that actually call $match.
+      const matchAlgorithmCount = filter(_selectedAlgos, algo => spendsMatchQuota(algo, {canBridge})).length
+      const rowCap = getRowCapByMatchOperations(preview.matchOperations, matchAlgorithmCount)
+      if(rowCap !== null && rowsToProcess.length > rowCap) {
         const requested = rowsToProcess.length
-        rowsToProcess = rowsToProcess.slice(0, Math.max(effectiveRowCap, 0))
-        projectLog({action: 'auto_match_pre_truncated', extras: {requested, allowed: effectiveRowCap}})
+        rowsToProcess = rowsToProcess.slice(0, rowCap)
+        projectLog({action: 'auto_match_pre_truncated', extras: {requested, allowed: rowCap}})
       }
 
       // ocl_online#105 Phase 5: open the run record, then guarantee it is
@@ -2147,6 +2176,7 @@ const MapProject = () => {
         try {
           for(const algo of _selectedAlgos) {
             if(abortRef.current) break
+            if(matchQuotaStopRef.current && spendsMatchQuota(algo, {canBridge})) continue
             if(['custom', 'ocl-search', 'ocl-semantic'].includes(algo.type))
               await processWithConcurrency(repo, algo, rowsToProcess)
             else if(['ocl-bridge', 'ocl-ciel-bridge'].includes(algo.type) && canBridge)
@@ -2158,20 +2188,28 @@ const MapProject = () => {
           isBulkMatchRunningRef.current = false
           bulkMatchAlgoIdsRef.current = []
         }
+        // After a quota stop, rerank and AI only the rows that got candidates;
+        // the rows the run never reached have nothing to rank or recommend.
+        const finishedRows = matchQuotaStopRef.current ?
+          rowsToProcess.filter(row => _selectedAlgos.some(algo => rowStageRef.current[row.__index]?.[algo.id] === 1)) :
+          rowsToProcess
         if(_selectedAlgos.length)
-          await processRerankWithConcurrency(rowsToProcess, 2)
+          await processRerankWithConcurrency(finishedRows, 2)
         if(inAIAssistantGroup && autoRunAIAnalysis) {
           await new Promise(resolve => setTimeout(resolve, 1000))
-          await runBulkAIAnalysis(rowsToProcess)
+          await runBulkAIAnalysis(finishedRows)
         } else {
           setIsLoadingInDecisionView(false)
           setLoadingMatches(false)
           setEndMatchingAt(moment())
         }
+        if(!abortRef.current && matchQuotaStopRef.current)
+          projectLog({action: 'auto_match_stopped_for_quota', extras: {reason: matchQuotaStopRef.current}})
         if(!abortRef.current)
           projectLog({
             action: 'auto_match_finished',
             extras: {
+              ...(matchQuotaStopRef.current ? {stopped_for_quota: matchQuotaStopRef.current} : {}),
               sub_actions: subActions,
               ...selectedRowsLogExtras,
               ...(inAIAssistantGroup && autoRunAIAnalysis ? {
@@ -2233,6 +2271,7 @@ const MapProject = () => {
         setLoadingMatches(false)
         break;
       };
+      if (matchQuotaStopRef.current) break;
       markAlgo(_rows[index].__index, algo.id, 0)
 
       await fetchBridgeCandidates(_rows[index], 0, undefined, undefined, undefined, false, true, ((response, payload) => {
@@ -3286,16 +3325,25 @@ const MapProject = () => {
   const isPreviewLimitError = response =>
     Boolean(response?.error_code && response.error_code.startsWith('mapper_'))
 
+  // Opens the at-limit dialog for a preview 403. During a bulk run it opens
+  // once, and the run stops sending $match (every later request would 403 too);
+  // the quota cache is refreshed once when the run ends instead of per row.
   const handlePreviewLimitError = (response, rowId, algoId) => {
     if(!isPreviewLimitError(response))
       return false
-    setAlert({message: response?.detail || t('unknown_error'), severity: 'error'})
+    const isRun = isBulkMatchRunningRef.current
     setIsLoadingInDecisionView(false)
-    if(isNumber(rowId)) {
-      if(!restoreRefreshRowStage(rowId) && algoId)
-        markAlgo(rowId, algoId, -2)
+    if(isNumber(rowId) && !restoreRefreshRowStage(rowId) && algoId)
+      markAlgo(rowId, algoId, -2)
+    if(isRun) {
+      if(!matchQuotaStopRef.current)
+        matchQuotaStopRef.current = response.error_code
+      if(runPreviewLimitShownRef.current)
+        return true
+      runPreviewLimitShownRef.current = true
+    } else if(isNumber(rowId))
       refreshMapperQuotaCache()
-    }
+    setPreviewLimit({errorCode: response.error_code, limit: response.limit, used: response.used})
     return true
   }
 
@@ -5469,7 +5517,8 @@ const MapProject = () => {
               inAIAssistantGroup,
               algosSelected,
               isCoreUser,
-              previewEligibleRowIndexes
+              previewEligibleRowIndexes,
+              matchAlgorithmIds
             }}
           />
           <PreviewLimitDialog

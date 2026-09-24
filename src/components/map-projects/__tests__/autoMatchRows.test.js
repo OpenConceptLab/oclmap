@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { getPreviewEligibleRowIndexes, getRowsToProcess } from '../autoMatchRows.js'
+import { getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations } from '../autoMatchRows.js'
 
 const rows = [
   { __index: 0, label: 'zero' },
@@ -112,4 +112,23 @@ test('getRowsToProcess: invalid rows input returns empty array', () => {
     getRowsToProcess(false, { unmapped: [0], readyForReview: [], reviewed: [] }, 'unmapped', [0]),
     []
   )
+})
+
+test('spendsMatchQuota: only algorithms that call $match spend match quota', () => {
+  assert.equal(spendsMatchQuota({ type: 'ocl-search' }), true)
+  assert.equal(spendsMatchQuota({ type: 'ocl-semantic' }), true)
+  assert.equal(spendsMatchQuota({ type: 'ocl-scispacy' }), false)
+  assert.equal(spendsMatchQuota({ type: 'custom', url: 'https://example.org/match' }), false)
+  assert.equal(spendsMatchQuota({ type: 'custom' }), true)
+  assert.equal(spendsMatchQuota({ type: 'ocl-ciel-bridge' }, { canBridge: false }), false)
+  assert.equal(spendsMatchQuota({ type: 'ocl-ciel-bridge' }, { canBridge: true }), true)
+  assert.equal(spendsMatchQuota(null), false)
+})
+
+test('getRowCapByMatchOperations: divides remaining operations by $match algorithms', () => {
+  assert.equal(getRowCapByMatchOperations({ remaining: 50 }, 2), 25)
+  assert.equal(getRowCapByMatchOperations({ remaining: 5 }, 2), 2)
+  assert.equal(getRowCapByMatchOperations({ remaining: 0 }, 1), 0)
+  assert.equal(getRowCapByMatchOperations({ unlimited: true }, 2), null)
+  assert.equal(getRowCapByMatchOperations({ remaining: 10 }, 0), null)
 })
