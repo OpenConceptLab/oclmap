@@ -90,17 +90,17 @@ const AutoMatchDialog = ({
   const rowsRemaining = preview.rowsPerProject.unlimited ? null : preview.rowsPerProject.remaining
   const rowsCapByOperations = (operationsRemaining === null || algorithmCount === 0) ?
     null : Math.floor(operationsRemaining / algorithmCount)
-  // One $invoke per row, so the AI cap is a flat count - only applies when AI
-  // analysis is actually going to run.
-  const aiCallsRemaining = preview.aiAssistantCalls.unlimited ? null : preview.aiAssistantCalls.remaining
-  const rowsCapByAICalls = autoRunAIAnalysis ? aiCallsRemaining : null
-  const effectiveRowCap = [rowsRemaining, rowsCapByOperations, rowsCapByAICalls].filter(n => n !== null).reduce(
+  // One $invoke per row. The AI quota never caps rows: once it runs out, the
+  // rest of the run is matched without AI recommendations.
+  const effectiveRowCap = [rowsRemaining, rowsCapByOperations].filter(n => n !== null).reduce(
     (min, n) => min === null ? n : Math.min(min, n), null
   )
   const willTruncate = effectiveRowCap !== null && rowsToMatchCount > effectiveRowCap
   const isPreviewQuotaExhausted = willTruncate && effectiveRowCap <= 0
-  const isPreviewLimited = operationsRemaining !== null || rowsRemaining !== null ||
-    (autoRunAIAnalysis && aiCallsRemaining !== null)
+  const rowsThisRun = willTruncate ? Math.max(effectiveRowCap, 0) : rowsToMatchCount
+  const aiCallsRemaining = preview.aiAssistantCalls.unlimited ? null : preview.aiAssistantCalls.remaining
+  const aiRowsCovered = (autoRunAIAnalysis && aiCallsRemaining !== null) ? Math.min(aiCallsRemaining, rowsThisRun) : null
+  const isPreviewLimited = operationsRemaining !== null || rowsRemaining !== null || aiRowsCovered !== null
 
   React.useEffect(() => {
     if (autoMatchScope === 'unmapped' && !hasUnmappedRows) {
@@ -183,7 +183,7 @@ const AutoMatchDialog = ({
       </DialogTitle>
       <DialogContent>
         {
-          isPreviewLimited && rowsToMatchCount > 0 &&
+          isPreviewLimited && rowsToMatchCount > 0 && (willTruncate || operationsRemaining !== null || rowsRemaining !== null) &&
             <Alert severity={isPreviewQuotaExhausted ? 'error' : (willTruncate ? 'warning' : 'info')} sx={{marginBottom: '8px'}}>
               {
                 isPreviewQuotaExhausted ?

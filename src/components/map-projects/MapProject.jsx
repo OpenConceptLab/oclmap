@@ -640,7 +640,7 @@ const MapProject = () => {
     setPermissionDenied(false)
   }, [params.projectId])
 
-  const newProjectBlockReason = (!params.projectId && !project?.id)
+  const newProjectBlockReason = (!params.projectId && !project?.id && mapperQuotaCacheVersion > 0)
     ? getNewProjectBlockReason(getMapperPreview())
     : null
 
@@ -4935,7 +4935,7 @@ const MapProject = () => {
         setAnalysis(prev => ({...prev, [__index]: [...(prev[__index] || []), newEntry]}))
         return true
       } catch (err) {
-        if((err?.error_code || err?.response?.data?.error_code) === 'ai_assistant_calls_limit_reached') {
+        if(['ai_assistant_calls_limit_reached', 'ai_assistant_calls_not_entitled', 'mapper_ai_assistant_denied'].includes(err?.error_code || err?.response?.data?.error_code)) {
           aiQuotaExhaustedRef.current = true
           markAlgo(__index, 'recommend', -3)
           log({created_at: moment().toDate(), action: 'AIRecommendationLimitReached', extras: {model: selectedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}})

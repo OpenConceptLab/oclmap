@@ -45,6 +45,7 @@ const MapProjects = () => {
   const refreshMapperQuotaCache = React.useCallback(() => {
     refreshCurrentUserCapabilitiesCache(() => setQuotaCacheVersion(version => version + 1))
   }, [])
+  React.useEffect(() => { refreshMapperQuotaCache() }, [])
   const newProjectBlockReason = getNewProjectBlockReason(getMapperPreview())
   const canCreateProject = !newProjectBlockReason
   const [loading, setLoading] = React.useState([])
