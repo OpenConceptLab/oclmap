@@ -14,7 +14,7 @@ import { OperationsContext } from '../app/LayoutContext';
 import { useTranslation, Trans } from 'react-i18next';
 
 
-const MapProjectDeleteConfirmDialog = ({ project, open, onClose }) => {
+const MapProjectDeleteConfirmDialog = ({ project, open, onClose, onDeleted }) => {
   const { t } = useTranslation();
   const { setAlert } = React.useContext(OperationsContext);
   const history = useHistory()
@@ -25,6 +25,7 @@ const MapProjectDeleteConfirmDialog = ({ project, open, onClose }) => {
     APIService.new().overrideURL(project.url).delete().then(response => {
       if(response.status === 204) {
         onClose(true)
+        onDeleted?.()
         history.push('/')
         setAlert({severity: 'success', message: t('map_project.successfully_deleted'), duration: 2000})
       }
