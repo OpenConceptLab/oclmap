@@ -20,7 +20,6 @@ const NOTIFY_ME_MAILTO = 'mailto:jonathan@openconceptlab.org?subject=' +
 // takes a payment. ocl_online#170 has not finalized the shared lead-capture
 // destination yet, so these mailto links are the recorded interim choice.
 // One-time allowance (R2): no reset date is ever shown here.
-
 const PreviewLimitDialog = ({open, onClose, errorCode, limit, used}) => {
   const { t } = useTranslation()
   const kind = PREVIEW_LIMIT_COPY_KEY[errorCode] || 'generic'

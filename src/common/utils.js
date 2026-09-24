@@ -1146,6 +1146,7 @@ export const getMapperPreview = () => {
     hasAIAssistant: hasCapability(user, 'users.mapper_ai_assistant'),
     hasCustomAlgorithms: hasCapability(user, 'users.mapper_custom_algorithms'),
     hasOrgProjects: hasCapability(user, 'users.mapper_org_projects'),
+    hasScispacy: hasCapability(user, 'users.mapper_scispacy'),
     projects: toMeter('mapper.projects'),
     rowsPerProject: toCap('mapper.rows_per_project'),
     matchOperations: toMeter('mapper.match_operations'),

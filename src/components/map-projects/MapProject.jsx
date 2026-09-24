@@ -545,7 +545,9 @@ const MapProject = () => {
   )
   const CANDIDATES_LIMIT = 15
   const canBridge = bridgeRef?.current?.canBridge()
-  const canScispacy = Boolean((isCoreUser || isStaffOrSuperuser) && canBridge && SCISPACY_API_URL && toggles.SCISPACY_LOINC_TOGGLE === true)
+  const canScispacy = Boolean(
+    hasCapability(user, 'users.mapper_scispacy') && canBridge && SCISPACY_API_URL && toggles.SCISPACY_LOINC_TOGGLE === true
+  )
   const matchAlgorithmIds = map(filter(algosSelected, algo => spendsMatchQuota(algo, {canBridge})), 'id')
   const isMultiAlgo = algosSelected.length > 1
   const scispacyEnabled = find(algosSelected, {type: 'ocl-scispacy'})
