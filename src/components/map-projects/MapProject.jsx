@@ -87,7 +87,7 @@ import MapProjectDeleteConfirmDialog from './MapProjectDeleteConfirmDialog';
 import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
 import DataGridControls from './DataGridControls'
-import { getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep } from './autoMatchRows'
+import { getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep, getAIRequestIdempotencyKey } from './autoMatchRows'
 import { createAutosaveScheduler } from './autosave'
 import MatchSummaryCard from './MatchSummaryCard'
 import MappingDecisionResult from './MappingDecisionResult'
@@ -5000,7 +5000,7 @@ const MapProject = () => {
       try {
         const response = await retryWithBackoff(
           attempt => service.request('POST', payload, undefined, {headers: {
-            'X-OCL-REQUEST-IDEMPOTENCY-KEY': `${params.projectId}-${__index}-${attempt}-${invokeTs}`,
+            'X-OCL-REQUEST-IDEMPOTENCY-KEY': getAIRequestIdempotencyKey(params.projectId, __index, invokeTs),
             // Discrete headers (read into event_metadata by the middleware); not
             // bundled into the JSON bag. attrHeaders adds request_source + the bag.
             ...(promptTemplateRef?.key ? {'X-OCL-PROMPT-TEMPLATE-KEY': promptTemplateRef.key} : {}),

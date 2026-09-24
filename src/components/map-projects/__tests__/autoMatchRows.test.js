@@ -2,7 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
-  getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep
+  getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep,
+  getAIRequestIdempotencyKey
 } from '../autoMatchRows.js'
 
 const rows = [
@@ -149,4 +150,10 @@ test('shouldStopAIStep: two failed rows in a row stop the AI step', () => {
 
 test('shouldStopAIStep: a spent AI quota stops the AI step', () => {
   assert.equal(shouldStopAIStep({ quotaExhausted: true, failuresInARow: 0 }), true)
+})
+
+test('getAIRequestIdempotencyKey: one key per project, row and request, whatever the retry attempt', () => {
+  assert.equal(getAIRequestIdempotencyKey('p1', 3, 1700000000000), 'p1-3-1700000000000')
+  assert.notEqual(getAIRequestIdempotencyKey('p1', 3, 1700000000000), getAIRequestIdempotencyKey('p1', 4, 1700000000000))
+  assert.notEqual(getAIRequestIdempotencyKey('p1', 3, 1700000000000), getAIRequestIdempotencyKey('p1', 3, 1700000009999))
 })

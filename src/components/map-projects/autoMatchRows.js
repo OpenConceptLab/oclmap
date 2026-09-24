@@ -62,3 +62,7 @@ const AI_FAILURES_BEFORE_STOP = 2
 
 export const shouldStopAIStep = ({ quotaExhausted = false, failuresInARow = 0 } = {}) =>
   quotaExhausted || failuresInARow >= AI_FAILURES_BEFORE_STOP
+
+// The same key for every retry of one AI request: the AI Assistant charges a
+// key once, and serves a call that already succeeded again for free.
+export const getAIRequestIdempotencyKey = (projectId, rowIndex, requestedAt) => `${projectId}-${rowIndex}-${requestedAt}`
