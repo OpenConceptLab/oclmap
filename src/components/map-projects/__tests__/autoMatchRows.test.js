@@ -1,7 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations } from '../autoMatchRows.js'
+import {
+  getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep
+} from '../autoMatchRows.js'
 
 const rows = [
   { __index: 0, label: 'zero' },
@@ -131,4 +133,20 @@ test('getRowCapByMatchOperations: divides remaining operations by $match algorit
   assert.equal(getRowCapByMatchOperations({ remaining: 0 }, 1), 0)
   assert.equal(getRowCapByMatchOperations({ unlimited: true }, 2), null)
   assert.equal(getRowCapByMatchOperations({ remaining: 10 }, 0), null)
+})
+
+test('shouldStopAIStep: keeps going with no failures', () => {
+  assert.equal(shouldStopAIStep({ quotaExhausted: false, failuresInARow: 0 }), false)
+})
+
+test('shouldStopAIStep: one failed row does not stop the AI step', () => {
+  assert.equal(shouldStopAIStep({ quotaExhausted: false, failuresInARow: 1 }), false)
+})
+
+test('shouldStopAIStep: two failed rows in a row stop the AI step', () => {
+  assert.equal(shouldStopAIStep({ quotaExhausted: false, failuresInARow: 2 }), true)
+})
+
+test('shouldStopAIStep: a spent AI quota stops the AI step', () => {
+  assert.equal(shouldStopAIStep({ quotaExhausted: true, failuresInARow: 0 }), true)
 })
