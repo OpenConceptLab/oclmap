@@ -536,11 +536,12 @@ const MapProject = () => {
   const inAIAssistantGroup = Boolean(hasCapability(user, 'users.mapper_ai_assistant') && AI_ASSISTANT_API_URL)
   const isCoreUser = hasAuthGroup(user, 'core_user')
   const isStaffOrSuperuser = Boolean(user?.is_staff || user?.is_superuser)
+  const mapperPreview = getMapperPreview()
   // Choosing the AI model / prompt template is for core, staff, early access
   // and unlimited-AI users; preview users get the default template and model.
   const canSelectAIModel = Boolean(
     isCoreUser || isStaffOrSuperuser || hasAuthGroup(user, 'early_access') ||
-    getMapperPreview().aiAssistantCalls.unlimited
+    mapperPreview.aiAssistantCalls.unlimited
   )
   const CANDIDATES_LIMIT = 15
   const canBridge = bridgeRef?.current?.canBridge()
@@ -5113,6 +5114,8 @@ const MapProject = () => {
       isCoreUser={isCoreUser}
       canSelectAIModel={canSelectAIModel}
       canScispacy={canScispacy}
+      canUseOrgProjects={mapperPreview.hasOrgProjects}
+      canUseCustomAlgorithms={mapperPreview.hasCustomAlgorithms}
       scispacyEnabled={scispacyEnabled}
       setAIAssistantColumns={setAIAssistantColumns}
       AIAssistantColumns={AIAssistantColumns}
