@@ -104,6 +104,7 @@ import { useAlgos, ensureConceptIdentity } from './algorithms'
 import AutoMatchDialog from './AutoMatchDialog'
 import PreviewLimitDialog from './PreviewLimitDialog'
 import MapperQuotaChip from './MapperQuotaChip'
+import { getPreviewLimitError, isAIPreviewLimitError, isPreviewLimitError } from './previewLimits'
 import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
 import { normalizeAlgorithmInvocation, lookupStatusRank, buildRecommendableConceptEntry, stripConstantClassAndDatatype, buildLookupConceptUrl, serializeCandidates, toStoredRowMatchState } from './normalizers'
 import { parseConceptKey } from './conceptKey'
@@ -217,6 +218,7 @@ const MapProject = () => {
   // finishes (rerank, AI, autosave) - unlike abortRef, which is the user's Stop.
   // Holds the limit's error_code, or null.
   const matchQuotaStopRef = React.useRef(null);
+  const rerankQuotaStopRef = React.useRef(null);
   // The at-limit dialog opens once per run, not once per failed request.
   const runPreviewLimitShownRef = React.useRef(false);
   const bulkMatchAlgoIdsRef = React.useRef([]);
@@ -534,11 +536,12 @@ const MapProject = () => {
   const inAIAssistantGroup = Boolean(hasCapability(user, 'users.mapper_ai_assistant') && AI_ASSISTANT_API_URL)
   const isCoreUser = hasAuthGroup(user, 'core_user')
   const isStaffOrSuperuser = Boolean(user?.is_staff || user?.is_superuser)
+  const mapperPreview = getMapperPreview()
   // Choosing the AI model / prompt template is for core, staff, early access
   // and unlimited-AI users; preview users get the default template and model.
   const canSelectAIModel = Boolean(
     isCoreUser || isStaffOrSuperuser || hasAuthGroup(user, 'early_access') ||
-    getMapperPreview().aiAssistantCalls.unlimited
+    mapperPreview.aiAssistantCalls.unlimited
   )
   const CANDIDATES_LIMIT = 15
   const canBridge = bridgeRef?.current?.canBridge()
@@ -1933,6 +1936,7 @@ const MapProject = () => {
   const getRowsResults = async (rows, selectedAlgos) => {
     abortRef.current = false;
     matchQuotaStopRef.current = null;
+    rerankQuotaStopRef.current = null;
     runPreviewLimitShownRef.current = false;
     const selectedRowIndexes = getSelectedRowIndexes(rows)
     const isAutoMatchUnmappedOnly = autoMatchScope === 'unmapped'
@@ -2089,6 +2093,10 @@ const MapProject = () => {
           if (abortRef.current) {
             setLoadingMatches(false)
             return
+          }
+          if(rerankQuotaStopRef.current) {
+            queue.length = 0
+            break
           }
 
           const row = queue.shift();
@@ -3353,27 +3361,34 @@ const MapProject = () => {
     }
     return false
   }
-  const isPreviewLimitError = response =>
-    Boolean(response?.error_code && response.error_code.startsWith('mapper_'))
-
   // Opens the at-limit dialog for a preview 403. During a bulk run it opens
   // once, and the run stops sending $match (every later request would 403 too);
   // the quota cache is refreshed once when the run ends instead of per row.
-  const handlePreviewLimitError = (response, rowId, algoId) => {
-    if(!isPreviewLimitError(response))
+  const handlePreviewLimitError = (value, rowId, algoId, options = {}) => {
+    const response = getPreviewLimitError(value)
+    if(!response)
       return false
-    const isRun = isBulkMatchRunningRef.current
+    const isRun = options.isRun === undefined ? isBulkMatchRunningRef.current : options.isRun
+    const stopPhase = options.stopPhase || (isAIPreviewLimitError(response.error_code) ? 'ai' : 'match')
     setIsLoadingInDecisionView(false)
     if(isNumber(rowId) && !restoreRefreshRowStage(rowId) && algoId)
       markAlgo(rowId, algoId, -2)
     if(isRun) {
-      if(!matchQuotaStopRef.current)
+      if(stopPhase === 'match' && !matchQuotaStopRef.current)
         matchQuotaStopRef.current = response.error_code
+      if(stopPhase === 'rerank' && !rerankQuotaStopRef.current)
+        rerankQuotaStopRef.current = response.error_code
+      if(stopPhase === 'ai')
+        aiQuotaExhaustedRef.current = true
       if(runPreviewLimitShownRef.current)
         return true
       runPreviewLimitShownRef.current = true
-    } else if(isNumber(rowId))
-      refreshMapperQuotaCache()
+    } else {
+      if(stopPhase === 'ai')
+        aiQuotaExhaustedRef.current = true
+      if(isNumber(rowId))
+        refreshMapperQuotaCache()
+    }
     setPreviewLimit({errorCode: response.error_code, limit: response.limit, used: response.used})
     return true
   }
@@ -3822,6 +3837,8 @@ const MapProject = () => {
         rows: rerankRows,
         ...(encoderModel ? { encoder_model: encoderModel } : {})
       }, null, attrHeaders({rowIndex: index, algorithmId: 'reranker', isRunTraffic}))
+      if(handlePreviewLimitError(response, index, 'rerank', {isRun: isRunTraffic, stopPhase: 'rerank'}))
+        return response
 
       // Write rerank_score into the row's ConceptRows. matchRerankResultToKey
       // throws on canonical-identity miss; surface to the alert state so a
@@ -3865,6 +3882,8 @@ const MapProject = () => {
         setTimeout(() => setAutoMatched([index]), 1000)
       return response
     } catch (e) {
+      if(handlePreviewLimitError(e, index, 'rerank', {isRun: isRunTraffic, stopPhase: 'rerank'}))
+        return null
       log({action: 'rerank_failed', description: `Rerank failed with ${encoderModel}`}, index)
       markAlgo(index, 'rerank', -2)
       return null
@@ -4996,11 +5015,9 @@ const MapProject = () => {
           }
         )
         let timestamp = moment().toDate()
-        if(response?.error_code === 'ai_assistant_calls_limit_reached') {
-          aiQuotaExhaustedRef.current = true
+        if(handlePreviewLimitError(response, __index, 'recommend', {isRun: isBulk, stopPhase: 'ai'})) {
           markAlgo(__index, 'recommend', -3)
           log({created_at: timestamp, action: 'AIRecommendationLimitReached', extras: {model: selectedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}})
-          setAlert({message: t('map_project.ai_assistant_limit_reached'), severity: 'warning'})
           return false
         }
         if(response?.detail) {
@@ -5023,11 +5040,9 @@ const MapProject = () => {
         setAnalysis(prev => ({...prev, [__index]: [...(prev[__index] || []), newEntry]}))
         return true
       } catch (err) {
-        if(['ai_assistant_calls_limit_reached', 'ai_assistant_calls_not_entitled', 'mapper_ai_assistant_denied'].includes(err?.error_code || err?.response?.data?.error_code)) {
-          aiQuotaExhaustedRef.current = true
+        if(handlePreviewLimitError(err, __index, 'recommend', {isRun: isBulk, stopPhase: 'ai'})) {
           markAlgo(__index, 'recommend', -3)
           log({created_at: moment().toDate(), action: 'AIRecommendationLimitReached', extras: {model: selectedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}})
-          setAlert({message: t('map_project.ai_assistant_limit_reached'), severity: 'warning'})
           return false
         }
         markAlgo(__index, 'recommend', -2)
@@ -5099,6 +5114,8 @@ const MapProject = () => {
       isCoreUser={isCoreUser}
       canSelectAIModel={canSelectAIModel}
       canScispacy={canScispacy}
+      canUseOrgProjects={mapperPreview.hasOrgProjects}
+      canUseCustomAlgorithms={mapperPreview.hasCustomAlgorithms}
       scispacyEnabled={scispacyEnabled}
       setAIAssistantColumns={setAIAssistantColumns}
       AIAssistantColumns={AIAssistantColumns}

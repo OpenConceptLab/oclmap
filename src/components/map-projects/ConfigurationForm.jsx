@@ -27,7 +27,7 @@ import isEmpty from 'lodash/isEmpty'
 import omit from 'lodash/omit'
 import filter from 'lodash/filter'
 
-import { toV3URL } from '../../common/utils'
+import { getCurrentUser, toV3URL } from '../../common/utils'
 import { getProjectConfigErrors } from './algorithms'
 import NamespaceDropdown from '../common/NamespaceDropdown'
 import RepoSearchAutocomplete from '../repos/RepoSearchAutocomplete'
@@ -43,6 +43,7 @@ import AdvancedSettings from './AdvancedSettings'
 import RerankerConfig from './RerankerConfig'
 import AIAssistantSelectorPanel from './AIAssistantSelectorPanel'
 import { hasSelectedTargetRepoVersion } from './projectTargetRepo'
+import { getPreviewAlgorithmOptions, getPreviewConfigAccessErrors } from './previewConfig'
 
 const VisuallyHiddenInput = styled('input')({
   clip: 'rect(0 0 0 0)',
@@ -59,8 +60,9 @@ const VisuallyHiddenInput = styled('input')({
 
 const deriveCanonicalUrl = relativeUrl => relativeUrl ? `https://ns.openconceptlab.org${relativeUrl}` : ''
 
-const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, name, setName, description, setDescription, repo, onRepoChange, repoVersion, setRepoVersion, versions, mappedSources, targetSourcesFromRows, algosSelected, setAlgosSelected, sx, algos, validColumns, columns, isValidColumnValue, updateColumn, configure, setConfigure, columnVisibilityModel, setColumnVisibilityModel, onSave, isSaving, candidatesScore, onScoreChange, includeDefaultFilter, setIncludeDefaultFilter, filters, setFilters, locales, isLoadingLocales, setAIAssistantColumns, AIAssistantColumns, inAIAssistantGroup, lookupConfig, setLookupConfig, encoderModel, setEncoderModel, isCoreUser, canSelectAIModel, canBridge, canScispacy, promptTemplates, promptTemplate, onPromptTemplateChange, AIModels, AIModel, setAIModel, namespace, setNamespace, promptOutputLocale, setPromptOutputLocale, inputLocale, setInputLocale, oclLocales, useLexicalVariants, setUseLexicalVariants }) => {
+const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, name, setName, description, setDescription, repo, onRepoChange, repoVersion, setRepoVersion, versions, mappedSources, targetSourcesFromRows, algosSelected, setAlgosSelected, sx, algos, validColumns, columns, isValidColumnValue, updateColumn, configure, setConfigure, columnVisibilityModel, setColumnVisibilityModel, onSave, isSaving, candidatesScore, onScoreChange, includeDefaultFilter, setIncludeDefaultFilter, filters, setFilters, locales, isLoadingLocales, setAIAssistantColumns, AIAssistantColumns, inAIAssistantGroup, lookupConfig, setLookupConfig, encoderModel, setEncoderModel, isCoreUser, canSelectAIModel, canBridge, canScispacy, canUseOrgProjects=true, canUseCustomAlgorithms=true, promptTemplates, promptTemplate, onPromptTemplateChange, AIModels, AIModel, setAIModel, namespace, setNamespace, promptOutputLocale, setPromptOutputLocale, inputLocale, setInputLocale, oclLocales, useLexicalVariants, setUseLexicalVariants }) => {
   const { t } = useTranslation();
+  const user = getCurrentUser()
   const isLLMAlgoNotAllowed = !repoVersion?.match_algorithms?.includes('llm')
   const appliedLocales = filters?.locale ? filters?.locale?.split(',') : []
   // PR3-H: effective set of name locales the AI Assistant will receive.
@@ -94,6 +96,14 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
   const bridgeAlgos = filter(algosSelected || [], a => a?.type && a.type.includes('bridge'))
   const defaultNamespace = owner || ''
   const namespaceValue = namespace || ''
+  const accessErrors = getPreviewConfigAccessErrors({
+    owner,
+    userUrl: user?.url,
+    algosSelected,
+    canUseOrgProjects,
+    canUseCustomAlgorithms,
+  })
+  const hasAccessErrors = accessErrors.length > 0
 
   // Project-config validation. Currently flags custom algos with missing /
   // malformed canonical_url. Returned as a structured list so the banner
@@ -101,17 +111,14 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
   const configErrors = getProjectConfigErrors(algosSelected)
   const hasConfigErrors = configErrors.length > 0
   const hasTargetRepoVersion = hasSelectedTargetRepoVersion(repoVersion)
-  const getAlgos = () => {
-    return algos.map(algo => {
-      if(algo.type === 'ocl-semantic')
-        algo.disabled = Boolean(isLLMAlgoNotAllowed)
-      else if(['ocl-bridge', 'ocl-ciel-bridge'].includes(algo.type))
-        algo.disabled = !canBridge
-      else if(algo.type === 'ocl-scispacy')
-        algo.disabled = !canScispacy
-      return algo
-    })
-  }
+  const getAlgos = () => getPreviewAlgorithmOptions({
+    algos,
+    algosSelected,
+    canUseCustomAlgorithms,
+    isLLMAlgoNotAllowed,
+    canBridge,
+    canScispacy,
+  })
 
   return (
     <div className='col-xs-12' style={{padding: '8px 0', ...sx}}>
@@ -138,6 +145,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
         size='small'
         onChange={(event, item) => setOwner(item?.url || '')}
         asOwner
+        personalOnly={!canUseOrgProjects}
         sx={{marginTop: '12px'}}
       />
       <TextField
@@ -491,6 +499,23 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
             </ul>
           </Alert>
       }
+      {
+        hasAccessErrors &&
+          <Alert severity='warning' sx={{marginTop: '16px'}}>
+            <Typography component='div' sx={{fontSize: '13px', fontWeight: 500, marginBottom: '4px'}}>
+              {t('map_project.preview_config_unavailable_title')}
+            </Typography>
+            <ul style={{margin: 0, paddingLeft: '20px', fontSize: '12px'}}>
+              {
+                accessErrors.map(reason => (
+                  <li key={reason}>
+                    {t(`map_project.preview_config_unavailable_${reason}`)}
+                  </li>
+                ))
+              }
+            </ul>
+          </Alert>
+      }
       <div className='col-xs-12 padding-0' style={{textAlign: 'right'}}>
       <Button
         variant='contained'
@@ -499,7 +524,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
         sx={{textTransform: 'none', margin: '20px 5px 5px 0px'}}
         startIcon={<SaveIcon />}
         onClick={onSave}
-        disabled={!name || !file?.name || !owner || hasConfigErrors || !hasTargetRepoVersion}
+        disabled={!name || !file?.name || !owner || hasConfigErrors || hasAccessErrors || !hasTargetRepoVersion}
         loading={isSaving}
         loadingPosition="start"
       >
