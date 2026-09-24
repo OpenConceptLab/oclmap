@@ -8,6 +8,7 @@ import Typography from '@mui/material/Typography'
 import Button from '@mui/material/Button'
 
 import CloseIconButton from '../common/CloseIconButton'
+import { PREVIEW_LIMIT_COPY_KEY } from './previewLimits'
 
 const REQUEST_ACCESS_MAILTO = 'mailto:jonathan@openconceptlab.org?subject=' +
   encodeURIComponent('OCL Mapper preview - request more access')
@@ -16,26 +17,13 @@ const NOTIFY_ME_MAILTO = 'mailto:jonathan@openconceptlab.org?subject=' +
 
 // R12: at the limit, offer "request more access" (creates a lead) and "notify me
 // when plans launch" - there is no checkout until November, so neither button
-// takes a payment. One-time allowance (R2): no reset date is ever shown here.
-const CAP_COPY_KEY = {
-  mapper_rows_per_project_limit_reached: 'rows',
-  mapper_match_operations_limit_reached: 'match_operations',
-  mapper_projects_limit_reached: 'projects',
-  mapper_org_projects_denied: 'org_projects',
-  mapper_access_denied: 'access',
-  mapper_custom_algorithms_denied: 'custom_algorithms',
-  mapper_ai_assistant_denied: 'ai_assistant',
-  // Never entitled (no cap configured at all) is a different condition from
-  // having used up a real allowance, and needs its own copy per capability.
-  mapper_rows_per_project_not_entitled: 'rows_not_entitled',
-  mapper_match_operations_not_entitled: 'match_operations_not_entitled',
-  mapper_projects_not_entitled: 'projects_not_entitled',
-  ai_assistant_calls_not_entitled: 'ai_assistant',
-}
+// takes a payment. ocl_online#170 has not finalized the shared lead-capture
+// destination yet, so these mailto links are the recorded interim choice.
+// One-time allowance (R2): no reset date is ever shown here.
 
 const PreviewLimitDialog = ({open, onClose, errorCode, limit, used}) => {
   const { t } = useTranslation()
-  const kind = CAP_COPY_KEY[errorCode] || 'generic'
+  const kind = PREVIEW_LIMIT_COPY_KEY[errorCode] || 'generic'
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth='xs' fullWidth>

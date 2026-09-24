@@ -502,6 +502,7 @@
     "preview_limit_body_access": "Tu cuenta no tiene actualmente acceso al Mapper. Solicita más acceso abajo y lo resolveremos.",
     "preview_limit_body_access_no_count": "Tu cuenta no tiene actualmente acceso al Mapper.",
     "preview_limit_body_custom_algorithms_no_count": "Los algoritmos externos aún no forman parte de la vista previa. Usa los algoritmos integrados de OCL, o solicita más acceso abajo.",
+    "preview_limit_body_ai_assistant": "Tu vista previa gratuita cubre {{limit}} llamadas al Asistente de IA: has usado {{used}} de {{limit}}. La asignación puede continuar sin análisis de IA para las filas restantes.",
     "preview_limit_body_ai_assistant_no_count": "El Asistente de IA no está disponible para tu cuenta. Solicita más acceso abajo y lo resolveremos.",
     "preview_limit_body_rows_not_entitled_no_count": "Este proyecto aún no tiene una asignación de filas configurada. Solicita más acceso abajo y lo resolveremos.",
     "preview_limit_body_match_operations_not_entitled_no_count": "Tu cuenta aún no tiene acceso a operaciones de coincidencia configurado. Solicita más acceso abajo y lo resolveremos.",
