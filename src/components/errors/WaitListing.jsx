@@ -93,22 +93,10 @@ const WaitListing = () => {
               fontSize: 'clamp(15px, 2.2vw, 22px)',
               maxWidth: 900,
               mx: 'auto',
-              mb: { xs: 1.5, sm: 2 },
+              mb: 3,
             }}
           >
             {t('map_project.preview_splash_subhead')}
-          </Typography>
-
-          <Typography
-            variant="body1"
-            sx={{
-              color: 'text.secondary',
-              maxWidth: 780,
-              mx: 'auto',
-              mb: { xs: 3, sm: 3 },
-            }}
-          >
-            {t('map_project.preview_splash_footnote')}
           </Typography>
 
           <Box

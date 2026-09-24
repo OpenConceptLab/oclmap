@@ -461,7 +461,6 @@
     "rejected": "Rechazado",
     "preview_splash_headline": "Asigna tus términos a LOINC, SNOMED CT, CIEL e ICD-11, con la IA haciendo la primera pasada.",
     "preview_splash_subhead": "El Mapper de OCL toma una hoja de cálculo de términos clínicos locales y propone coincidencias con terminologías estándar, clasificadas, con la evidencia de cada una.",
-    "preview_splash_footnote": "Toda cuenta de OCL incluye una vista previa del Mapper: un proyecto, 25 filas auto-asignadas, 100 operaciones de coincidencia y 6 llamadas al Asistente de IA, sin tarjeta requerida.",
     "preview_splash_sign_in_cta": "Iniciar sesión y empezar a mapear",
     "preview_splash_register_cta": "Crear una cuenta gratuita",
     "preview_quota_chip": "Vista previa: {{limit}} filas por proyecto",

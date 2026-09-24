@@ -496,7 +496,6 @@
     "rejected": "Rejected",
     "preview_splash_headline": "Map your terms to LOINC, SNOMED CT, CIEL and ICD-11 - with AI doing the first pass.",
     "preview_splash_subhead": "The OCL Mapper takes a spreadsheet of local clinical terms and proposes standard-terminology matches, ranked, with the evidence for each one.",
-    "preview_splash_footnote": "Every OCL account includes a Mapper preview: one project, 25 auto-matched rows, 100 match operations and 6 AI Assistant calls - yours to use, no card required.",
     "preview_splash_sign_in_cta": "Sign in and start mapping",
     "preview_splash_register_cta": "Create a free account",
     "preview_quota_chip": "Preview: {{limit}} rows per project",
