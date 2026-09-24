@@ -22,6 +22,7 @@ import SearchFilters from '../search/SearchFilters'
 import Mappings from './Mappings'
 import Concept from './Concept'
 import MapButton from './MapButton'
+import GAService from '../../services/GAService'
 
 const Search = ({searchStr, setSearchStr, onSearch, repo, repoVersion, concepts, openConceptPanel, showItem, isSelectedForMap, onMap, response, facets, appliedFacets, setAppliedFacets, isLoading, filters, columns, defaultFilters, locales}) => {
   const { t } = useTranslation();
@@ -29,6 +30,27 @@ const Search = ({searchStr, setSearchStr, onSearch, repo, repoVersion, concepts,
   const [display, setDisplay] = React.useState('card')
   let total = parseInt(response?.headers?.num_found) || concepts?.length || 0
   const results = {total: total, pageSize: max([parseInt(response?.headers?.num_returned), 5]), page: parseInt(response?.headers?.page_number), pages: parseInt(response?.headers?.pages), results: response?.data || []}
+
+  const onSearchStrChange = event => setSearchStr(event.target.value || '')
+
+  const onFiltersToggle = () => {
+    GAService.recordActionEvent('MapProject Search', 'search_filters_toggle', undefined, { open: !openFilters })
+    setOpenFilters(!openFilters)
+  }
+
+  const onDisplayChange = newDisplay => {
+    if(newDisplay !== display)
+      GAService.recordActionEvent('MapProject Search', 'search_display_change', undefined, { display: newDisplay })
+    setDisplay(newDisplay)
+  }
+
+  const onResultClick = item => {
+    GAService.recordActionEvent('MapProject Search', 'search_result_click')
+    openConceptPanel(item, {fromCrossTab: true})
+    setTimeout(() => {
+      highlightTexts([item], null, false)
+    }, 100)
+  }
 
   const onKeyPress = event => {
     if(event.key === 'Enter') {
@@ -73,7 +95,7 @@ const Search = ({searchStr, setSearchStr, onSearch, repo, repoVersion, concepts,
   return (
     <div className='col-xs-12 padding-0'>
       <div className='col-xs-12 padding-0' style={{display: 'flex', alignItems: 'center'}}>
-        <IconButton color={(isEmpty(appliedFacets) && !openFilters) ? undefined : 'primary'} style={{marginRight: '4px'}} onClick={() => setOpenFilters(!openFilters)} disabled={isEmpty(facets)}>
+        <IconButton color={(isEmpty(appliedFacets) && !openFilters) ? undefined : 'primary'} style={{marginRight: '4px'}} onClick={onFiltersToggle} disabled={isEmpty(facets)}>
           <Badge badgeContent={flatten(values(appliedFacets).map(v => values(v))).length} color='primary'>
             <FilterListIcon sx={{color: (isEmpty(appliedFacets) && !openFilters) ? '#000': 'primary'}} />
           </Badge>
@@ -85,7 +107,7 @@ const Search = ({searchStr, setSearchStr, onSearch, repo, repoVersion, concepts,
           required
           id="search"
           value={searchStr}
-          onChange={event => setSearchStr(event.target.value || '')}
+          onChange={onSearchStrChange}
           size='small'
           onKeyDown={onKeyPress}
           slotProps={{
@@ -176,8 +198,7 @@ const Search = ({searchStr, setSearchStr, onSearch, repo, repoVersion, concepts,
                 ? (event) => {
                     event.preventDefault()
                     event.stopPropagation()
-                    openConceptPanel(row, {fromCrossTab: true})
-                    setTimeout(() => { highlightTexts([row], null, false) }, 100)
+                    onResultClick(row)
                   }
                 : props.onCardClick
               return (
@@ -194,7 +215,7 @@ const Search = ({searchStr, setSearchStr, onSearch, repo, repoVersion, concepts,
             }
           }
           display={display}
-          onDisplayChange={setDisplay}
+          onDisplayChange={onDisplayChange}
           nested
           results={results}
           resource='concepts'
@@ -210,10 +231,7 @@ const Search = ({searchStr, setSearchStr, onSearch, repo, repoVersion, concepts,
             // is also a candidate for the current row; if so, enriches the
             // payload with multi-algo + bridge context and surfaces the
             // "Also a candidate for [code]" chip in the header.
-            openConceptPanel(item, {fromCrossTab: true})
-            setTimeout(() => {
-              highlightTexts([item], null, false)
-            }, 100)
+            onResultClick(item)
           }}
           selectedToShow={showItem}
           onPageChange={(page, pageSize) => onSearch(null, page, pageSize)}

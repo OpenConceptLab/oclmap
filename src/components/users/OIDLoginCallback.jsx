@@ -5,6 +5,7 @@ import {
   refreshCurrentUserCache, consumeStoredPKCECodeVerifier, consumeAndValidateOAuthState
 } from '../../common/utils';
 import APIService from '../../services/APIService'
+import GAService from '../../services/GAService'
 import { OperationsContext } from '../app/LayoutContext';
 
 class OIDLoginCallback extends React.Component {
@@ -39,18 +40,19 @@ class OIDLoginCallback extends React.Component {
 
         APIService.users().appendToUrl('oidc/code-exchange/').post({code: code, redirect_uri: redirectURL, client_id: clientId, code_verifier: codeVerifier}).then(res => {
           if(res.data?.access_token) {
+            GAService.recordSignupComplete()
             localStorage.removeItem('server_configs')
             localStorage.setItem('token', res.data.access_token)
             localStorage.setItem('id_token', res.data.id_token)
-            const sessionExpired = sessionStorage.getItem('session_expired')
             sessionStorage.removeItem('session_expired')
             setAlert({
               duration: 2000,
-              severity: sessionExpired ? 'info' : 'success',
-              message: sessionExpired ? this.props.t('auth.session_expired') : this.props.t('auth.sign_in_success')
+              severity: 'success',
+              message: this.props.t('auth.sign_in_success')
             })
             this.cacheUserData()
           } else {
+            GAService.clearSignupFlow()
             setAlert({severity: 'error', message: res.data?.error_description || this.props.t('auth.sign_in_error')})
           }
         })

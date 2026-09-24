@@ -1,19 +1,19 @@
 /*eslint no-process-env: 0*/
 import 'core-js/features/url-search-params';
 import React from 'react';
-import ReactGA from 'react-ga4';
 import moment from 'moment';
 import { Tooltip } from '@mui/material';
 import {
   filter, difference, compact, find, reject, intersectionBy, size, keys, omitBy, isEmpty,
   get, includes, map, isArray, values, pick, sortBy, zipObject, orderBy, isObject, merge,
-  uniqBy, cloneDeep, isEqual, without, capitalize, last, nth, startCase, uniq, flatten, pickBy, upperFirst
+  uniqBy, cloneDeep, isEqual, without, capitalize, last, nth, uniq, flatten, pickBy, upperFirst
 } from 'lodash';
 import {
   DATE_FORMAT, TIME_FORMAT, DATETIME_FORMAT, OCL_SERVERS_GROUP, OCL_FHIR_SERVERS_GROUP, HAPI_FHIR_SERVERS_GROUP,
   OPENMRS_URL, DEFAULT_FHIR_SERVER_FOR_LOCAL_ID, OPERATIONS_PANEL_GROUP
 } from './constants';
 import APIService from '../services/APIService';
+import GAService from '../services/GAService';
 import { SERVER_CONFIGS } from './serverConfigs';
 
 export const currentPath = () => window.location.hash.split('?')[0];
@@ -578,32 +578,9 @@ export const getOpenMRSURL = () => {
   return OPENMRS_URL.replace('openmrs.', `openmrs.${env}`);
 }
 
-export const recordGAPageView = () => {
-  /*eslint no-undef: 0*/
-  ReactGA.initialize(window.GA_ACCOUNT_ID || process.env.GA_ACCOUNT_ID);
-  // Strip the query string from the hash so auth params (code, state, session_state) on the OIDC callback are not sent to GA
-  ReactGA.send({ hitType: "pageview", page: window.location.pathname + window.location.hash.split('?')[0] });
-}
-
-export const recordGAAction = (category, action, label) => {
-  /*eslint no-undef: 0*/
-  if(category && action) {
-    ReactGA.initialize(window.GA_ACCOUNT_ID || process.env.GA_ACCOUNT_ID);
-    ReactGA.event({category: category, action: action, label: label || action, transport: "xhr"});
-  }
-}
-
-export const recordGAUpsertEvent = (category, edit, resource) => {
-  const actionPrefix = edit ? 'update' : 'create'
-  resource = resource || category.replaceAll(' ', '_').toLowerCase()
-  let action = `${actionPrefix}_${resource}`
-  let label = `${startCase(actionPrefix)} ${startCase(resource)}`
-  recordGAAction(category, action, label)
-}
-
 export const setUpRecentHistory = history => {
   history.listen(location => {
-    recordGAPageView()
+    GAService.recordPageView()
     let visits = JSON.parse(get(localStorage, 'visits', '[]'));
     let urlParts = compact(location.pathname.split('/'));
     let type = '';
@@ -890,6 +867,9 @@ export const getLoginURL = async returnTo => {
   const codeChallenge = await preparePKCECodeChallenge()
   const state = prepareOAuthState()
   const nonce = generateSecureRandomString(32)
+
+  GAService.clearSignupFlow()
+
   return `${getAPIURL()}/users/login/?client_id=${oidClientID}&state=${state}&nonce=${nonce}&redirect_uri=${redirectURL}&code_challenge=${codeChallenge}&code_challenge_method=S256`
 }
 
@@ -912,6 +892,9 @@ export const getRegisterURL = async returnTo => {
   const codeChallenge = await preparePKCECodeChallenge()
   const state = prepareOAuthState()
   const nonce = generateSecureRandomString(32)
+
+  GAService.recordSignupStart()
+
   return `${getAPIURL()}/users/signup/?client_id=${oidClientID}&state=${state}&nonce=${nonce}&redirect_uri=${redirectURL}&code_challenge=${codeChallenge}&code_challenge_method=S256`
 }
 

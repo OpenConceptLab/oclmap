@@ -9,6 +9,7 @@ import CloseIcon from '@mui/icons-material/Close'
 import Dialog from '../common/Dialog'
 import DialogTitle from '../common/DialogTitle'
 import APIService from '../../services/APIService'
+import GAService from '../../services/GAService'
 import { OperationsContext } from '../app/LayoutContext';
 import { useTranslation, Trans } from 'react-i18next';
 
@@ -20,6 +21,7 @@ const MapProjectDeleteConfirmDialog = ({ project, open, onClose, onDeleted }) =>
   const [value, setValue] = React.useState('')
 
   const onDelete = () => {
+    GAService.recordActionEvent('MapProject', 'delete_map_project')
     APIService.new().overrideURL(project.url).delete().then(response => {
       if(response.status === 204) {
         onClose(true)

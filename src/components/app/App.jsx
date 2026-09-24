@@ -2,9 +2,10 @@
 import React from 'react';
 import { Route, Switch, withRouter } from 'react-router-dom';
 import {
-  recordGAPageView, isLoggedIn, getLoginURL, isOtherOCLClientURL, isRedirectingToLoginViaReferrer,
+  isLoggedIn, getLoginURL, isOtherOCLClientURL, isRedirectingToLoginViaReferrer,
   getEnv
 } from '../../common/utils';
+import GAService from '../../services/GAService';
 import Error404 from '../errors/Error404';
 import Error403 from '../errors/Error403';
 import Error401 from '../errors/Error401';
@@ -104,7 +105,7 @@ const App = props => {
     forceLoginUser()
     fetchToggles()
     addLogoutListenerForAllTabs()
-    recordGAPageView()
+    GAService.recordPageView()
     setupHotJar()
 
     return () => unsubscribe()
