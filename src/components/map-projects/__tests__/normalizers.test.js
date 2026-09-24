@@ -17,6 +17,8 @@ import assert from 'node:assert/strict'
 
 import {
   createAlgorithmResponse,
+  toStoredRowMatchState,
+  serializeCandidates,
   normalizeAlgoResult,
   normalizeAlgorithmInvocation,
   filterPropertyBySummary,
@@ -249,6 +251,146 @@ test('createAlgorithmResponse records error when status=failed', () => {
 
   assert.equal(response.status, 'failed')
   assert.equal(response.error, 'Network timeout')
+})
+
+// An axios response as APIService resolves it: the body, plus the request
+// config (request headers included), response headers and the XHR request.
+const httpResponse = (data) => ({
+  data,
+  status: 200,
+  statusText: 'OK',
+  headers: { 'content-type': 'application/json' },
+  config: {
+    url: 'https://api.example.org/concepts/$match/',
+    method: 'post',
+    headers: { Authorization: 'Token test', 'Content-Type': 'application/json' },
+    data: '{"rows":[]}'
+  },
+  request: {}
+})
+
+test('createAlgorithmResponse keeps only data and status from an HTTP response', () => {
+  const data = [{ row: { __index: 3 }, results: [] }]
+  const response = createAlgorithmResponse(httpResponse(data), 'ocl-search', { rowIndex: 3 })
+
+  assert.deepEqual(response.raw, { data, status: 200 })
+})
+
+// ---------- toStoredRowMatchState ----------
+
+// A row saved before AlgorithmResponses were reduced: the full HTTP response
+// in `raw`, next to payload-only responses from other algorithms.
+const savedRow = () => ({
+  algorithm_responses: {
+    'ar-http': {
+      id: 'ar-http', algorithm_id: 'ocl-search', row_index: 0, status: 'success',
+      received_at: '2026-01-01T00:00:00.000Z',
+      raw: httpResponse([{ row: { __index: 0 }, results: [] }])
+    },
+    'ar-bridge': {
+      id: 'ar-bridge', algorithm_id: 'ocl-ciel-bridge', row_index: 0, status: 'success',
+      raw: [{ row: { __index: 0 }, results: [] }]
+    },
+    'ar-envelope': {
+      id: 'ar-envelope', algorithm_id: 'ocl-semantic', row_index: 0, status: 'success',
+      raw: { row: { __index: 0 }, results: [] }
+    }
+  },
+  candidates: { 'c-1': { id: 'c-1', algorithm_response_id: 'ar-http', concept_key: 'k1' } },
+  concept_rows: { k1: { concept_key: 'k1', rerank_score: 0.9 } }
+})
+
+test('toStoredRowMatchState reduces HTTP responses in saved rows to data and status', () => {
+  const row = savedRow()
+  const stored = toStoredRowMatchState({ 0: row })
+
+  assert.deepEqual(stored[0].algorithm_responses['ar-http'], {
+    id: 'ar-http', algorithm_id: 'ocl-search', row_index: 0, status: 'success',
+    received_at: '2026-01-01T00:00:00.000Z',
+    raw: { data: row.algorithm_responses['ar-http'].raw.data, status: 200 }
+  })
+  assert.ok('config' in row.algorithm_responses['ar-http'].raw, 'input rows are not mutated')
+})
+
+test('toStoredRowMatchState leaves payloads, candidates and concept rows as they are', () => {
+  const row = savedRow()
+  const stored = toStoredRowMatchState({ 0: row })
+
+  assert.equal(stored[0].algorithm_responses['ar-bridge'], row.algorithm_responses['ar-bridge'])
+  assert.equal(stored[0].algorithm_responses['ar-envelope'], row.algorithm_responses['ar-envelope'])
+  assert.equal(stored[0].candidates, row.candidates)
+  assert.equal(stored[0].concept_rows, row.concept_rows)
+})
+
+// ---------- serializeCandidates (the `candidates` field onSave persists) ----------
+
+// Project state holding a row saved before AlgorithmResponses were reduced
+// (row 0) and a row matched in this session from an HTTP response (row 1).
+const projectState = () => {
+  const invocation = normalizeAlgorithmInvocation(
+    { row: { __index: 1 }, results: [oclSearchResult_LOINC_glucose_full] },
+    {
+      algorithmId: 'ocl-search',
+      algorithmConfig: oclSearchAlgo,
+      projectContext,
+      rowIndex: 1,
+      rawResponse: httpResponse([{ row: { __index: 1 }, results: [oclSearchResult_LOINC_glucose_full] }])
+    }
+  )
+  const rowMatchState = {
+    0: savedRow(),
+    1: {
+      algorithm_responses: { [invocation.algorithm_response.id]: invocation.algorithm_response },
+      candidates: Object.fromEntries(invocation.candidates.map(c => [c.id, c])),
+      concept_rows: Object.fromEntries(invocation.concept_rows.map(cr => [cr.concept_key, cr]))
+    }
+  }
+  const conceptCache = Object.fromEntries(invocation.concept_definitions.map(cd => [cd.key, cd]))
+  return { rowMatchState, conceptCache }
+}
+
+const keysAtAnyDepth = (value, keys = new Set()) => {
+  if (value && typeof value === 'object') {
+    for (const [key, child] of Object.entries(value)) {
+      if (!Array.isArray(value)) keys.add(key)
+      keysAtAnyDepth(child, keys)
+    }
+  }
+  return keys
+}
+
+test('saved candidates contain no request config, headers, request or Authorization', () => {
+  const { rowMatchState, conceptCache } = projectState()
+
+  const saved = JSON.stringify(serializeCandidates(rowMatchState, conceptCache))
+
+  assert.doesNotMatch(saved, /Authorization/)
+  const keys = keysAtAnyDepth(JSON.parse(saved))
+  for (const key of ['config', 'headers', 'request', 'statusText'])
+    assert.ok(!keys.has(key), `saved candidates contain "${key}"`)
+})
+
+test('serializeCandidates writes v2 candidates with response data, status and payloads intact', () => {
+  const { rowMatchState, conceptCache } = projectState()
+
+  const saved = JSON.parse(JSON.stringify(serializeCandidates(rowMatchState, conceptCache)))
+
+  assert.equal(saved.mapper_schema_version, 2)
+  const [[defKey, def]] = saved.concept_definitions
+  assert.equal(defKey, Object.keys(conceptCache)[0])
+  assert.equal(def.key, undefined, 'the derived key is re-attached on load, not saved')
+  const [invocationResponse] = Object.values(saved.rows[1].algorithm_responses)
+  assert.deepEqual(invocationResponse.raw, {
+    data: [{ row: { __index: 1 }, results: [oclSearchResult_LOINC_glucose_full] }],
+    status: 200
+  })
+  assert.deepEqual(saved.rows[0].algorithm_responses['ar-http'].raw, {
+    data: [{ row: { __index: 0 }, results: [] }],
+    status: 200
+  })
+  assert.deepEqual(saved.rows[0].algorithm_responses['ar-bridge'].raw, [{ row: { __index: 0 }, results: [] }])
+  assert.deepEqual(saved.rows[0].algorithm_responses['ar-envelope'].raw, { row: { __index: 0 }, results: [] })
+  assert.deepEqual(saved.rows[1].candidates, JSON.parse(JSON.stringify(rowMatchState[1].candidates)))
 })
 
 // ---------- normalizeAlgoResult: standard ----------
