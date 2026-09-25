@@ -149,6 +149,8 @@
     "signing_in": "Signing in...",
     "sign_in_success": "Successfully signed in.",
     "sign_in_error": "Unable to signin at the time.",
+    "email_verified_sign_in": "Your email is verified. Sign in to continue.",
+    "sign_in_to_continue": "Sign in to continue.",
     "update_password": "Update password",
     "session_expired": "Your session has expired. Please log in to continue."
   },
