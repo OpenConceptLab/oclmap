@@ -1,5 +1,7 @@
 export const QUOTA_PRICING_URL = 'https://preview.openconceptlab.org/pricing'
-export const REQUEST_MORE_ACCESS_URL = 'mailto:jonathan@openconceptlab.org?subject=' +
+// Where upgrade and quota requests go (ocl_online#231).
+export const CONTACT_EMAIL = 'jon@openconceptlab.org'
+export const REQUEST_MORE_ACCESS_URL = `mailto:${CONTACT_EMAIL}?subject=` +
   encodeURIComponent('OCL - request more access')
 
 const QUOTA_ERRORS = {

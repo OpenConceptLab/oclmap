@@ -8,11 +8,12 @@ import Typography from '@mui/material/Typography'
 import Button from '@mui/material/Button'
 
 import CloseIconButton from '../common/CloseIconButton'
+import { CONTACT_EMAIL } from '../common/quotaErrors'
 import { PREVIEW_LIMIT_COPY_KEY } from './previewLimits'
 
-const REQUEST_ACCESS_MAILTO = 'mailto:jonathan@openconceptlab.org?subject=' +
+const REQUEST_ACCESS_MAILTO = `mailto:${CONTACT_EMAIL}?subject=` +
   encodeURIComponent('OCL Mapper preview - request more access')
-const NOTIFY_ME_MAILTO = 'mailto:jonathan@openconceptlab.org?subject=' +
+const NOTIFY_ME_MAILTO = `mailto:${CONTACT_EMAIL}?subject=` +
   encodeURIComponent('OCL Mapper - notify me when plans launch')
 
 // R12: at the limit, offer "request more access" (creates a lead) and "notify me

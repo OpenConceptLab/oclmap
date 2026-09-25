@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { getQuotaError, isCapMeter, isQuotaError } from '../quotaErrors.js'
+import { CONTACT_EMAIL, REQUEST_MORE_ACCESS_URL, getQuotaError, isCapMeter, isQuotaError } from '../quotaErrors.js'
 
 test('getQuotaError: maps quota and cap error codes to a meter and kind', () => {
   assert.deepEqual(getQuotaError({error_code: 'mapper_match_operations_limit_reached', limit: 6, used: 6}), {
@@ -29,4 +29,11 @@ test('isCapMeter: only projects and rows are caps', () => {
   assert.equal(isCapMeter('projects'), true)
   assert.equal(isCapMeter('rows'), true)
   assert.equal(isCapMeter('match_operations'), false)
+})
+
+// ocl_online#231: jonathan@openconceptlab.org doesn't exist, so upgrade and
+// quota requests sent there were lost.
+test('upgrade and quota requests go to jon@openconceptlab.org', () => {
+  assert.equal(CONTACT_EMAIL, 'jon@openconceptlab.org')
+  assert.match(REQUEST_MORE_ACCESS_URL, /^mailto:jon@openconceptlab\.org\?subject=/)
 })
