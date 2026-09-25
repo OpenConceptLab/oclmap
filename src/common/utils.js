@@ -838,12 +838,18 @@ const preparePKCECodeChallenge = async () => {
   return generateCodeChallenge(codeVerifier)
 }
 
+// Marks the state getRegisterURL sends. Keycloak echoes it back after the email-verification link,
+// usually in a new tab, so OIDLoginCallback can tell a finished sign-up apart from other callbacks.
+const SIGNUP_STATE_PREFIX = 'signup.'
+
 // state is only meaningful for flows that echo it back (login/register); reset-password does not.
-const prepareOAuthState = () => {
-  const state = generateSecureRandomString(32)
+const prepareOAuthState = (prefix = '') => {
+  const state = prefix + generateSecureRandomString(32)
   sessionStorage.setItem(OAUTH_STATE_KEY, state)
   return state
 }
+
+export const isSignupOAuthState = state => Boolean(state && state.startsWith(SIGNUP_STATE_PREFIX))
 
 export const consumeStoredPKCECodeVerifier = () => {
   const codeVerifier = sessionStorage.getItem(PKCE_CODE_VERIFIER_KEY)
@@ -890,7 +896,7 @@ export const getRegisterURL = async returnTo => {
   redirectURL = redirectURL.replace(/([^:]\/)\/+/g, "$1");
 
   const codeChallenge = await preparePKCECodeChallenge()
-  const state = prepareOAuthState()
+  const state = prepareOAuthState(SIGNUP_STATE_PREFIX)
   const nonce = generateSecureRandomString(32)
 
   GAService.recordSignupStart()

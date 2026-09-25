@@ -56,6 +56,12 @@ const GAService = {
       this.recordEvent('signup_complete', { event_category: 'auth', event_label: 'signup_complete' });
   },
 
+  // The email-verification link finishes sign-up in a tab that never called recordSignupStart.
+  recordSignupVerified() {
+    this.clearSignupFlow();
+    this.recordEvent('signup_complete', { event_category: 'auth', event_label: 'signup_complete', completed_via: 'email_link' });
+  },
+
   recordEvent(name, params) {
     initialize();
     if(!enabled())

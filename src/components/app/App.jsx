@@ -87,7 +87,9 @@ const App = props => {
     const queryParams = new URLSearchParams(search)
     const referrer = queryParams.get('referrer')
     if(isLoggedIn()) {
-      window.location.hash = '#'  + pathname
+      // OIDLoginCallback navigates away itself; resetting the hash here would undo that.
+      if(!pathname.startsWith('/oidc/login'))
+        window.location.hash = '#'  + pathname
     } else if(isOtherOCLClientURL(referrer) && !isLoggedIn()) {
       const parts = hash ? hash.split('?') : referrer.split('?')
       let params = new URLSearchParams(parts[1])
@@ -149,7 +151,7 @@ const App = props => {
                 )}
               </React.Fragment>
             )}
-            <Alert message={alert?.message} onClose={() => setAlert(false)} severity={alert?.severity} duration={alert?.duration} />
+            <Alert message={alert?.message} onClose={() => setAlert(false)} severity={alert?.severity} duration={alert?.duration} action={alert?.action} />
           </main>
         </ErrorBoundary>
         <Footer {...props} />
