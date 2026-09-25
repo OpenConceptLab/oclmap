@@ -747,5 +747,46 @@
     "web_version": "Web 版本",
     "api_version": "API 版本"
   },
-  "unknown_error": "未知错误"
+  "unknown_error": "未知错误",
+  "quota": {
+    "title_quota": "您已达到配额上限",
+    "title_cap": "您已达到使用上限",
+    "your_plan": "您的套餐",
+    "used_of": "已使用 {{used}} / {{limit}}",
+    "period_one_time": "一次性预览额度",
+    "request_more_access": "申请更多权限",
+    "view_pricing": "查看价格",
+    "meter": {
+      "match_operations": "匹配操作",
+      "ai_assistant_calls": "OCL AI 助手调用",
+      "ai_assistant_change_comments": "OCL AI 助手更新备注",
+      "projects": "映射项目",
+      "rows": "每个项目的行数",
+      "generic": "用量"
+    },
+    "consequence": {
+      "generic": "在提高额度之前，部分功能已暂停。",
+      "ai_assistant_calls": {
+        "default": "使用 OCL AI 助手的功能已暂停。",
+        "auto_match": "自动匹配将继续运行，但不再提供 OCL AI 助手的推荐。"
+      },
+      "ai_assistant_change_comments": {
+        "default": "您仍可自行撰写更新备注，只是没有 OCL AI 助手的草稿。",
+        "tbv3_change_comment": "您仍可自行撰写更新备注，只是没有 OCL AI 助手的草稿。"
+      },
+      "match_operations": {
+        "default": "匹配已暂停。",
+        "auto_match": "您仍可查看、编辑和导出项目，但自动匹配已暂停。",
+        "tbv3_match": "搜索将继续可用，但使用 OCL 语义搜索的 $match 已暂停。"
+      },
+      "projects": {
+        "default": "现有项目保持打开；删除一个项目即可腾出位置创建新项目。",
+        "new_project": "现有项目保持打开；删除一个项目即可腾出位置创建新项目。"
+      },
+      "rows": {
+        "default": "超出限制的行会保留在项目中，但不会被匹配。",
+        "import": "超出限制的行会保留在项目中，但不会被匹配。"
+      }
+    }
+  }
 }

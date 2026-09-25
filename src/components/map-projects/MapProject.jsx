@@ -103,6 +103,8 @@ import ProjectLogs from './ProjectLogs';
 import { useAlgos, ensureConceptIdentity } from './algorithms'
 import AutoMatchDialog from './AutoMatchDialog'
 import PreviewLimitDialog from './PreviewLimitDialog'
+import QuotaDialog from '../common/QuotaDialog'
+import { getQuotaError } from '../common/quotaErrors'
 import MapperQuotaChip from './MapperQuotaChip'
 import { getPreviewLimitError, isAIPreviewLimitError, isPreviewLimitError } from './previewLimits'
 import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
@@ -134,6 +136,9 @@ import '../common/ResizablePanel.scss'
 //   extras: {},
 //   created_at: ''
 // }
+
+const NEW_PROJECT_BLOCK_ERROR_CODES = {access: 'mapper_access_denied', projects_not_entitled: 'mapper_projects_not_entitled', projects: 'mapper_projects_limit_reached'}
+const MAPPER_QUOTA_SURFACE = {match_operations: 'auto_match', ai_assistant_calls: 'auto_match', projects: 'new_project', rows: 'import'}
 
 const MapProject = () => {
   const { t } = useTranslation();
@@ -232,6 +237,7 @@ const MapProject = () => {
   const refreshRowStageSnapshotRef = React.useRef({});
 
   const [previewLimit, setPreviewLimit] = React.useState(null) // {errorCode, limit, used} or null
+  const previewLimitQuota = previewLimit ? getQuotaError({error_code: previewLimit.errorCode, limit: previewLimit.limit, used: previewLimit.used}) : null
 
   const [row, setRow] = React.useState(false)
   const [loadingMatches, setLoadingMatches] = React.useState(false)
@@ -5156,6 +5162,12 @@ const MapProject = () => {
   const onCopyClick = event => {
     event.preventDefault()
     event.stopPropagation()
+    const preview = getMapperPreview()
+    const blockReason = getNewProjectBlockReason(preview)
+    if(blockReason) {
+      setPreviewLimit({errorCode: NEW_PROJECT_BLOCK_ERROR_CODES[blockReason], limit: preview.projects.limit, used: preview.projects.used})
+      return
+    }
     if(project?.url) {
       window.open(`/#/map-projects/new?templateFrom=${encodeURIComponent(project.url)}`, '_blank', 'noopener,noreferrer')
     }
@@ -5589,13 +5601,23 @@ const MapProject = () => {
               matchAlgorithmIds
             }}
           />
-          <PreviewLimitDialog
-            open={Boolean(previewLimit)}
-            onClose={() => setPreviewLimit(null)}
-            errorCode={previewLimit?.errorCode}
-            limit={previewLimit?.limit}
-            used={previewLimit?.used}
-          />
+          {
+            previewLimitQuota ?
+              <QuotaDialog
+                open
+                onClose={() => setPreviewLimit(null)}
+                meter={previewLimitQuota.meter}
+                surface={MAPPER_QUOTA_SURFACE[previewLimitQuota.meter]}
+                usage={{...previewLimitQuota.usage, period: 'one_time'}}
+              /> :
+              <PreviewLimitDialog
+                open={Boolean(previewLimit)}
+                onClose={() => setPreviewLimit(null)}
+                errorCode={previewLimit?.errorCode}
+                limit={previewLimit?.limit}
+                used={previewLimit?.used}
+              />
+          }
       </Paper>
       <Paper component="div" className={isSplitView ? 'col-xs-6 split padding-0 split-appear' : 'col-xs-6 padding-0'} sx={{boxShadow: 'none', p: 0, backgroundColor: WHITE, borderRadius: '10px', border: 'solid 0.3px', borderColor: 'surface.nv80', opacity: isSplitView ? 1 : 0, height: 'calc(100vh - 100px) !important', overflow: 'auto'}}>
         {

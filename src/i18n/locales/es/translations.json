@@ -749,5 +749,46 @@
     "target_owner": "Propietario de destino",
     "view_canonical_url_registry": "Ver registro de URL canónicas"
   },
-  "unknown_error": "Error desconocido"
+  "unknown_error": "Error desconocido",
+  "quota": {
+    "title_quota": "Ha alcanzado su cuota",
+    "title_cap": "Ha alcanzado su límite",
+    "your_plan": "Su plan",
+    "used_of": "{{used}} de {{limit}} usados",
+    "period_one_time": "Asignación de vista previa única",
+    "request_more_access": "Solicitar más acceso",
+    "view_pricing": "Ver precios",
+    "meter": {
+      "match_operations": "Operaciones de coincidencia",
+      "ai_assistant_calls": "Llamadas al asistente de IA de OCL",
+      "ai_assistant_change_comments": "Comentarios de actualización del asistente de IA de OCL",
+      "projects": "Proyectos de mapeo",
+      "rows": "Filas por proyecto",
+      "generic": "Uso"
+    },
+    "consequence": {
+      "generic": "Algunas funciones están en pausa hasta que se amplíe su asignación.",
+      "ai_assistant_calls": {
+        "default": "Las funciones que usan el asistente de IA de OCL están en pausa.",
+        "auto_match": "La coincidencia automática seguirá funcionando sin recomendaciones del asistente de IA de OCL."
+      },
+      "ai_assistant_change_comments": {
+        "default": "Aún puede escribir el comentario de actualización usted mismo, sin un borrador del asistente de IA de OCL.",
+        "tbv3_change_comment": "Aún puede escribir el comentario de actualización usted mismo, sin un borrador del asistente de IA de OCL."
+      },
+      "match_operations": {
+        "default": "La coincidencia está en pausa.",
+        "auto_match": "Aún puede revisar, editar y exportar sus proyectos, pero la coincidencia automática está en pausa.",
+        "tbv3_match": "La búsqueda seguirá funcionando, pero $match con la búsqueda semántica de OCL está en pausa."
+      },
+      "projects": {
+        "default": "Sus proyectos existentes siguen abiertos; elimine uno para liberar un espacio para uno nuevo.",
+        "new_project": "Sus proyectos existentes siguen abiertos; elimine uno para liberar un espacio para uno nuevo."
+      },
+      "rows": {
+        "default": "Las filas que superan su límite permanecen en el proyecto pero no se emparejan.",
+        "import": "Las filas que superan su límite permanecen en el proyecto pero no se emparejan."
+      }
+    }
+  }
 }
