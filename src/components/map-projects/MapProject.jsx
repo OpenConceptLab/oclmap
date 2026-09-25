@@ -8,7 +8,7 @@ import Split from 'react-split';
 import BridgeMatch from '../../services/LazyLoader'
 import GAService from '../../services/GAService'
 
-import { useParams, useHistory, useLocation } from 'react-router-dom'
+import { useParams, useHistory, useLocation, Redirect } from 'react-router-dom'
 
 import Paper from '@mui/material/Paper'
 import Button from '@mui/material/Button';
@@ -72,7 +72,7 @@ import { OperationsContext } from '../app/LayoutContext';
 
 import APIService, { isTransientNetworkError, retryWithBackoff } from '../../services/APIService';
 import { buildAttributionHeaders, buildConfigSnapshot, summarizeRunCompletion } from '../../services/attribution'
-import { highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, downloadObject, currentUserToken } from '../../common/utils';
+import { highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, hasCapability, getMapperPreview, getNewProjectBlockReason, downloadObject, currentUserToken, refreshCurrentUserCapabilitiesCache } from '../../common/utils';
 import { WHITE, SURFACE_COLORS, TEXT_GRAY } from '../../common/colors';
 
 import { useDoubleClick } from '../common/useDoubleClick'
@@ -87,7 +87,7 @@ import MapProjectDeleteConfirmDialog from './MapProjectDeleteConfirmDialog';
 import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
 import DataGridControls from './DataGridControls'
-import { getRowsToProcess } from './autoMatchRows'
+import { getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep, getAIRequestIdempotencyKey } from './autoMatchRows'
 import { createAutosaveScheduler } from './autosave'
 import MatchSummaryCard from './MatchSummaryCard'
 import MappingDecisionResult from './MappingDecisionResult'
@@ -102,8 +102,13 @@ import ImportToCollection from './ImportToCollection'
 import ProjectLogs from './ProjectLogs';
 import { useAlgos, ensureConceptIdentity } from './algorithms'
 import AutoMatchDialog from './AutoMatchDialog'
+import PreviewLimitDialog from './PreviewLimitDialog'
+import QuotaDialog from '../common/QuotaDialog'
+import { getQuotaError } from '../common/quotaErrors'
+import MapperQuotaChip from './MapperQuotaChip'
+import { getPreviewLimitError, isAIPreviewLimitError, isPreviewLimitError } from './previewLimits'
 import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
-import { normalizeAlgorithmInvocation, lookupStatusRank, buildRecommendableConceptEntry, stripConstantClassAndDatatype, buildLookupConceptUrl } from './normalizers'
+import { normalizeAlgorithmInvocation, lookupStatusRank, buildRecommendableConceptEntry, stripConstantClassAndDatatype, buildLookupConceptUrl, serializeCandidates, toStoredRowMatchState } from './normalizers'
 import { parseConceptKey } from './conceptKey'
 import { getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId } from './projectTargetRepo'
 import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, formatBridgeTargetDownloadEntry, resolveAICandidateID, getScoreDetails, getAIAnalysisCandidateIDs } from './viewBuilders.js'
@@ -132,10 +137,17 @@ import '../common/ResizablePanel.scss'
 //   created_at: ''
 // }
 
+const NEW_PROJECT_BLOCK_ERROR_CODES = {access: 'mapper_access_denied', projects_not_entitled: 'mapper_projects_not_entitled', projects: 'mapper_projects_limit_reached'}
+const MAPPER_QUOTA_SURFACE = {match_operations: 'auto_match', ai_assistant_calls: 'auto_match', projects: 'new_project', rows: 'import'}
+
 const MapProject = () => {
   const { t } = useTranslation();
   const { toggles, setAlert: baseSetAlert } = React.useContext(OperationsContext);
   const user = getCurrentUser()
+  const [mapperQuotaCacheVersion, setMapperQuotaCacheVersion] = React.useState(0)
+  const refreshMapperQuotaCache = React.useCallback(() => {
+    refreshCurrentUserCapabilitiesCache(() => setMapperQuotaCacheVersion(version => version + 1))
+  }, [])
   const params = useParams()
   const history = useHistory()
   const location = useLocation()
@@ -203,12 +215,29 @@ const MapProject = () => {
   const promptTemplatesFetchedRef = React.useRef(false)
 
   const abortRef = React.useRef(false);
+  // ai_assistant.calls is a one-time allowance (no reset, R2) - once exhausted it
+  // stays exhausted for the rest of the session, so this is never reset per-run.
+  const aiQuotaExhaustedRef = React.useRef(false);
+  // Consecutive rows whose AI step failed for a reason other than quota. Reset
+  // at the start of each run's AI step (see shouldStopAIStep).
+  const aiFailuresInARowRef = React.useRef(0);
   const isBulkMatchRunningRef = React.useRef(false);
+  // A run that hits a preview limit mid-way stops sending $match but still
+  // finishes (rerank, AI, autosave) - unlike abortRef, which is the user's Stop.
+  // Holds the limit's error_code, or null.
+  const matchQuotaStopRef = React.useRef(null);
+  const rerankQuotaStopRef = React.useRef(null);
+  // The at-limit dialog opens once per run, not once per failed request.
+  const runPreviewLimitShownRef = React.useRef(false);
   const bulkMatchAlgoIdsRef = React.useRef([]);
   // ocl_online#105 Phase 5: the active AutomatchRun ({id, algoIds}) or null.
   // A ref so every per-row backend call reads the run id synchronously without
   // prop-drilling or re-renders; null outside a run → 'mapper-ui-manual'.
   const automatchRunRef = React.useRef(null);
+  const refreshRowStageSnapshotRef = React.useRef({});
+
+  const [previewLimit, setPreviewLimit] = React.useState(null) // {errorCode, limit, used} or null
+  const previewLimitQuota = previewLimit ? getQuotaError({error_code: previewLimit.errorCode, limit: previewLimit.limit, used: previewLimit.used}) : null
 
   const [row, setRow] = React.useState(false)
   const [loadingMatches, setLoadingMatches] = React.useState(false)
@@ -513,11 +542,22 @@ const MapProject = () => {
   const AI_ASSISTANT_API_URL = window.AI_ASSISTANT_API_URL || process.env.AI_ASSISTANT_API_URL
   const SCISPACY_API_URL = window.SCISPACY_LOINC_API_URL || process.env.SCISPACY_LOINC_API_URL
   const OCL_ONLINE_API_URL = window.OCL_ONLINE_API_URL || process.env.OCL_ONLINE_API_URL
-  const inAIAssistantGroup = Boolean(hasAuthGroup(user, 'mapper_ai_assistant') && AI_ASSISTANT_API_URL)
+  const inAIAssistantGroup = Boolean(hasCapability(user, 'users.mapper_ai_assistant') && AI_ASSISTANT_API_URL)
   const isCoreUser = hasAuthGroup(user, 'core_user')
+  const isStaffOrSuperuser = Boolean(user?.is_staff || user?.is_superuser)
+  const mapperPreview = getMapperPreview()
+  // Choosing the AI model / prompt template is for core, staff, early access
+  // and unlimited-AI users; preview users get the default template and model.
+  const canSelectAIModel = Boolean(
+    isCoreUser || isStaffOrSuperuser || hasAuthGroup(user, 'early_access') ||
+    mapperPreview.aiAssistantCalls.unlimited
+  )
   const CANDIDATES_LIMIT = 15
   const canBridge = bridgeRef?.current?.canBridge()
-  const canScispacy = Boolean(canBridge && SCISPACY_API_URL && toggles.SCISPACY_LOINC_TOGGLE === true)
+  const canScispacy = Boolean(
+    hasCapability(user, 'users.mapper_scispacy') && canBridge && SCISPACY_API_URL && toggles.SCISPACY_LOINC_TOGGLE === true
+  )
+  const matchAlgorithmIds = map(filter(algosSelected, algo => spendsMatchQuota(algo, {canBridge})), 'id')
   const isMultiAlgo = algosSelected.length > 1
   const scispacyEnabled = find(algosSelected, {type: 'ocl-scispacy'})
   const bridgeAlgo = find(algosSelected, a => ['ocl-bridge', 'ocl-ciel-bridge'].includes(a.type))
@@ -621,11 +661,21 @@ const MapProject = () => {
     if(templateFromProjectURL) {
       createProjectFromTemplate()
     }
+    refreshMapperQuotaCache()
   }, [])
 
   React.useEffect(() => {
     setPermissionDenied(false)
   }, [params.projectId])
+
+  const newProjectBlockReason = (!params.projectId && !project?.id && mapperQuotaCacheVersion > 0)
+    ? getNewProjectBlockReason(getMapperPreview())
+    : null
+
+  React.useEffect(() => {
+    if(newProjectBlockReason)
+      baseSetAlert({severity: 'error', message: t(`map_project.preview_limit_title_${newProjectBlockReason}`), duration: 8000})
+  }, [newProjectBlockReason])
 
   React.useEffect(() => {
     const isDefaultApplied = isRepoDefaultFilterApplied(repoVersion)
@@ -705,6 +755,7 @@ const MapProject = () => {
         setLoadingProject(false)
         return
       }
+      refreshMapperQuotaCache()
       setFilters(response.data?.filters || {})
       if(response.data?.url) {
         APIService.new().overrideURL(response.data.url).appendToUrl('logs/').get().then(response => {
@@ -775,7 +826,7 @@ const MapProject = () => {
         for(const [defKey, def] of (savedCandidates.concept_definitions || [])) {
           _cache[defKey] = { ...def, key: defKey }
         }
-        Object.assign(_rowMatchState, savedCandidates.rows || {})
+        Object.assign(_rowMatchState, toStoredRowMatchState(savedCandidates.rows))
         // Reconstruct rowStage UI markers from rowMatchState:
         //   rerank: 1 if any concept_row has a rerank_score, else -1
         //   recommend: 1 if response.data.analysis[idx] is non-empty, else -1
@@ -1320,6 +1371,20 @@ const MapProject = () => {
     }
 
     setData(_data);
+    if(!isResuming) {
+      // Preview projects hold the first N rows of the spreadsheet; say so at
+      // import instead of surprising the user at Auto Match.
+      const { rowsPerProject } = getMapperPreview()
+      if(!rowsPerProject.unlimited && isNumber(rowsPerProject.limit) && _data.length > rowsPerProject.limit)
+        baseSetAlert({
+          severity: 'info',
+          duration: 10000,
+          message: t('map_project.preview_rows_activated_notice', {
+            limit: rowsPerProject.limit.toLocaleString(),
+            total: _data.length.toLocaleString()
+          })
+        })
+    }
     if(!isResuming)
       setRowStatuses(prev => {
         prev.unmapped = map(_data, '__index')
@@ -1447,21 +1512,8 @@ const MapProject = () => {
         concept: getConcept(data)
       }
     })
-    // v2 wire format: serialize rowMatchState + conceptCache directly.
-    // Concept identity lives in concept_definitions[] (deduped by key);
-    // per-row state lives in rows{}. The derived `key` field is stripped
-    // from each def (re-attached on load) per plans/unified-mapper-model.md.
-    const conceptDefinitions = []
-    const cache = conceptCacheRef.current || {}
-    for(const [defKey, def] of Object.entries(cache)) {
-      const { key: _runtimeKey, ...defWithoutKey } = def  // eslint-disable-line no-unused-vars
-      conceptDefinitions.push([defKey, defWithoutKey])
-    }
-    const candidates = {
-      mapper_schema_version: 2,
-      concept_definitions: conceptDefinitions,
-      rows: rowMatchStateRef.current || {}
-    }
+    // v2 wire format: rowMatchState + conceptCache (see serializeCandidates).
+    const candidates = serializeCandidates(rowMatchStateRef.current, conceptCacheRef.current)
     const formData = new FormData();
     formData.append('file', f);
     formData.append('candidates', JSON.stringify(candidates))
@@ -1508,12 +1560,15 @@ const MapProject = () => {
       GAService.recordUpsertEvent('MapProject', isUpdate, 'map_project')
     let service = APIService.new().overrideURL(owner).appendToUrl('map-projects/')
     if(isUpdate)
-      service = service.appendToUrl(project.id + '/').put(formData, null, {"Content-Type": "multipart/form-data"})
+      service = service.appendToUrl(project.id + '/')
+        .put(formData, null, {"Content-Type": "multipart/form-data"}, undefined, true)
     else
-      service = service.post(formData, null, {"Content-Type": "multipart/form-data"})
+      service = service.post(formData, null, {"Content-Type": "multipart/form-data"}, undefined, true)
 
     service.then(response => {
       setIsSaving(false)
+      const status = response?.response?.status || response?.status
+      const errorData = response?.response?.data || (response?.data?.id ? null : response?.data)
       if(response?.data?.id) {
         const saveLog = {
           action: isAutoSave ? 'Auto Saved' : (isUpdate ? 'Updated' : 'Created'),
@@ -1531,12 +1586,18 @@ const MapProject = () => {
         }
         setProjectPromptTemplateKey(response.data?.prompt_template_key || getProjectPromptTemplateKey())
         setProject(response.data)
+        if(!isUpdate)
+          refreshMapperQuotaCache()
         if(response.data.url)
           history.push(response.data.url)
         if(!isAutoSave)
           baseSetAlert({severity: 'success', message: t('map_project.successfully_saved'), duration: 2000})
 
         APIService.new().overrideURL(response.data.url).appendToUrl('logs/').post({logs: {row_logs: rowLogsForSave, project_logs: savedProjectLogs}}).then(() => {})
+      } else if(status === 403 && errorData?.error_code) {
+        setPreviewLimit({errorCode: errorData.error_code, limit: errorData.limit, used: errorData.used})
+      } else if(!isAutoSave && status !== 429 && status !== 401) {
+        baseSetAlert({severity: 'error', message: errorData?.detail || t('unknown_error'), duration: 8000})
       }
     }).finally(() => setIsSaving(false))
   }
@@ -1577,11 +1638,16 @@ const MapProject = () => {
       rowIndex, rowIndices, batchSize, algorithmId, clientAttemptN,
     })
 
-  // Create the AutomatchRun system-of-record at run start (oclapi2#876). The
-  // server stamps started_by / client_user_agent / client_ip itself, so we send
-  // only the run-start snapshot. Degrades gracefully: a failed create leaves the
-  // ref null and the auto-match run proceeds (per-row calls fall back to
-  // 'mapper-ui-manual') — run creation must never block matching.
+  // Create the AutomatchRun system-of-record at run start (oclapi2#876), which
+  // is also the rows_per_project cap enforcement chokepoint (core.capabilities):
+  // the server rejects the whole run with 403 + error_code when it would cross
+  // the per-project row cap. That case must abort the run and tell the user why.
+  // match-operations is metered separately, per row-algorithm pair, by each
+  // $match call the run fires below - not here, to avoid double-counting.
+  // Any OTHER failure (network blip, unexpected shape) degrades gracefully as
+  // before — the ref stays null and the run proceeds with per-row calls
+  // falling back to 'mapper-ui-manual'; run-creation telemetry must never
+  // block matching on its own.
   const createAutomatchRun = async (selectedAlgos, intendedRows) => {
     automatchRunRef.current = null
     if(!project?.url || !intendedRows?.length) return
@@ -1599,10 +1665,23 @@ const MapProject = () => {
       }),
     }
     try {
-      const response = await APIService.new().overrideURL(project.url).appendToUrl('auto-match-runs/').post(body)
-      const id = response?.data?.id
-      if(id) automatchRunRef.current = {id, algoIds: map(selectedAlgos, 'id')}
-      else projectLog({action: 'automatch_run_create_failed', extras: {status: response?.status || 'no-id'}})
+      const response = await APIService.new().overrideURL(project.url).appendToUrl('auto-match-runs/')
+        .post(body, null, {}, undefined, true)
+      const status = response?.response?.status || response?.status
+      const data = response?.response?.data || response?.data
+      const id = data?.id
+      if(id) {
+        automatchRunRef.current = {id, algoIds: map(selectedAlgos, 'id')}
+        return
+      }
+      if(status === 403 && data?.error_code) {
+        abortRef.current = true
+        setLoadingMatches(false)
+        setIsLoadingInDecisionView(false)
+        setPreviewLimit({errorCode: data.error_code, limit: data.limit, used: data.used})
+        return
+      }
+      projectLog({action: 'automatch_run_create_failed', extras: {status: status || 'no-id'}})
     } catch (err) {
       projectLog({action: 'automatch_run_create_failed', extras: {error: err?.message || 'unknown'}})
     }
@@ -1622,6 +1701,7 @@ const MapProject = () => {
       rowIndices: map(intendedRows, '__index'),
       algoIds: run.algoIds?.length ? run.algoIds : map(selectedAlgos, 'id'),
       aborted: abortRef.current,
+      stoppedForQuota: Boolean(matchQuotaStopRef.current),
     })
     try {
       await APIService.new().overrideURL('/auto-match-runs/' + run.id + '/')
@@ -1866,6 +1946,9 @@ const MapProject = () => {
 
   const getRowsResults = async (rows, selectedAlgos) => {
     abortRef.current = false;
+    matchQuotaStopRef.current = null;
+    rerankQuotaStopRef.current = null;
+    runPreviewLimitShownRef.current = false;
     const selectedRowIndexes = getSelectedRowIndexes(rows)
     const isAutoMatchUnmappedOnly = autoMatchScope === 'unmapped'
     const isAutoMatchAllRows = autoMatchScope === 'all'
@@ -1888,6 +1971,8 @@ const MapProject = () => {
         setLoadingMatches(false)
         return []
       };
+      if (matchQuotaStopRef.current && spendsMatchQuota(algo, {canBridge}))
+        return []
 
       const payload = getPayloadForMatching(rowBatch, _repo)
       payload.rows = filter(payload.rows, row => values(omit(row, '__index')).length > 0)
@@ -1921,6 +2006,17 @@ const MapProject = () => {
             ...extraParams
           }
         );
+        // service.post() resolves (not throws) on a 403, so check explicitly.
+        // handlePreviewLimitError sets matchQuotaStopRef, which stops the rest
+        // of the $match requests but lets the run finish with what it has.
+        if(isPreviewLimitError(response)) {
+          forEach(rowBatch, __row => {
+            markAlgo(__row.__index, algo.id, -2)
+            log({action: 'algo_failed', extras: getAlgoLogExtras(algo)}, __row.__index)
+          })
+          handlePreviewLimitError(response)
+          return [];
+        }
         forEach(rowBatch, __row => {
           markAlgo(__row.__index, algo.id, 1)
           log({action: 'algo_finished', extras: getAlgoLogExtras(algo)}, __row.__index)
@@ -1951,6 +2047,10 @@ const MapProject = () => {
             setLoadingMatches(false)
             return
           };
+          if (matchQuotaStopRef.current && spendsMatchQuota(algo, {canBridge})) {
+            queue.length = 0
+            break
+          }
           const rowBatch = queue.shift();
           const promise = processBatch(_repo, rowBatch, algo).then((data) => {
             // Populate rowMatchState before any consumer (setStateViews /
@@ -1990,7 +2090,8 @@ const MapProject = () => {
         }
 
         // Wait for at least one request to complete before continuing
-        await Promise.race(activeRequests);
+        if (activeRequests.size > 0)
+          await Promise.race(activeRequests);
       }
     };
 
@@ -2003,6 +2104,10 @@ const MapProject = () => {
           if (abortRef.current) {
             setLoadingMatches(false)
             return
+          }
+          if(rerankQuotaStopRef.current) {
+            queue.length = 0
+            break
           }
 
           const row = queue.shift();
@@ -2054,7 +2159,20 @@ const MapProject = () => {
       }))
 
     setTimeout(async () => {
-      const rowsToProcess = getRowsToProcess(rows, rowStatuses, autoMatchScope, selectedRowIndexes)
+      const preview = getMapperPreview()
+      const previewEligibleRowIndexes = getPreviewEligibleRowIndexes(rows, preview)
+      let rowsToProcess = getRowsToProcess(rows, rowStatuses, autoMatchScope, selectedRowIndexes, previewEligibleRowIndexes)
+
+      // Rows per project is already applied by previewEligibleRowIndexes; the
+      // only spendable cap is match operations, counted over the algorithms
+      // that actually call $match.
+      const matchAlgorithmCount = filter(_selectedAlgos, algo => spendsMatchQuota(algo, {canBridge})).length
+      const rowCap = getRowCapByMatchOperations(preview.matchOperations, matchAlgorithmCount)
+      if(rowCap !== null && rowsToProcess.length > rowCap) {
+        const requested = rowsToProcess.length
+        rowsToProcess = rowsToProcess.slice(0, rowCap)
+        projectLog({action: 'auto_match_pre_truncated', extras: {requested, allowed: rowCap}})
+      }
 
       // ocl_online#105 Phase 5: open the run record, then guarantee it is
       // closed out (completed / partial / failed / cancelled) via the finally,
@@ -2080,6 +2198,7 @@ const MapProject = () => {
         try {
           for(const algo of _selectedAlgos) {
             if(abortRef.current) break
+            if(matchQuotaStopRef.current && spendsMatchQuota(algo, {canBridge})) continue
             if(['custom', 'ocl-search', 'ocl-semantic'].includes(algo.type))
               await processWithConcurrency(repo, algo, rowsToProcess)
             else if(['ocl-bridge', 'ocl-ciel-bridge'].includes(algo.type) && canBridge)
@@ -2091,20 +2210,28 @@ const MapProject = () => {
           isBulkMatchRunningRef.current = false
           bulkMatchAlgoIdsRef.current = []
         }
+        // After a quota stop, rerank and AI only the rows that got candidates;
+        // the rows the run never reached have nothing to rank or recommend.
+        const finishedRows = matchQuotaStopRef.current ?
+          rowsToProcess.filter(row => _selectedAlgos.some(algo => rowStageRef.current[row.__index]?.[algo.id] === 1)) :
+          rowsToProcess
         if(_selectedAlgos.length)
-          await processRerankWithConcurrency(rowsToProcess, 2)
+          await processRerankWithConcurrency(finishedRows, 2)
         if(inAIAssistantGroup && autoRunAIAnalysis) {
           await new Promise(resolve => setTimeout(resolve, 1000))
-          await runBulkAIAnalysis(rowsToProcess)
+          await runBulkAIAnalysis(finishedRows)
         } else {
           setIsLoadingInDecisionView(false)
           setLoadingMatches(false)
           setEndMatchingAt(moment())
         }
+        if(!abortRef.current && matchQuotaStopRef.current)
+          projectLog({action: 'auto_match_stopped_for_quota', extras: {reason: matchQuotaStopRef.current}})
         if(!abortRef.current)
           projectLog({
             action: 'auto_match_finished',
             extras: {
+              ...(matchQuotaStopRef.current ? {stopped_for_quota: matchQuotaStopRef.current} : {}),
               sub_actions: subActions,
               ...selectedRowsLogExtras,
               ...(inAIAssistantGroup && autoRunAIAnalysis ? {
@@ -2119,6 +2246,7 @@ const MapProject = () => {
           scheduleAutoSave('auto_match')
       } finally {
         await completeAutomatchRun(_selectedAlgos, rowsToProcess)
+        refreshMapperQuotaCache()
       }
     }, 1000)
   };
@@ -2146,8 +2274,13 @@ const MapProject = () => {
       setAlert({message: err?.message || t('unknown_error'), severity: 'error'})
       return
     }
+    aiFailuresInARowRef.current = 0
     for (let index = 0; index < _rows.length; index++) {
       if (abortRef.current) break;
+      // AI quota exhausted, or the AI service failing row after row: stop calling
+      // the AI step only. Matching itself already finished before this loop
+      // starts, so nothing else aborts.
+      if (shouldStopAIStep({quotaExhausted: aiQuotaExhaustedRef.current, failuresInARow: aiFailuresInARowRef.current})) break;
 
       await fetchRecommendation(_rows[index], resolvedPromptTemplate, true);
     }
@@ -2166,6 +2299,7 @@ const MapProject = () => {
         setLoadingMatches(false)
         break;
       };
+      if (matchQuotaStopRef.current) break;
       markAlgo(_rows[index].__index, algo.id, 0)
 
       await fetchBridgeCandidates(_rows[index], 0, undefined, undefined, undefined, false, true, ((response, payload) => {
@@ -2762,6 +2896,8 @@ const MapProject = () => {
   }
 
   const onCSVRowSelect = (csvRow, options = {}) => {
+    if(!isRowPreviewEligible(csvRow))
+      return
     if(edit?.length > 0)
       return
     if(options.source !== 'approve_next')
@@ -2811,6 +2947,9 @@ const MapProject = () => {
   }
 
   const onRefreshClick = () => {
+    refreshRowStageSnapshotRef.current[rowIndex] = rowStageRef.current?.[rowIndex]
+      ? {...rowStageRef.current[rowIndex]}
+      : null
     GAService.recordActionEvent('MapProject', 'refresh_candidates')
     // Drop this row's candidates from rowMatchState so the re-fetch
     // doesn't short-circuit on the existing algorithm_responses entries.
@@ -3001,10 +3140,31 @@ const MapProject = () => {
     setLogs(next)
   }
 
+  const previewEligibleRowIndexes = React.useMemo(
+    () => getPreviewEligibleRowIndexes(data, getMapperPreview()),
+    [data, mapperQuotaCacheVersion]
+  )
+  const previewEligibleRowIndexSet = React.useMemo(
+    () => Array.isArray(previewEligibleRowIndexes) ? new Set(previewEligibleRowIndexes.map(id => id?.toString())) : null,
+    [previewEligibleRowIndexes]
+  )
+  const isRowPreviewEligible = React.useCallback(
+    rowOrId => {
+      if(!previewEligibleRowIndexSet)
+        return true
+      const id = typeof rowOrId === 'object' ? rowOrId?.__index : rowOrId
+      return previewEligibleRowIndexSet.has(id?.toString())
+    },
+    [previewEligibleRowIndexSet]
+  )
+
   const getSelectedRowIndexes = (_rows = data) => {
     if(!isArray(_rows)) return []
     const selectedIds = new Set(selectedRowIds.map(id => id?.toString()))
-    return _rows.filter(_row => selectedIds.has(_row.__index?.toString())).map(_row => _row.__index)
+    return _rows
+      .filter(_row => selectedIds.has(_row.__index?.toString()))
+      .filter(_row => isRowPreviewEligible(_row))
+      .map(_row => _row.__index)
   }
 
   const rowSelectionModel = React.useMemo(() => ({
@@ -3013,8 +3173,9 @@ const MapProject = () => {
   }), [selectedRowIds])
 
   const handleRowSelectionModelChange = React.useCallback((model) => {
-    setSelectedRowIds(Array.from(model?.ids || []))
-  }, [])
+    const ids = Array.from(model?.ids || [])
+    setSelectedRowIds(ids.filter(id => isRowPreviewEligible(id)))
+  }, [isRowPreviewEligible])
 
   const handleGridPointerDownCapture = React.useCallback((event) => {
     const headerButton = event.target?.closest?.('.MuiDataGrid-columnHeader button')
@@ -3191,6 +3352,59 @@ const MapProject = () => {
       return { ...prev, [rowId]: row };
     });
   };
+  const restoreRefreshRowStage = rowId => {
+    if(!Object.prototype.hasOwnProperty.call(refreshRowStageSnapshotRef.current, rowId))
+      return false
+    const snapshot = refreshRowStageSnapshotRef.current[rowId]
+    delete refreshRowStageSnapshotRef.current[rowId]
+    setRowStage(prev => {
+      const next = {...prev}
+      if(snapshot)
+        next[rowId] = snapshot
+      else
+        delete next[rowId]
+      return next
+    })
+    return true
+  }
+  const clearRefreshRowStageSnapshot = rowId => {
+    if(Object.prototype.hasOwnProperty.call(refreshRowStageSnapshotRef.current, rowId)) {
+      delete refreshRowStageSnapshotRef.current[rowId]
+      return true
+    }
+    return false
+  }
+  // Opens the at-limit dialog for a preview 403. During a bulk run it opens
+  // once, and the run stops sending $match (every later request would 403 too);
+  // the quota cache is refreshed once when the run ends instead of per row.
+  const handlePreviewLimitError = (value, rowId, algoId, options = {}) => {
+    const response = getPreviewLimitError(value)
+    if(!response)
+      return false
+    const isRun = options.isRun === undefined ? isBulkMatchRunningRef.current : options.isRun
+    const stopPhase = options.stopPhase || (isAIPreviewLimitError(response.error_code) ? 'ai' : 'match')
+    setIsLoadingInDecisionView(false)
+    if(isNumber(rowId) && !restoreRefreshRowStage(rowId) && algoId)
+      markAlgo(rowId, algoId, -2)
+    if(isRun) {
+      if(stopPhase === 'match' && !matchQuotaStopRef.current)
+        matchQuotaStopRef.current = response.error_code
+      if(stopPhase === 'rerank' && !rerankQuotaStopRef.current)
+        rerankQuotaStopRef.current = response.error_code
+      if(stopPhase === 'ai')
+        aiQuotaExhaustedRef.current = true
+      if(runPreviewLimitShownRef.current)
+        return true
+      runPreviewLimitShownRef.current = true
+    } else {
+      if(stopPhase === 'ai')
+        aiQuotaExhaustedRef.current = true
+      if(isNumber(rowId))
+        refreshMapperQuotaCache()
+    }
+    setPreviewLimit({errorCode: response.error_code, limit: response.limit, used: response.used})
+    return true
+  }
 
   const getAlgoDef = algoId => {
     const algo = find(algosSelected, {id: algoId})
@@ -3305,6 +3519,10 @@ const MapProject = () => {
         const projectContext = buildProjectContext()
         const logExtras = getAlgoLogExtras(getAlgoDef(algoId))
         if(response?.detail) {
+          if(handlePreviewLimitError(response, __row.__index, algoId))
+            return
+          clearRefreshRowStageSnapshot(__row.__index)
+          refreshMapperQuotaCache()
           markAlgo(__row.__index, algoId, -2)
           log({action: 'algo_failed', extras: logExtras}, __row.__index)
           setAlert({message: response.detail, severity: 'error'})
@@ -3366,6 +3584,8 @@ const MapProject = () => {
           markAlgo(__row.__index, nextAlgo.id, 0)
           fetchAllCandidatesForRow(nextAlgo.id, __row, offset, _retired, scrollToBottom, _filters, forceReload)
         } else {
+          clearRefreshRowStageSnapshot(__row.__index)
+          refreshMapperQuotaCache()
           const currentAlgo = algoId ? getAlgoDef(algoId) : null
           // Single-algo native path: $match's reranker:true returns scores
           // inline, so mergeIntoRowMatchState already wrote rerank_score on
@@ -3477,6 +3697,10 @@ const MapProject = () => {
             || response?.status >= 400
             || (response && response.data === undefined && response.status !== 200)
           if(isError) {
+            if(handlePreviewLimitError(response, __row.__index, 'ocl-scispacy-loinc'))
+              return response
+            clearRefreshRowStageSnapshot(__row.__index)
+            refreshMapperQuotaCache()
             markAlgo(__row.__index, 'ocl-scispacy-loinc', -2)
             log({action: 'algo_failed', extras: {algo: 'ocl-scispacy-loinc', status: response?.status, detail: response?.detail}}, __row.__index)
             setAlert({
@@ -3626,6 +3850,8 @@ const MapProject = () => {
         rows: rerankRows,
         ...(encoderModel ? { encoder_model: encoderModel } : {})
       }, null, attrHeaders({rowIndex: index, algorithmId: 'reranker', isRunTraffic}))
+      if(handlePreviewLimitError(response, index, 'rerank', {isRun: isRunTraffic, stopPhase: 'rerank'}))
+        return response
 
       // Write rerank_score into the row's ConceptRows. matchRerankResultToKey
       // throws on canonical-identity miss; surface to the alert state so a
@@ -3669,6 +3895,8 @@ const MapProject = () => {
         setTimeout(() => setAutoMatched([index]), 1000)
       return response
     } catch (e) {
+      if(handlePreviewLimitError(e, index, 'rerank', {isRun: isRunTraffic, stopPhase: 'rerank'}))
+        return null
       log({action: 'rerank_failed', description: `Rerank failed with ${encoderModel}`}, index)
       markAlgo(index, 'rerank', -2)
       return null
@@ -3913,6 +4141,12 @@ const MapProject = () => {
           resolve()
         },
         (response, errorMsg) => {
+          if(handlePreviewLimitError(response, __row.__index, bridgeAlgoId)) {
+            resolve()
+            return
+          }
+          clearRefreshRowStageSnapshot(__row.__index)
+          refreshMapperQuotaCache()
           markAlgo(__row.__index, bridgeAlgoId, -2)
           log({action: 'algo_failed', extras: getAlgoLogExtras(bridgeAlgo)}, __row.__index)
           setAlert({message: response?.detail || errorMsg, severity: 'error'})
@@ -4319,12 +4553,14 @@ const MapProject = () => {
   React.useEffect(() => {
     setSelectedRowIds(prev => {
       const visibleRowIdSet = new Set(visibleRowIds.map(id => id?.toString()))
-      const next = prev.filter(id => visibleRowIdSet.has(id?.toString()))
+      const next = prev.filter(id => visibleRowIdSet.has(id?.toString()) && isRowPreviewEligible(id))
       return next.length === prev.length ? prev : next
     })
-  }, [visibleRowIdKey])
+  }, [visibleRowIdKey, isRowPreviewEligible])
   const onDataGridCellClick = (params, event) => {
     if(params.field === '__check__')
+      return
+    if(!isRowPreviewEligible(params?.id))
       return
     doubleClickCallback(params, event)
   }
@@ -4438,7 +4674,12 @@ const MapProject = () => {
       const service = APIService.new()
       service.URL = AI_ASSISTANT_API_URL
       service.appendToUrl('/match/models/').get().then(response => {
-        if(response?.detail) {
+        // The AI Assistant service being unreachable resolves to a plain error
+        // string (APIService swallows network errors into error.message, not an
+        // object), so response.data is undefined here — guard for an actual
+        // array rather than just `response?.detail`, or AIModels becomes
+        // undefined and every `.length`/`.map()` on it downstream crashes.
+        if(!Array.isArray(response?.data)) {
           return
         }
         setAIModels(response.data)
@@ -4472,7 +4713,7 @@ const MapProject = () => {
   }, [AIModels, getDefaultAIModelId])
 
   const fetchPromptTemplates = React.useCallback((models = AIModels) => {
-    if(!AI_ASSISTANT_API_URL || !isCoreUser)
+    if(!AI_ASSISTANT_API_URL || !canSelectAIModel)
       return
 
     const service = APIService.new()
@@ -4484,7 +4725,7 @@ const MapProject = () => {
       }
       setPromptTemplates(response.data || [])
     })
-  }, [AIModels, AI_ASSISTANT_API_URL, isCoreUser])
+  }, [AIModels, AI_ASSISTANT_API_URL, canSelectAIModel])
 
   const fetchPromptTemplateByKey = React.useCallback((key, models = AIModels) => {
     if(!AI_ASSISTANT_API_URL || !key)
@@ -4508,14 +4749,14 @@ const MapProject = () => {
     if(promptTemplatesFetchedRef.current) return
     promptTemplatesFetchedRef.current = true
 
-    if(isCoreUser)
+    if(canSelectAIModel)
       fetchPromptTemplates(AIModels)
     else
       fetchPromptTemplateByKey(getConfiguredPromptTemplateKey(), AIModels)
-  }, [AIModels, AI_ASSISTANT_API_URL, fetchPromptTemplateByKey, fetchPromptTemplates, getConfiguredPromptTemplateKey, isCoreUser])
+  }, [AIModels, AI_ASSISTANT_API_URL, fetchPromptTemplateByKey, fetchPromptTemplates, getConfiguredPromptTemplateKey, canSelectAIModel])
 
   React.useEffect(() => {
-    if(!isCoreUser || !promptTemplates?.length)
+    if(!canSelectAIModel || !promptTemplates?.length)
       return
 
     const configuredKey = getConfiguredPromptTemplateKey()
@@ -4525,7 +4766,7 @@ const MapProject = () => {
 
     setPromptTemplate(nextTemplate)
     setAIModel(getDefaultAIModelId(nextTemplate))
-  }, [getConfiguredPromptTemplateKey, getDefaultAIModelId, isCoreUser, promptTemplates])
+  }, [getConfiguredPromptTemplateKey, getDefaultAIModelId, canSelectAIModel, promptTemplates])
 
   const resolvePromptTemplateForInvocation = React.useCallback(async (template = promptTemplate) => {
     const key = template?.key || getConfiguredPromptTemplateKey()
@@ -4756,7 +4997,7 @@ const MapProject = () => {
         }
       }
 
-      if(promptOutputLocale && isCoreUser)
+      if(promptOutputLocale && canSelectAIModel)
         payload.variables.output_locale = promptOutputLocale
 
       const service = APIService.new()
@@ -4765,7 +5006,7 @@ const MapProject = () => {
       try {
         const response = await retryWithBackoff(
           attempt => service.request('POST', payload, undefined, {headers: {
-            'X-OCL-REQUEST-IDEMPOTENCY-KEY': `${params.projectId}-${__index}-${attempt}-${invokeTs}`,
+            'X-OCL-REQUEST-IDEMPOTENCY-KEY': getAIRequestIdempotencyKey(params.projectId, __index, invokeTs),
             // Discrete headers (read into event_metadata by the middleware); not
             // bundled into the JSON bag. attrHeaders adds request_source + the bag.
             ...(promptTemplateRef?.key ? {'X-OCL-PROMPT-TEMPLATE-KEY': promptTemplateRef.key} : {}),
@@ -4787,14 +5028,21 @@ const MapProject = () => {
           }
         )
         let timestamp = moment().toDate()
+        if(handlePreviewLimitError(response, __index, 'recommend', {isRun: isBulk, stopPhase: 'ai'})) {
+          markAlgo(__index, 'recommend', -3)
+          log({created_at: timestamp, action: 'AIRecommendationLimitReached', extras: {model: selectedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}})
+          return false
+        }
         if(response?.detail) {
           markAlgo(__index, 'recommend', -2)
+          aiFailuresInARowRef.current += 1
           log({created_at: timestamp, action: 'AIRecommendation', description: response.detail, extras: {error: response.detail, model: selectedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}})
           setAlert({message: response.detail, severity: 'error'})
           return false
         }
 
         markAlgo(__index, 'recommend', 1)
+        aiFailuresInARowRef.current = 0
         log({created_at: timestamp, action: 'AIRecommendation', description: get(response.data, 'output.rationale') || get(response.data, 'rationale'), extras: {...response.data, model: selectedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}}, __index)
         const resolvedTemplate = response.data?.template || {}
         const resolvedVersion = resolvedTemplate.version || promptTemplateRef?.version || null
@@ -4807,10 +5055,19 @@ const MapProject = () => {
         setAnalysis(prev => ({...prev, [__index]: [...(prev[__index] || []), newEntry]}))
         return true
       } catch (err) {
+        if(handlePreviewLimitError(err, __index, 'recommend', {isRun: isBulk, stopPhase: 'ai'})) {
+          markAlgo(__index, 'recommend', -3)
+          log({created_at: moment().toDate(), action: 'AIRecommendationLimitReached', extras: {model: selectedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}})
+          return false
+        }
         markAlgo(__index, 'recommend', -2)
+        aiFailuresInARowRef.current += 1
         const errorMessage = err?.detail || err?.response?.data?.detail || err?.message || t('unknown_error')
         setAlert({message: errorMessage, severity: 'error'})
         return false
+      } finally {
+        if(!isBulk)
+          refreshMapperQuotaCache()
       }
     } else {
       markAlgo(__index, 'recommend', analysis[__index]?.length > 0 ? 1 : -3)
@@ -4871,7 +5128,10 @@ const MapProject = () => {
       bridgeEnabled={bridgeEnabled}
       canBridge={canBridge}
       isCoreUser={isCoreUser}
+      canSelectAIModel={canSelectAIModel}
       canScispacy={canScispacy}
+      canUseOrgProjects={mapperPreview.hasOrgProjects}
+      canUseCustomAlgorithms={mapperPreview.hasCustomAlgorithms}
       scispacyEnabled={scispacyEnabled}
       setAIAssistantColumns={setAIAssistantColumns}
       AIAssistantColumns={AIAssistantColumns}
@@ -4902,6 +5162,12 @@ const MapProject = () => {
   const onCopyClick = event => {
     event.preventDefault()
     event.stopPropagation()
+    const preview = getMapperPreview()
+    const blockReason = getNewProjectBlockReason(preview)
+    if(blockReason) {
+      setPreviewLimit({errorCode: NEW_PROJECT_BLOCK_ERROR_CODES[blockReason], limit: preview.projects.limit, used: preview.projects.used})
+      return
+    }
     if(project?.url) {
       window.open(`/#/map-projects/new?templateFrom=${encodeURIComponent(project.url)}`, '_blank', 'noopener,noreferrer')
     }
@@ -4916,7 +5182,7 @@ const MapProject = () => {
     return minFactor
   }
 
-  return permissionDenied ? <Error403/> : (
+  return permissionDenied ? <Error403/> : newProjectBlockReason ? <Redirect to='/' /> : (
     <div className='col-xs-12 padding-0' style={{borderRadius: '10px', width: 'calc(100vw - 32px)'}}>
       {
         (() => {
@@ -4972,6 +5238,9 @@ const MapProject = () => {
                         {name}
                       </span>
                   }
+                  <span style={{marginRight: '8px'}}>
+                    <MapperQuotaChip />
+                  </span>
                   <Button
                     variant='contained'
                     size='small'
@@ -5239,12 +5508,21 @@ const MapProject = () => {
                     },
                     '.MuiDataGrid-filterFormDeleteIcon': {
                       display: 'none'
+                    },
+                    '.MuiDataGrid-row.preview-disabled-row': {
+                      opacity: 0.48,
+                      backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                      cursor: 'not-allowed'
+                    },
+                    '.MuiDataGrid-row.preview-disabled-row .MuiDataGrid-cell': {
+                      color: 'text.disabled'
                     }
                   }}
                   columnHeaderHeight={64}
                   onColumnWidthChange={(params) => params?.colDef?.field ? setColumnWidth({...columnWidth, [params?.colDef?.field]: params.width}) : null}
                   getRowHeight={() => 'auto'}
                   getRowId={row => row.__index}
+                  isRowSelectable={params => isRowPreviewEligible(params?.id)}
                   rows={rows}
                   columns={columnsForTable}
                   pageSizeOptions={[100]}
@@ -5265,11 +5543,12 @@ const MapProject = () => {
                   getRowClassName={params => {
                     const index = params?.row?.__index
                     const targetConcept = mapSelected[index]
+                    const disabledClass = isRowPreviewEligible(index) ? '' : ' preview-disabled-row'
                     if(targetConcept) {
                       const score = targetConcept?.search_meta?.search_normalized_score
-                      return getCandidateBucket(score) + '-row'
+                      return getCandidateBucket(score) + '-row' + disabledClass
                     } else
-                      return 'unmatched-row'
+                      return 'unmatched-row' + disabledClass
                   }}
                 />
               </div>
@@ -5317,9 +5596,28 @@ const MapProject = () => {
               repoVersion,
               inAIAssistantGroup,
               algosSelected,
-              isCoreUser
+              canSelectAIModel,
+              previewEligibleRowIndexes,
+              matchAlgorithmIds
             }}
           />
+          {
+            previewLimitQuota ?
+              <QuotaDialog
+                open
+                onClose={() => setPreviewLimit(null)}
+                meter={previewLimitQuota.meter}
+                surface={MAPPER_QUOTA_SURFACE[previewLimitQuota.meter]}
+                usage={{...previewLimitQuota.usage, period: 'one_time'}}
+              /> :
+              <PreviewLimitDialog
+                open={Boolean(previewLimit)}
+                onClose={() => setPreviewLimit(null)}
+                errorCode={previewLimit?.errorCode}
+                limit={previewLimit?.limit}
+                used={previewLimit?.used}
+              />
+          }
       </Paper>
       <Paper component="div" className={isSplitView ? 'col-xs-6 split padding-0 split-appear' : 'col-xs-6 padding-0'} sx={{boxShadow: 'none', p: 0, backgroundColor: WHITE, borderRadius: '10px', border: 'solid 0.3px', borderColor: 'surface.nv80', opacity: isSplitView ? 1 : 0, height: 'calc(100vh - 100px) !important', overflow: 'auto'}}>
         {
@@ -5451,6 +5749,7 @@ const MapProject = () => {
                       inAIAssistantGroup={inAIAssistantGroup}
                       algosSelected={algosSelected}
                       isCoreUser={isCoreUser}
+                      canSelectAIModel={canSelectAIModel}
                     />
                 }
                 {
@@ -5495,7 +5794,7 @@ const MapProject = () => {
     </Split>
       {
         deleteProject && project?.id &&
-          <MapProjectDeleteConfirmDialog open={deleteProject} onClose={() => setDeleteProject(false)} project={project} />
+          <MapProjectDeleteConfirmDialog open={deleteProject} onClose={() => setDeleteProject(false)} onDeleted={refreshMapperQuotaCache} project={project} />
       }
       <ConceptDetailsPanel
         payload={showItem}

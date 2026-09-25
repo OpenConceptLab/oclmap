@@ -1,11 +1,30 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next'
 import Button from '@mui/material/Button'
 import Container from '@mui/material/Container';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Paper from '@mui/material/Paper';
 
-const WaitListing = ({ onSignup }) => {
+import { getLoginURL, getRegisterURL } from '../../common/utils'
+
+// Renamed in spirit, not in file: this used to be the "coming soon" waitlist
+// splash for anonymous visitors. There is no waitlist any more (R1) - every
+// OCL account gets a Mapper preview automatically - so this is now the
+// sign-in prompt that tells an anonymous visitor what they'd get.
+const WaitListing = () => {
+  const { t } = useTranslation()
+
+  const goToLogin = e => {
+    e.preventDefault()
+    getLoginURL(window.location.href).then(url => { window.location.href = url })
+  }
+
+  const goToRegister = e => {
+    e.preventDefault()
+    getRegisterURL().then(url => { window.location.href = url })
+  }
+
   return (
     <Box
       sx={{
@@ -63,7 +82,7 @@ const WaitListing = ({ onSignup }) => {
               mb: { xs: 1.5, sm: 2 },
             }}
           >
-            The future of terminology mapping is coming soon!
+            {t('map_project.preview_splash_headline')}
           </Typography>
 
           <Typography
@@ -74,27 +93,28 @@ const WaitListing = ({ onSignup }) => {
               fontSize: 'clamp(15px, 2.2vw, 22px)',
               maxWidth: 900,
               mx: 'auto',
-              mb: { xs: 3, sm: 3 },
+              mb: 3,
             }}
           >
-            Join the waitlist for early access to the OCL Mapper on OCL Online.
+            {t('map_project.preview_splash_subhead')}
           </Typography>
 
           <Box
             sx={{
               width: '100%',
               display: 'flex',
+              flexWrap: 'wrap',
               justifyContent: 'center',
               alignItems: 'center',
+              gap: 2,
               mb: { xs: 2, sm: 3, md: 3, lg: 3 },
             }}
           >
             <Button
-              href='https://docs.google.com/forms/d/e/1FAIpQLSed7ftI_eUt5fp-YQZM7z1YHRg5-7qz69gVImy2SlX4-73kOg/viewform'
               size="large"
               variant="contained"
               color="primary"
-              onClick={onSignup}
+              onClick={goToLogin}
               sx={{
                 px: { xs: 3.5, sm: 4.5 },
                 py: { xs: 1.25, sm: 1.5 },
@@ -104,7 +124,23 @@ const WaitListing = ({ onSignup }) => {
                 fontSize: 'clamp(14px, 1.8vw, 18px)',
               }}
             >
-              Sign up for Early Access
+              {t('map_project.preview_splash_sign_in_cta')}
+            </Button>
+            <Button
+              size="large"
+              variant="outlined"
+              color="primary"
+              onClick={goToRegister}
+              sx={{
+                px: { xs: 3.5, sm: 4.5 },
+                py: { xs: 1.25, sm: 1.5 },
+                borderRadius: 999,
+                textTransform: 'none',
+                fontWeight: 600,
+                fontSize: 'clamp(14px, 1.8vw, 18px)',
+              }}
+            >
+              {t('map_project.preview_splash_register_cta')}
             </Button>
           </Box>
           <Box

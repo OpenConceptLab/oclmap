@@ -20,9 +20,9 @@ import TableContainer from '@mui/material/TableContainer';
 import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import Skeleton from '@mui/material/Skeleton';
+import Tooltip from '@mui/material/Tooltip'
 import ListItemText from '@mui/material/ListItemText'
 import ListItemIcon from '@mui/material/ListItemIcon'
-import Tooltip from '@mui/material/Tooltip'
 
 import AddIcon from '@mui/icons-material/Add'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
@@ -30,17 +30,28 @@ import ContentCopy from '@mui/icons-material/ContentCopy';
 import DeleteOutlined from '@mui/icons-material/DeleteOutlined';
 
 import APIService from '../../services/APIService'
-import { getCurrentUser } from '../../common/utils'
+import { getCurrentUser, getMapperPreview, getNewProjectBlockReason, refreshCurrentUserCapabilitiesCache } from '../../common/utils'
 
 import OwnerIcon from '../common/OwnerIcon'
 import NoResults from '../search/NoResults';
 import MapProjectDeleteConfirmDialog from './MapProjectDeleteConfirmDialog';
+import PreviewLimitDialog from './PreviewLimitDialog'
+import QuotaDialog from '../common/QuotaDialog'
+
+const NEW_PROJECT_BLOCK_ERROR_CODES = {access: 'mapper_access_denied', projects_not_entitled: 'mapper_projects_not_entitled'}
 
 const MapProjects = () => {
   const { t } = useTranslation();
   const history = useHistory()
 
   const user = getCurrentUser()
+  const [, setQuotaCacheVersion] = React.useState(0)
+  const refreshMapperQuotaCache = React.useCallback(() => {
+    refreshCurrentUserCapabilitiesCache(() => setQuotaCacheVersion(version => version + 1))
+  }, [])
+  React.useEffect(() => { refreshMapperQuotaCache() }, [])
+  const [newProjectBlock, setNewProjectBlock] = React.useState(null)
+  const [checkingNewProject, setCheckingNewProject] = React.useState(false)
   const [loading, setLoading] = React.useState([])
   const [projects, setProjects] = React.useState([])
   const [deleteProject, setDeleteProject] = React.useState(null)
@@ -74,12 +85,38 @@ const MapProjects = () => {
     setDeleteProject(null)
   }
 
+  const startNewProject = templateURL => {
+    const goToNewProject = () => history.push(templateURL ? `/map-projects/new?templateFrom=${encodeURIComponent(templateURL)}` : '/map-projects/new')
+    const reasonFromCache = () => getNewProjectBlockReason(getMapperPreview())
+    const showBlock = reason => setNewProjectBlock({reason, preview: getMapperPreview()})
+
+    const cachedReason = reasonFromCache()
+    if(cachedReason) {
+      showBlock(cachedReason)
+      return
+    }
+    setCheckingNewProject(true)
+    refreshCurrentUserCapabilitiesCache(() => {
+      setCheckingNewProject(false)
+      const reason = reasonFromCache()
+      if(reason)
+        showBlock(reason)
+      else
+        goToNewProject()
+    })
+  }
+
+  const onNewProjectClick = event => {
+    event.preventDefault()
+    if(!checkingNewProject)
+      startNewProject()
+  }
+
   const onCopyClick = (event, project) => {
     event.preventDefault()
     event.stopPropagation()
-    if(project?.url) {
-      history.push(`/map-projects/new?templateFrom=${encodeURIComponent(project.url)}`)
-    }
+    if(project?.url && !checkingNewProject)
+      startNewProject(project.url)
   }
 
   const openActionMenu = (event, project) => {
@@ -120,7 +157,14 @@ const MapProjects = () => {
             <Typography component='span' sx={{fontSize: '28px', color: 'surface.dark', fontWeight: 600, display: 'flex', alignItems: 'center'}}>
               {t('map_project.mapping_projects')}
             </Typography>
-            <Button variant='contained' color='primary' startIcon={<AddIcon />} href='#/map-projects/new' sx={{textTransform: 'none'}}>
+            <Button
+              variant='contained'
+              color='primary'
+              startIcon={<AddIcon />}
+              href='#/map-projects/new'
+              onClick={onNewProjectClick}
+              sx={{textTransform: 'none'}}
+            >
               {t('map_project.new_map_project')}
             </Button>
           </div>
@@ -249,8 +293,23 @@ const MapProjects = () => {
         </Paper>
       </Paper>
       {
+        newProjectBlock?.reason === 'projects' ?
+          <QuotaDialog
+            open
+            onClose={() => setNewProjectBlock(null)}
+            meter='projects'
+            surface='new_project'
+            usage={{used: newProjectBlock.preview.projects.used, limit: newProjectBlock.preview.projects.limit, period: 'one_time'}}
+          /> :
+          <PreviewLimitDialog
+            open={Boolean(newProjectBlock)}
+            onClose={() => setNewProjectBlock(null)}
+            errorCode={NEW_PROJECT_BLOCK_ERROR_CODES[newProjectBlock?.reason]}
+          />
+      }
+      {
         deleteProject?.id &&
-          <MapProjectDeleteConfirmDialog open={Boolean(deleteProject?.id)} onClose={onProjectDelete} project={deleteProject} />
+          <MapProjectDeleteConfirmDialog open={Boolean(deleteProject?.id)} onClose={onProjectDelete} onDeleted={refreshMapperQuotaCache} project={deleteProject} />
       }
     </div>
   )

@@ -14,6 +14,7 @@ import RadioGroup from '@mui/material/RadioGroup';
 import Radio from '@mui/material/Radio';
 import FormLabel from '@mui/material/FormLabel';
 import Chip from '@mui/material/Chip'
+import Alert from '@mui/material/Alert';
 
 import DoubleArrowIcon from '@mui/icons-material/DoubleArrow';
 
@@ -22,8 +23,9 @@ import map from 'lodash/map'
 import CloseIconButton from '../common/CloseIconButton'
 import TagCountLabel from '../common/TagCountLabel'
 import RepoChip from '../repos/RepoVersionChip'
-import AIAssistantButton from './AIAssistantButton'
 import AIAssistantSelectorPanel from './AIAssistantSelectorPanel'
+import { getMapperPreview } from '../../common/utils'
+import { getRowCapByMatchOperations } from './autoMatchRows'
 
 
 const AutoMatchDialog = ({
@@ -45,24 +47,86 @@ const AutoMatchDialog = ({
   onSubmit,
   inAIAssistantGroup,
   algosSelected,
-  isCoreUser
+  canSelectAIModel,
+  previewEligibleRowIndexes,
+  matchAlgorithmIds
 }) => {
   const { t } = useTranslation()
   const [algos, setAlgos] = React.useState(true)
   const [confirmAllIncludingApproved, setConfirmAllIncludingApproved] = React.useState(false)
-  const allRowsCount = rowStatuses.unmapped.length + rowStatuses.readyForReview.length
-  const totalRows = rowStatuses.unmapped.length + rowStatuses.readyForReview.length + rowStatuses.reviewed.length
+  const previewEligibleRowIndexSet = React.useMemo(
+    () => Array.isArray(previewEligibleRowIndexes) ? new Set(previewEligibleRowIndexes.map(id => id?.toString())) : null,
+    [previewEligibleRowIndexes]
+  )
+  const countEligible = React.useCallback(
+    rowIndexes => previewEligibleRowIndexSet ?
+      rowIndexes.filter(index => previewEligibleRowIndexSet.has(index?.toString())).length :
+      rowIndexes.length,
+    [previewEligibleRowIndexSet]
+  )
+  const unmappedRowsCount = countEligible(rowStatuses.unmapped)
+  const readyForReviewRowsCount = countEligible(rowStatuses.readyForReview)
+  const reviewedRowsCount = countEligible(rowStatuses.reviewed)
+  const allRowsCount = unmappedRowsCount + readyForReviewRowsCount
+  const totalRows = allRowsCount + reviewedRowsCount
   const rowsInSelectedScope = {
-    unmapped: rowStatuses.unmapped.length,
+    unmapped: unmappedRowsCount,
     all: allRowsCount,
     allIncludingApproved: totalRows,
     selected: selectedRowCount
   }
   const rowsToMatchCount = rowsInSelectedScope[autoMatchScope] || 0
   const hasSelectedRows = selectedRowCount > 0
-  const hasUnmappedRows = rowStatuses.unmapped.length > 0
-  const hasApprovedRows = rowStatuses.reviewed.length > 0
+  const hasUnmappedRows = unmappedRowsCount > 0
+  const hasApprovedRows = reviewedRowsCount > 0
   const isAllIncludingApproved = autoMatchScope === 'allIncludingApproved'
+
+  // One-time allowance (R2, no reset). Each row costs one match operation per
+  // selected algorithm that calls $match (TQ6); scispacy, custom algorithms
+  // with their own url and a bridge the user can't run don't spend any.
+  const preview = getMapperPreview()
+  const matchAlgorithmIdSet = React.useMemo(() => new Set(matchAlgorithmIds || []), [matchAlgorithmIds])
+  const matchAlgorithmCount = algos ? algosSelected.filter(algo => matchAlgorithmIdSet.has(algo.id)).length : 0
+  const operationsRemaining = (preview.matchOperations.unlimited || !matchAlgorithmCount) ? null : preview.matchOperations.remaining
+  const rowCap = getRowCapByMatchOperations(preview.matchOperations, matchAlgorithmCount)
+  const willTruncate = rowCap !== null && rowsToMatchCount > rowCap
+  const isPreviewQuotaExhausted = willTruncate && rowCap <= 0
+  const rowsThisRun = willTruncate ? rowCap : rowsToMatchCount
+  const estimatedOperations = rowsThisRun * matchAlgorithmCount
+  // One $invoke per row. The AI quota never caps rows: once it runs out, the
+  // rest of the run is matched without AI recommendations.
+  const aiCallsRemaining = preview.aiAssistantCalls.unlimited ? null : preview.aiAssistantCalls.remaining
+  const aiRowsCovered = (inAIAssistantGroup && autoRunAIAnalysis && aiCallsRemaining !== null) ? Math.min(aiCallsRemaining, rowsThisRun) : null
+  const getPreviewEstimate = () => {
+    if(isPreviewQuotaExhausted)
+      return t('map_project.preview_estimate_no_operations_left')
+    const parts = []
+    if(operationsRemaining !== null)
+      parts.push(t('map_project.preview_estimate_match', {
+        rows: rowsThisRun.toLocaleString(),
+        algorithms: matchAlgorithmCount.toLocaleString(),
+        used: estimatedOperations.toLocaleString(),
+        remaining: operationsRemaining.toLocaleString()
+      }))
+    if(willTruncate)
+      parts.push(t('map_project.preview_estimate_will_truncate', {
+        allowed: rowsThisRun.toLocaleString(),
+        requested: rowsToMatchCount.toLocaleString()
+      }))
+    if(aiRowsCovered !== null) {
+      if(aiRowsCovered >= rowsThisRun)
+        parts.push(t('map_project.preview_estimate_ai_all', {count: rowsThisRun.toLocaleString()}))
+      else if(aiRowsCovered === 0)
+        parts.push(t('map_project.preview_estimate_ai_none'))
+      else
+        parts.push(t('map_project.preview_estimate_ai_partial', {
+          covered: aiRowsCovered.toLocaleString(),
+          rest: (rowsThisRun - aiRowsCovered).toLocaleString()
+        }))
+    }
+    return parts.join(' ')
+  }
+  const previewEstimate = rowsToMatchCount > 0 && (operationsRemaining !== null || aiRowsCovered !== null) ? getPreviewEstimate() : ''
 
   React.useEffect(() => {
     if (autoMatchScope === 'unmapped' && !hasUnmappedRows) {
@@ -91,7 +155,7 @@ const AutoMatchDialog = ({
     {
       value: 'unmapped',
       disabled: !hasUnmappedRows,
-      count: rowStatuses.unmapped.length,
+      count: unmappedRowsCount,
       label: t('map_project.unmapped_only'),
       helperText: t('map_project.auto_match_unmapped_only_note')
     },
@@ -101,8 +165,8 @@ const AutoMatchDialog = ({
       count: allRowsCount,
       label: t('map_project.unmapped_and_proposed'),
       helperText: t('map_project.auto_match_note', {
-        approvedCount: rowStatuses.reviewed.length.toLocaleString(),
-        proposedCount: rowStatuses.readyForReview.length.toLocaleString()
+        approvedCount: reviewedRowsCount.toLocaleString(),
+        proposedCount: readyForReviewRowsCount.toLocaleString()
       })
     },
     {
@@ -112,8 +176,8 @@ const AutoMatchDialog = ({
       label: t('map_project.all_including_approved'),
       warning: true,
       helperText: t('map_project.auto_match_all_including_approved_note', {
-        approvedCount: rowStatuses.reviewed.length.toLocaleString(),
-        proposedCount: rowStatuses.readyForReview.length.toLocaleString()
+        approvedCount: reviewedRowsCount.toLocaleString(),
+        proposedCount: readyForReviewRowsCount.toLocaleString()
       })
     }
   ]
@@ -121,6 +185,7 @@ const AutoMatchDialog = ({
   const isDisabled =
     !repoVersion?.version_url ||
     rowsToMatchCount === 0 ||
+    isPreviewQuotaExhausted ||
     (!algos && !autoRunAIAnalysis) ||
     (isAllIncludingApproved && !confirmAllIncludingApproved)
 
@@ -143,6 +208,12 @@ const AutoMatchDialog = ({
         <CloseIconButton onClick={onClose} />
       </DialogTitle>
       <DialogContent>
+        {
+          previewEstimate &&
+            <Alert severity={isPreviewQuotaExhausted ? 'error' : (willTruncate ? 'warning' : 'info')} sx={{marginBottom: '8px'}}>
+              {previewEstimate}
+            </Alert>
+        }
         <div className='col-xs-12 padding-0' style={{display: 'flex', alignItems: 'center', fontSize: '1rem'}}>
           {t('map_project.target_repository')}
           {
@@ -184,7 +255,7 @@ const AutoMatchDialog = ({
                           />
                         }
                         label={t('map_project.auto_match_all_including_approved_confirm', {
-                          approvedCount: rowStatuses.reviewed.length.toLocaleString()
+                          approvedCount: reviewedRowsCount.toLocaleString()
                         })}
                       />
                   }
@@ -229,28 +300,16 @@ const AutoMatchDialog = ({
                 {t('map_project.run_ai_analysis_note')}
               </FormHelperText>
               {
-                autoRunAIAnalysis && (
-                  isCoreUser ?
-                    <AIAssistantSelectorPanel
-                      promptTemplates={promptTemplates}
-                      promptTemplate={promptTemplate}
-                      onPromptTemplateChange={setPromptTemplate}
-                      models={AIModels}
-                      selectedModel={AIModel}
-                      onModelChange={setAIModel}
-                      sx={{marginTop: '12px', marginLeft: '12px'}}
-                    /> :
-                    <AIAssistantButton
-                      models={AIModels}
-                      selected={AIModel}
-                      onClick={() => {}}
-                      sx={{marginTop: '12px', marginLeft: '12px'}}
-                      onModelChange={setAIModel}
-                      popperProps={{
-                        sx: {zIndex: 1500}
-                      }}
-                    />
-                )
+                autoRunAIAnalysis && canSelectAIModel &&
+                  <AIAssistantSelectorPanel
+                    promptTemplates={promptTemplates}
+                    promptTemplate={promptTemplate}
+                    onPromptTemplateChange={setPromptTemplate}
+                    models={AIModels}
+                    selectedModel={AIModel}
+                    onModelChange={setAIModel}
+                    sx={{marginTop: '12px', marginLeft: '12px'}}
+                  />
               }
             </>
         }

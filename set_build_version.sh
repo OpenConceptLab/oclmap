@@ -5,8 +5,7 @@ set -e
 CONFIG_FILE="config.json"
 touch ${CONFIG_FILE}
 
-SHA=${SOURCE_COMMIT:-'dev'}
-SHA=${SHA:0:8}
+SHA=$(./release_version.sh sha "${SOURCE_COMMIT:-}")
 
 echo "Setting build version to $SHA in ${CONFIG_FILE}"
 

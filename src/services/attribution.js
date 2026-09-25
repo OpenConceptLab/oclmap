@@ -143,6 +143,7 @@ export const summarizeRunCompletion = ({
   rowIndices = [],
   algoIds = [],
   aborted = false,
+  stoppedForQuota = false,
 } = {}) => {
   let completed = 0
   let failed = 0
@@ -156,6 +157,9 @@ export const summarizeRunCompletion = ({
   const total = rowIndices.length
   let completion_status = 'completed'
   if(aborted) completion_status = 'cancelled'
+  // Running out of match quota isn't a user cancel: the rows that finished are
+  // kept. completion_status has no quota value yet, so it's recorded as partial.
+  else if(stoppedForQuota) completion_status = 'partial'
   else if(completed === 0) completion_status = 'failed'
   else if(completed < total) completion_status = 'partial'
   return { completed_rows: completed, failed_rows: failed, completion_status }

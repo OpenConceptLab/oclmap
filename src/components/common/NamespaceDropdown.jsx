@@ -25,7 +25,7 @@ const OwnerOption = ({ option, selected, ...rest }) => {
 }
 
 
-const NamespaceDropdown = ({onChange, label, id, owner, backgroundColor, asOwner, size, disabled, sx}) => {
+const NamespaceDropdown = ({onChange, label, id, owner, backgroundColor, asOwner, personalOnly, size, disabled, sx}) => {
   const { t } = useTranslation()
   const user = getCurrentUser()
   const [ownerOptions, setOwnerOptions] = React.useState([])
@@ -36,15 +36,17 @@ const NamespaceDropdown = ({onChange, label, id, owner, backgroundColor, asOwner
     ]
     if(!asOwner)
       options = [global, ...options]
-    getCurrentUserOrgs().forEach(org => {
-      options.push({url: org.url, id: org.id, type: org.type, name: org.name, icon: <OrgIcon noLink strict logoClassName='user-img-xsmall' org={org} />, group: t('org.my')})
-    })
+    if(!personalOnly) {
+      getCurrentUserOrgs().forEach(org => {
+        options.push({url: org.url, id: org.id, type: org.type, name: org.name, icon: <OrgIcon noLink strict logoClassName='user-img-xsmall' org={org} />, group: t('org.my')})
+      })
+    }
     setOwnerOptions(options)
   }
 
   React.useEffect(() => {
     prepareOwnerOptions()
-  }, [])
+  }, [personalOnly, asOwner])
 
   const filterOptions = (options, { inputValue }) => inputValue ? filter(options, option => option.id.toLowerCase().includes(inputValue.toLowerCase()) || option.name.toLowerCase().includes(inputValue.toLowerCase())) : options;
   const selectedOption = ownerOptions.find(value => value?.url === owner) || ''

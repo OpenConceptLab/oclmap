@@ -3,7 +3,6 @@ import { styled } from '@mui/material/styles';
 import { useTranslation } from 'react-i18next'
 import { useLocation } from 'react-router-dom';
 import Typography from '@mui/material/Typography'
-import Chip from '@mui/material/Chip';
 import List from '@mui/material/List';
 import ListItem from '@mui/material/ListItem';
 import ListItemButton from '@mui/material/ListItemButton';
@@ -14,10 +13,11 @@ import FolderOpenIcon from '@mui/icons-material/FolderOutlined';
 import Divider from '@mui/material/Divider';
 import map from 'lodash/map'
 import { PRIMARY_COLORS } from '../../common/colors'
-import { getCurrentUser, refreshCurrentUserCache, getCurrentUserOrgs, toV3URL, isInWaitlist } from '../../common/utils';
+import { getCurrentUser, refreshCurrentUserCache, getCurrentUserOrgs, toV3URL } from '../../common/utils';
 import Drawer from '../common/Drawer';
 import OrgIcon from '../orgs/OrgIcon';
 import EntityIcon from '../common/EntityIcon'
+import MapperQuotaChip from '../map-projects/MapperQuotaChip'
 
 
 const DrawerHeader = styled('div')(({ theme }) => ({
@@ -133,10 +133,7 @@ const LeftMenu = ({ isOpen, onClose }) => {
               <i style={{fontSize: '1.25rem', color: location.pathname === '/' ?  PRIMARY_COLORS.main : undefined}} className="fa-solid fa-diagram-project"></i>
             </ListItemIcon>
             <ListItemText primary={t('user.my_mapping_projects')} />
-            {
-              isInWaitlist() &&
-                <Chip size='small' variant='contained' label={t('map_project.waitlist')} color='primary' />
-            }
+            <MapperQuotaChip />
           </ListItemButton>
         </ListItem>
       </List>

@@ -3,7 +3,7 @@ import React from 'react';
 import { Route, Switch, withRouter } from 'react-router-dom';
 import {
   isLoggedIn, getLoginURL, isOtherOCLClientURL, isRedirectingToLoginViaReferrer,
-  isInWaitlist, getEnv
+  getEnv
 } from '../../common/utils';
 import GAService from '../../services/GAService';
 import Error404 from '../errors/Error404';
@@ -37,11 +37,7 @@ const AuthenticationRequiredRoute = ({component: Component, ...rest}) => {
       render={
         props =>
         isLoggedIn() ?
-          (
-            isInWaitlist() ?
-              <WaitListing /> :
-            <Component {...props} />
-          ) :
+          <Component {...props} /> :
           isRedirectingToLoginViaReferrer(props.location) ?
           <CheckAuth /> :
           ((toggles?.MAPPER_WAITLIST_TOGGLE === true || ['staging', 'production', 'development'].includes(env)) ? <WaitListing /> : <Error401 />)

@@ -264,9 +264,26 @@ export const arrayToCSV = objArray => {
 }
 
 export const refreshCurrentUserCache = callback => {
-  APIService.user().get(null, null, {includeAuthGroups: true, includeSubscribedOrgs: true}).then(response => {
+  APIService.user().get(null, null, {includeAuthGroups: true, includeSubscribedOrgs: true, includeCapabilities: true}).then(response => {
     if(response.status === 200) {
       localStorage.setItem('user', JSON.stringify(response.data));
+      if(callback) callback(response);
+    }
+  });
+}
+
+export const refreshCurrentUserCapabilitiesCache = callback => {
+  APIService.user().get(null, null, {includeCapabilities: true}).then(response => {
+    if(response.status === 200) {
+      const currentUser = getCurrentUser()
+      if(currentUser) {
+        const updates = {};
+        ['capabilities', 'permissions'].forEach(key => {
+          if(response.data && Object.prototype.hasOwnProperty.call(response.data, key))
+            updates[key] = response.data[key]
+        })
+        localStorage.setItem('user', JSON.stringify({...currentUser, ...updates}));
+      }
       if(callback) callback(response);
     }
   });
@@ -1105,7 +1122,47 @@ export const toCamelCase = str => {
     .replace(/^(.)/, (m) => m.toLowerCase());
 }
 
-export const isInWaitlist = () => getCurrentUser()?.auth_groups?.includes('mapper-waitlist')
+export const hasCapability = (user, capability) => Boolean((user || getCurrentUser())?.permissions?.includes(capability))
+
+export const getMapperPreview = () => {
+  const user = getCurrentUser()
+  const capabilities = user?.capabilities || []
+  const toMeter = key => {
+    const entry = capabilities.find(c => c.name === key) || {}
+    const limit = entry.limit === undefined ? null : entry.limit
+    const used = entry.used || 0
+    const unlimited = limit === 0
+    return {limit, used, unlimited, remaining: unlimited ? null : Math.max((limit || 0) - used, 0)}
+  }
+  // Rows per project is a cap, not a quota: `used` is a lifetime counter that
+  // never drops when a project is deleted, and the server checks the project's
+  // own rows. Only the cap is exposed, so nothing reads a "rows left" figure.
+  const toCap = key => {
+    const { limit, unlimited } = toMeter(key)
+    return {limit, unlimited}
+  }
+  return {
+    hasAccess: hasCapability(user, 'users.mapper_use'),
+    hasAIAssistant: hasCapability(user, 'users.mapper_ai_assistant'),
+    hasCustomAlgorithms: hasCapability(user, 'users.mapper_custom_algorithms'),
+    hasOrgProjects: hasCapability(user, 'users.mapper_org_projects'),
+    hasScispacy: hasCapability(user, 'users.mapper_scispacy'),
+    projects: toMeter('mapper.projects'),
+    rowsPerProject: toCap('mapper.rows_per_project'),
+    matchOperations: toMeter('mapper.match_operations'),
+    aiAssistantCalls: toMeter('ai_assistant.calls'),
+  }
+}
+
+export const getNewProjectBlockReason = (preview = getMapperPreview()) => {
+  if(isAdminUser())
+    return null
+  if(!preview.hasAccess) return 'access'
+  const { projects } = preview
+  if(projects.limit === null || projects.limit === undefined) return 'projects_not_entitled'
+  if(!projects.unlimited && projects.remaining <= 0) return 'projects'
+  return null
+}
 
 
 export const isNumeric = value => {
