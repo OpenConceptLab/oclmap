@@ -8,17 +8,18 @@ import Typography from '@mui/material/Typography'
 import Button from '@mui/material/Button'
 
 import CloseIconButton from '../common/CloseIconButton'
+import { REQUEST_MORE_ACCESS_URL } from '../common/quotaErrors'
 import { PREVIEW_LIMIT_COPY_KEY } from './previewLimits'
 
-const REQUEST_ACCESS_MAILTO = 'mailto:jonathan@openconceptlab.org?subject=' +
-  encodeURIComponent('OCL Mapper preview - request more access')
-const NOTIFY_ME_MAILTO = 'mailto:jonathan@openconceptlab.org?subject=' +
-  encodeURIComponent('OCL Mapper - notify me when plans launch')
+// The community site's newsletter sign-up (it redirects to the Brevo form).
+// Same DNS-cutover host switch as quotaErrors.js.
+const NOTIFY_ME_URL = 'https://preview.openconceptlab.org/newsletter'
+const LINK_PROPS = {target: '_blank', rel: 'noopener noreferrer'}
 
-// R12: at the limit, offer "request more access" (creates a lead) and "notify me
-// when plans launch" - there is no checkout until November, so neither button
-// takes a payment. ocl_online#170 has not finalized the shared lead-capture
-// destination yet, so these mailto links are the recorded interim choice.
+// R12: at the limit, offer "request more access" (the community site's
+// early-access form, which creates a lead) and "notify me when plans launch"
+// (the newsletter). There is no checkout until November, so neither button
+// takes a payment (ocl_online#170). Both open in a new tab, like QuotaDialog's.
 // One-time allowance (R2): no reset date is ever shown here.
 const PreviewLimitDialog = ({open, onClose, errorCode, limit, used}) => {
   const { t } = useTranslation()
@@ -43,10 +44,10 @@ const PreviewLimitDialog = ({open, onClose, errorCode, limit, used}) => {
         </Typography>
       </DialogContent>
       <DialogActions sx={{flexWrap: 'wrap', gap: 1, px: 3, pb: 2}}>
-        <Button href={NOTIFY_ME_MAILTO} variant='contained' color='primary' sx={{textTransform: 'none'}}>
+        <Button href={NOTIFY_ME_URL} {...LINK_PROPS} variant='contained' color='primary' sx={{textTransform: 'none'}}>
           {t('map_project.preview_limit_notify_me')}
         </Button>
-        <Button href={REQUEST_ACCESS_MAILTO} variant='text' sx={{textTransform: 'none'}}>
+        <Button href={REQUEST_MORE_ACCESS_URL} {...LINK_PROPS} variant='text' sx={{textTransform: 'none'}}>
           {t('map_project.preview_limit_request_access')}
         </Button>
         <Button onClick={onClose} variant='text' color='inherit' sx={{textTransform: 'none', ml: 'auto'}}>
