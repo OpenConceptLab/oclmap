@@ -758,6 +758,12 @@
     "api_version": "API Version"
   },
   "unknown_error": "Unknown error",
+  "announcement": {
+    "title": "Welcome to the public preview of the OCL Mapper!",
+    "text": "Try it now, ahead of the full release coming soon.",
+    "link_label": "Learn more",
+    "dismiss": "Dismiss"
+  },
   "quota": {
     "title_quota": "You've reached your quota",
     "title_cap": "You've reached your limit",

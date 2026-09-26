@@ -750,6 +750,12 @@
     "api_version": "API 版本"
   },
   "unknown_error": "未知错误",
+  "announcement": {
+    "title": "欢迎体验 OCL Mapper 公开预览版！",
+    "text": "正式版即将推出，现在就来抢先试用吧。",
+    "link_label": "了解更多",
+    "dismiss": "关闭"
+  },
   "quota": {
     "title_quota": "您已达到配额上限",
     "title_cap": "您已达到使用上限",
