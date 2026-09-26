@@ -225,7 +225,7 @@ const Search = ({searchStr, setSearchStr, onSearch, repo, repoVersion, concepts,
           searchedText={searchStr}
           noResults={!isLoading && !isNaN(results.page) && results?.results?.length === 0}
           loading={isLoading}
-          resultContainerStyle={{height: 'calc(100vh - 602px)', overflow: 'auto'}}
+          resultContainerStyle={{height: 'calc(var(--app-height) - 602px)', overflow: 'auto'}}
           onShowItemSelect={item => {
             // fromCrossTab: true → openConceptPanel checks if this concept
             // is also a candidate for the current row; if so, enriches the

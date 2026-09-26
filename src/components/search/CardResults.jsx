@@ -5,7 +5,7 @@ import ConceptCard from '../concepts/ConceptCard';
 const CardResults = ({bgColor, handleClick, handleRowClick, results, resource, isSelected, isItemShown, className, isSplitView, style, renderer, selected, id}) => {
   const rows = results?.results || []
   return (
-    <div id={id} className={'col-xs-12 padding-0 ' + (className || '')} style={style || {height: 'calc(100vh - 275px)', overflowX: 'auto'}}>
+    <div id={id} className={'col-xs-12 padding-0 ' + (className || '')} style={style || {height: 'calc(var(--app-height) - 275px)', overflowX: 'auto'}}>
       {
         resource === 'concepts' && map(rows, (row, index) => {
           let props = {

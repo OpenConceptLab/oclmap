@@ -114,7 +114,7 @@ const Discuss = ({ logs, onAdd }) => {
 
   return (
     <>
-      <div className='col-xs-12 padding-0' style={{maxHeight: 'calc(100vh - 576px)', overflow: 'auto'}}>
+      <div className='col-xs-12 padding-0' style={{maxHeight: 'calc(var(--app-height) - 576px)', overflow: 'auto'}}>
       <Timeline
         sx={{
           padding: '4px 16px',

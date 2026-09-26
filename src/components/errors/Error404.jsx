@@ -6,7 +6,7 @@ import { BLACK, PRIMARY_COLORS } from '../../common/colors';
 const Error404 = () => {
   const { t } = useTranslation()
   return (
-    <div style={{display: 'flex', height: 'calc(100vh - 100px)', alignItems: 'center', justifyContent: 'center', textAlign: 'center', flexDirection: 'column'}}>
+    <div style={{display: 'flex', height: 'calc(var(--app-height) - 100px)', alignItems: 'center', justifyContent: 'center', textAlign: 'center', flexDirection: 'column'}}>
       <div className='col-xs-12'>
         <SvgIcon style={{width: "395px", height: "341px", fill: 'none'}} viewBox="0 0 395 341">
           <path d="M144.805 214.456h89.53v1.47h-89.53v-1.47z" fill="#000"/>
