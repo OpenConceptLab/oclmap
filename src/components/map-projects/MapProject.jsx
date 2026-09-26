@@ -5213,15 +5213,15 @@ const MapProject = () => {
         snapOffset={0}
         direction="horizontal"
         cursor="col-resize"
-        style={{ display: 'flex', height: 'calc(100vh - 100px)' }}
+        style={{ display: 'flex', height: 'calc(var(--app-height) - 100px)' }}
         gutter={() => {
         const gutter = document.createElement('div');
         gutter.className = 'gutter';
         return gutter;
       }}
       >
-        <Paper component="div" className={isSplitView ? 'col-xs-6 split padding-0' : 'col-xs-12 split padding-0'} sx={{boxShadow: 'none', p: 0, backgroundColor: 'white', borderRadius: '10px', border: 'solid 0.3px', borderColor: 'surface.nv80', minHeight: 'calc(100vh - 100px) !important', overflow: 'auto'}}>
-          <Paper component="div" className='col-xs-12' sx={{backgroundColor: 'surface.main', boxShadow: 'none', padding: '4px 16px 8px 16px', borderRadius: '10px 10px 0 0', minWidth: '665px', ...((isConfigureInSplitView || !configure) ? {} : {height: 'calc(100vh - 125px) !important', overflow: 'auto'})}}>
+        <Paper component="div" className={isSplitView ? 'col-xs-6 split padding-0' : 'col-xs-12 split padding-0'} sx={{boxShadow: 'none', p: 0, backgroundColor: 'white', borderRadius: '10px', border: 'solid 0.3px', borderColor: 'surface.nv80', minHeight: 'calc(var(--app-height) - 100px) !important', overflow: 'auto'}}>
+          <Paper component="div" className='col-xs-12' sx={{backgroundColor: 'surface.main', boxShadow: 'none', padding: '4px 16px 8px 16px', borderRadius: '10px 10px 0 0', minWidth: '665px', ...((isConfigureInSplitView || !configure) ? {} : {height: 'calc(var(--app-height) - 125px) !important', overflow: 'auto'})}}>
             {
               configure && !file?.name &&
                 <div className='col-xs-8 padding-0'>
@@ -5346,7 +5346,7 @@ const MapProject = () => {
         </Paper>
         {
           (Boolean(rows?.length) || ROW_STATES.includes(selectedRowStatus) || searchText) &&
-            <div className='col-xs-12' style={{padding: '0', width: '100%', height: 'calc(100vh - 170px)', minWidth: '665px'}}>
+            <div className='col-xs-12' style={{padding: '0', width: '100%', height: 'calc(var(--app-height) - 170px)', minWidth: '665px'}}>
               <div className='col-xs-12' style={{padding: '0 12px', display: 'flex', backgroundColor: SURFACE_COLORS.main, overflowX: 'auto'}}>
                 {
                   map(VIEWS, (state, view) => {
@@ -5426,7 +5426,7 @@ const MapProject = () => {
                 </Alert>
               </Snackbar>
               <div
-                style={{ width: '100%', height: `calc(100vh - ${getGridHeightFactor()}px)` }}
+                style={{ width: '100%', height: `calc(var(--app-height) - ${getGridHeightFactor()}px)` }}
                 onPointerDownCapture={handleGridPointerDownCapture}
               >
                 <DataGrid
@@ -5619,7 +5619,7 @@ const MapProject = () => {
               />
           }
       </Paper>
-      <Paper component="div" className={isSplitView ? 'col-xs-6 split padding-0 split-appear' : 'col-xs-6 padding-0'} sx={{boxShadow: 'none', p: 0, backgroundColor: WHITE, borderRadius: '10px', border: 'solid 0.3px', borderColor: 'surface.nv80', opacity: isSplitView ? 1 : 0, height: 'calc(100vh - 100px) !important', overflow: 'auto'}}>
+      <Paper component="div" className={isSplitView ? 'col-xs-6 split padding-0 split-appear' : 'col-xs-6 padding-0'} sx={{boxShadow: 'none', p: 0, backgroundColor: WHITE, borderRadius: '10px', border: 'solid 0.3px', borderColor: 'surface.nv80', opacity: isSplitView ? 1 : 0, height: 'calc(var(--app-height) - 100px) !important', overflow: 'auto'}}>
         {
           configure && file?.name ?
             <div className='col-xs-12'>

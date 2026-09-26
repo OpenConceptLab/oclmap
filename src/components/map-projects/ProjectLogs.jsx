@@ -131,7 +131,7 @@ const ProjectLogs = ({onClose, logs, project}) => {
         </Typography>
         <CloseIconButton color='secondary' onClick={onClose} />
       </div>
-      <div className='col-xs-12 padding-0' style={{maxHeight: 'calc(100vh - 190px)', overflow: 'auto'}}>
+      <div className='col-xs-12 padding-0' style={{maxHeight: 'calc(var(--app-height) - 190px)', overflow: 'auto'}}>
         <Timeline
           sx={{
             padding: '4px 20px',

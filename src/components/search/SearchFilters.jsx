@@ -312,7 +312,7 @@ const SearchFilters = ({filters, resource, onChange, kwargs, bgColor, appliedFil
             </div>
         }
       </div>
-      <div className='col-xs-12 padding-0' style={{marginTop: `${topBarHeight}px`, height: `calc(100vh - ${heightToSubtract || 0}px - ${topBarHeight}px)`, overflowY: 'auto'}}>
+      <div className='col-xs-12 padding-0' style={{marginTop: `${topBarHeight}px`, height: `calc(var(--app-height) - ${heightToSubtract || 0}px - ${topBarHeight}px)`, overflowY: 'auto'}}>
         {
           loading && isEmpty(totalFilters) &&
             <div className='col-xs-12' style={{textAlign: 'center', padding: '16px'}}>

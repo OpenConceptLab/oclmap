@@ -139,7 +139,7 @@ const TableResults = ({selected, bgColor, handleClick, handleRowClick, handleSel
   }
 
   return (
-    <TableContainer style={style || {height: 'calc(100vh - 275px)'}} className={className}>
+    <TableContainer style={style || {height: 'calc(var(--app-height) - 275px)'}} className={className}>
       <Table
         stickyHeader
         size={size || 'small'}

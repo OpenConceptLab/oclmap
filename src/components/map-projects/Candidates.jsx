@@ -721,7 +721,7 @@ const Candidates = ({rowIndex, rowState, conceptCache, targetCanonical, targetRe
             width: '100%',
             position: 'relative',
             overflow: 'auto',
-            maxHeight: 'calc(100vh - 522px)',
+            maxHeight: 'calc(var(--app-height) - 522px)',
             '& ul': { padding: 0 },
           }}
           subheader={<li />}

@@ -17,7 +17,7 @@ const ConceptDetails = ({ concept, repo, mappings, reverseMappings, loading, loa
   const { t } = useTranslation()
   const updatedBy = concept?.version_updated_by || concept?.updated_by
   return (
-    <div className='col-xs-12' style={{padding: '16px 0', height: 'calc(100vh - 245px)', overflow: 'auto', ...style}}>
+    <div className='col-xs-12' style={{padding: '16px 0', height: 'calc(var(--app-height) - 245px)', overflow: 'auto', ...style}}>
       {
         has(concept, 'concept_class') ?
           <Paper className='col-xs-12 padding-0' sx={{boxShadow: 'none', border: '1px solid', borderColor: borderColor, borderRadius: '10px'}}>
