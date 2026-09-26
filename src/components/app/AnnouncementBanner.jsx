@@ -68,10 +68,12 @@ const AnnouncementBanner = () => {
     return null;
 
   // Gutters match the app bar's Toolbar, so the icon lines up with the logo and
-  // the close button with the header controls.
+  // the close button with the header controls. mui-fixed lets MUI's scroll lock
+  // pad it like the app bar when a modal opens.
   return (
     <Box
       ref={ref}
+      className='mui-fixed'
       sx={{
         position: 'fixed',
         top: 0,
@@ -94,7 +96,7 @@ const AnnouncementBanner = () => {
         </Typography>
         <Typography variant='body2' sx={{ color: 'surface.contrastText' }}>
           {t('announcement.text')}{' '}
-          <Link href={MAPPER_ANNOUNCEMENT_URL} target='_blank' rel='noopener noreferrer' sx={{ fontWeight: 600 }}>
+          <Link href={MAPPER_ANNOUNCEMENT_URL} target='_blank' rel='noopener noreferrer' sx={{ fontWeight: 600, '&:hover, &:focus': { color: 'primary.main' } }}>
             {t('announcement.link_label')}
           </Link>
         </Typography>
