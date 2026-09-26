@@ -1,5 +1,5 @@
 import React from 'react'
-import { useTranslation } from 'react-i18next';
+import { useTranslation, Trans } from 'react-i18next';
 import Typography from '@mui/material/Typography'
 import Autocomplete from '@mui/material/Autocomplete'
 import TextField from '@mui/material/TextField'
@@ -28,6 +28,7 @@ import omit from 'lodash/omit'
 import filter from 'lodash/filter'
 
 import { getCurrentUser, toV3URL } from '../../common/utils'
+import { MATCHING_ALGORITHMS_DOC_LINK } from '../../common/constants'
 import { getProjectConfigErrors } from './algorithms'
 import NamespaceDropdown from '../common/NamespaceDropdown'
 import RepoSearchAutocomplete from '../repos/RepoSearchAutocomplete'
@@ -418,7 +419,12 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
         {t('map_project.matching_algorithm')}
       </Typography>
       <FormHelperText sx={{marginTop: 0}}>
-        {t('map_project.matching_algorithm_description')}
+        <Trans
+          i18nKey='map_project.matching_algorithm_description'
+          components={[
+            <a key='learn-more' className='link' href={MATCHING_ALGORITHMS_DOC_LINK} target='_blank' rel='noopener noreferrer' />
+          ]}
+        />
       </FormHelperText>
       <MultiAlgoSelector
         algos={getAlgos()}
