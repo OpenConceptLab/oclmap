@@ -1,16 +1,24 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import Alert from '@mui/material/Alert';
+import Box from '@mui/material/Box';
+import IconButton from '@mui/material/IconButton';
+import Link from '@mui/material/Link';
+import Typography from '@mui/material/Typography';
+import CampaignOutlinedIcon from '@mui/icons-material/CampaignOutlined';
+import CloseIcon from '@mui/icons-material/Close';
 import { MAPPER_ANNOUNCEMENT_URL } from '../../common/constants';
 
-// Update announcement.* in the locale bundles (and bump ANNOUNCEMENT_ID) to
-// re-show a new announcement to visitors who dismissed a previous one. Same
-// pattern as the community site's and TBv3's AnnouncementBanner.
+// OCL Online-wide announcement strip, fixed above the app bar and styled like
+// the community site's AnnouncementBanner, so it reads as sitting above the
+// tool rather than inside it. Same component in TBv3 and TBv2. Update
+// announcement.* in the locale bundles (and bump ANNOUNCEMENT_ID) to re-show a
+// new announcement to visitors who dismissed a previous one.
 const ANNOUNCEMENT_ID = 'mapper-public-preview-2026-09';
 
 const DISMISSED_KEY = 'announcementDismissed';
 
-// Read by --app-height in index.scss, which page heights subtract from 100vh.
+// The banner's height while it shows. Header moves the app bar and the content
+// down by it, and --app-height in index.scss subtracts it from 100vh.
 const HEIGHT_VAR = '--announcement-height';
 
 const isDismissed = () => {
@@ -59,19 +67,44 @@ const AnnouncementBanner = () => {
   if (!open)
     return null;
 
-  // Padding rather than the Alert's margin, so offsetHeight includes the gap.
+  // Gutters match the app bar's Toolbar, so the icon lines up with the logo and
+  // the close button with the header controls. mui-fixed lets MUI's scroll lock
+  // pad it like the app bar when a modal opens.
   return (
-    <div ref={ref} style={{ padding: '8px 0' }}>
-      <Alert
-        severity='info'
-        onClose={onClose}
-        closeText={t('announcement.dismiss')}
-        sx={{ borderRadius: '8px' }}
-      >
-        <b>{t('announcement.title')}</b> {t('announcement.text')}{' '}
-        <a className='link' href={MAPPER_ANNOUNCEMENT_URL} target='_blank' rel='noopener noreferrer'>{t('announcement.link_label')}</a>
-      </Alert>
-    </div>
+    <Box
+      ref={ref}
+      className='mui-fixed'
+      sx={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        zIndex: theme => theme.zIndex.drawer + 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: 'primary.95',
+        py: 1,
+        pl: { xs: 2, sm: 3 },
+        pr: 2,
+      }}
+    >
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+        <CampaignOutlinedIcon color='primary' fontSize='small' />
+        <Typography variant='body2' sx={{ fontWeight: 600, color: 'surface.dark' }}>
+          {t('announcement.title')}
+        </Typography>
+        <Typography variant='body2' sx={{ color: 'surface.contrastText' }}>
+          {t('announcement.text')}{' '}
+          <Link href={MAPPER_ANNOUNCEMENT_URL} target='_blank' rel='noopener noreferrer' sx={{ fontWeight: 600, '&:hover, &:focus': { color: 'primary.main' } }}>
+            {t('announcement.link_label')}
+          </Link>
+        </Typography>
+      </Box>
+      <IconButton size='small' aria-label={t('announcement.dismiss')} onClick={onClose}>
+        <CloseIcon fontSize='small' />
+      </IconButton>
+    </Box>
   );
 };
 

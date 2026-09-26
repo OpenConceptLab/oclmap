@@ -5,7 +5,9 @@ html {
     // Viewport height left for the page once the announcement banner has taken
     // its share; AnnouncementBanner sets --announcement-height while it shows.
     // Size pages with calc(var(--app-height) - Npx), not 100vh, or the banner
-    // pushes their bottom edge off-screen (body doesn't scroll).
+    // pushes their bottom edge off-screen (body doesn't scroll). The banner is
+    // fixed above the app bar, so anything fixed to the top of the viewport adds
+    // var(--announcement-height, 0px) to its top, as the app bar does.
     --app-height: calc(100vh - var(--announcement-height, 0px));
 }
 

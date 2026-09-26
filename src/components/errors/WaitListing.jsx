@@ -28,7 +28,7 @@ const WaitListing = () => {
   return (
     <Box
       sx={{
-        minHeight: { xs: 'auto', sm: 'calc(100dvh - 100px)' },
+        minHeight: { xs: 'auto', sm: 'calc(100dvh - var(--announcement-height, 0px) - 100px)' },
         display: 'flex',
         alignItems: { xs: 'stretch', sm: 'center' },
         justifyContent: 'center',
