@@ -88,7 +88,7 @@ import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
 import DataGridControls from './DataGridControls'
 import { getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep, getAIRequestIdempotencyKey } from './autoMatchRows'
-import { createAutosaveScheduler } from './autosave'
+import { createAutosaveScheduler, saveOnLeave } from './autosave'
 import MatchSummaryCard from './MatchSummaryCard'
 import MappingDecisionResult from './MappingDecisionResult'
 import DecisionSelector from './DecisionSelector'
@@ -266,6 +266,11 @@ const MapProject = () => {
   const isSavingRef = React.useRef(false)
   const projectIdRef = React.useRef(null)
   const onSaveRef = React.useRef(null)
+  // A save can complete after the user has left the project
+  // (OpenConceptLab/ocl_issues#2829): these track the request still in flight
+  // and whether this page is still open.
+  const inFlightSaveRef = React.useRef(null)
+  const isMountedRef = React.useRef(true)
   const autosaveSchedulerRef = React.useRef(null)
   if(!autosaveSchedulerRef.current)
     autosaveSchedulerRef.current = createAutosaveScheduler({
@@ -317,8 +322,32 @@ const MapProject = () => {
     onSaveRef.current = onSave
   })
 
-  React.useEffect(() => () => {
-    autosaveSchedulerRef.current.cancel()
+  // Leaving the project unmounts this page, often inside the autosave window:
+  // save the pending change now rather than drop it
+  // (OpenConceptLab/ocl_issues#2829). Nothing to save once signed out.
+  React.useEffect(() => {
+    isMountedRef.current = true
+    return () => {
+      isMountedRef.current = false
+      saveOnLeave({
+        scheduler: autosaveSchedulerRef.current,
+        inFlightSave: inFlightSaveRef.current,
+        save: reasons => currentUserToken() && onSaveRef.current({source: 'auto', closeConfigure: false, reasons})
+      })
+    }
+  }, [])
+
+  // Closing or reloading the tab inside the autosave window, or while a save
+  // is in flight, would lose the change, so ask first.
+  React.useEffect(() => {
+    const warnIfUnsaved = event => {
+      if(!autosaveSchedulerRef.current.hasPending() && !inFlightSaveRef.current)
+        return
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', warnIfUnsaved)
+    return () => window.removeEventListener('beforeunload', warnIfUnsaved)
   }, [])
 
   // repo state
@@ -1565,7 +1594,7 @@ const MapProject = () => {
     else
       service = service.post(formData, null, {"Content-Type": "multipart/form-data"}, undefined, true)
 
-    service.then(response => {
+    const request = service.then(response => {
       setIsSaving(false)
       const status = response?.response?.status || response?.status
       const errorData = response?.response?.data || (response?.data?.id ? null : response?.data)
@@ -1588,7 +1617,8 @@ const MapProject = () => {
         setProject(response.data)
         if(!isUpdate)
           refreshMapperQuotaCache()
-        if(response.data.url)
+        // A save that lands after the user left mustn't pull them back here.
+        if(response.data.url && isMountedRef.current)
           history.push(response.data.url)
         if(!isAutoSave)
           baseSetAlert({severity: 'success', message: t('map_project.successfully_saved'), duration: 2000})
@@ -1599,7 +1629,12 @@ const MapProject = () => {
       } else if(!isAutoSave && status !== 429 && status !== 401) {
         baseSetAlert({severity: 'error', message: errorData?.detail || t('unknown_error'), duration: 8000})
       }
-    }).finally(() => setIsSaving(false))
+    }).finally(() => {
+      setIsSaving(false)
+      if(inFlightSaveRef.current === request)
+        inFlightSaveRef.current = null
+    })
+    inFlightSaveRef.current = request
   }
 
   // onSave takes options, so it can't be bound to onClick directly — the click

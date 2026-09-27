@@ -13,7 +13,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { createAutosaveScheduler, AUTOSAVE_DELAY_MS } from '../autosave.js'
+import { createAutosaveScheduler, saveOnLeave, AUTOSAVE_DELAY_MS } from '../autosave.js'
 
 // Virtual clock standing in for setTimeout/clearTimeout. Timers scheduled
 // while the clock is being advanced land in a later window, as real timers
@@ -165,4 +165,81 @@ test('autosave gating: a pending autosave is dropped if the project id goes away
 
   assert.equal(saves.length, 0, 'no save without a project id')
   assert.deepEqual(scheduler.pendingReasons(), [], 'queued reasons must be cleared')
+})
+
+// Leaving the project inside the autosave window (OpenConceptLab/ocl_issues#2829).
+
+test('autosave: takePending() hands back the queued reasons and clears the timer', () => {
+  const { scheduler, clock, saves } = setup()
+
+  scheduler.schedule('auto_match')
+  scheduler.schedule('decision_change')
+
+  assert.deepEqual(scheduler.takePending(), ['auto_match', 'decision_change'])
+  assert.equal(scheduler.hasPending(), false)
+  assert.deepEqual(scheduler.pendingReasons(), [])
+
+  clock.tick(DELAY * 2)
+  assert.equal(saves.length, 0, 'the taken autosave must not also fire from the timer')
+})
+
+test('autosave: takePending() is null with nothing pending, or once the project id is gone', () => {
+  const { scheduler, state } = setup()
+
+  assert.equal(scheduler.takePending(), null)
+
+  scheduler.schedule('decision_change')
+  state.projectId = null
+  assert.equal(scheduler.takePending(), null, 'no save without a project id')
+  assert.equal(scheduler.hasPending(), false)
+})
+
+test('saveOnLeave: saves a pending change right away instead of dropping it', () => {
+  const { scheduler, clock, saves } = setup()
+  const leaveSaves = []
+
+  scheduler.schedule('auto_match')
+  const started = saveOnLeave({ scheduler, inFlightSave: null, save: reasons => leaveSaves.push(reasons) })
+
+  assert.equal(started, true)
+  assert.deepEqual(leaveSaves, [['auto_match']], 'saved at once, not 5s later')
+  clock.tick(DELAY * 2)
+  assert.equal(saves.length, 0, 'and only once')
+})
+
+test('saveOnLeave: nothing pending, nothing saved', () => {
+  const { scheduler } = setup()
+  const leaveSaves = []
+
+  assert.equal(saveOnLeave({ scheduler, inFlightSave: null, save: reasons => leaveSaves.push(reasons) }), false)
+  assert.deepEqual(leaveSaves, [])
+})
+
+test('saveOnLeave: waits for a save in flight, so the newer payload lands last', async () => {
+  const { scheduler } = setup()
+  const order = []
+  let finish
+  const inFlightSave = new Promise(resolve => { finish = resolve }).then(() => order.push('in-flight save'))
+
+  scheduler.schedule('decision_change')
+  saveOnLeave({ scheduler, inFlightSave, save: reasons => order.push(`leave save: ${reasons}`) })
+  assert.deepEqual(order, [], 'must not save on top of the in-flight save')
+
+  finish()
+  await inFlightSave
+  await new Promise(resolve => setTimeout(resolve, 0))
+  assert.deepEqual(order, ['in-flight save', 'leave save: decision_change'])
+})
+
+test('saveOnLeave: still saves when the in-flight save fails', async () => {
+  const { scheduler } = setup()
+  const leaveSaves = []
+  const inFlightSave = Promise.reject(new Error('network'))
+
+  scheduler.schedule('decision_change')
+  saveOnLeave({ scheduler, inFlightSave, save: reasons => leaveSaves.push(reasons) })
+
+  await inFlightSave.catch(() => {})
+  await new Promise(resolve => setTimeout(resolve, 0))
+  assert.deepEqual(leaveSaves, [['decision_change']])
 })
