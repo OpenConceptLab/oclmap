@@ -360,7 +360,8 @@
     "search_highlight": "Detalles de Coincidencia",
     "matched_attributes": "Atributos Coincidentes",
     "list_view": "Vista de lista",
-    "table_view": "Vista de tabla"
+    "table_view": "Vista de tabla",
+    "select_all_rows": "Seleccionar todas las filas"
   },
   "locale": {
     "add_custom_language_codes": "Agregar código(s) de idioma personalizado(s)",
