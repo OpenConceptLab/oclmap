@@ -19,12 +19,17 @@ import get from 'lodash/get'
 import map from 'lodash/map'
 import compact from 'lodash/compact'
 
+import { getCurrentUser } from '../../common/utils'
 import Comment from './Comment'
+import { canSeeAIInternals } from './aiVisibility'
 
 
-const AICandidatesAnalysis = ({ analysis: analysisProp, onClose, sx, isCoreUser, isInProgress, page = 0, onPageChange }) => {
+const AICandidatesAnalysis = ({ analysis: analysisProp, onClose, sx, isInProgress, page = 0, onPageChange }) => {
   const { t } = useTranslation();
   const [openDetails, setOpenDetails] = React.useState(false)
+  // The model, the prompt template and the raw JSON are staff-only
+  // (ocl_online#254); everyone else sees the assessment and candidates.
+  const isStaff = canSeeAIInternals(getCurrentUser())
 
   const analysisArray = Array.isArray(analysisProp) ? analysisProp : (analysisProp ? [analysisProp] : [])
   const total = analysisArray.length
@@ -81,7 +86,7 @@ const AICandidatesAnalysis = ({ analysis: analysisProp, onClose, sx, isCoreUser,
             <span>
               <span style={{marginRight: '4px', display: 'inline-flex'}}>
                 <Typography gutterBottom sx={{ color: 'text.secondary', fontSize: 12, mb: 0 }} component='span'>
-                  {t('map_project.assessment')}:
+                  {t('map_project.assessment')}:&nbsp;
                 </Typography>
                 <Typography gutterBottom sx={{ color: 'text.primary', fontSize: 12, mb: 0 }} component='span'>
                   {output?.recommendation ? getRecommendationTitle() : <i>NA</i>}
@@ -89,7 +94,7 @@ const AICandidatesAnalysis = ({ analysis: analysisProp, onClose, sx, isCoreUser,
               </span>
               <span style={{marginRight: '4px', display: 'inline-flex'}}>
                 <Typography gutterBottom sx={{ color: 'text.secondary', fontSize: 12, mb: 0 }} component='span'>
-                  {t('map_project.primary')}:
+                  {t('map_project.primary')}:&nbsp;
                 </Typography>
                 <Typography gutterBottom sx={{ color: 'text.primary', fontSize: 12, mb: 0 }} component='span'>
                   {output?.primary_candidate?.canonical_reference?.code || '-'}
@@ -97,33 +102,39 @@ const AICandidatesAnalysis = ({ analysis: analysisProp, onClose, sx, isCoreUser,
               </span>
               <span style={{marginRight: '4px', display: 'inline-flex'}}>
                 <Typography gutterBottom sx={{ color: 'text.secondary', fontSize: 12, mb: 0 }} component='span'>
-                  {t('map_project.alternates')}:
+                  {t('map_project.alternates')}:&nbsp;
                 </Typography>
                 <Typography gutterBottom sx={{ color: 'text.primary', fontSize: 12, mb: 0 }} component='span'>
                   {getAlternateIds() || '-'}
                 </Typography>
               </span>
-              <span style={{marginRight: '4px', display: 'inline-flex'}}>
-                <Typography gutterBottom sx={{ color: 'text.secondary', fontSize: 12, mb: 0 }} component='span'>
-                  {t('map_project.model')}:
-                </Typography>
-                <Typography gutterBottom sx={{ color: 'text.primary', fontSize: 12, mb: 0 }} component='span'>
-                  {analysis?.model_name || analysis?.model || '-'}
-                </Typography>
-              </span>
-              <span style={{marginRight: '4px', display: 'inline-flex'}}>
-                <Typography gutterBottom sx={{ color: 'text.secondary', fontSize: 12, mb: 0 }} component='span'>
-                  {t('map_project.ai_prompt_template')}:
-                </Typography>
-                <Typography gutterBottom sx={{ color: 'text.primary', fontSize: 12, mb: 0 }} component='span'>
-                  {analysis?.prompt_template?.key ? `${analysis.prompt_template.key} (${t('common.version')}: ${analysis.prompt_template.version || '-'})` : '-'}
-                </Typography>
-              </span>
+              {
+                isStaff &&
+                  <span style={{marginRight: '4px', display: 'inline-flex'}}>
+                    <Typography gutterBottom sx={{ color: 'text.secondary', fontSize: 12, mb: 0 }} component='span'>
+                      {t('map_project.model')}:&nbsp;
+                    </Typography>
+                    <Typography gutterBottom sx={{ color: 'text.primary', fontSize: 12, mb: 0 }} component='span'>
+                      {analysis?.model_name || analysis?.model || '-'}
+                    </Typography>
+                  </span>
+              }
+              {
+                isStaff &&
+                  <span style={{marginRight: '4px', display: 'inline-flex'}}>
+                    <Typography gutterBottom sx={{ color: 'text.secondary', fontSize: 12, mb: 0 }} component='span'>
+                      {t('map_project.ai_prompt_template')}:&nbsp;
+                    </Typography>
+                    <Typography gutterBottom sx={{ color: 'text.primary', fontSize: 12, mb: 0 }} component='span'>
+                      {analysis?.prompt_template?.key ? `${analysis.prompt_template.key} (${t('common.version')}: ${analysis.prompt_template.version || '-'})` : '-'}
+                    </Typography>
+                  </span>
+              }
               {
                 analysis?.output_locale &&
                   <span style={{marginRight: '4px', display: 'inline-flex'}}>
                     <Typography gutterBottom sx={{ color: 'text.secondary', fontSize: 12, mb: 0 }} component='span'>
-                      {t('map_project.output_locale')}:
+                      {t('map_project.output_locale')}:&nbsp;
                     </Typography>
                     <Typography gutterBottom sx={{ color: 'text.primary', fontSize: 12, mb: 0 }} component='span'>
                       {analysis.output_locale}
@@ -132,7 +143,7 @@ const AICandidatesAnalysis = ({ analysis: analysisProp, onClose, sx, isCoreUser,
               }
               <span style={{marginRight: '4px', display: 'inline-flex'}}>
                 <Typography gutterBottom sx={{ color: 'text.secondary', fontSize: 12, mb: 0 }} component='span'>
-                  {t('map_project.requested_by')}:
+                  {t('map_project.requested_by')}:&nbsp;
                 </Typography>
                 <Typography gutterBottom sx={{ color: 'text.primary', fontSize: 12, mb: 0 }} component='span'>
                   {analysis?.user || '-'}
@@ -153,7 +164,7 @@ const AICandidatesAnalysis = ({ analysis: analysisProp, onClose, sx, isCoreUser,
                   </span>
               }
               {
-                isCoreUser &&
+                isStaff &&
                   <Tooltip title={t('map_project.view_raw_json')} placement='right'>
                     <span>
                       <IconButton color='primary' size='small' disabled={!analysis} sx={{padding: '4px', marginLeft: '4px', marginTop: '-2px'}} onClick={() => setOpenDetails(!openDetails)}>
