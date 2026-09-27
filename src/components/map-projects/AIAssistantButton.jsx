@@ -205,7 +205,8 @@ const AIAssistantButton = ({
           {t('map_project.ai_assistant')}
         </Button>
         {
-          // Preview users run the default model; only the model picker is hidden.
+          // Only staff pick the model (ocl_online#259); everyone else runs the
+          // project's prompt template on its default model.
           canSelectModel &&
             <Button
               size="small"
