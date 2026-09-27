@@ -1,3 +1,20 @@
+# Cache-Control by URI (OpenConceptLab/ocl_issues#2824), sent by the single
+# add_header in the server block. A location that declares any add_header of
+# its own drops every server-level one, so a location added later must repeat
+# that line.
+#
+# webpack.config.js names production bundles <name>.<8-hex contenthash>.js
+# (and .css, should CSS ever be extracted), so a changed file gets a new URL
+# and can be cached for a year. Everything else keeps its name across deploys,
+# so the browser revalidates it on every use (a 304 when unchanged):
+# index.html, which is also the fallback for any unknown path, so a deploy's
+# new bundle names load at once; env-config.js, which start-prod.sh writes at
+# container start; and the files the Dockerfile copies from public/.
+map $uri $cache_control {
+    default                                "no-cache";
+    "~^/[^/]+\.[0-9a-f]{8}\.(js|css)$"     "public, max-age=31536000, immutable";
+}
+
 server {
     listen       ${WEB_PORT};
     server_name  localhost;
@@ -5,6 +22,8 @@ server {
     root         /usr/share/nginx/html;
     index        index.html;
     try_files    $uri /index.html;
+
+    add_header   Cache-Control $cache_control always;
 
     gzip on;
     gzip_vary on;

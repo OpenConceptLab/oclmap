@@ -1,7 +1,6 @@
-// Community-site pages (ocl_online#170). Switch the host to openconceptlab.org
-// at the DNS cutover (ocl-community-site docs/CUTOVER.md, step 5).
-export const QUOTA_PRICING_URL = 'https://preview.openconceptlab.org/pricing'
-export const REQUEST_MORE_ACCESS_URL = 'https://preview.openconceptlab.org/early-access?source=mapper-limit'
+// Community-site pages (ocl_online#170).
+export const QUOTA_PRICING_URL = 'https://openconceptlab.org/pricing'
+export const REQUEST_MORE_ACCESS_URL = 'https://openconceptlab.org/early-access?source=mapper-limit'
 
 const QUOTA_ERRORS = {
   mapper_match_operations_limit_reached: {meter: 'match_operations', kind: 'quota'},

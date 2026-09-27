@@ -12,8 +12,7 @@ import { REQUEST_MORE_ACCESS_URL } from '../common/quotaErrors'
 import { PREVIEW_LIMIT_COPY_KEY } from './previewLimits'
 
 // The community site's newsletter sign-up (it redirects to the Brevo form).
-// Same DNS-cutover host switch as quotaErrors.js.
-const NOTIFY_ME_URL = 'https://preview.openconceptlab.org/newsletter'
+const NOTIFY_ME_URL = 'https://openconceptlab.org/newsletter'
 const LINK_PROPS = {target: '_blank', rel: 'noopener noreferrer'}
 
 // R12: at the limit, offer "request more access" (the community site's

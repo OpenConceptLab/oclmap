@@ -8,6 +8,16 @@ module.exports = (env) => {
   const isProduction = env.NODE_ENV === 'production';
   return {
     mode: env.NODE_ENV,
+    output: {
+      // Production names carry a content hash (OpenConceptLab/ocl_issues#2824),
+      // so a changed bundle gets a new URL. nginx caches these files for a year
+      // and revalidates index.html on every load, so a returning browser never
+      // mixes bundles from two builds. nginx/default.conf.template matches the
+      // names by pattern; change the two together. Dev keeps webpack's
+      // defaults.
+      filename: isProduction ? '[name].[contenthash:8].js' : '[name].js',
+      chunkFilename: isProduction ? '[name].[contenthash:8].js' : '[name].js',
+    },
     module: {
       rules: [
         {
@@ -99,7 +109,9 @@ module.exports = (env) => {
       new HtmlWebpackPlugin({
         template: './public/index.html',
       }),
-      new MiniCssExtractPlugin({filename: 'bundle.css'}),
+      // Emits nothing today: the scss rule uses style-loader, so styles ship
+      // inside the JS bundles. Hashed like them in case it is ever used.
+      new MiniCssExtractPlugin({filename: isProduction ? '[name].[contenthash:8].css' : 'bundle.css'}),
       new CopyWebpackPlugin(['src/assets']),
       new ProvidePlugin({
         $: 'jquery',
