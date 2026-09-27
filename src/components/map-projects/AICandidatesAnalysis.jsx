@@ -19,16 +19,17 @@ import get from 'lodash/get'
 import map from 'lodash/map'
 import compact from 'lodash/compact'
 
-import { isAdminUser } from '../../common/utils'
+import { getCurrentUser } from '../../common/utils'
 import Comment from './Comment'
+import { canSeeAIInternals } from './aiVisibility'
 
 
-const AICandidatesAnalysis = ({ analysis: analysisProp, onClose, sx, isCoreUser, isInProgress, page = 0, onPageChange }) => {
+const AICandidatesAnalysis = ({ analysis: analysisProp, onClose, sx, isInProgress, page = 0, onPageChange }) => {
   const { t } = useTranslation();
   const [openDetails, setOpenDetails] = React.useState(false)
-  // The model and prompt template behind a recommendation are staff-only
+  // The model, the prompt template and the raw JSON are staff-only
   // (ocl_online#254); everyone else sees the assessment and candidates.
-  const isStaff = isAdminUser()
+  const isStaff = canSeeAIInternals(getCurrentUser())
 
   const analysisArray = Array.isArray(analysisProp) ? analysisProp : (analysisProp ? [analysisProp] : [])
   const total = analysisArray.length
@@ -163,7 +164,7 @@ const AICandidatesAnalysis = ({ analysis: analysisProp, onClose, sx, isCoreUser,
                   </span>
               }
               {
-                isCoreUser &&
+                isStaff &&
                   <Tooltip title={t('map_project.view_raw_json')} placement='right'>
                     <span>
                       <IconButton color='primary' size='small' disabled={!analysis} sx={{padding: '4px', marginLeft: '4px', marginTop: '-2px'}} onClick={() => setOpenDetails(!openDetails)}>

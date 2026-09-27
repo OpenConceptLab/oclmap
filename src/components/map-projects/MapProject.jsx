@@ -5748,7 +5748,6 @@ const MapProject = () => {
                       onRefreshClick={onRefreshClick}
                       inAIAssistantGroup={inAIAssistantGroup}
                       algosSelected={algosSelected}
-                      isCoreUser={isCoreUser}
                       canSelectAIModel={canSelectAIModel}
                     />
                 }

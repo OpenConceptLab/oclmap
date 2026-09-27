@@ -28,8 +28,9 @@ import map from 'lodash/map'
 import startCase from 'lodash/startCase'
 import orderBy from 'lodash/orderBy'
 
-import { isAdminUser } from '../../common/utils'
+import { getCurrentUser } from '../../common/utils'
 import Comment from './Comment'
+import { canSeeAIInternals } from './aiVisibility'
 
 
 const Discuss = ({ logs, onAdd }) => {
@@ -37,7 +38,7 @@ const Discuss = ({ logs, onAdd }) => {
   const [comment, setComment] = React.useState('')
   // An AI recommendation's model, prompt template and template URI are
   // staff-only (ocl_online#254).
-  const isStaff = isAdminUser()
+  const isStaff = canSeeAIInternals(getCurrentUser())
   const getTitle = log => {
     if(['mapped', 'unmapped', 'auto-matched', 'rejected'].includes(log.action)) {
       if(log.action === 'rejected' && log.description)
