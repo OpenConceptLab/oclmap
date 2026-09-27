@@ -96,7 +96,8 @@ export const buildAttributionHeaders = ({
  * @param {object|null}   [opts.scoreConfig]   {recommended, available} thresholds
  * @param {object|null}   [opts.filters]       active match filters
  * @param {object|null}   [opts.template]      prompt-template ref (AI runs only)
- * @param {object|string|null} [opts.aiModel]  selected AI model (AI runs only)
+ * @param {object|string|null} [opts.aiModel]  AI model a staff user picked (AI runs only);
+ *                                            null means the template's default model
  */
 export const buildConfigSnapshot = ({
   selectedAlgos = [],

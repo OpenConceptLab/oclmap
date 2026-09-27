@@ -28,6 +28,7 @@ const AIAssistantSelectorPanel = ({
   setPromptOutputLocale,
   showSubmit = false,
   disabled = false,
+  showPickers = true,
   showLocale = false,
   availableLocales,
   secondaryActionLabel,
@@ -52,7 +53,16 @@ const AIAssistantSelectorPanel = ({
   const locales = [AUTO_OPTION, ...baseLocales]
   const [checkLocale, setCheckLocale] = React.useState(false)
 
-  if (!promptTemplates?.length) {
+  React.useEffect(() => {
+    if (showLocale && promptOutputLocale && !checkLocale) {
+      setCheckLocale(true)
+    }
+  }, [showLocale, promptOutputLocale, checkLocale])
+
+  // The prompt template and model pickers are staff-only (ocl_online#259);
+  // without them the panel can still offer the output language.
+  const hasPickers = Boolean(showPickers && promptTemplates?.length)
+  if (!hasPickers && !showLocale) {
     return null
   }
 
@@ -78,12 +88,6 @@ const AIAssistantSelectorPanel = ({
       setPromptOutputLocale(null)
   }
 
-  React.useEffect(() => {
-    if (showLocale && promptOutputLocale && !checkLocale) {
-      setCheckLocale(true)
-    }
-  }, [showLocale, promptOutputLocale, checkLocale])
-
   return (
     <Box
       sx={{
@@ -92,87 +96,92 @@ const AIAssistantSelectorPanel = ({
         ...sx
       }}
     >
-      <Autocomplete
-        disableClearable
-        blurOnSelect
-        disabled={disabled}
-        size='small'
-        options={promptTemplates}
-        value={promptTemplate || null}
-        getOptionLabel={option => option?.name || ''}
-        isOptionEqualToValue={(option, current) => option?.key === current?.key}
-        onChange={(event, option) => onPromptTemplateChange(option || null)}
-        renderInput={params => (
-          <TextField
-            {...params}
-            label={t('map_project.ai_prompt_template_field')}
-            fullWidth
-          />
-        )}
-        renderOption={(props, option) => (
-          <li {...props} key={option.key || option.id}>
-            <Box sx={{ width: '100%', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2 }}>
-              <ListItemText
-                sx={{ my: 0, '.MuiListItemText-primary': { whiteSpace: 'normal' }, '.MuiListItemText-secondary': { whiteSpace: 'normal' } }}
-                primary={option.name}
-                secondary={
-                  <React.Fragment>
-                    <Typography component='span' variant='body2' color='text.secondary' sx={{ display: 'block' }}>
-                      {option.description}
-                    </Typography>
-                    <Typography component='span' variant='caption' color='text.secondary'>
-                      {t('map_project.ai_prompt_template_default_model')}: {option.default_model || 'N/A'}
-                    </Typography>
-                  </React.Fragment>
-                }
-              />
-              {
-                option.key === PROMPTS_KEY_DEFAULT &&
-                  <Chip
-                    label={t('common.default')}
-                    size='small'
-                    color='primary'
-                    variant='outlined'
-                    sx={{ mt: 0.5, flexShrink: 0 }}
-                  />
-              }
-            </Box>
-          </li>
-        )}
-      />
-      <Autocomplete
-        disableClearable
-        blurOnSelect
-        disabled={disabled}
-        size='small'
-        options={models || []}
-        value={selectedModelOption}
-        sx={{ marginTop: '12px' }}
-        getOptionLabel={option => option?.name || option?.id || ''}
-        isOptionEqualToValue={(option, current) => option?.id === current?.id}
-        onChange={(event, option) => onModelChange(option?.id || '')}
-        renderInput={params => (
-          <TextField
-            {...params}
-            label={t('map_project.model')}
-            fullWidth
-          />
-        )}
-        renderOption={(props, option) => (
-          <li {...props} key={option.id}>
-            <ListItemText
-              primary={option.name}
-              secondary={option.id}
-              sx={{ my: 0, '.MuiListItemText-primary': { whiteSpace: 'normal' }, '.MuiListItemText-secondary': { whiteSpace: 'normal' } }}
-            />
-          </li>
-        )}
-      />
       {
-        promptTemplate &&
-          <FormHelperText sx={{ margin: '4px 0 0 14px' }}>
-            {t('common.version')}: {promptTemplate.version || 'N/A'}
-          </FormHelperText>
+        hasPickers &&
+          <>
+            <Autocomplete
+              disableClearable
+              blurOnSelect
+              disabled={disabled}
+              size='small'
+              options={promptTemplates}
+              value={promptTemplate || null}
+              getOptionLabel={option => option?.name || ''}
+              isOptionEqualToValue={(option, current) => option?.key === current?.key}
+              onChange={(event, option) => onPromptTemplateChange(option || null)}
+              renderInput={params => (
+                <TextField
+                  {...params}
+                  label={t('map_project.ai_prompt_template_field')}
+                  fullWidth
+                />
+              )}
+              renderOption={(props, option) => (
+                <li {...props} key={option.key || option.id}>
+                  <Box sx={{ width: '100%', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2 }}>
+                    <ListItemText
+                      sx={{ my: 0, '.MuiListItemText-primary': { whiteSpace: 'normal' }, '.MuiListItemText-secondary': { whiteSpace: 'normal' } }}
+                      primary={option.name}
+                      secondary={
+                        <React.Fragment>
+                          <Typography component='span' variant='body2' color='text.secondary' sx={{ display: 'block' }}>
+                            {option.description}
+                          </Typography>
+                          <Typography component='span' variant='caption' color='text.secondary'>
+                            {t('map_project.ai_prompt_template_default_model')}: {option.default_model || 'N/A'}
+                          </Typography>
+                        </React.Fragment>
+                      }
+                    />
+                    {
+                      option.key === PROMPTS_KEY_DEFAULT &&
+                        <Chip
+                          label={t('common.default')}
+                          size='small'
+                          color='primary'
+                          variant='outlined'
+                          sx={{ mt: 0.5, flexShrink: 0 }}
+                        />
+                    }
+                  </Box>
+                </li>
+              )}
+            />
+            <Autocomplete
+              disableClearable
+              blurOnSelect
+              disabled={disabled}
+              size='small'
+              options={models || []}
+              value={selectedModelOption}
+              sx={{ marginTop: '12px' }}
+              getOptionLabel={option => option?.name || option?.id || ''}
+              isOptionEqualToValue={(option, current) => option?.id === current?.id}
+              onChange={(event, option) => onModelChange(option?.id || '')}
+              renderInput={params => (
+                <TextField
+                  {...params}
+                  label={t('map_project.model')}
+                  fullWidth
+                />
+              )}
+              renderOption={(props, option) => (
+                <li {...props} key={option.id}>
+                  <ListItemText
+                    primary={option.name}
+                    secondary={option.id}
+                    sx={{ my: 0, '.MuiListItemText-primary': { whiteSpace: 'normal' }, '.MuiListItemText-secondary': { whiteSpace: 'normal' } }}
+                  />
+                </li>
+              )}
+            />
+            {
+              promptTemplate &&
+                <FormHelperText sx={{ margin: '4px 0 0 14px' }}>
+                  {t('common.version')}: {promptTemplate.version || 'N/A'}
+                </FormHelperText>
+            }
+          </>
       }
       {
         showLocale &&

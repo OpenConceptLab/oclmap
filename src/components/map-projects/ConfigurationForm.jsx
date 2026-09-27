@@ -61,7 +61,7 @@ const VisuallyHiddenInput = styled('input')({
 
 const deriveCanonicalUrl = relativeUrl => relativeUrl ? `https://ns.openconceptlab.org${relativeUrl}` : ''
 
-const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, name, setName, description, setDescription, repo, onRepoChange, repoVersion, setRepoVersion, versions, mappedSources, targetSourcesFromRows, algosSelected, setAlgosSelected, sx, algos, validColumns, columns, isValidColumnValue, updateColumn, configure, setConfigure, columnVisibilityModel, setColumnVisibilityModel, onSave, isSaving, candidatesScore, onScoreChange, includeDefaultFilter, setIncludeDefaultFilter, filters, setFilters, locales, isLoadingLocales, setAIAssistantColumns, AIAssistantColumns, inAIAssistantGroup, lookupConfig, setLookupConfig, encoderModel, setEncoderModel, isCoreUser, canSelectAIModel, canBridge, canScispacy, canUseOrgProjects=true, canUseCustomAlgorithms=true, promptTemplates, promptTemplate, onPromptTemplateChange, AIModels, AIModel, setAIModel, namespace, setNamespace, promptOutputLocale, setPromptOutputLocale, inputLocale, setInputLocale, oclLocales, useLexicalVariants, setUseLexicalVariants }) => {
+const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, name, setName, description, setDescription, repo, onRepoChange, repoVersion, setRepoVersion, versions, mappedSources, targetSourcesFromRows, algosSelected, setAlgosSelected, sx, algos, validColumns, columns, isValidColumnValue, updateColumn, configure, setConfigure, columnVisibilityModel, setColumnVisibilityModel, onSave, isSaving, candidatesScore, onScoreChange, includeDefaultFilter, setIncludeDefaultFilter, filters, setFilters, locales, isLoadingLocales, setAIAssistantColumns, AIAssistantColumns, inAIAssistantGroup, lookupConfig, setLookupConfig, encoderModel, setEncoderModel, isCoreUser, canSelectAIModel, canSetAIOutputLocale, canBridge, canScispacy, canUseOrgProjects=true, canUseCustomAlgorithms=true, promptTemplates, promptTemplate, onPromptTemplateChange, AIModels, AIModel, setAIModel, namespace, setNamespace, promptOutputLocale, setPromptOutputLocale, inputLocale, setInputLocale, oclLocales, useLexicalVariants, setUseLexicalVariants }) => {
   const { t } = useTranslation();
   const user = getCurrentUser()
   const isLLMAlgoNotAllowed = !repoVersion?.match_algorithms?.includes('llm')
@@ -386,14 +386,19 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
           <AdvancedSettings namespaceValue={namespaceValue} setNamespace={setNamespace} defaultNamespace={defaultNamespace} isCoreUser={isCoreUser} useLexicalVariants={useLexicalVariants} setUseLexicalVariants={setUseLexicalVariants} />
       }
       {
-        inAIAssistantGroup && canSelectAIModel && promptTemplates?.length > 0 &&
+        // Staff pick the prompt template and model; core, early-access and
+        // unlimited-AI users set the output language only.
+        inAIAssistantGroup && canSetAIOutputLocale &&
           <>
             <Typography component="div" sx={{fontSize: '16px', fontWeight: 'bold', marginTop: '20px'}}>
               {t('map_project.ai_assistant')}
             </Typography>
-            <FormHelperText sx={{marginTop: 0}}>
-              {t('map_project.ai_prompt_template_description')}
-            </FormHelperText>
+            {
+              canSelectAIModel && promptTemplates?.length > 0 &&
+                <FormHelperText sx={{marginTop: 0}}>
+                  {t('map_project.ai_prompt_template_description')}
+                </FormHelperText>
+            }
             <AIAssistantSelectorPanel
               promptTemplates={promptTemplates}
               promptTemplate={promptTemplate}
@@ -402,6 +407,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
               selectedModel={AIModel}
               onModelChange={setAIModel}
               sx={{marginTop: '12px'}}
+              showPickers={canSelectAIModel}
               showLocale
               promptOutputLocale={promptOutputLocale}
               setPromptOutputLocale={setPromptOutputLocale}

@@ -107,6 +107,7 @@ import QuotaDialog from '../common/QuotaDialog'
 import { getQuotaError } from '../common/quotaErrors'
 import MapperQuotaChip from './MapperQuotaChip'
 import { getPreviewLimitError, isAIPreviewLimitError, isPreviewLimitError } from './previewLimits'
+import { getAIAssistantChoices, getModelUsed, getPromptTemplateKey, createLatestRequestGate } from './aiVisibility'
 import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
 import { normalizeAlgorithmInvocation, lookupStatusRank, buildRecommendableConceptEntry, stripConstantClassAndDatatype, buildLookupConceptUrl, serializeCandidates, toStoredRowMatchState } from './normalizers'
 import { parseConceptKey } from './conceptKey'
@@ -213,6 +214,9 @@ const MapProject = () => {
   const [promptTemplates, setPromptTemplates] = React.useState(false)
   const [projectPromptTemplateKey, setProjectPromptTemplateKey] = React.useState('')
   const promptTemplatesFetchedRef = React.useRef(false)
+  const promptTemplateRequestGateRef = React.useRef(null)
+  if(!promptTemplateRequestGateRef.current)
+    promptTemplateRequestGateRef.current = createLatestRequestGate()
 
   const abortRef = React.useRef(false);
   // ai_assistant.calls is a one-time allowance (no reset, R2) - once exhausted it
@@ -571,13 +575,12 @@ const MapProject = () => {
   const OCL_ONLINE_API_URL = window.OCL_ONLINE_API_URL || process.env.OCL_ONLINE_API_URL
   const inAIAssistantGroup = Boolean(hasCapability(user, 'users.mapper_ai_assistant') && AI_ASSISTANT_API_URL)
   const isCoreUser = hasAuthGroup(user, 'core_user')
-  const isStaffOrSuperuser = Boolean(user?.is_staff || user?.is_superuser)
   const mapperPreview = getMapperPreview()
-  // Choosing the AI model / prompt template is for core, staff, early access
-  // and unlimited-AI users; preview users get the default template and model.
-  const canSelectAIModel = Boolean(
-    isCoreUser || isStaffOrSuperuser || hasAuthGroup(user, 'early_access') ||
-    mapperPreview.aiAssistantCalls.unlimited
+  // Only staff choose the AI model and prompt template (canSelectAIModel gates
+  // both pickers). Core, early-access and unlimited-AI users keep the output
+  // language; preview users get the project's template and its default model.
+  const { canSelectAIModel, canSetAIOutputLocale } = getAIAssistantChoices(
+    user, {unlimitedAICalls: mapperPreview.aiAssistantCalls.unlimited}
   )
   const CANDIDATES_LIMIT = 15
   const canBridge = bridgeRef?.current?.canBridge()
@@ -1701,7 +1704,8 @@ const MapProject = () => {
         scoreConfig: candidatesScore,
         filters: getFilters(),
         template: withAI ? getPromptTemplateRef() : null,
-        aiModel: withAI ? (getSelectedAIModel()?.id || AIModel) : null,
+        // null: the template's default model (only staff pick one)
+        aiModel: withAI ? (getRequestedAIModel()?.id || null) : null,
       }),
     }
     try {
@@ -2180,7 +2184,7 @@ const MapProject = () => {
         ...selectedRowsLogExtras,
         ...(inAIAssistantGroup && autoRunAIAnalysis ? {
           ai_assistant: {
-            model: getSelectedAIModel(),
+            model: getRequestedAIModel() || null,
             prompt_template: getPromptTemplateRef()
           }
         } : {})
@@ -2276,7 +2280,7 @@ const MapProject = () => {
               ...selectedRowsLogExtras,
               ...(inAIAssistantGroup && autoRunAIAnalysis ? {
                 ai_assistant: {
-                  model: getSelectedAIModel(),
+                  model: getRequestedAIModel() || null,
                   prompt_template: getPromptTemplateRef()
                 }
               } : {})
@@ -4677,9 +4681,11 @@ const MapProject = () => {
     return version && version !== 'invoke' ? version : ''
   }, [])
 
-  const getProjectPromptTemplateKey = React.useCallback((template = promptTemplate) => (
-    template?.key || projectPromptTemplateKey || ''
-  ), [projectPromptTemplateKey, promptTemplate])
+  // Staff's pick wins; for everyone else the project's configured template does,
+  // even while an earlier-fetched template is still in state.
+  const getProjectPromptTemplateKey = React.useCallback((template = promptTemplate) => getPromptTemplateKey({
+    canSelect: canSelectAIModel, selectedKey: template?.key, configuredKey: projectPromptTemplateKey, fallbackKey: template?.key
+  }), [canSelectAIModel, projectPromptTemplateKey, promptTemplate])
 
   const getDefaultAIModelId = React.useCallback((template, models = AIModels) => (
     find(models, {id: template?.default_model})?.id || find(models, {is_default: true})?.id || ''
@@ -4728,22 +4734,32 @@ const MapProject = () => {
   }
 
   const getPromptTemplateRef = React.useCallback((template = promptTemplate) => {
-    const key = template?.key || getConfiguredPromptTemplateKey()
+    const key = getPromptTemplateKey({
+      canSelect: canSelectAIModel, selectedKey: template?.key, configuredKey: projectPromptTemplateKey, fallbackKey: template?.key || PROMPTS_KEY_DEFAULT
+    })
     if(!key)
       return undefined
 
-    const uri = template?.uri || template?.prompt_template_uri || template?.url || `/prompts/${key}/`
+    // Describe the template object only when it is the one that runs.
+    const runTemplate = template?.key === key ? template : undefined
+    const uri = runTemplate?.uri || runTemplate?.prompt_template_uri || runTemplate?.url || `/prompts/${key}/`
 
     return {
       key,
-      version: template?.version || getPromptTemplateVersionFromURL(uri) || null,
+      version: runTemplate?.version || getPromptTemplateVersionFromURL(uri) || null,
       uri: uri || null
     }
-  }, [getConfiguredPromptTemplateKey, getPromptTemplateVersionFromURL, promptTemplate])
+  }, [canSelectAIModel, getPromptTemplateVersionFromURL, projectPromptTemplateKey, promptTemplate])
 
   const getSelectedAIModel = React.useCallback((modelId = AIModel) => (
     find(AIModels, {id: modelId})
   ), [AIModel, AIModels])
+
+  // The model to request on /invoke/: the staff user's choice. Nobody else can
+  // override the template's default model, so their calls name no model.
+  const getRequestedAIModel = React.useCallback(() => (
+    canSelectAIModel ? getSelectedAIModel() : undefined
+  ), [canSelectAIModel, getSelectedAIModel])
 
   const onPromptTemplateChange = React.useCallback((template) => {
     setPromptTemplate(template || null)
@@ -4771,9 +4787,13 @@ const MapProject = () => {
     if(!AI_ASSISTANT_API_URL || !key)
       return
 
+    const ticket = promptTemplateRequestGateRef.current.next()
     const service = APIService.new()
     service.URL = AI_ASSISTANT_API_URL
     service.appendToUrl(`/prompts/${key}/`).get().then(response => {
+      // A newer key was requested since (the project's arrived): drop this one.
+      if(!promptTemplateRequestGateRef.current.isCurrent(ticket))
+        return
       if(response?.detail) {
         setAIModel(find(models, {is_default: true})?.id || '')
         return
@@ -4783,17 +4803,25 @@ const MapProject = () => {
     })
   }, [AIModels, AI_ASSISTANT_API_URL, getDefaultAIModelId])
 
+  // Staff pick from the whole template list: fetch it once.
   React.useEffect(() => {
-    if(!AIModels.length || !AI_ASSISTANT_API_URL)
+    if(!canSelectAIModel || !AIModels.length || !AI_ASSISTANT_API_URL)
       return
     if(promptTemplatesFetchedRef.current) return
     promptTemplatesFetchedRef.current = true
+    fetchPromptTemplates(AIModels)
+  }, [AIModels, AI_ASSISTANT_API_URL, fetchPromptTemplates, canSelectAIModel])
 
-    if(canSelectAIModel)
-      fetchPromptTemplates(AIModels)
-    else
-      fetchPromptTemplateByKey(getConfiguredPromptTemplateKey(), AIModels)
-  }, [AIModels, AI_ASSISTANT_API_URL, fetchPromptTemplateByKey, fetchPromptTemplates, getConfiguredPromptTemplateKey, canSelectAIModel])
+  // Everyone else runs the project's configured template. Its key arrives with
+  // the project, which can load after the AI models, so fetch again whenever
+  // the key changes. Fetching only once ran and saved the default template for
+  // non-staff whenever the models loaded first.
+  const configuredPromptTemplateKey = getConfiguredPromptTemplateKey()
+  React.useEffect(() => {
+    if(canSelectAIModel || !AIModels.length || !AI_ASSISTANT_API_URL)
+      return
+    fetchPromptTemplateByKey(configuredPromptTemplateKey, AIModels)
+  }, [AIModels, AI_ASSISTANT_API_URL, canSelectAIModel, configuredPromptTemplateKey])
 
   React.useEffect(() => {
     if(!canSelectAIModel || !promptTemplates?.length)
@@ -4809,7 +4837,9 @@ const MapProject = () => {
   }, [getConfiguredPromptTemplateKey, getDefaultAIModelId, canSelectAIModel, promptTemplates])
 
   const resolvePromptTemplateForInvocation = React.useCallback(async (template = promptTemplate) => {
-    const key = template?.key || getConfiguredPromptTemplateKey()
+    const key = getPromptTemplateKey({
+      canSelect: canSelectAIModel, selectedKey: template?.key, configuredKey: projectPromptTemplateKey, fallbackKey: PROMPTS_KEY_DEFAULT
+    })
     if(!key || !AI_ASSISTANT_API_URL)
       throw new Error('AI Assistant prompt template is not available')
 
@@ -4827,7 +4857,7 @@ const MapProject = () => {
       uri: getResolvedPromptTemplateURI(resolvedTemplate, key),
       version: resolvedTemplate?.version || getPromptTemplateVersionFromURL(getResolvedPromptTemplateURI(resolvedTemplate, key)) || null
     }
-  }, [AI_ASSISTANT_API_URL, getConfiguredPromptTemplateKey, getPromptTemplateVersionFromURL, getResolvedPromptTemplateURI, promptTemplate])
+  }, [AI_ASSISTANT_API_URL, canSelectAIModel, getPromptTemplateVersionFromURL, getResolvedPromptTemplateURI, projectPromptTemplateKey, promptTemplate])
 
 
   const getProjectMetadata = () => {
@@ -4989,7 +5019,7 @@ const MapProject = () => {
       markAlgo(__index, 'recommend', 0)
       let rowData = prepareRow(__row, true, true)
 
-      const selectedModel = getSelectedAIModel()
+      const requestedModel = getRequestedAIModel()
       let activePromptTemplate
       try {
         activePromptTemplate = resolvedPromptTemplate || await resolvePromptTemplateForInvocation()
@@ -5021,7 +5051,7 @@ const MapProject = () => {
         markAlgo(__index, 'recommend', -2)
         const errorMessage = err?.message || t('unknown_error')
         let timestamp = moment().toDate()
-        log({created_at: timestamp, action: 'AIRecommendation', description: errorMessage, extras: {error: errorMessage, model: selectedModel, prompt_template: getPromptTemplateRef(), prompt_template_uri: getPromptTemplateRef()?.uri}}, __index)
+        log({created_at: timestamp, action: 'AIRecommendation', description: errorMessage, extras: {error: errorMessage, model: requestedModel, prompt_template: getPromptTemplateRef(), prompt_template_uri: getPromptTemplateRef()?.uri}}, __index)
         setAlert({message: errorMessage, severity: 'error'})
         return false
       }
@@ -5037,8 +5067,10 @@ const MapProject = () => {
         }
       }
 
-      if(promptOutputLocale && canSelectAIModel)
+      if(promptOutputLocale && canSetAIOutputLocale)
         payload.variables.output_locale = promptOutputLocale
+      if(requestedModel?.id)
+        payload.model = requestedModel.id
 
       const service = APIService.new()
       service.URL = getPromptTemplateInvokeURL(activePromptTemplate, promptTemplateRef?.key)
@@ -5063,27 +5095,31 @@ const MapProject = () => {
             onAttemptFailed: (err, attempt) => {
               const errorMessage = err?.response?.data?.detail || err?.message || t('unknown_error')
               const retrySuffix = attempt > 0 ? ` [Retry ${attempt}]` : ''
-              log({created_at: moment().toDate(), action: 'AIRecommendation', description: `failed with ${errorMessage}${retrySuffix}`, extras: {error: errorMessage, model: selectedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}}, __index)
+              log({created_at: moment().toDate(), action: 'AIRecommendation', description: `failed with ${errorMessage}${retrySuffix}`, extras: {error: errorMessage, model: requestedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}}, __index)
             },
           }
         )
         let timestamp = moment().toDate()
         if(handlePreviewLimitError(response, __index, 'recommend', {isRun: isBulk, stopPhase: 'ai'})) {
           markAlgo(__index, 'recommend', -3)
-          log({created_at: timestamp, action: 'AIRecommendationLimitReached', extras: {model: selectedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}})
+          log({created_at: timestamp, action: 'AIRecommendationLimitReached', extras: {model: requestedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}})
           return false
         }
         if(response?.detail) {
           markAlgo(__index, 'recommend', -2)
           aiFailuresInARowRef.current += 1
-          log({created_at: timestamp, action: 'AIRecommendation', description: response.detail, extras: {error: response.detail, model: selectedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}})
+          log({created_at: timestamp, action: 'AIRecommendation', description: response.detail, extras: {error: response.detail, model: requestedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}})
           setAlert({message: response.detail, severity: 'error'})
           return false
         }
 
         markAlgo(__index, 'recommend', 1)
         aiFailuresInARowRef.current = 0
-        log({created_at: timestamp, action: 'AIRecommendation', description: get(response.data, 'output.rationale') || get(response.data, 'rationale'), extras: {...response.data, model: selectedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}}, __index)
+        // Record the model that answered, not the one the UI shows: the AI
+        // Assistant runs the template's default for everyone but staff.
+        const modelUsed = getModelUsed(response.data) || requestedModel?.id || null
+        const modelUsedRef = modelUsed ? (find(AIModels, {id: modelUsed}) || {id: modelUsed, name: modelUsed}) : null
+        log({created_at: timestamp, action: 'AIRecommendation', description: get(response.data, 'output.rationale') || get(response.data, 'rationale'), extras: {...response.data, model: modelUsedRef, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}}, __index)
         const resolvedTemplate = response.data?.template || {}
         const resolvedVersion = resolvedTemplate.version || promptTemplateRef?.version || null
         const resolvedPromptRef = {
@@ -5091,13 +5127,13 @@ const MapProject = () => {
           version: resolvedVersion,
           uri: resolvedVersion && promptTemplateRef?.key ? `/prompts/${promptTemplateRef.key}/${resolvedVersion}/` : (promptTemplateRef?.uri || null)
         }
-        const newEntry = {...response.data, model: selectedModel?.id || AIModel, model_name: selectedModel?.name, prompt_template: resolvedPromptRef, prompt_template_uri: resolvedPromptRef.uri, output_locale: promptOutputLocale || null, timestamp: timestamp, user: user.username || user.id}
+        const newEntry = {...response.data, model: modelUsed, model_name: modelUsedRef?.name, prompt_template: resolvedPromptRef, prompt_template_uri: resolvedPromptRef.uri, output_locale: promptOutputLocale || null, timestamp: timestamp, user: user.username || user.id}
         setAnalysis(prev => ({...prev, [__index]: [...(prev[__index] || []), newEntry]}))
         return true
       } catch (err) {
         if(handlePreviewLimitError(err, __index, 'recommend', {isRun: isBulk, stopPhase: 'ai'})) {
           markAlgo(__index, 'recommend', -3)
-          log({created_at: moment().toDate(), action: 'AIRecommendationLimitReached', extras: {model: selectedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}})
+          log({created_at: moment().toDate(), action: 'AIRecommendationLimitReached', extras: {model: requestedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}})
           return false
         }
         markAlgo(__index, 'recommend', -2)
@@ -5169,6 +5205,7 @@ const MapProject = () => {
       canBridge={canBridge}
       isCoreUser={isCoreUser}
       canSelectAIModel={canSelectAIModel}
+      canSetAIOutputLocale={canSetAIOutputLocale}
       canScispacy={canScispacy}
       canUseOrgProjects={mapperPreview.hasOrgProjects}
       canUseCustomAlgorithms={mapperPreview.hasCustomAlgorithms}
