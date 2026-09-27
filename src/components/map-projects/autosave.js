@@ -86,16 +86,58 @@ export const createAutosaveScheduler = ({
  * (OpenConceptLab/ocl_issues#2829). This saves it now instead. A save still in
  * flight goes first, so the older payload can't land after the newer one.
  *
- * Returns whether a save was started or queued.
+ * The save always starts asynchronously: an error while building the payload
+ * must not surface inside React's unmount and take down the page the user is
+ * going to.
+ *
+ * Returns whether a save was queued.
  */
 export const saveOnLeave = ({ scheduler, inFlightSave, save }) => {
   const reasons = scheduler.takePending()
   if(!reasons)
     return false
-  if(inFlightSave) {
-    const run = () => save(reasons)
-    inFlightSave.then(run, run)
-  } else
-    save(reasons)
+  const run = () => save(reasons)
+  Promise.resolve(inFlightSave)
+    .then(run, run)
+    .catch(error => console.error('Mapper: saving on leave failed', error))
   return true
+}
+
+// Saves still in flight, by project id. A save on leave outlives the page that
+// started it: reopening that project must wait for it, or the stale copy loads
+// and its next autosave overwrites the save, and closing the tab must warn.
+const savesInFlight = new Map()
+
+export const trackSave = (projectId, request) => {
+  const key = String(projectId)
+  savesInFlight.set(key, request)
+  const clear = () => {
+    if(savesInFlight.get(key) === request)
+      savesInFlight.delete(key)
+  }
+  request.then(clear, clear)
+  return request
+}
+
+// Resolves, never rejects, once the project's save in flight has settled.
+export const whenSaved = projectId => {
+  const request = savesInFlight.get(String(projectId))
+  return request ? request.then(() => undefined, () => undefined) : Promise.resolve()
+}
+
+export const hasSaveInFlight = () => savesInFlight.size > 0
+
+// One window-level prompt, never removed, so it still covers a save whose
+// page is gone.
+let unloadGuardInstalled = false
+export const installUnloadGuard = () => {
+  if(unloadGuardInstalled || typeof window === 'undefined')
+    return
+  unloadGuardInstalled = true
+  window.addEventListener('beforeunload', event => {
+    if(!hasSaveInFlight())
+      return
+    event.preventDefault()
+    event.returnValue = ''
+  })
 }

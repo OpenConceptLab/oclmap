@@ -88,7 +88,7 @@ import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
 import DataGridControls from './DataGridControls'
 import { getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep, getAIRequestIdempotencyKey } from './autoMatchRows'
-import { createAutosaveScheduler, saveOnLeave } from './autosave'
+import { createAutosaveScheduler, saveOnLeave, trackSave, whenSaved, installUnloadGuard } from './autosave'
 import MatchSummaryCard from './MatchSummaryCard'
 import MappingDecisionResult from './MappingDecisionResult'
 import DecisionSelector from './DecisionSelector'
@@ -263,19 +263,19 @@ const MapProject = () => {
   const logsRef = React.useRef({})
   const projectLogsRef = React.useRef([])
   const configSnapshotOnOpenRef = React.useRef(null)
-  const isSavingRef = React.useRef(false)
   const projectIdRef = React.useRef(null)
   const onSaveRef = React.useRef(null)
   // A save can complete after the user has left the project
   // (OpenConceptLab/ocl_issues#2829): these track the request still in flight
-  // and whether this page is still open.
+  // (accurate after unmount, unlike isSaving state) and whether this page is
+  // still open.
   const inFlightSaveRef = React.useRef(null)
   const isMountedRef = React.useRef(true)
   const autosaveSchedulerRef = React.useRef(null)
   if(!autosaveSchedulerRef.current)
     autosaveSchedulerRef.current = createAutosaveScheduler({
       getProjectId: () => projectIdRef.current,
-      isSaving: () => isSavingRef.current,
+      isSaving: () => Boolean(inFlightSaveRef.current),
       onFire: reasons => onSaveRef.current({source: 'auto', closeConfigure: false, reasons})
     })
   const [filterModel, setFilterModel] = React.useState({ items: [] });
@@ -308,10 +308,6 @@ const MapProject = () => {
   }, [projectLogs])
 
   React.useEffect(() => {
-    isSavingRef.current = isSaving
-  }, [isSaving])
-
-  React.useEffect(() => {
     projectIdRef.current = project?.id
   }, [project])
 
@@ -327,18 +323,20 @@ const MapProject = () => {
   // (OpenConceptLab/ocl_issues#2829). Nothing to save once signed out.
   React.useEffect(() => {
     isMountedRef.current = true
+    installUnloadGuard()
     return () => {
       isMountedRef.current = false
       saveOnLeave({
         scheduler: autosaveSchedulerRef.current,
         inFlightSave: inFlightSaveRef.current,
-        save: reasons => currentUserToken() && onSaveRef.current({source: 'auto', closeConfigure: false, reasons})
+        save: reasons => currentUserToken() && onSaveRef.current({source: 'auto', closeConfigure: false, reasons, leaving: true})
       })
     }
   }, [])
 
   // Closing or reloading the tab inside the autosave window, or while a save
-  // is in flight, would lose the change, so ask first.
+  // is in flight, would lose the change, so ask first. installUnloadGuard
+  // covers a save that outlives this page.
   React.useEffect(() => {
     const warnIfUnsaved = event => {
       if(!autosaveSchedulerRef.current.hasPending() && !inFlightSaveRef.current)
@@ -777,7 +775,9 @@ const MapProject = () => {
   const fetchAndSetProject = () => {
     setLoadingProject(true)
     let url = ['', params.ownerType, params.owner, 'map-projects', params.projectId, ''].join('/')
-    APIService.new().overrideURL(url).get().then(response => {
+    // A save on leave may still be uploading: load after it lands, or the
+    // stale copy's next autosave would overwrite it.
+    whenSaved(params.projectId).then(() => APIService.new().overrideURL(url).get()).then(response => {
       if(response?.detail) {
         setPermissionDenied(true)
         baseSetAlert({message: response.detail, severity: 'error'})
@@ -1624,6 +1624,9 @@ const MapProject = () => {
           baseSetAlert({severity: 'success', message: t('map_project.successfully_saved'), duration: 2000})
 
         APIService.new().overrideURL(response.data.url).appendToUrl('logs/').post({logs: {row_logs: rowLogsForSave, project_logs: savedProjectLogs}}).then(() => {})
+      } else if(options.leaving && status !== 401) {
+        // The user has left the project, so no dialog can show: say so once.
+        baseSetAlert({severity: 'error', message: t('map_project.leave_save_failed', {name: name || project?.name, detail: errorData?.detail || t('unknown_error')}), duration: 12000})
       } else if(status === 403 && errorData?.error_code) {
         setPreviewLimit({errorCode: errorData.error_code, limit: errorData.limit, used: errorData.used})
       } else if(!isAutoSave && status !== 429 && status !== 401) {
@@ -1635,6 +1638,8 @@ const MapProject = () => {
         inFlightSaveRef.current = null
     })
     inFlightSaveRef.current = request
+    if(isUpdate)
+      trackSave(project.id, request)
   }
 
   // onSave takes options, so it can't be bound to onClick directly — the click
@@ -5829,7 +5834,7 @@ const MapProject = () => {
     </Split>
       {
         deleteProject && project?.id &&
-          <MapProjectDeleteConfirmDialog open={deleteProject} onClose={() => setDeleteProject(false)} onDeleted={refreshMapperQuotaCache} project={project} />
+          <MapProjectDeleteConfirmDialog open={deleteProject} onClose={() => setDeleteProject(false)} onDeleted={() => { autosaveSchedulerRef.current.cancel(); refreshMapperQuotaCache() }} project={project} />
       }
       <ConceptDetailsPanel
         payload={showItem}
