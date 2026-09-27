@@ -107,7 +107,7 @@ import QuotaDialog from '../common/QuotaDialog'
 import { getQuotaError } from '../common/quotaErrors'
 import MapperQuotaChip from './MapperQuotaChip'
 import { getPreviewLimitError, isAIPreviewLimitError, isPreviewLimitError } from './previewLimits'
-import { getAIAssistantChoices, getModelUsed } from './aiVisibility'
+import { getAIAssistantChoices, getModelUsed, getPromptTemplateKey, createLatestRequestGate } from './aiVisibility'
 import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
 import { normalizeAlgorithmInvocation, lookupStatusRank, buildRecommendableConceptEntry, stripConstantClassAndDatatype, buildLookupConceptUrl, serializeCandidates, toStoredRowMatchState } from './normalizers'
 import { parseConceptKey } from './conceptKey'
@@ -214,6 +214,9 @@ const MapProject = () => {
   const [promptTemplates, setPromptTemplates] = React.useState(false)
   const [projectPromptTemplateKey, setProjectPromptTemplateKey] = React.useState('')
   const promptTemplatesFetchedRef = React.useRef(false)
+  const promptTemplateRequestGateRef = React.useRef(null)
+  if(!promptTemplateRequestGateRef.current)
+    promptTemplateRequestGateRef.current = createLatestRequestGate()
 
   const abortRef = React.useRef(false);
   // ai_assistant.calls is a one-time allowance (no reset, R2) - once exhausted it
@@ -4678,9 +4681,11 @@ const MapProject = () => {
     return version && version !== 'invoke' ? version : ''
   }, [])
 
-  const getProjectPromptTemplateKey = React.useCallback((template = promptTemplate) => (
-    template?.key || projectPromptTemplateKey || ''
-  ), [projectPromptTemplateKey, promptTemplate])
+  // Staff's pick wins; for everyone else the project's configured template does,
+  // even while an earlier-fetched template is still in state.
+  const getProjectPromptTemplateKey = React.useCallback((template = promptTemplate) => getPromptTemplateKey({
+    canSelect: canSelectAIModel, selectedKey: template?.key, configuredKey: projectPromptTemplateKey, fallbackKey: template?.key
+  }), [canSelectAIModel, projectPromptTemplateKey, promptTemplate])
 
   const getDefaultAIModelId = React.useCallback((template, models = AIModels) => (
     find(models, {id: template?.default_model})?.id || find(models, {is_default: true})?.id || ''
@@ -4729,18 +4734,22 @@ const MapProject = () => {
   }
 
   const getPromptTemplateRef = React.useCallback((template = promptTemplate) => {
-    const key = template?.key || getConfiguredPromptTemplateKey()
+    const key = getPromptTemplateKey({
+      canSelect: canSelectAIModel, selectedKey: template?.key, configuredKey: projectPromptTemplateKey, fallbackKey: template?.key || PROMPTS_KEY_DEFAULT
+    })
     if(!key)
       return undefined
 
-    const uri = template?.uri || template?.prompt_template_uri || template?.url || `/prompts/${key}/`
+    // Describe the template object only when it is the one that runs.
+    const runTemplate = template?.key === key ? template : undefined
+    const uri = runTemplate?.uri || runTemplate?.prompt_template_uri || runTemplate?.url || `/prompts/${key}/`
 
     return {
       key,
-      version: template?.version || getPromptTemplateVersionFromURL(uri) || null,
+      version: runTemplate?.version || getPromptTemplateVersionFromURL(uri) || null,
       uri: uri || null
     }
-  }, [getConfiguredPromptTemplateKey, getPromptTemplateVersionFromURL, promptTemplate])
+  }, [canSelectAIModel, getPromptTemplateVersionFromURL, projectPromptTemplateKey, promptTemplate])
 
   const getSelectedAIModel = React.useCallback((modelId = AIModel) => (
     find(AIModels, {id: modelId})
@@ -4778,9 +4787,13 @@ const MapProject = () => {
     if(!AI_ASSISTANT_API_URL || !key)
       return
 
+    const ticket = promptTemplateRequestGateRef.current.next()
     const service = APIService.new()
     service.URL = AI_ASSISTANT_API_URL
     service.appendToUrl(`/prompts/${key}/`).get().then(response => {
+      // A newer key was requested since (the project's arrived): drop this one.
+      if(!promptTemplateRequestGateRef.current.isCurrent(ticket))
+        return
       if(response?.detail) {
         setAIModel(find(models, {is_default: true})?.id || '')
         return
@@ -4790,17 +4803,25 @@ const MapProject = () => {
     })
   }, [AIModels, AI_ASSISTANT_API_URL, getDefaultAIModelId])
 
+  // Staff pick from the whole template list: fetch it once.
   React.useEffect(() => {
-    if(!AIModels.length || !AI_ASSISTANT_API_URL)
+    if(!canSelectAIModel || !AIModels.length || !AI_ASSISTANT_API_URL)
       return
     if(promptTemplatesFetchedRef.current) return
     promptTemplatesFetchedRef.current = true
+    fetchPromptTemplates(AIModels)
+  }, [AIModels, AI_ASSISTANT_API_URL, fetchPromptTemplates, canSelectAIModel])
 
-    if(canSelectAIModel)
-      fetchPromptTemplates(AIModels)
-    else
-      fetchPromptTemplateByKey(getConfiguredPromptTemplateKey(), AIModels)
-  }, [AIModels, AI_ASSISTANT_API_URL, fetchPromptTemplateByKey, fetchPromptTemplates, getConfiguredPromptTemplateKey, canSelectAIModel])
+  // Everyone else runs the project's configured template. Its key arrives with
+  // the project, which can load after the AI models, so fetch again whenever
+  // the key changes. Fetching only once ran and saved the default template for
+  // non-staff whenever the models loaded first.
+  const configuredPromptTemplateKey = getConfiguredPromptTemplateKey()
+  React.useEffect(() => {
+    if(canSelectAIModel || !AIModels.length || !AI_ASSISTANT_API_URL)
+      return
+    fetchPromptTemplateByKey(configuredPromptTemplateKey, AIModels)
+  }, [AIModels, AI_ASSISTANT_API_URL, canSelectAIModel, configuredPromptTemplateKey])
 
   React.useEffect(() => {
     if(!canSelectAIModel || !promptTemplates?.length)
@@ -4816,7 +4837,9 @@ const MapProject = () => {
   }, [getConfiguredPromptTemplateKey, getDefaultAIModelId, canSelectAIModel, promptTemplates])
 
   const resolvePromptTemplateForInvocation = React.useCallback(async (template = promptTemplate) => {
-    const key = template?.key || getConfiguredPromptTemplateKey()
+    const key = getPromptTemplateKey({
+      canSelect: canSelectAIModel, selectedKey: template?.key, configuredKey: projectPromptTemplateKey, fallbackKey: PROMPTS_KEY_DEFAULT
+    })
     if(!key || !AI_ASSISTANT_API_URL)
       throw new Error('AI Assistant prompt template is not available')
 
@@ -4834,7 +4857,7 @@ const MapProject = () => {
       uri: getResolvedPromptTemplateURI(resolvedTemplate, key),
       version: resolvedTemplate?.version || getPromptTemplateVersionFromURL(getResolvedPromptTemplateURI(resolvedTemplate, key)) || null
     }
-  }, [AI_ASSISTANT_API_URL, getConfiguredPromptTemplateKey, getPromptTemplateVersionFromURL, getResolvedPromptTemplateURI, promptTemplate])
+  }, [AI_ASSISTANT_API_URL, canSelectAIModel, getPromptTemplateVersionFromURL, getResolvedPromptTemplateURI, projectPromptTemplateKey, promptTemplate])
 
 
   const getProjectMetadata = () => {
