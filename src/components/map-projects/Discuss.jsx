@@ -28,12 +28,16 @@ import map from 'lodash/map'
 import startCase from 'lodash/startCase'
 import orderBy from 'lodash/orderBy'
 
+import { isAdminUser } from '../../common/utils'
 import Comment from './Comment'
 
 
 const Discuss = ({ logs, onAdd }) => {
   const { t } = useTranslation();
   const [comment, setComment] = React.useState('')
+  // An AI recommendation's model, prompt template and template URI are
+  // staff-only (ocl_online#254).
+  const isStaff = isAdminUser()
   const getTitle = log => {
     if(['mapped', 'unmapped', 'auto-matched', 'rejected'].includes(log.action)) {
       if(log.action === 'rejected' && log.description)
@@ -179,19 +183,19 @@ const Discuss = ({ logs, onAdd }) => {
                           </>
                       }
                       {
-                        log.action === 'AIRecommendation' && log?.extras?.model?.id &&
+                        isStaff && log.action === 'AIRecommendation' && log?.extras?.model?.id &&
                           <Typography sx={{fontSize: '12px', color: 'rgba(0, 0, 0, 0.7)'}}>
                             {log.extras.model.name}
                           </Typography>
                       }
                       {
-                        log.action === 'AIRecommendation' && log?.extras?.prompt_template?.key &&
+                        isStaff && log.action === 'AIRecommendation' && log?.extras?.prompt_template?.key &&
                           <Typography sx={{fontSize: '12px', color: 'rgba(0, 0, 0, 0.7)'}}>
                             {t('map_project.ai_prompt_template')}: {log.extras.prompt_template.key} ({t('common.version')}: {log.extras.prompt_template.version || '-'})
                           </Typography>
                       }
                       {
-                        log.action === 'AIRecommendation' && log?.extras?.prompt_template_uri &&
+                        isStaff && log.action === 'AIRecommendation' && log?.extras?.prompt_template_uri &&
                           <Typography sx={{fontSize: '12px', color: 'rgba(0, 0, 0, 0.7)'}}>
                             URI: {log.extras.prompt_template_uri}
                           </Typography>
