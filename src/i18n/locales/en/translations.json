@@ -369,7 +369,8 @@
     "matched_attributes": "Matched Attributes",
     "no_match_metrics": "No algorithm match metrics available for this concept.",
     "list_view": "List View",
-    "table_view": "Table View"
+    "table_view": "Table View",
+    "select_all_rows": "Select all rows"
   },
   "url_registry": {
     "url_registry": "Canonical URL registry",

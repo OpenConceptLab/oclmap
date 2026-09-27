@@ -368,7 +368,8 @@
     "search_raw_score": "原始评分",
     "matched_attributes": "匹配属性",
     "list_view": "列表视图",
-    "table_view": "表格视图"
+    "table_view": "表格视图",
+    "select_all_rows": "选择全部行"
   },
   "url_registry": {
     "url_registry": "规范型 URL 注册库",

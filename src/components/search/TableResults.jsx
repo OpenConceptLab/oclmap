@@ -34,7 +34,7 @@ const EnhancedTableHead = props => {
                 checked={rowCount > 0 && numSelected === rowCount}
                 onChange={onSelectAllClick}
                 inputProps={{
-                  'aria-label': 'select all desserts',
+                  'aria-label': t('search.select_all_rows'),
                 }}
               />
             </TableCell>
