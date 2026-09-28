@@ -5129,6 +5129,13 @@ const MapProject = () => {
         }
         const newEntry = {...response.data, model: modelUsed, model_name: modelUsedRef?.name, prompt_template: resolvedPromptRef, prompt_template_uri: resolvedPromptRef.uri, output_locale: promptOutputLocale || null, timestamp: timestamp, user: user.username || user.id}
         setAnalysis(prev => ({...prev, [__index]: [...(prev[__index] || []), newEntry]}))
+        // Schedule a save, or leaving loses the result
+        // (OpenConceptLab/ocl_issues#2833). Auto Match rows (isBulk) are saved
+        // when the run completes. A result that lands after the user left
+        // never reached this page's state, so a save would resend the old
+        // state, possibly over a newer one.
+        if(!isBulk && isMountedRef.current)
+          scheduleAutoSave('ai_recommendation')
         return true
       } catch (err) {
         if(handlePreviewLimitError(err, __index, 'recommend', {isRun: isBulk, stopPhase: 'ai'})) {
