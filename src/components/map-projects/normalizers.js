@@ -457,6 +457,28 @@ export const normalizeAlgorithmInvocation = (rawPayload, ctx = {}) => {
 const LOOKUP_RANK = { pending: 0, failed: 0, partial: 1, full: 2 }
 export const lookupStatusRank = (status) => LOOKUP_RANK[status] ?? 0
 
+// A failed invocation is stored too, with status 'failed' (ocl_online#283).
+// Only a successful one (or one saved before statuses were recorded) counts as
+// a result a row can reuse instead of fetching again.
+const isSuccessfulResponse = response => response?.status !== 'failed'
+
+export const hasSuccessfulAlgorithmResponse = (rowEntry, algorithmId) =>
+  Object.values(rowEntry?.algorithm_responses || {})
+    .some(response => response?.algorithm_id === algorithmId && isSuccessfulResponse(response))
+
+// {algorithmId: 1 | -2} for a saved row's stage markers: done when any of the
+// algorithm's responses succeeded, failed when all of them failed.
+export const getAlgorithmStagesFromResponses = row => {
+  const stages = {}
+  Object.values(row?.algorithm_responses || {}).forEach(response => {
+    const algorithmId = response?.algorithm_id
+    if(!algorithmId) return
+    if(isSuccessfulResponse(response)) stages[algorithmId] = 1
+    else if(stages[algorithmId] !== 1) stages[algorithmId] = -2
+  })
+  return stages
+}
+
 /**
  * Filter a ConceptDefinition.property[] dict array to the subset the project
  * considers identifying — repoVersion.meta.display.concept_summary_properties

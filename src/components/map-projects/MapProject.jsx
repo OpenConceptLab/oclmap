@@ -86,7 +86,7 @@ import MapProjectDeleteConfirmDialog from './MapProjectDeleteConfirmDialog';
 import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
 import DataGridControls from './DataGridControls'
-import { getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, AI_LOOKUP_WAIT_MS } from './autoMatchRows'
+import { getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, AI_LOOKUP_WAIT_MS, RERANK_LOOKUP_WAIT_MS } from './autoMatchRows'
 import { createAutosaveScheduler, saveOnLeave, trackSave, whenSaved, installUnloadGuard } from './autosave'
 import MatchSummaryCard from './MatchSummaryCard'
 import MappingDecisionResult from './MappingDecisionResult'
@@ -108,10 +108,10 @@ import QuotaDialog from '../common/QuotaDialog'
 import { getQuotaError } from '../common/quotaErrors'
 import MapperQuotaChip from './MapperQuotaChip'
 import { getPreviewLimitError, isAIPreviewLimitError } from './previewLimits'
-import { formatRowNumbers, runMatchBatch } from './matchBatch'
+import { formatRowNumbers, runMatchBatch, requestSingleMatch } from './matchBatch'
 import { getAIAssistantChoices, getModelUsed, getPromptTemplateKey, createLatestRequestGate } from './aiVisibility'
 import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
-import { normalizeAlgorithmInvocation, lookupStatusRank, buildRecommendableConceptEntry, stripConstantClassAndDatatype, buildLookupConceptUrl, serializeCandidates, toStoredRowMatchState } from './normalizers'
+import { normalizeAlgorithmInvocation, hasSuccessfulAlgorithmResponse, getAlgorithmStagesFromResponses, lookupStatusRank, buildRecommendableConceptEntry, stripConstantClassAndDatatype, buildLookupConceptUrl, serializeCandidates, toStoredRowMatchState } from './normalizers'
 import { parseConceptKey } from './conceptKey'
 import { getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId } from './projectTargetRepo'
 import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, formatBridgeTargetDownloadEntry, resolveAICandidateID, getScoreDetails, getAIAnalysisCandidateIDs } from './viewBuilders.js'
@@ -878,10 +878,8 @@ const MapProject = () => {
         const analysis = response.data?.analysis || {}
         for(const [idxStr, row] of Object.entries(_rowMatchState)) {
           const hasRerank = Object.values(row?.concept_rows || {}).some(cr => isNumber(cr?.rerank_score))
-          const stage = { rerank: hasRerank ? 1 : -1, recommend: isEmpty(analysis[idxStr]) ? -1 : 1 }
-          for(const ar of Object.values(row?.algorithm_responses || {})) {
-            if(ar?.algorithm_id) stage[ar.algorithm_id] = 1
-          }
+          // A saved failed response reloads as failed (-2), not done (ocl_online#283).
+          const stage = { rerank: hasRerank ? 1 : -1, recommend: isEmpty(analysis[idxStr]) ? -1 : 1, ...getAlgorithmStagesFromResponses(row) }
           _rowStage[idxStr] = stage
         }
       } else if(savedCandidates && !isEmpty(savedCandidates)) {
@@ -3138,8 +3136,7 @@ const MapProject = () => {
       const rowStageForRow = rowStageRef.current?.[rowIndex] || {}
       const anyAlgoInFlight = selectedAlgoIds?.some(id => rowStageForRow[id] === 0)
       const rowMatchEntry = rowMatchStateRef.current?.[rowIndex]
-      const hasCandidates = Boolean(rowMatchEntry && Object.values(rowMatchEntry.algorithm_responses || {})
-        .some(ar => ar?.algorithm_id === firstAlgoId))
+      const hasCandidates = hasSuccessfulAlgorithmResponse(rowMatchEntry, firstAlgoId)
       if(firstAlgoId && !anyAlgoInFlight && !hasCandidates)
         fetchAllCandidatesForRow(firstAlgoId)
     }
@@ -3530,29 +3527,45 @@ const MapProject = () => {
       return
     }
     const service = getMatchAPIService(algoDef)
-    service.post(
+    // service.request rejects on a network error or a non-2xx; service.post
+    // resolved, so a failed call showed as "no candidates" (ocl_online#283).
+    // requestSingleMatch retries it like a bulk batch; a call that still fails
+    // reaches the callback as an error body, which shows the error and marks
+    // the algorithm failed for the row.
+    requestSingleMatch(() => service.request(
+      'POST',
       payload,
       (algoDef.type === 'custom' && algoDef.url) ? algoDef.token : null,
-      null,
       {
-        includeSearchMeta: true,
-        includeRetired: isBoolean(_retired) ? _retired : retired,
-        includeMappings: true,
-        mappingBrief: true,
-        mapTypes: 'SAME-AS,SAME AS,SAME_AS',
-        verbose: true,
-        limit: algoDef.limit || CANDIDATES_LIMIT,
-        offset: offset || 0,
-        semantic: ['ocl-semantic', 'custom'].includes(algoDef.type),
-        reranker: !isMultiAlgo && algoDef.provider === 'ocl',
-        encoder_model: !isMultiAlgo && encoderModel ? encoderModel : undefined
-      }).then(response => callback(response, payload))
+        query: {
+          includeSearchMeta: true,
+          includeRetired: isBoolean(_retired) ? _retired : retired,
+          includeMappings: true,
+          mappingBrief: true,
+          mapTypes: 'SAME-AS,SAME AS,SAME_AS',
+          verbose: true,
+          limit: algoDef.limit || CANDIDATES_LIMIT,
+          offset: offset || 0,
+          semantic: ['ocl-semantic', 'custom'].includes(algoDef.type),
+          reranker: !isMultiAlgo && algoDef.provider === 'ocl',
+          encoder_model: !isMultiAlgo && encoderModel ? encoderModel : undefined
+        }
+      }
+    )).then(({ok, response, errorBody, previewLimit}) => {
+      if(ok)
+        return callback(response, payload)
+      // A preview limit keeps the server's body, which opens the limit dialog.
+      callback(previewLimit ? errorBody : {...errorBody, detail: t('map_project.match_request_failed', {error: errorBody.detail})}, payload)
+    })
   }
 
-  const fetchAllCandidatesForRow = (algoId, _row, offset=0, _retired, scrollToBottom, _filters, forceReload=false) => {
+  // keepAlert: set by the calls that go on to a row's next algorithm, so an
+  // error an earlier algorithm showed stays up (ocl_online#283).
+  const fetchAllCandidatesForRow = (algoId, _row, offset=0, _retired, scrollToBottom, _filters, forceReload=false, keepAlert=false) => {
     if(loadingMatches)
       return
-    setAlert(false)
+    if(!keepAlert)
+      setAlert(false)
     if(isAnyValidColumn()) {
       let algoDef
       if (!algoId) {
@@ -3573,8 +3586,8 @@ const MapProject = () => {
       // short-circuit on entry presence) would skip silently without
       // firing onResponse, leaving the "Running: …" indicator pinned.
       const rowMatchEntry = rowMatchStateRef.current?.[__row.__index]
-      const hasAlgoResponse = rowMatchEntry && Object.values(rowMatchEntry.algorithm_responses || {})
-        .some(ar => ar?.algorithm_id === algoId)
+      // A failed response doesn't count: the row fetches again (ocl_online#283).
+      const hasAlgoResponse = hasSuccessfulAlgorithmResponse(rowMatchEntry, algoId)
       const canReuseExistingCandidates = !forceReload &&
         offset === 0 &&
         !_retired &&
@@ -3593,7 +3606,7 @@ const MapProject = () => {
         const nextAlgo = getNextAlgoDef(algoId)
         if(nextAlgo?.id && (offset === 0 || nextAlgo.type !== 'ocl-scispacy')) {
           markAlgo(__row.__index, nextAlgo.id, 0)
-          fetchAllCandidatesForRow(nextAlgo.id, __row, offset, _retired, scrollToBottom, _filters, forceReload)
+          fetchAllCandidatesForRow(nextAlgo.id, __row, offset, _retired, scrollToBottom, _filters, forceReload, true)
         } else {
           // Rerank is now debounce-driven from mergeIntoRowMatchState. If
           // any cached ConceptRow still lacks a rerank_score, scheduleRerank
@@ -3613,18 +3626,34 @@ const MapProject = () => {
             return
           clearRefreshRowStageSnapshot(__row.__index)
           refreshMapperQuotaCache()
-          markAlgo(__row.__index, algoId, -2)
-          log({action: 'algo_failed', extras: logExtras}, __row.__index)
+          log({action: 'algo_failed', extras: {...logExtras, error: response.detail, status: response.status, ...(offset ? {offset} : {})}}, __row.__index)
           setAlert({message: response.detail, severity: 'error'})
-          mergeIntoRowMatchState(__row.__index, normalizeAlgorithmInvocation(null, {
-            algorithmId: algoId,
-            algorithmConfig: algoDef,
-            projectContext,
-            rowIndex: __row.__index,
-            status: 'failed',
-            error: response.detail,
-            rawResponse: response
-          }))
+          if(offset) {
+            // A failed "load more" keeps the pages already loaded. The
+            // algorithm stays done if it loaded a page; "load more" also runs
+            // algorithms that never did, and those stay failed.
+            markAlgo(__row.__index, algoId, hasSuccessfulAlgorithmResponse(rowMatchStateRef.current?.[__row.__index], algoId) ? 1 : -2)
+          } else {
+            markAlgo(__row.__index, algoId, -2)
+            mergeIntoRowMatchState(__row.__index, normalizeAlgorithmInvocation(null, {
+              algorithmId: algoId,
+              algorithmConfig: algoDef,
+              projectContext,
+              rowIndex: __row.__index,
+              status: 'failed',
+              error: response.detail,
+              rawResponse: response
+            }))
+          }
+          // One algorithm failing doesn't stop the row's others, and the
+          // panel stops loading (ocl_online#283).
+          setIsLoadingInDecisionView(false)
+          const nextAlgoAfterFailure = getNextAlgoDef(algoId)
+          if(nextAlgoAfterFailure?.id && (offset === 0 || nextAlgoAfterFailure.type !== 'ocl-scispacy')) {
+            markAlgo(__row.__index, nextAlgoAfterFailure.id, 0)
+            fetchAllCandidatesForRow(nextAlgoAfterFailure.id, __row, offset, _retired, scrollToBottom, _filters, forceReload, true)
+          } else
+            scheduleRerank(__row.__index)
           return
         }
         log({action: 'algo_finished', extras: logExtras}, __row.__index)
@@ -3672,7 +3701,7 @@ const MapProject = () => {
         const nextAlgo = getNextAlgoDef(algoId)
         if(nextAlgo?.id && (offset === 0 || nextAlgo.type !== 'ocl-scispacy')) {
           markAlgo(__row.__index, nextAlgo.id, 0)
-          fetchAllCandidatesForRow(nextAlgo.id, __row, offset, _retired, scrollToBottom, _filters, forceReload)
+          fetchAllCandidatesForRow(nextAlgo.id, __row, offset, _retired, scrollToBottom, _filters, forceReload, true)
         } else {
           clearRefreshRowStageSnapshot(__row.__index)
           refreshMapperQuotaCache()
@@ -3779,7 +3808,8 @@ const MapProject = () => {
             setIsLoadingInDecisionView(false)
             return response
           }
-          setAlert({message: t('map_project.scispacy_warming_up'), severity: 'info'})
+          // Don't cover an error an earlier algorithm for this row showed.
+          setAlert(prev => (prev?.severity === 'error' ? prev : {message: t('map_project.scispacy_warming_up'), severity: 'info'}))
           await new Promise(resolve => setTimeout(resolve, SCISPACY_WARMUP_RETRY_MS))
         } else {
           warmingUp = false
@@ -3800,7 +3830,9 @@ const MapProject = () => {
             setIsLoadingInDecisionView(false)
             return response
           }
-          setAlert(false)
+          // Clear ScispaCy's own warming-up or starting notice, but not an
+          // error another algorithm for this row showed (ocl_online#283).
+          setAlert(prev => (prev?.severity === 'error' ? prev : false))
           if(callback) callback(response, payload)
           setIsLoadingInDecisionView(false)
           return response
@@ -3905,7 +3937,9 @@ const MapProject = () => {
     if(rowStateForLookup?.concept_rows) {
       const pendingLookups = getPendingRowLookups(rowStateForLookup, inFlightLookupsRef.current)
       if(pendingLookups.length) {
-        await Promise.all(pendingLookups)
+        // Bounded, so a lookup that never settles can't stall rerank, and
+        // with it a run (ocl_online#283).
+        await waitForLookups(pendingLookups, RERANK_LOOKUP_WAIT_MS, stuckLookupsRef.current)
         // The settling lookups fired scheduleRerank via settle()/writeConceptCachePatch,
         // setting a 300ms debounce timer. Clear it — we're already inside rerank() and
         // about to run, so that timer would only queue a redundant rerankRerunNeeded.
@@ -4447,9 +4481,16 @@ const MapProject = () => {
       const body = toResolve.map(({reference}) => reference.version
         ? {url: reference.url, version: reference.version}
         : {url: reference.url})
+      // service.request rejects on any error, a 429 included, so the catch
+      // below marks these lookups failed and settles them. APIService.post
+      // answers a 429 with a promise that never settles, which left every
+      // wait on these lookups hanging (ocl_online#283).
       resolvePromise = APIService.new()
         .overrideURL('/$resolveReference/')
-        .post(body, currentToken, attrHeaders({rowIndex: logRowIndex, isRunTraffic}), resolveNamespace ? {namespace: resolveNamespace} : undefined)
+        .request('POST', body, currentToken, {
+          headers: attrHeaders({rowIndex: logRowIndex, isRunTraffic}),
+          query: resolveNamespace ? {namespace: resolveNamespace} : {},
+        })
         .then(async response => {
           const items = Array.isArray(response?.data) ? response.data : []
           await Promise.all(toResolve.map(async ({key, reference}, i) => {

@@ -17,6 +17,8 @@ import assert from 'node:assert/strict'
 
 import {
   createAlgorithmResponse,
+  hasSuccessfulAlgorithmResponse,
+  getAlgorithmStagesFromResponses,
   toStoredRowMatchState,
   serializeCandidates,
   normalizeAlgoResult,
@@ -1753,4 +1755,32 @@ test('buildLookupConceptUrl: returns null on missing input', () => {
   assert.equal(buildLookupConceptUrl('', 'BD11.Z'), null)
   assert.equal(buildLookupConceptUrl(LOOKUP_URL, undefined), null)
   assert.equal(buildLookupConceptUrl(LOOKUP_URL, ''), null)
+})
+
+// ocl_online#283 review: a failed single-row $match stores an algorithm
+// response with status 'failed'. It must not count as a result to reuse, or
+// the row never retries and shows the algorithm as done.
+const rowWith = (...responses) => ({ algorithm_responses: Object.fromEntries(responses.map((r, i) => [`ar${i}`, r])) })
+
+test('hasSuccessfulAlgorithmResponse: a successful response counts, even with no candidates', () => {
+  assert.equal(hasSuccessfulAlgorithmResponse(rowWith({ algorithm_id: 'ocl-semantic', status: 'success' }), 'ocl-semantic'), true)
+  // saved before statuses were recorded
+  assert.equal(hasSuccessfulAlgorithmResponse(rowWith({ algorithm_id: 'ocl-semantic' }), 'ocl-semantic'), true)
+})
+
+test('hasSuccessfulAlgorithmResponse: a failed response alone does not count', () => {
+  assert.equal(hasSuccessfulAlgorithmResponse(rowWith({ algorithm_id: 'ocl-semantic', status: 'failed' }), 'ocl-semantic'), false)
+  assert.equal(hasSuccessfulAlgorithmResponse(rowWith({ algorithm_id: 'ocl-semantic', status: 'failed' }, { algorithm_id: 'ocl-semantic', status: 'success' }), 'ocl-semantic'), true)
+  assert.equal(hasSuccessfulAlgorithmResponse(rowWith({ algorithm_id: 'ocl-search', status: 'success' }), 'ocl-semantic'), false)
+  assert.equal(hasSuccessfulAlgorithmResponse(undefined, 'ocl-semantic'), false)
+})
+
+test('getAlgorithmStagesFromResponses: done (1) when any response succeeded, failed (-2) when all failed', () => {
+  assert.deepEqual(getAlgorithmStagesFromResponses(rowWith(
+    { algorithm_id: 'ocl-semantic', status: 'success' },
+    { algorithm_id: 'ocl-search', status: 'failed' },
+    { algorithm_id: 'custom-1', status: 'failed' },
+    { algorithm_id: 'custom-1' },
+  )), { 'ocl-semantic': 1, 'ocl-search': -2, 'custom-1': 1 })
+  assert.deepEqual(getAlgorithmStagesFromResponses({}), {})
 })
