@@ -307,3 +307,5 @@ jobs:
           task-definition: ${{ steps.task-def.outputs.task-definition }}
           service: ${{ env.ECS_SERVICE_PRODUCTION }}
           cluster: ${{ env.ECS_CLUSTER_STAGING_PRODUCTION }}
+          wait-for-service-stability: true
+          wait-for-minutes: 15

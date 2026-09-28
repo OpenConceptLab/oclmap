@@ -52,4 +52,5 @@ echo "Adjusting nginx configuration"
 envsubst '$WEB_PORT' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf
 
 echo "Starting up the production server"
-nginx -g "daemon off;"
+# exec, so nginx runs as PID 1 and gets the container stop signal instead of a SIGKILL 30 s later
+exec nginx -g "daemon off;"
