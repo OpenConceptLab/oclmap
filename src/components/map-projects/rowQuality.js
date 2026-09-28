@@ -42,14 +42,17 @@ export const getRowQuality = ({ proposedMatch, hasDecision = false, bestCandidat
   return { source: 'candidate', score: candidateScore, bucket: getBucket(candidateScore, candidatesScore) }
 }
 
-// {rowIndex: quality or null} for the given rows.
-export const getRowQualities = ({ rowIndexes = [], mapSelected = {}, decisions = {}, bestCandidateScores = {} }, candidatesScore) => {
+// {rowIndex: quality or null} for the given rows. getBestCandidateScore is
+// only asked for rows with no proposed match and no decision.
+export const getRowQualities = ({ rowIndexes = [], mapSelected = {}, decisions = {}, getBestCandidateScore = () => undefined }, candidatesScore) => {
   const qualities = {}
   rowIndexes.forEach(index => {
+    const proposedMatch = mapSelected[index]
+    const hasDecision = Boolean(decisions[index])
     qualities[index] = getRowQuality({
-      proposedMatch: mapSelected[index],
-      hasDecision: Boolean(decisions[index]),
-      bestCandidateScore: bestCandidateScores[index],
+      proposedMatch,
+      hasDecision,
+      bestCandidateScore: (proposedMatch || hasDecision) ? undefined : getBestCandidateScore(index),
     }, candidatesScore)
   })
   return qualities
@@ -64,11 +67,58 @@ export const countQualityBuckets = qualities => {
 }
 
 // The rows in a bucket, sorted by score (no score sorts as 0). No bucket, or
-// a bucket with no rows, leaves the rows as they are.
+// a bucket with no rows anywhere in the project (qualities covers every row),
+// leaves the rows as they are.
 export const filterRowsByQualityBucket = (rows, qualities, bucket, sortBy) => {
   if(!bucket) return rows
-  const inBucket = rows.filter(row => qualities[row.__index]?.bucket === bucket)
-  if(!inBucket.length) return rows
+  if(!Object.values(qualities).some(quality => quality?.bucket === bucket)) return rows
   const scoreOf = row => qualities[row.__index].score || 0
-  return inBucket.sort((a, b) => sortBy === 'asc' ? scoreOf(a) - scoreOf(b) : scoreOf(b) - scoreOf(a))
+  return rows
+    .filter(row => qualities[row.__index]?.bucket === bucket)
+    .sort((a, b) => sortBy === 'asc' ? scoreOf(a) - scoreOf(b) : scoreOf(b) - scoreOf(a))
+}
+
+/**
+ * Caches each row's best candidate score across renders. A row is recomputed
+ * only when its state object, a concept definition its concept rows use, or
+ * the target repo changes; rows state and the concept cache are replaced,
+ * never mutated, so identity checks are enough.
+ *
+ * @param {function} computeScore rowIndex => score (e.g. from pickTopRowView)
+ * @returns {{getter: function}} getter({rows, concepts, targetKey}) returns
+ *   rowIndex => score for one render
+ */
+export const createBestCandidateScoreCache = computeScore => {
+  let byRow = new Map()
+  let current = { rows: null, concepts: null, targetKey: null }
+  let checked = new Set()
+  return {
+    getter: ({ rows, concepts, targetKey }) => {
+      if(current.targetKey !== targetKey)
+        byRow = new Map()
+      if(current.rows !== rows || current.concepts !== concepts || current.targetKey !== targetKey) {
+        current = { rows, concepts, targetKey }
+        checked = new Set()
+      }
+      return index => {
+        if(checked.has(index))
+          return byRow.get(index)?.score
+        checked.add(index)
+        const rowState = rows?.[index]
+        if(!rowState) {
+          byRow.delete(index)
+          return undefined
+        }
+        const conceptKeys = Object.keys(rowState.concept_rows || {})
+        const entry = byRow.get(index)
+        const unchanged = entry && entry.rowState === rowState && entry.defs.length === conceptKeys.length &&
+          conceptKeys.every((key, i) => entry.defs[i] === concepts?.[key])
+        if(unchanged)
+          return entry.score
+        const score = computeScore(index)
+        byRow.set(index, { rowState, defs: conceptKeys.map(key => concepts?.[key]), score })
+        return score
+      }
+    },
+  }
 }

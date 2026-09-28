@@ -13,7 +13,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { getRowQuality, getRowQualities, countQualityBuckets, filterRowsByQualityBucket } from '../rowQuality.js'
+import { getRowQuality, getRowQualities, countQualityBuckets, filterRowsByQualityBucket, createBestCandidateScoreCache } from '../rowQuality.js'
 
 const candidatesScore = { recommended: 80, available: 50 }
 const proposed = score => ({ search_meta: { search_normalized_score: score } })
@@ -49,7 +49,7 @@ const run = {
   rowIndexes: [0, 1, 2, 3, 4],
   mapSelected: {},
   decisions: {},
-  bestCandidateScores: { 0: 71, 1: 64.2, 2: 55, 3: 31, 4: 12 },
+  getBestCandidateScore: index => ({ 0: 71, 1: 64.2, 2: 55, 3: 31, 4: 12 })[index],
 }
 
 test('countQualityBuckets: a candidates-only run no longer shows 0 everywhere', () => {
@@ -62,7 +62,7 @@ test('countQualityBuckets: proposed matches and candidate-only rows are counted 
     rowIndexes: [0, 1, 2, 3, 4, 5],
     mapSelected: { 0: proposed(92), 1: proposed(40) },
     decisions: { 0: 'map', 1: 'map', 2: 'rejected' },
-    bestCandidateScores: { 0: 92, 1: 88, 2: 85, 3: 81, 4: 45 },
+    getBestCandidateScore: index => ({ 0: 92, 1: 88, 2: 85, 3: 81, 4: 45 })[index],
   }, candidatesScore)
   // 0 proposed 92 → recommended; 1 proposed 40 → low (its own score, not the
   // better candidate); 2 rejected → unranked; 3 best 81 → recommended;
@@ -82,13 +82,74 @@ test('filterRowsByQualityBucket: keeps the bucket\'s rows, sorted by score', () 
 
 test('filterRowsByQualityBucket: a proposed match with no score sorts as 0 in Low Ranked', () => {
   const rows = [0, 1].map(__index => ({ __index }))
-  const qualities = getRowQualities({ rowIndexes: [0, 1], mapSelected: { 0: {} }, decisions: { 0: 'map' }, bestCandidateScores: { 1: 30 } }, candidatesScore)
+  const qualities = getRowQualities({ rowIndexes: [0, 1], mapSelected: { 0: {} }, decisions: { 0: 'map' }, getBestCandidateScore: index => ({ 1: 30 })[index] }, candidatesScore)
   assert.deepEqual(filterRowsByQualityBucket(rows, qualities, 'low_ranked', 'asc').map(r => r.__index), [0, 1])
 })
 
-test('filterRowsByQualityBucket: no bucket, or a bucket with no rows, leaves the rows as they are', () => {
+test('getRowQualities: only asks for a best candidate where it is used', () => {
+  const asked = []
+  getRowQualities({
+    rowIndexes: [0, 1, 2],
+    mapSelected: { 0: proposed(90) },
+    decisions: { 0: 'map', 1: 'rejected' },
+    getBestCandidateScore: index => { asked.push(index); return 70 },
+  }, candidatesScore)
+  assert.deepEqual(asked, [2])
+})
+
+test('filterRowsByQualityBucket: no bucket, or a bucket with no rows in the whole project, leaves the rows as they are', () => {
   const rows = run.rowIndexes.map(__index => ({ __index }))
   const qualities = getRowQualities(run, candidatesScore)
   assert.equal(filterRowsByQualityBucket(rows, qualities, false, 'desc'), rows)
   assert.equal(filterRowsByQualityBucket(rows, qualities, 'recommended', 'desc'), rows)
+})
+
+test('filterRowsByQualityBucket: combined with a search or status filter, a bucket with no rows among them shows none', () => {
+  const qualities = getRowQualities(run, candidatesScore)
+  // the search left only row 3 (Low Ranked); the user picks Available
+  assert.deepEqual(filterRowsByQualityBucket([{ __index: 3 }], qualities, 'available', 'desc'), [])
+})
+
+test('createBestCandidateScoreCache: recomputes only the rows whose candidates or concepts changed', () => {
+  const computed = []
+  const cache = createBestCandidateScoreCache(index => { computed.push(index); return 50 + index })
+  const concepts = { a: { key: 'a' }, b: { key: 'b' }, c: { key: 'c' } }
+  const rows = { 0: { concept_rows: { a: {} } }, 1: { concept_rows: { b: {} } }, 2: { concept_rows: { c: {} } } }
+
+  let get = cache.getter({ rows, concepts, targetKey: 't' })
+  assert.deepEqual([0, 1, 2].map(get), [50, 51, 52])
+  assert.deepEqual(computed, [0, 1, 2])
+
+  // nothing changed: nothing recomputed, even across renders
+  computed.length = 0
+  get = cache.getter({ rows, concepts, targetKey: 't' })
+  ;[0, 1, 2].forEach(get)
+  assert.deepEqual(computed, [])
+
+  // one row's candidates changed (a rerank replaced its state)
+  const rows2 = { ...rows, 1: { concept_rows: { b: { rerank_score: 80 } } } }
+  get = cache.getter({ rows: rows2, concepts, targetKey: 't' })
+  ;[0, 1, 2].forEach(get)
+  assert.deepEqual(computed, [1])
+
+  // a lookup filled in concept c, used only by row 2
+  computed.length = 0
+  const concepts2 = { ...concepts, c: { key: 'c', display_name: 'C' } }
+  get = cache.getter({ rows: rows2, concepts: concepts2, targetKey: 't' })
+  ;[0, 1, 2].forEach(get)
+  assert.deepEqual(computed, [2])
+
+  // the target repo changed: every row again
+  computed.length = 0
+  get = cache.getter({ rows: rows2, concepts: concepts2, targetKey: 'u' })
+  ;[0, 1, 2].forEach(get)
+  assert.deepEqual(computed, [0, 1, 2])
+})
+
+test('createBestCandidateScoreCache: a row with no candidates has no score and is not computed', () => {
+  const computed = []
+  const cache = createBestCandidateScoreCache(index => { computed.push(index); return 1 })
+  const get = cache.getter({ rows: {}, concepts: {}, targetKey: 't' })
+  assert.equal(get(7), undefined)
+  assert.deepEqual(computed, [])
 })

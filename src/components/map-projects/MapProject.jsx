@@ -102,7 +102,7 @@ import ImportToCollection from './ImportToCollection'
 import ProjectLogs from './ProjectLogs';
 import { useAlgos, ensureConceptIdentity } from './algorithms'
 import { applyRequestSettings, getRequestSettings, hasFullRequestLimits } from './requestLimits'
-import { countQualityBuckets, filterRowsByQualityBucket, getRowQualities } from './rowQuality'
+import { countQualityBuckets, createBestCandidateScoreCache, filterRowsByQualityBucket, getRowQualities } from './rowQuality'
 import AutoMatchDialog from './AutoMatchDialog'
 import PreviewLimitDialog from './PreviewLimitDialog'
 import QuotaDialog from '../common/QuotaDialog'
@@ -976,7 +976,7 @@ const MapProject = () => {
   const getRowScoreDetails = index => getScoreDetails({search_meta: mapSelected[index]?.search_meta}, candidatesScore)
   const getRowMatchQualityLabel = index => {
     const qualityBucket = getRowScoreDetails(index).qualityBucket
-    return qualityBucket ? startCase(qualityBucket) : t('map_project.unranked')
+    return qualityBucket ? t('map_project.' + qualityBucket) : t('map_project.unranked')
   }
 
   const getRowAIIndicatorMeta = (index, targetConcept) => {
@@ -1129,7 +1129,7 @@ const MapProject = () => {
       valueGetter: (_, row) => {
         const quality = rowQualities[row.__index]
         if(quality?.source === 'candidate')
-          return startCase(quality.bucket)
+          return t('map_project.' + quality.bucket)
         return mapSelected[row.__index] ? getRowMatchQualityLabel(row.__index) : ''
       },
       renderCell: params => {
@@ -1140,7 +1140,7 @@ const MapProject = () => {
             <Tooltip title={t('map_project.best_candidate_quality')}>
               <Chip
                 size='small'
-                label={startCase(quality.bucket)}
+                label={t('map_project.' + quality.bucket)}
                 sx={{borderColor: SCORES_COLOR[quality.bucket], color: TEXT_GRAY}}
                 variant='outlined'
               />
@@ -1951,25 +1951,18 @@ const MapProject = () => {
   }
 
   // Each row's best target-repo candidate score, for the grid's match quality
-  // (ocl_issues#2837). Recomputed only when the candidates, the concept cache
-  // or the target repo change; each of those is replaced, never mutated.
-  const bestCandidateScoresRef = React.useRef({rows: null, concepts: null, targetKey: null, scores: {}})
-  const getBestCandidateScores = () => {
-    const rows = rowMatchStateRef.current
-    const concepts = conceptCacheRef.current
+  // (ocl_issues#2837). A row is recomputed only when its candidates, a concept
+  // they use, or the target repo changes.
+  const bestCandidateScoreCacheRef = React.useRef(null)
+  if(!bestCandidateScoreCacheRef.current)
+    bestCandidateScoreCacheRef.current = createBestCandidateScoreCache(index => pickTopRowView(index)?.conceptRow?.rerank_score)
+  const getBestCandidateScoreGetter = () => {
     const targetRepo = buildProjectContext()?.target_repo
-    const targetKey = `${targetRepo?.canonical_url || ''}|${targetRepo?.relative_url || ''}`
-    const cached = bestCandidateScoresRef.current
-    if(cached.rows === rows && cached.concepts === concepts && cached.targetKey === targetKey)
-      return cached.scores
-    const scores = {}
-    forEach(keys(rows || {}), index => {
-      const score = pickTopRowView(index)?.conceptRow?.rerank_score
-      if(isNumber(score))
-        scores[index] = score
+    return bestCandidateScoreCacheRef.current.getter({
+      rows: rowMatchStateRef.current,
+      concepts: conceptCacheRef.current,
+      targetKey: `${targetRepo?.canonical_url || ''}|${targetRepo?.relative_url || ''}`,
     })
-    bestCandidateScoresRef.current = {rows, concepts, targetKey, scores}
-    return scores
   }
 
   const setStateViews = (data, _repo) => {
@@ -2736,7 +2729,7 @@ const MapProject = () => {
     rowIndexes: data?.length ? map(data, '__index') : [],
     mapSelected,
     decisions,
-    bestCandidateScores: getBestCandidateScores(),
+    getBestCandidateScore: getBestCandidateScoreGetter(),
   }, candidatesScore)
   const { recommended: recommendedCount, available: availableCount, low_ranked: lowRankedCount } = countQualityBuckets(rowQualities)
 
