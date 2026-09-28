@@ -77,15 +77,35 @@ const hashString = text => {
   return (hash >>> 0).toString(16).padStart(8, '0')
 }
 
+// JSON with object keys sorted, so the same content always gives the same text.
+const stableStringify = value => {
+  if(Array.isArray(value))
+    return `[${value.map(stableStringify).join(',')}]`
+  if(value && typeof value === 'object')
+    return `{${Object.keys(value).sort().filter(key => value[key] !== undefined).map(key => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(',')}}`
+  return JSON.stringify(value) ?? 'null'
+}
+
 // A fingerprint of the candidate pool an AI analysis saw (ocl_online#258):
-// each recommendable concept with the algorithms that surfaced it. Scores are
-// left out; they move between runs while the pool stays the same.
+// each recommendable concept as sent to the AI (names, properties and so on,
+// so a concept a later lookup filled in counts as changed), with the evidence
+// of which algorithms surfaced it and through which bridge. Scores and search
+// highlights are left out; they move between runs while the pool stays the same.
 export const getCandidatePoolFingerprint = recommendableConcepts => {
   if(!Array.isArray(recommendableConcepts))
     return null
   const parts = recommendableConcepts.map(concept => {
-    const algorithmIds = [...new Set((concept?.evidence || []).map(e => e?.algorithm_id))].sort()
-    return `${concept?.concept_key}:${algorithmIds.join(',')}`
+    const content = {}
+    Object.keys(concept || {}).forEach(key => {
+      if(key !== 'rerank_score' && key !== 'evidence')
+        content[key] = concept[key]
+    })
+    const evidenceParts = [...new Set((concept?.evidence || []).map(e => stableStringify({
+      algorithm_id: e?.algorithm_id,
+      candidate_type: e?.candidate_type,
+      via: e?.via,
+    })))].sort()
+    return stableStringify({ ...content, evidence: evidenceParts })
   }).sort()
   return `${parts.length}-${hashString(parts.join('\n'))}`
 }

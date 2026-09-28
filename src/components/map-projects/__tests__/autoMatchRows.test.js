@@ -177,6 +177,31 @@ test('getCandidatePoolFingerprint: a new concept, a dropped one, or another algo
   assert.notEqual(getCandidatePoolFingerprint(pool(['loinc|2336-6', 'ocl-search', 'ocl-scispacy-loinc'])), before)
 })
 
+test('getCandidatePoolFingerprint: another bridge, or another map type through it, changes it', () => {
+  const viaBridge = (bridgeKey, mapType) => [{
+    concept_key: 'loinc|2336-6', display_name: 'Globulin',
+    evidence: [{ algorithm_id: 'ocl-bridge', candidate_type: 'bridge_child', score: 1, via: { bridge_concept_key: bridgeKey, bridge_map_type: mapType } }],
+  }]
+  const before = getCandidatePoolFingerprint(viaBridge('ciel|1', 'SAME-AS'))
+  assert.notEqual(getCandidatePoolFingerprint(viaBridge('ciel|2', 'SAME-AS')), before)
+  assert.notEqual(getCandidatePoolFingerprint(viaBridge('ciel|1', 'NARROWER-THAN')), before)
+  assert.equal(getCandidatePoolFingerprint(viaBridge('ciel|1', 'SAME-AS')), before)
+})
+
+test('getCandidatePoolFingerprint: a concept a later lookup filled in changes it', () => {
+  // a failed lookup leaves the concept with its name only; a later run's
+  // lookup adds its names and properties, which the AI then sees
+  const sparse = [{ concept_key: 'loinc|2336-6', display_name: 'Globulin', evidence: [{ algorithm_id: 'ocl-scispacy-loinc' }] }]
+  const full = [{ ...sparse[0], names: [{ name: 'Globulin [Mass/volume] in Serum', locale: 'en' }], property: { SYSTEM: 'Ser', COMPONENT: 'Globulin' } }]
+  assert.notEqual(getCandidatePoolFingerprint(full), getCandidatePoolFingerprint(sparse))
+})
+
+test('getCandidatePoolFingerprint: scores, highlights and key order are left out', () => {
+  const a = [{ concept_key: 'k', display_name: 'X', rerank_score: 91, property: { A: 1, B: 2 }, evidence: [{ algorithm_id: 'ocl-search', score: 7, highlights: { name: ['<em>X</em>'] } }] }]
+  const b = [{ property: { B: 2, A: 1 }, evidence: [{ highlights: { name: ['X'] }, score: 3, algorithm_id: 'ocl-search' }], rerank_score: 40, display_name: 'X', concept_key: 'k' }]
+  assert.equal(getCandidatePoolFingerprint(a), getCandidatePoolFingerprint(b))
+})
+
 test('getCandidatePoolFingerprint: no pool has no fingerprint', () => {
   assert.equal(getCandidatePoolFingerprint(undefined), null)
   assert.equal(getCandidatePoolFingerprint(null), null)
