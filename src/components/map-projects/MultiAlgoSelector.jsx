@@ -186,7 +186,7 @@ export default function MultiAlgoSelector({
   const getRequestFieldsSettings = (sel, algo) => getRequestSettings({
     batch_size: sel.batch_size ?? algo?.batch_size,
     concurrent_requests: sel.concurrent_requests ?? algo?.concurrent_requests,
-  }, requestLimits)
+  }, fullRequestLimits)
   const getLimitHelperText = max => fullRequestLimits ? undefined : t('map_project.request_limit_up_to', {max})
   const getBatchSizeProps = (sel, algo) => ({
     value: getRequestFieldsSettings(sel, algo).batchSize,
@@ -314,8 +314,8 @@ export default function MultiAlgoSelector({
       ...omit(algo, ['getIcon', 'disabled', 'description', 'url']),
       id: id,
       name: name,
-      batch_size: getRequestSettings(algo, requestLimits).batchSize,
-      concurrent_requests: getRequestSettings(algo, requestLimits).concurrentRequests,
+      batch_size: getRequestSettings(algo, fullRequestLimits).batchSize,
+      concurrent_requests: getRequestSettings(algo, fullRequestLimits).concurrentRequests,
       __key: Math.random(100).toString()
     };
 

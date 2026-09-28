@@ -101,7 +101,7 @@ import Concept from './Concept'
 import ImportToCollection from './ImportToCollection'
 import ProjectLogs from './ProjectLogs';
 import { useAlgos, ensureConceptIdentity } from './algorithms'
-import { getRequestLimits, getRequestSettings, hasFullRequestLimits } from './requestLimits'
+import { applyRequestSettings, getRequestSettings, hasFullRequestLimits } from './requestLimits'
 import AutoMatchDialog from './AutoMatchDialog'
 import PreviewLimitDialog from './PreviewLimitDialog'
 import QuotaDialog from '../common/QuotaDialog'
@@ -578,7 +578,6 @@ const MapProject = () => {
   const isCoreUser = hasAuthGroup(user, 'core_user')
   // Batch size and concurrent requests per algorithm (ocl_online#274)
   const fullRequestLimits = hasFullRequestLimits(user)
-  const requestLimits = getRequestLimits(fullRequestLimits)
   const mapperPreview = getMapperPreview()
   // Only staff choose the AI model and prompt template (canSelectAIModel gates
   // both pickers). Core, early-access and unlimited-AI users keep the output
@@ -2082,7 +2081,7 @@ const MapProject = () => {
     // Function to handle concurrency
     const processWithConcurrency = async (_repo, algo, _rows) => {
       // A project's saved settings run within this user's limits.
-      const { batchSize, concurrentRequests } = getRequestSettings(algo, requestLimits)
+      const { batchSize, concurrentRequests } = getRequestSettings(algo, fullRequestLimits)
       const CHUNK_SIZE = batchSize // Number of rows per batch
       const MAX_CONCURRENT_REQUESTS = concurrentRequests; // Number of parallel API requests allowed
       const rowChunks = chunk(_rows, CHUNK_SIZE);
@@ -2171,7 +2170,12 @@ const MapProject = () => {
           await Promise.race(activeRequests);
       }
     };
-    let _selectedAlgos = filter(algosSelected, algo => selectedAlgos.includes(algo.id))
+    // Capped users' algorithms carry the settings they run with, so the
+    // AutomatchRun's config snapshot records what ran (ocl_online#274).
+    let _selectedAlgos = map(
+      filter(algosSelected, algo => selectedAlgos.includes(algo.id)),
+      algo => applyRequestSettings(algo, fullRequestLimits)
+    )
     let subActions = [...map(_selectedAlgos, algo => algo.name || algo.id)]
     subActions.push('reranker')
     if(isAutoMatchUnmappedOnly)
