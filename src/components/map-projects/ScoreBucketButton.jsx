@@ -5,6 +5,7 @@ import SortIcon from '@mui/icons-material/SwapVertRounded';
 import ButtonGroup from '@mui/material/ButtonGroup'
 import Button from '@mui/material/Button'
 import Badge from '@mui/material/Badge'
+import Tooltip from '@mui/material/Tooltip'
 import { SCORES_COLOR } from './constants'
 import { useTranslation } from 'react-i18next';
 
@@ -27,6 +28,7 @@ const BucketButton = ({id, selected, onClick, count}) => {
 }
 
 const ScoreBucketButton = ({onClick, onSort, sortBy, selected, recommended, available, low_ranked}) => {
+  const { t } = useTranslation();
   const getSortIcon = () => {
     if(sortBy === 'desc')
       return <DownIcon fontSize='inherit' />
@@ -36,7 +38,10 @@ const ScoreBucketButton = ({onClick, onSort, sortBy, selected, recommended, avai
   }
   const disabled = !recommended && !available && !low_ranked
   const selectedCount = selected === 'recommended' ? recommended : (selected === 'available' ? available : low_ranked)
+  // The counts rank rows by their proposed match or, before a match is
+  // proposed, by their best candidate (ocl_issues#2837).
   return (
+    <Tooltip title={t('map_project.match_quality_counts_help')}>
     <ButtonGroup size='small' variant='text' sx={{marginRight: '8px', marginLeft: '12px'}}>
       <BucketButton id='recommended' selected={selected} count={recommended} onClick={onClick} />
       <BucketButton id='available' selected={selected} count={available} onClick={onClick} />
@@ -46,6 +51,7 @@ const ScoreBucketButton = ({onClick, onSort, sortBy, selected, recommended, avai
           <Button onClick={onSort}>{getSortIcon()}</Button>
       }
     </ButtonGroup>
+    </Tooltip>
   )
 }
 

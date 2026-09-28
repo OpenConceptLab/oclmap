@@ -413,6 +413,8 @@
     "recommended": "Recomendado",
     "state": "Estado",
     "unranked": "Sin Clasificar",
+    "match_quality_counts_help": "Filas según la puntuación de su coincidencia propuesta o, si aún no hay ninguna propuesta, de su mejor candidato.",
+    "best_candidate_quality": "Mejor candidato. Aún no hay ninguna coincidencia propuesta.",
     "low_ranked": "De baja clasificación",
     "field_configuration": "Configuración de Campo",
     "field_configuration_description": "Asocie campos en los datos de entrada con campos que los algoritmos de coincidencia puedan entender. Asigne campos de entrada que contengan códigos de concepto o mapeos a repositorios específicos. Aprenda más",
