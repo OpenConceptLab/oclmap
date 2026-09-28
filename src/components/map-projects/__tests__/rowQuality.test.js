@@ -112,44 +112,55 @@ test('filterRowsByQualityBucket: combined with a search or status filter, a buck
 
 test('createBestCandidateScoreCache: recomputes only the rows whose candidates or concepts changed', () => {
   const computed = []
-  const cache = createBestCandidateScoreCache(index => { computed.push(index); return 50 + index })
+  const computeScore = index => { computed.push(index); return 50 + index }
+  const cache = createBestCandidateScoreCache()
   const concepts = { a: { key: 'a' }, b: { key: 'b' }, c: { key: 'c' } }
   const rows = { 0: { concept_rows: { a: {} } }, 1: { concept_rows: { b: {} } }, 2: { concept_rows: { c: {} } } }
 
-  let get = cache.getter({ rows, concepts, targetKey: 't' })
+  let get = cache.getter({ rows, concepts, targetKey: 't', computeScore })
   assert.deepEqual([0, 1, 2].map(get), [50, 51, 52])
   assert.deepEqual(computed, [0, 1, 2])
 
   // nothing changed: nothing recomputed, even across renders
   computed.length = 0
-  get = cache.getter({ rows, concepts, targetKey: 't' })
+  get = cache.getter({ rows, concepts, targetKey: 't', computeScore })
   ;[0, 1, 2].forEach(get)
   assert.deepEqual(computed, [])
 
   // one row's candidates changed (a rerank replaced its state)
   const rows2 = { ...rows, 1: { concept_rows: { b: { rerank_score: 80 } } } }
-  get = cache.getter({ rows: rows2, concepts, targetKey: 't' })
+  get = cache.getter({ rows: rows2, concepts, targetKey: 't', computeScore })
   ;[0, 1, 2].forEach(get)
   assert.deepEqual(computed, [1])
 
   // a lookup filled in concept c, used only by row 2
   computed.length = 0
   const concepts2 = { ...concepts, c: { key: 'c', display_name: 'C' } }
-  get = cache.getter({ rows: rows2, concepts: concepts2, targetKey: 't' })
+  get = cache.getter({ rows: rows2, concepts: concepts2, targetKey: 't', computeScore })
   ;[0, 1, 2].forEach(get)
   assert.deepEqual(computed, [2])
 
   // the target repo changed: every row again
   computed.length = 0
-  get = cache.getter({ rows: rows2, concepts: concepts2, targetKey: 'u' })
+  get = cache.getter({ rows: rows2, concepts: concepts2, targetKey: 'u', computeScore })
   ;[0, 1, 2].forEach(get)
   assert.deepEqual(computed, [0, 1, 2])
 })
 
 test('createBestCandidateScoreCache: a row with no candidates has no score and is not computed', () => {
   const computed = []
-  const cache = createBestCandidateScoreCache(index => { computed.push(index); return 1 })
-  const get = cache.getter({ rows: {}, concepts: {}, targetKey: 't' })
+  const cache = createBestCandidateScoreCache()
+  const get = cache.getter({ rows: {}, concepts: {}, targetKey: 't', computeScore: index => { computed.push(index); return 1 } })
   assert.equal(get(7), undefined)
   assert.deepEqual(computed, [])
+})
+
+test('createBestCandidateScoreCache: uses each render\'s own computeScore, not the first one it saw', () => {
+  // MapProject's first render has no target repo yet, so its pickTopRowView
+  // scores nothing; a later render's must be the one used.
+  const cache = createBestCandidateScoreCache()
+  const rows = { 0: { concept_rows: { a: {} } } }
+  const concepts = { a: { key: 'a' } }
+  assert.equal(cache.getter({ rows, concepts, targetKey: '|', computeScore: () => undefined })(0), undefined)
+  assert.equal(cache.getter({ rows, concepts, targetKey: 'loinc|/orgs/Regenstrief/sources/LOINC/', computeScore: () => 72 })(0), 72)
 })

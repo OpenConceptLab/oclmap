@@ -84,16 +84,17 @@ export const filterRowsByQualityBucket = (rows, qualities, bucket, sortBy) => {
  * the target repo changes; rows state and the concept cache are replaced,
  * never mutated, so identity checks are enough.
  *
- * @param {function} computeScore rowIndex => score (e.g. from pickTopRowView)
- * @returns {{getter: function}} getter({rows, concepts, targetKey}) returns
- *   rowIndex => score for one render
+ * @returns {{getter: function}} getter({rows, concepts, targetKey, computeScore})
+ *   returns rowIndex => score for one render. computeScore (rowIndex => score,
+ *   e.g. from pickTopRowView) is the render's own, so it sees that render's
+ *   project context.
  */
-export const createBestCandidateScoreCache = computeScore => {
+export const createBestCandidateScoreCache = () => {
   let byRow = new Map()
   let current = { rows: null, concepts: null, targetKey: null }
   let checked = new Set()
   return {
-    getter: ({ rows, concepts, targetKey }) => {
+    getter: ({ rows, concepts, targetKey, computeScore }) => {
       if(current.targetKey !== targetKey)
         byRow = new Map()
       if(current.rows !== rows || current.concepts !== concepts || current.targetKey !== targetKey) {

@@ -1955,13 +1955,15 @@ const MapProject = () => {
   // they use, or the target repo changes.
   const bestCandidateScoreCacheRef = React.useRef(null)
   if(!bestCandidateScoreCacheRef.current)
-    bestCandidateScoreCacheRef.current = createBestCandidateScoreCache(index => pickTopRowView(index)?.conceptRow?.rerank_score)
+    bestCandidateScoreCacheRef.current = createBestCandidateScoreCache()
   const getBestCandidateScoreGetter = () => {
     const targetRepo = buildProjectContext()?.target_repo
     return bestCandidateScoreCacheRef.current.getter({
       rows: rowMatchStateRef.current,
       concepts: conceptCacheRef.current,
       targetKey: `${targetRepo?.canonical_url || ''}|${targetRepo?.relative_url || ''}`,
+      // this render's pickTopRowView, which sees this render's target repo
+      computeScore: index => pickTopRowView(index)?.conceptRow?.rerank_score,
     })
   }
 
