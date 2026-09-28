@@ -436,6 +436,7 @@
     "match_api_token_placeholder": "e.g. XXXXXXXXXXX",
     "batch_size": "Batch Size",
     "concurrent_requests": "Concurrent Requests",
+    "request_limit_up_to": "Up to {{max}}",
     "api_url": "API URL",
     "api_token": "API Token",
     "lookup_required": "Lookup Required",

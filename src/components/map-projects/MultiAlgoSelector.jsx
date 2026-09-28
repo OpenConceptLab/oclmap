@@ -37,6 +37,7 @@ import { OperationsContext } from '../app/LayoutContext'
 import { isLikelyCanonicalUrl } from './algorithms'
 import RepoVersionSearchAutocomplete from '../repos/RepoVersionSearchAutocomplete'
 import APIService from '../../services/APIService';
+import { getRequestLimits, getRequestSettings } from './requestLimits'
 import { dropVersion } from '../../common/utils'
 import {
   getDefaultBridgeRepoVersion,
@@ -109,9 +110,13 @@ export default function MultiAlgoSelector({
   onChange,
   maxAlgos=5,
   repo,
-  isCoreUser
+  isCoreUser,
+  fullRequestLimits=false,
 }) {
   const { t } = useTranslation()
+  // Non-core users get at most 10 rows per batch and 5 concurrent requests
+  // (ocl_online#274).
+  const requestLimits = getRequestLimits(fullRequestLimits)
   const { setAlert } = React.useContext(OperationsContext)
   const [expanded, setExpanded] = useState(() => new Map());
   const [errors, setErrors] = React.useState({})
@@ -175,6 +180,26 @@ export default function MultiAlgoSelector({
   }, [algos, selectedIds, selectedTypes]);
 
   const canAddMore = addableOptions.length > 0 && value.length < maxAlgos;
+
+  // A saved value over the limit shows as the limit, which is what Auto Match
+  // runs with. Only capped users see the limit as helper text.
+  const getRequestFieldsSettings = (sel, algo) => getRequestSettings({
+    batch_size: sel.batch_size ?? algo?.batch_size,
+    concurrent_requests: sel.concurrent_requests ?? algo?.concurrent_requests,
+  }, requestLimits)
+  const getLimitHelperText = max => fullRequestLimits ? undefined : t('map_project.request_limit_up_to', {max})
+  const getBatchSizeProps = (sel, algo) => ({
+    value: getRequestFieldsSettings(sel, algo).batchSize,
+    onChange: e => updateSelected(sel.__key, { batch_size: clampInt(e.target.value, 1, requestLimits.batchSize) }),
+    helperText: getLimitHelperText(requestLimits.batchSize),
+    slotProps: {htmlInput: {min: 1, max: requestLimits.batchSize}},
+  })
+  const getConcurrentRequestsProps = (sel, algo) => ({
+    value: getRequestFieldsSettings(sel, algo).concurrentRequests,
+    onChange: e => updateSelected(sel.__key, { concurrent_requests: clampInt(e.target.value, 1, requestLimits.concurrentRequests) }),
+    helperText: getLimitHelperText(requestLimits.concurrentRequests),
+    slotProps: {htmlInput: {min: 1, max: requestLimits.concurrentRequests}},
+  })
 
   const updateSelected = (key, patch) => {
     const next = normalizedValue.map(v => (v.__key === key ? { ...v, ...patch } : v));
@@ -289,8 +314,8 @@ export default function MultiAlgoSelector({
       ...omit(algo, ['getIcon', 'disabled', 'description', 'url']),
       id: id,
       name: name,
-      batch_size: algo.batch_size ?? 10,
-      concurrent_requests: algo.concurrent_requests ?? 1,
+      batch_size: getRequestSettings(algo, requestLimits).batchSize,
+      concurrent_requests: getRequestSettings(algo, requestLimits).concurrentRequests,
       __key: Math.random(100).toString()
     };
 
@@ -581,12 +606,12 @@ export default function MultiAlgoSelector({
                               label={t('map_project.batch_size')}
                               sx={{width: '50%'}}
                               type="number"
-                              value={sel.batch_size ?? algo.batch_size ?? 10}
-                              onChange={(e) =>
-                                updateSelected(sel.__key, { batch_size: clampInt(e.target.value, 1, 1000) })
-                              }
-                              InputProps={{
-                                endAdornment: <InputAdornment position="end">{t('map_project.rows')}</InputAdornment>,
+                              {...getBatchSizeProps(sel, algo)}
+                              slotProps={{
+                                input: {
+                                  endAdornment: <InputAdornment position="end">{t('map_project.rows')}</InputAdornment>,
+                                },
+                                htmlInput: {min: 1, max: requestLimits.batchSize},
                               }}
                             />
 
@@ -594,12 +619,7 @@ export default function MultiAlgoSelector({
                               label={t('map_project.concurrent_requests')}
                               sx={{width: '50%'}}
                               type="number"
-                              value={sel.concurrent_requests ?? algo.concurrent_requests ?? 1}
-                              onChange={(e) =>
-                                updateSelected(sel.__key, {
-                                  concurrent_requests: clampInt(e.target.value, 1, 50),
-                                })
-                              }
+                              {...getConcurrentRequestsProps(sel, algo)}
                             />
                           </Stack>
 
@@ -689,19 +709,13 @@ export default function MultiAlgoSelector({
                             label={t('map_project.batch_size')}
                             sx={{width: '50%'}}
                             type="number"
-                            value={sel.batch_size ?? algo.batch_size ?? 10}
-                            onChange={(e) => updateSelected(sel.__key, { batch_size: clampInt(e.target.value, 1, 1000) })}
+                            {...getBatchSizeProps(sel, algo)}
                           />
                           <TextField
                             label={t('map_project.concurrent_requests')}
                             sx={{width: '50%'}}
                             type="number"
-                            value={sel.concurrent_requests ?? algo.concurrent_requests ?? 1}
-                            onChange={(e) =>
-                              updateSelected(sel.__key, {
-                                concurrent_requests: clampInt(e.target.value, 1, 50),
-                              })
-                            }
+                            {...getConcurrentRequestsProps(sel, algo)}
                           />
                         </Stack>
                       </Stack>
@@ -720,19 +734,13 @@ export default function MultiAlgoSelector({
                           label={t('map_project.batch_size')}
                           sx={{width: '50%'}}
                           type="number"
-                          value={sel.batch_size ?? algo.batch_size ?? 10}
-                          onChange={(e) => updateSelected(sel.__key, { batch_size: clampInt(e.target.value, 1, 1000) })}
+                          {...getBatchSizeProps(sel, algo)}
                         />
                         <TextField
                           label={t('map_project.concurrent_requests')}
                           sx={{width: '50%'}}
                           type="number"
-                          value={sel.concurrent_requests ?? algo.concurrent_requests ?? 1}
-                          onChange={(e) =>
-                            updateSelected(sel.__key, {
-                              concurrent_requests: clampInt(e.target.value, 1, 50),
-                            })
-                          }
+                          {...getConcurrentRequestsProps(sel, algo)}
                         />
                       </Stack>
                     )}

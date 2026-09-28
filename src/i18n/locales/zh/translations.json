@@ -661,6 +661,7 @@
     "algorithm": "算法",
     "column_send_to_ai_assistant": "发送给 AI 助手",
     "concurrent_requests": "并发请求",
+    "request_limit_up_to": "最多 {{max}}",
     "api_url": "API URL",
     "api_token": "API 令牌",
     "lookup_required": "需要查找",
