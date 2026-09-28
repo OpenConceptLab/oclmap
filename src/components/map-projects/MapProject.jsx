@@ -220,6 +220,11 @@ const MapProject = () => {
     promptTemplateRequestGateRef.current = createLatestRequestGate()
 
   const abortRef = React.useRef(false);
+  // Numbers Auto Match runs. abortRef is reset when a run starts, so a batch
+  // still waiting to retry from a cancelled run checks its ticket instead.
+  const autoMatchRunGateRef = React.useRef(null)
+  if(!autoMatchRunGateRef.current)
+    autoMatchRunGateRef.current = createLatestRequestGate()
   // ai_assistant.calls is a one-time allowance (no reset, R2) - once exhausted it
   // stays exhausted for the rest of the session, so this is never reset per-run.
   const aiQuotaExhaustedRef = React.useRef(false);
@@ -2012,6 +2017,8 @@ const MapProject = () => {
     // Rows whose $match batch still failed after the retries, per algorithm id,
     // reported at the end of the run so the user knows which rows to re-run.
     const failedMatchRows = {}
+    const runTicket = autoMatchRunGateRef.current.next()
+    const isCurrentRun = () => autoMatchRunGateRef.current.isCurrent(runTicket)
 
     // Function to process a single batch
     const processBatch = async (_repo, rowBatch, algo) => {
@@ -2061,7 +2068,11 @@ const MapProject = () => {
             }
           }
         ),
-        setStage: (index, stage) => markAlgo(index, algo.id, stage),
+        // A batch that outlives its run must not touch the next run's stages.
+        setStage: (index, stage) => {
+          if(isCurrentRun())
+            markAlgo(index, algo.id, stage)
+        },
         onRowFinished: index => log({action: 'algo_finished', extras: logExtras}, index),
         onRowFailed: (index, {error, status, attempts, previewLimit}) => {
           log({action: 'algo_failed', extras: {...logExtras, error, status, attempts}}, index)
@@ -2071,9 +2082,11 @@ const MapProject = () => {
         // Sets matchQuotaStopRef, which stops the rest of the $match requests
         // but lets the run finish with what it has.
         onPreviewLimit: err => handlePreviewLimitError(err),
-        // A batch waiting to retry stops on a cancel, or once another batch
-        // has hit the match quota.
-        shouldStop: () => Boolean(abortRef.current || (matchQuotaStopRef.current && spendsMatchQuota(algo, {canBridge}))),
+        // A batch waiting to retry stops on a cancel, once another batch has
+        // hit the match quota, or once a newer run has started.
+        shouldStop: () => Boolean(
+          !isCurrentRun() || abortRef.current || (matchQuotaStopRef.current && spendsMatchQuota(algo, {canBridge}))
+        ),
       })
     };
 

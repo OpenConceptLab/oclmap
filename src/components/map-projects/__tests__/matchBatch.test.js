@@ -13,6 +13,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import { formatRowNumbers, isRetryableMatchError, runMatchBatch } from '../matchBatch.js'
+import { createLatestRequestGate } from '../aiVisibility.js'
 
 const NO_WAIT = {baseDelayMs: 0}
 
@@ -178,6 +179,37 @@ test('runMatchBatch: a preview-limit 403 on one batch stops another batch that i
   assert.deepEqual(rec.stages[1], [0, -1])
   // batch B hit the limit: failed, flagged as a preview limit
   assert.deepEqual(rec.failed.map(f => [f.index, f.previewLimit]), [[2, true], [3, true]])
+})
+
+test('runMatchBatch: a batch from a cancelled run that wakes after a new run starts sends nothing and writes no stage', async () => {
+  // Mirrors processBatch's wiring: the run's gate ticket guards every stage
+  // write, and shouldStop checks it before abortRef, which a new run resets.
+  const gate = createLatestRequestGate()
+  const abortRef = {current: false}
+  const ticket = gate.next()
+  const isCurrentRun = () => gate.isCurrent(ticket)
+  const rec = recorder()
+  let calls = 0
+  const send = async () => {
+    calls += 1
+    setTimeout(() => {
+      abortRef.current = true   // the user stops the run...
+      gate.next()               // ...and starts a new one,
+      abortRef.current = false  // which resets abortRef
+    }, 5)
+    throw networkError()
+  }
+
+  await runMatchBatch({
+    rowIndexes: [0], send, ...rec,
+    setStage: (index, stage) => { if(isCurrentRun()) rec.setStage(index, stage) },
+    shouldStop: () => !isCurrentRun() || abortRef.current,
+    retryOptions: {baseDelayMs: 40, jitterFactor: 0},
+  })
+
+  assert.equal(calls, 1)
+  assert.deepEqual(rec.stages, {0: [0]})
+  assert.deepEqual(rec.failed, [])
 })
 
 test('runMatchBatch: a 2xx with no body resolves to no results, not a failure', async () => {
