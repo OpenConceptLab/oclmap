@@ -129,3 +129,18 @@ export const getPendingRowLookups = (rowState, inFlightLookups) =>
   Object.keys(rowState?.concept_rows || {})
     .filter(key => inFlightLookups.has(key))
     .map(key => inFlightLookups.get(key))
+
+// How long a bulk run's AI step waits for a row's lookups before going ahead.
+export const AI_LOOKUP_WAIT_MS = 15000
+
+// Resolves true once every lookup settles, or false after ms, whichever comes
+// first. A lookup can stay pending for good (APIService.post answers a 429 with
+// a promise that never settles), and a run must not wait on it forever.
+export const waitForLookups = (lookups, ms) => {
+  if(!lookups?.length)
+    return Promise.resolve(true)
+  let timer
+  const timeout = new Promise(resolve => { timer = setTimeout(() => resolve(false), ms) })
+  const settled = Promise.all(lookups.map(lookup => Promise.resolve(lookup).catch(() => null))).then(() => true)
+  return Promise.race([settled, timeout]).finally(() => clearTimeout(timer))
+}

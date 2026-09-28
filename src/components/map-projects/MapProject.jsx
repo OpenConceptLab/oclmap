@@ -87,7 +87,7 @@ import MapProjectDeleteConfirmDialog from './MapProjectDeleteConfirmDialog';
 import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
 import DataGridControls from './DataGridControls'
-import { getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups } from './autoMatchRows'
+import { getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, AI_LOOKUP_WAIT_MS } from './autoMatchRows'
 import { createAutosaveScheduler, saveOnLeave, trackSave, whenSaved, installUnloadGuard } from './autosave'
 import MatchSummaryCard from './MatchSummaryCard'
 import MappingDecisionResult from './MappingDecisionResult'
@@ -5057,12 +5057,10 @@ const MapProject = () => {
     const existingAnalyses = analysis[__index] || []
     // After a rerank quota stop, a bulk run reaches this row without rerank
     // having waited for its lookups; wait here so the AI, and the pool
-    // fingerprint, see the looked-up concepts.
-    if(isBulk && isNumber(__index)) {
-      const pendingLookups = getPendingRowLookups(rowMatchStateRef.current[__index], inFlightLookupsRef.current)
-      if(pendingLookups.length)
-        await Promise.all(pendingLookups)
-    }
+    // fingerprint, see the looked-up concepts. The wait is bounded: a lookup
+    // can stay pending for good, and the run then goes ahead without it.
+    if(isBulk && isNumber(__index))
+      await waitForLookups(getPendingRowLookups(rowMatchStateRef.current[__index], inFlightLookupsRef.current), AI_LOOKUP_WAIT_MS)
     const v2 = isNumber(__index) ? buildV2RecommendationPayload(__index) : null
     const candidatePoolFingerprint = getCandidatePoolFingerprint(v2?.recommendable_concepts)
     const alreadyAnalyzed = isAutoMatch && hasCurrentAnalysis(existingAnalyses, candidatePoolFingerprint)

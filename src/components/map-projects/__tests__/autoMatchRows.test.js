@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 
 import {
   getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep,
-  getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups
+  getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups
 } from '../autoMatchRows.js'
 
 const rows = [
@@ -249,4 +249,21 @@ test('getPendingRowLookups: the in-flight lookups for the row\'s own concepts on
   assert.deepEqual(getPendingRowLookups(rowState, inFlight), [a])
   assert.deepEqual(getPendingRowLookups({ concept_rows: {} }, inFlight), [])
   assert.deepEqual(getPendingRowLookups(undefined, inFlight), [])
+})
+
+// Codex pass 2: a lookup can stay pending for good (APIService.post answers a
+// 429 with a promise that never settles), so the AI step's wait is bounded.
+test('waitForLookups: resolves true once every lookup settles', async () => {
+  assert.equal(await waitForLookups([Promise.resolve(1), Promise.resolve(2)], 1000), true)
+  assert.equal(await waitForLookups([], 1000), true)
+})
+
+test('waitForLookups: gives up after the timeout when a lookup never settles', async () => {
+  const started = Date.now()
+  assert.equal(await waitForLookups([new Promise(() => {})], 30), false)
+  assert.ok(Date.now() - started < 1000)
+})
+
+test('waitForLookups: a rejected lookup counts as settled', async () => {
+  assert.equal(await waitForLookups([Promise.reject(new Error('x'))], 1000), true)
 })
