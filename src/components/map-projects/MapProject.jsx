@@ -548,6 +548,9 @@ const MapProject = () => {
   // dedupes concurrent calls for the same key by awaiting the existing
   // Promise instead of issuing a duplicate fetch.
   const inFlightLookupsRef = React.useRef(new Map())
+  // Lookups a bulk AI step gave up waiting for (they may never settle), so
+  // later rows don't wait on them again (ocl_online#258).
+  const stuckLookupsRef = React.useRef(new WeakSet())
 
   // URL-level fetch dedup for ensureLoaded. Keyed by ocl_url. Stores
   // Promise<data|null>: in-flight entries deduplicate concurrent requests for
@@ -5058,9 +5061,14 @@ const MapProject = () => {
     // After a rerank quota stop, a bulk run reaches this row without rerank
     // having waited for its lookups; wait here so the AI, and the pool
     // fingerprint, see the looked-up concepts. The wait is bounded: a lookup
-    // can stay pending for good, and the run then goes ahead without it.
-    if(isBulk && isNumber(__index))
-      await waitForLookups(getPendingRowLookups(rowMatchStateRef.current[__index], inFlightLookupsRef.current), AI_LOOKUP_WAIT_MS)
+    // can stay pending for good, and the run then goes ahead without it, and
+    // doesn't wait on that lookup again for later rows.
+    if(isBulk && isNumber(__index)) {
+      await waitForLookups(getPendingRowLookups(rowMatchStateRef.current[__index], inFlightLookupsRef.current), AI_LOOKUP_WAIT_MS, stuckLookupsRef.current)
+      // The user may have pressed Stop while this row waited.
+      if(abortRef.current)
+        return false
+    }
     const v2 = isNumber(__index) ? buildV2RecommendationPayload(__index) : null
     const candidatePoolFingerprint = getCandidatePoolFingerprint(v2?.recommendable_concepts)
     const alreadyAnalyzed = isAutoMatch && hasCurrentAnalysis(existingAnalyses, candidatePoolFingerprint)

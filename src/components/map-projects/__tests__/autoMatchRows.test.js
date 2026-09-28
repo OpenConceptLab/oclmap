@@ -267,3 +267,17 @@ test('waitForLookups: gives up after the timeout when a lookup never settles', a
 test('waitForLookups: a rejected lookup counts as settled', async () => {
   assert.equal(await waitForLookups([Promise.reject(new Error('x'))], 1000), true)
 })
+
+// Codex pass 3: a lookup that timed out once is not waited on again, so rows
+// sharing a stuck lookup don't each wait the full timeout.
+test('waitForLookups: a lookup that timed out is not waited on again', async () => {
+  const stuck = new WeakSet()
+  const never = new Promise(() => {})
+  const done = Promise.resolve()
+  assert.equal(await waitForLookups([never, done], 30, stuck), false)
+  assert.equal(stuck.has(never), true)
+  assert.equal(stuck.has(done), false)
+  const started = Date.now()
+  assert.equal(await waitForLookups([never], 5000, stuck), true)
+  assert.ok(Date.now() - started < 1000)
+})

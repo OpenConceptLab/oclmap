@@ -135,12 +135,23 @@ export const AI_LOOKUP_WAIT_MS = 15000
 
 // Resolves true once every lookup settles, or false after ms, whichever comes
 // first. A lookup can stay pending for good (APIService.post answers a 429 with
-// a promise that never settles), and a run must not wait on it forever.
-export const waitForLookups = (lookups, ms) => {
-  if(!lookups?.length)
+// a promise that never settles), and a run must not wait on it forever. Pass a
+// WeakSet as stuck to remember lookups that timed out, so later rows sharing
+// them don't each wait the full timeout again.
+export const waitForLookups = (lookups, ms, stuck) => {
+  const waiting = (lookups || []).filter(lookup => !stuck?.has(lookup))
+  if(!waiting.length)
     return Promise.resolve(true)
+  const pending = new Set(waiting)
   let timer
-  const timeout = new Promise(resolve => { timer = setTimeout(() => resolve(false), ms) })
-  const settled = Promise.all(lookups.map(lookup => Promise.resolve(lookup).catch(() => null))).then(() => true)
+  const timeout = new Promise(resolve => {
+    timer = setTimeout(() => {
+      pending.forEach(lookup => stuck?.add(lookup))
+      resolve(false)
+    }, ms)
+  })
+  const settled = Promise.all(waiting.map(lookup =>
+    Promise.resolve(lookup).catch(() => null).finally(() => pending.delete(lookup))
+  )).then(() => true)
   return Promise.race([settled, timeout]).finally(() => clearTimeout(timer))
 }
