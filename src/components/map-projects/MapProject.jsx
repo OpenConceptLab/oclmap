@@ -106,7 +106,8 @@ import PreviewLimitDialog from './PreviewLimitDialog'
 import QuotaDialog from '../common/QuotaDialog'
 import { getQuotaError } from '../common/quotaErrors'
 import MapperQuotaChip from './MapperQuotaChip'
-import { getPreviewLimitError, isAIPreviewLimitError, isPreviewLimitError } from './previewLimits'
+import { getPreviewLimitError, isAIPreviewLimitError } from './previewLimits'
+import { formatRowNumbers, runMatchBatch } from './matchBatch'
 import { getAIAssistantChoices, getModelUsed, getPromptTemplateKey, createLatestRequestGate } from './aiVisibility'
 import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
 import { normalizeAlgorithmInvocation, lookupStatusRank, buildRecommendableConceptEntry, stripConstantClassAndDatatype, buildLookupConceptUrl, serializeCandidates, toStoredRowMatchState } from './normalizers'
@@ -219,6 +220,11 @@ const MapProject = () => {
     promptTemplateRequestGateRef.current = createLatestRequestGate()
 
   const abortRef = React.useRef(false);
+  // Numbers Auto Match runs. abortRef is reset when a run starts, so a batch
+  // still waiting to retry from a cancelled run checks its ticket instead.
+  const autoMatchRunGateRef = React.useRef(null)
+  if(!autoMatchRunGateRef.current)
+    autoMatchRunGateRef.current = createLatestRequestGate()
   // ai_assistant.calls is a one-time allowance (no reset, R2) - once exhausted it
   // stays exhausted for the rest of the session, so this is never reset per-run.
   const aiQuotaExhaustedRef = React.useRef(false);
@@ -2008,6 +2014,11 @@ const MapProject = () => {
       algorithm_count: selectedAlgos.length,
       run_ai_analysis: Boolean(inAIAssistantGroup && autoRunAIAnalysis)
     })
+    // Rows whose $match batch still failed after the retries, per algorithm id,
+    // reported at the end of the run so the user knows which rows to re-run.
+    const failedMatchRows = {}
+    const runTicket = autoMatchRunGateRef.current.next()
+    const isCurrentRun = () => autoMatchRunGateRef.current.isCurrent(runTicket)
 
     // Function to process a single batch
     const processBatch = async (_repo, rowBatch, algo) => {
@@ -2036,43 +2047,47 @@ const MapProject = () => {
         ...(encoderModel ? { encoder_model: encoderModel } : {})
       }
 
-      forEach(rowBatch, __row => markAlgo(__row.__index, algo.id, 0))
-
-      try {
-        const service = getMatchAPIService(algo)
-        const response = await service.post(
+      const service = getMatchAPIService(algo)
+      const rowIndexes = map(rowBatch, '__index')
+      const logExtras = getAlgoLogExtras(algo)
+      // service.request rejects on a network error or a non-2xx; service.post
+      // would resolve, and the failed batch would pass as a success with no
+      // candidates (ocl_online#257). runMatchBatch retries transient failures.
+      return runMatchBatch({
+        rowIndexes,
+        send: attempt => service.request(
+          'POST',
           payload,
           (algo.type === 'custom' && algo.url && algo.token) ? algo.token : null,
-          attrHeaders({rowIndices: map(rowBatch, '__index'), batchSize: rowBatch.length, algorithmId: algo.id, isRunTraffic: true}),
           {
-            includeSearchMeta: true,
-            ...(algo.query_params || {}),
-            ...extraParams
+            headers: attrHeaders({rowIndices: rowIndexes, batchSize: rowBatch.length, algorithmId: algo.id, clientAttemptN: attempt + 1, isRunTraffic: true}),
+            query: {
+              includeSearchMeta: true,
+              ...(algo.query_params || {}),
+              ...extraParams
+            }
           }
-        );
-        // service.post() resolves (not throws) on a 403, so check explicitly.
-        // handlePreviewLimitError sets matchQuotaStopRef, which stops the rest
-        // of the $match requests but lets the run finish with what it has.
-        if(isPreviewLimitError(response)) {
-          forEach(rowBatch, __row => {
-            markAlgo(__row.__index, algo.id, -2)
-            log({action: 'algo_failed', extras: getAlgoLogExtras(algo)}, __row.__index)
-          })
-          handlePreviewLimitError(response)
-          return [];
-        }
-        forEach(rowBatch, __row => {
-          markAlgo(__row.__index, algo.id, 1)
-          log({action: 'algo_finished', extras: getAlgoLogExtras(algo)}, __row.__index)
-        })
-        return response.data || [];
-      } catch {
-        forEach(rowBatch, __row => {
-          markAlgo(__row.__index, algo.id, -2)
-          log({action: 'algo_failed', extras: getAlgoLogExtras(algo)}, __row.__index)
-        })
-        return [];
-      }
+        ),
+        // A batch that outlives its run must not touch the next run's stages.
+        setStage: (index, stage) => {
+          if(isCurrentRun())
+            markAlgo(index, algo.id, stage)
+        },
+        onRowFinished: index => log({action: 'algo_finished', extras: logExtras}, index),
+        onRowFailed: (index, {error, status, attempts, previewLimit}) => {
+          log({action: 'algo_failed', extras: {...logExtras, error, status, attempts}}, index)
+          if(!previewLimit)
+            failedMatchRows[algo.id] = [...(failedMatchRows[algo.id] || []), index]
+        },
+        // Sets matchQuotaStopRef, which stops the rest of the $match requests
+        // but lets the run finish with what it has.
+        onPreviewLimit: err => handlePreviewLimitError(err),
+        // A batch waiting to retry stops on a cancel, once another batch has
+        // hit the match quota, or once a newer run has started.
+        shouldStop: () => Boolean(
+          !isCurrentRun() || abortRef.current || (matchQuotaStopRef.current && spendsMatchQuota(algo, {canBridge}))
+        ),
+      })
     };
 
     // Function to handle concurrency
@@ -2268,6 +2283,26 @@ const MapProject = () => {
           setIsLoadingInDecisionView(false)
           setLoadingMatches(false)
           setEndMatchingAt(moment())
+        }
+        const failedAlgoIds = keys(failedMatchRows)
+        if(!abortRef.current && failedAlgoIds.length) {
+          const rowsByAlgo = {}
+          failedAlgoIds.forEach(algoId => { rowsByAlgo[algoId] = uniq(failedMatchRows[algoId]).sort((a, b) => a - b) })
+          const getAlgoLabel = algoId => {
+            const name = find(_selectedAlgos, {id: algoId})?.name
+            return isString(name) && name ? name : algoId
+          }
+          projectLog({action: 'auto_match_rows_failed', extras: {row_indexes_by_algorithm: rowsByAlgo}})
+          setAlert({
+            severity: 'warning',
+            message: t('map_project.auto_match_rows_failed', {
+              count: uniq(flatten(values(rowsByAlgo))).length,
+              details: failedAlgoIds.map(algoId => t('map_project.auto_match_rows_failed_algorithm', {
+                algorithm: getAlgoLabel(algoId),
+                rows: formatRowNumbers(rowsByAlgo[algoId]),
+              })).join('; '),
+            }),
+          })
         }
         if(!abortRef.current && matchQuotaStopRef.current)
           projectLog({action: 'auto_match_stopped_for_quota', extras: {reason: matchQuotaStopRef.current}})

@@ -548,6 +548,8 @@
     "auto_match_all_including_approved_confirm": "Entiendo que se sobrescribirán {{approvedCount}} decisiones aprobadas",
     "auto_match_selected_rows_note": "Nota: Esto ejecutará Auto Match para {{count}} fila(s) seleccionada(s)",
     "auto_match_selected_rows_note_no_count": "Nota: Seleccione filas en el panel izquierdo para habilitar esta opción",
+    "auto_match_rows_failed": "La coincidencia falló en {{count}} fila(s) de entrada, así que les faltan candidatos: {{details}}. Las filas se cuentan desde la primera fila de datos de tu archivo. Vuelve a ejecutar Auto Match en esas filas para reintentarlo.",
+    "auto_match_rows_failed_algorithm": "{{algorithm}} en la(s) fila(s) {{rows}}",
     "run_ai_analysis": "Ejecutar Análisis de IA",
     "run_ai_analysis_note": "Nota: Habilitar esta función ejecutará Análisis de IA en los resultados de cada fila. Esto tiene implicaciones de costo directas.",
     "decision": "Decisión",
