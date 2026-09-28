@@ -66,3 +66,7 @@ export const shouldStopAIStep = ({ quotaExhausted = false, failuresInARow = 0 } 
 // The same key for every retry of one AI request: the AI Assistant charges a
 // key once, and serves a call that already succeeded again for free.
 export const getAIRequestIdempotencyKey = (projectId, rowIndex, requestedAt) => `${projectId}-${rowIndex}-${requestedAt}`
+
+// The ScispaCy service keys each row's results by the itemid sent, which is
+// the row's index, not its position in the run (ocl_online#258).
+export const getScispacyRowResults = (responseData, rowIndex) => responseData?.[rowIndex] || []

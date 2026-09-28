@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 
 import {
   getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep,
-  getAIRequestIdempotencyKey
+  getAIRequestIdempotencyKey, getScispacyRowResults
 } from '../autoMatchRows.js'
 
 const rows = [
@@ -156,4 +156,16 @@ test('getAIRequestIdempotencyKey: one key per project, row and request, whatever
   assert.equal(getAIRequestIdempotencyKey('p1', 3, 1700000000000), 'p1-3-1700000000000')
   assert.notEqual(getAIRequestIdempotencyKey('p1', 3, 1700000000000), getAIRequestIdempotencyKey('p1', 4, 1700000000000))
   assert.notEqual(getAIRequestIdempotencyKey('p1', 3, 1700000000000), getAIRequestIdempotencyKey('p1', 3, 1700000009999))
+})
+
+// ocl_online#258: the bulk ScispaCy path read each row's results by its
+// position in the run instead of its row index, so a Selected Rows re-run
+// (rows 61–70 at positions 0–9) got no ScispaCy candidates.
+test('getScispacyRowResults: reads the row\'s own results, keyed by its row index', () => {
+  const data = { 60: [{ code: 'A' }], 61: [{ code: 'B' }] }
+  assert.deepEqual(getScispacyRowResults(data, 60), [{ code: 'A' }])
+  assert.deepEqual(getScispacyRowResults(data, 61), [{ code: 'B' }])
+  assert.deepEqual(getScispacyRowResults(data, 0), [])
+  assert.deepEqual(getScispacyRowResults({ '7': [{ code: 'C' }] }, 7), [{ code: 'C' }])
+  assert.deepEqual(getScispacyRowResults(undefined, 7), [])
 })

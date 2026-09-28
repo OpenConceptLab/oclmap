@@ -87,7 +87,7 @@ import MapProjectDeleteConfirmDialog from './MapProjectDeleteConfirmDialog';
 import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
 import DataGridControls from './DataGridControls'
-import { getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep, getAIRequestIdempotencyKey } from './autoMatchRows'
+import { getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep, getAIRequestIdempotencyKey, getScispacyRowResults } from './autoMatchRows'
 import { createAutosaveScheduler, saveOnLeave, trackSave, whenSaved, installUnloadGuard } from './autosave'
 import MatchSummaryCard from './MatchSummaryCard'
 import MappingDecisionResult from './MappingDecisionResult'
@@ -2430,7 +2430,7 @@ const MapProject = () => {
       setLoadingMatches(true)
       await fetchScispacyCandidates(_rows[index], false, false, true, (response => {
         const _index = _rows[index].__index
-        const results = [{row: _rows[index], results: fromScispacyResultsToConcepts(get(response.data, index) || [])}]
+        const results = [{row: _rows[index], results: fromScispacyResultsToConcepts(getScispacyRowResults(response.data, _index))}]
         log({action: 'algo_finished', extras: getAlgoLogExtras(algo)}, _index)
         markAlgo(_index, algo.id, 1)
         // Mirror the bulk-bridge wiring — the per-row scispacy path goes via
@@ -3629,7 +3629,7 @@ const MapProject = () => {
         log({action: 'algo_finished', extras: logExtras}, __row.__index)
         let data = isArray(response) ? response : (response?.data || [])
         if(offset === 0) {
-          const results = algoId === 'ocl-scispacy-loinc' ? [{row: __row, results: fromScispacyResultsToConcepts(get(response.data, __row.__index) || [])}] : data
+          const results = algoId === 'ocl-scispacy-loinc' ? [{row: __row, results: fromScispacyResultsToConcepts(getScispacyRowResults(response.data, __row.__index))}] : data
           // Normalize the invocation for this row and merge into rowMatchState.
           const rowPayload = find(results, r => r?.row?.__index === __row.__index)
           if(rowPayload) {
