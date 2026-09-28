@@ -638,6 +638,7 @@
     "algorithm": "Algoritmo",
     "column_send_to_ai_assistant": "Enviar a Asistente de IA",
     "concurrent_requests": "Solicitudes concurrentes",
+    "request_limit_up_to": "Hasta {{max}}",
     "api_url": "URL de la API",
     "api_token": "Token de API",
     "lookup_required": "Búsqueda requerida",
