@@ -67,6 +67,37 @@ export const shouldStopAIStep = ({ quotaExhausted = false, failuresInARow = 0 } 
 // key once, and serves a call that already succeeded again for free.
 export const getAIRequestIdempotencyKey = (projectId, rowIndex, requestedAt) => `${projectId}-${rowIndex}-${requestedAt}`
 
+// FNV-1a, 32-bit: short and stable, for comparing candidate pools only.
+const hashString = text => {
+  let hash = 0x811c9dc5
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0')
+}
+
+// A fingerprint of the candidate pool an AI analysis saw (ocl_online#258):
+// each recommendable concept with the algorithms that surfaced it. Scores are
+// left out; they move between runs while the pool stays the same.
+export const getCandidatePoolFingerprint = recommendableConcepts => {
+  if(!Array.isArray(recommendableConcepts))
+    return null
+  const parts = recommendableConcepts.map(concept => {
+    const algorithmIds = [...new Set((concept?.evidence || []).map(e => e?.algorithm_id))].sort()
+    return `${concept?.concept_key}:${algorithmIds.join(',')}`
+  }).sort()
+  return `${parts.length}-${hashString(parts.join('\n'))}`
+}
+
+// Whether a row's latest AI analysis saw this same candidate pool, so an Auto
+// Match run can skip its AI step. An analysis saved before fingerprints
+// existed can't be compared, so it's redone.
+export const hasCurrentAnalysis = (analyses, fingerprint) => {
+  const latest = Array.isArray(analyses) && analyses.length ? analyses[analyses.length - 1] : null
+  return Boolean(fingerprint && latest?.candidate_pool_fingerprint === fingerprint)
+}
+
 // The ScispaCy service keys each row's results by the itemid sent, which is
 // the row's index, not its position in the run (ocl_online#258).
 export const getScispacyRowResults = (responseData, rowIndex) => responseData?.[rowIndex] || []

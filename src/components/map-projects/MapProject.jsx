@@ -87,7 +87,7 @@ import MapProjectDeleteConfirmDialog from './MapProjectDeleteConfirmDialog';
 import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
 import DataGridControls from './DataGridControls'
-import { getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep, getAIRequestIdempotencyKey, getScispacyRowResults } from './autoMatchRows'
+import { getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults } from './autoMatchRows'
 import { createAutosaveScheduler, saveOnLeave, trackSave, whenSaved, installUnloadGuard } from './autosave'
 import MatchSummaryCard from './MatchSummaryCard'
 import MappingDecisionResult from './MappingDecisionResult'
@@ -5051,13 +5051,15 @@ const MapProject = () => {
       console.error('AI ASSISTANT is not enabled for you.')
       return false
     }
-    // Auto-match (caller supplied resolvedPromptTemplate) fires once per row;
-    // user-initiated single-row clicks always append a new entry to the
-    // per-row analysis history.
+    // Auto Match (caller supplied resolvedPromptTemplate) skips a row whose
+    // latest analysis saw this same candidate pool; a re-run whose candidates
+    // changed analyses the row again (ocl_online#258). User-initiated
+    // single-row clicks always append a new entry to the analysis history.
     const isAutoMatch = Boolean(resolvedPromptTemplate)
     const existingAnalyses = analysis[__index] || []
-    const alreadyAnalyzed = isAutoMatch && existingAnalyses.length > 0
     const v2 = isNumber(__index) ? buildV2RecommendationPayload(__index) : null
+    const candidatePoolFingerprint = getCandidatePoolFingerprint(v2?.recommendable_concepts)
+    const alreadyAnalyzed = isAutoMatch && hasCurrentAnalysis(existingAnalyses, candidatePoolFingerprint)
     if(isNumber(__index) && repoVersion && !alreadyAnalyzed && (v2?.recommendable_concepts?.length || 0) > 0) {
       if(!isBulk)
         GAService.recordActionEvent('MapProject', 'ai_assistant_run', undefined, { mode: 'single' })
@@ -5172,7 +5174,7 @@ const MapProject = () => {
           version: resolvedVersion,
           uri: resolvedVersion && promptTemplateRef?.key ? `/prompts/${promptTemplateRef.key}/${resolvedVersion}/` : (promptTemplateRef?.uri || null)
         }
-        const newEntry = {...response.data, model: modelUsed, model_name: modelUsedRef?.name, prompt_template: resolvedPromptRef, prompt_template_uri: resolvedPromptRef.uri, output_locale: promptOutputLocale || null, timestamp: timestamp, user: user.username || user.id}
+        const newEntry = {...response.data, model: modelUsed, model_name: modelUsedRef?.name, prompt_template: resolvedPromptRef, prompt_template_uri: resolvedPromptRef.uri, output_locale: promptOutputLocale || null, candidate_pool_fingerprint: candidatePoolFingerprint, timestamp: timestamp, user: user.username || user.id}
         setAnalysis(prev => ({...prev, [__index]: [...(prev[__index] || []), newEntry]}))
         // Schedule a save, or leaving loses the result
         // (OpenConceptLab/ocl_issues#2833). Auto Match rows (isBulk) are saved

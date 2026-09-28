@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 
 import {
   getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep,
-  getAIRequestIdempotencyKey, getScispacyRowResults
+  getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults
 } from '../autoMatchRows.js'
 
 const rows = [
@@ -156,6 +156,50 @@ test('getAIRequestIdempotencyKey: one key per project, row and request, whatever
   assert.equal(getAIRequestIdempotencyKey('p1', 3, 1700000000000), 'p1-3-1700000000000')
   assert.notEqual(getAIRequestIdempotencyKey('p1', 3, 1700000000000), getAIRequestIdempotencyKey('p1', 4, 1700000000000))
   assert.notEqual(getAIRequestIdempotencyKey('p1', 3, 1700000000000), getAIRequestIdempotencyKey('p1', 3, 1700000009999))
+})
+
+// ocl_online#258: a bulk re-run skipped the AI for any row analysed before,
+// so a row kept the verdict from its old candidate pool.
+const pool = (...entries) => entries.map(([concept_key, ...algos]) => ({
+  concept_key, rerank_score: Math.random() * 100, evidence: algos.map(algorithm_id => ({ algorithm_id, score: Math.random() })),
+}))
+
+test('getCandidatePoolFingerprint: the same concepts from the same algorithms give the same fingerprint, in any order and at any score', () => {
+  const a = pool(['loinc|2336-6', 'ocl-semantic'], ['loinc|10834-0', 'ocl-search', 'ocl-semantic'])
+  const b = pool(['loinc|10834-0', 'ocl-semantic', 'ocl-search'], ['loinc|2336-6', 'ocl-semantic'])
+  assert.equal(getCandidatePoolFingerprint(a), getCandidatePoolFingerprint(b))
+})
+
+test('getCandidatePoolFingerprint: a new concept, a dropped one, or another algorithm backing one changes it', () => {
+  const before = getCandidatePoolFingerprint(pool(['loinc|2336-6', 'ocl-search']))
+  assert.notEqual(getCandidatePoolFingerprint(pool(['loinc|2336-6', 'ocl-search'], ['loinc|10834-0', 'ocl-semantic'])), before)
+  assert.notEqual(getCandidatePoolFingerprint(pool()), before)
+  assert.notEqual(getCandidatePoolFingerprint(pool(['loinc|2336-6', 'ocl-search', 'ocl-scispacy-loinc'])), before)
+})
+
+test('getCandidatePoolFingerprint: no pool has no fingerprint', () => {
+  assert.equal(getCandidatePoolFingerprint(undefined), null)
+  assert.equal(getCandidatePoolFingerprint(null), null)
+})
+
+test('hasCurrentAnalysis: only the latest analysis of the same pool counts', () => {
+  const fp = getCandidatePoolFingerprint(pool(['loinc|2336-6', 'ocl-search']))
+  const other = getCandidatePoolFingerprint(pool(['loinc|2336-6', 'ocl-semantic']))
+  assert.equal(hasCurrentAnalysis([{ candidate_pool_fingerprint: fp }], fp), true)
+  assert.equal(hasCurrentAnalysis([{ candidate_pool_fingerprint: other }], fp), false)
+  assert.equal(hasCurrentAnalysis([{ candidate_pool_fingerprint: fp }, { candidate_pool_fingerprint: other }], fp), false)
+})
+
+test('hasCurrentAnalysis: an analysis saved before fingerprints existed is redone', () => {
+  const fp = getCandidatePoolFingerprint(pool(['loinc|2336-6', 'ocl-search']))
+  assert.equal(hasCurrentAnalysis([{ output: { recommendation: 'RECOMMEND' } }], fp), false)
+})
+
+test('hasCurrentAnalysis: no analysis yet, or no pool to compare, is not current', () => {
+  const fp = getCandidatePoolFingerprint(pool(['loinc|2336-6', 'ocl-search']))
+  assert.equal(hasCurrentAnalysis([], fp), false)
+  assert.equal(hasCurrentAnalysis(undefined, fp), false)
+  assert.equal(hasCurrentAnalysis([{ candidate_pool_fingerprint: null }], null), false)
 })
 
 // ocl_online#258: the bulk ScispaCy path read each row's results by its
