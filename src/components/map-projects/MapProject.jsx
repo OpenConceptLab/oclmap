@@ -102,6 +102,7 @@ import ImportToCollection from './ImportToCollection'
 import ProjectLogs from './ProjectLogs';
 import { useAlgos, ensureConceptIdentity } from './algorithms'
 import { applyRequestSettings, getRequestSettings, hasFullRequestLimits } from './requestLimits'
+import { countQualityBuckets, filterRowsByQualityBucket, getRowQualities } from './rowQuality'
 import AutoMatchDialog from './AutoMatchDialog'
 import PreviewLimitDialog from './PreviewLimitDialog'
 import QuotaDialog from '../common/QuotaDialog'
@@ -1125,8 +1126,26 @@ const MapProject = () => {
       width: columnWidth['_matchQuality_'] || 160,
       align: 'left',
       headerAlign: 'left',
-      valueGetter: (_, row) => mapSelected[row.__index] ? getRowMatchQualityLabel(row.__index) : '',
+      valueGetter: (_, row) => {
+        const quality = rowQualities[row.__index]
+        if(quality?.source === 'candidate')
+          return startCase(quality.bucket)
+        return mapSelected[row.__index] ? getRowMatchQualityLabel(row.__index) : ''
+      },
       renderCell: params => {
+        // No match proposed yet: the row's best candidate, outlined.
+        const quality = rowQualities[params.row.__index]
+        if(quality?.source === 'candidate')
+          return (
+            <Tooltip title={t('map_project.best_candidate_quality')}>
+              <Chip
+                size='small'
+                label={startCase(quality.bucket)}
+                sx={{borderColor: SCORES_COLOR[quality.bucket], color: TEXT_GRAY}}
+                variant='outlined'
+              />
+            </Tooltip>
+          )
         if(!mapSelected[params.row.__index])
           return null
         const details = getRowScoreDetails(params.row.__index)
@@ -1931,6 +1950,28 @@ const MapProject = () => {
     return orderBy(eligible, [v => v.conceptRow?.rerank_score ?? -1], ['desc'])[0]
   }
 
+  // Each row's best target-repo candidate score, for the grid's match quality
+  // (ocl_issues#2837). Recomputed only when the candidates, the concept cache
+  // or the target repo change; each of those is replaced, never mutated.
+  const bestCandidateScoresRef = React.useRef({rows: null, concepts: null, targetKey: null, scores: {}})
+  const getBestCandidateScores = () => {
+    const rows = rowMatchStateRef.current
+    const concepts = conceptCacheRef.current
+    const targetRepo = buildProjectContext()?.target_repo
+    const targetKey = `${targetRepo?.canonical_url || ''}|${targetRepo?.relative_url || ''}`
+    const cached = bestCandidateScoresRef.current
+    if(cached.rows === rows && cached.concepts === concepts && cached.targetKey === targetKey)
+      return cached.scores
+    const scores = {}
+    forEach(keys(rows || {}), index => {
+      const score = pickTopRowView(index)?.conceptRow?.rerank_score
+      if(isNumber(score))
+        scores[index] = score
+    })
+    bestCandidateScoresRef.current = {rows, concepts, targetKey, scores}
+    return scores
+  }
+
   const setStateViews = (data, _repo) => {
     setRowStatuses(prev => {
       forEach(data, concept => {
@@ -2685,56 +2726,19 @@ const MapProject = () => {
       let indexes = keys(pickBy(decisions, value => (hasNone && !value) || decisionFilters.includes(value)))
       rows = filter(rows, row => indexes.includes(row.__index.toString()))
     }
-    if(selectedCandidatesScoreBucket) {
-      let minScore = 0
-      let maxScore = 100.1
-      let noScore = false
-      let rowIndexes = []
-      if(selectedCandidatesScoreBucket === 'low_ranked' ) {
-        minScore = -0.1
-        maxScore = candidatesScore.available
-        noScore = true
-      }
-      else if(selectedCandidatesScoreBucket === 'available') {
-        minScore = candidatesScore.available
-        maxScore = candidatesScore.recommended
-      }
-      else if(selectedCandidatesScoreBucket === 'recommended') {
-        minScore = candidatesScore.recommended
-      }
-      if(minScore) {
-        rowIndexes = Object.entries(mapSelected)
-          .filter(([, v]) => {
-            let score = parseFloat(v?.search_meta?.search_normalized_score || 0)
-            return isNumber(score) ? score >= minScore && score < maxScore : noScore
-          })
-          .sort((a, b) => {
-            let aScore = parseFloat(a[1].search_meta.search_normalized_score || 0)
-            let bScore = parseFloat(b[1].search_meta.search_normalized_score || 0)
-            if(noScore) {
-              aScore = aScore || 0
-              bScore = bScore || 0
-            }
-
-            return scoreBucketSortBy === 'asc' ? aScore - bScore : bScore - aScore
-          })
-          .map(([k]) => k);
-      }
-      if(rowIndexes?.length) {
-        const orderMap = Object.fromEntries(rowIndexes.map((idx, pos) => [idx, pos]));
-        rows = rows.filter(row => rowIndexes.includes(row.__index.toString()))
-        rows = rows.sort(
-          (a, b) => orderMap[a.__index] - orderMap[b.__index]
-        );
-      }
-
-    }
+    rows = filterRowsByQualityBucket(rows, rowQualities, selectedCandidatesScoreBucket, scoreBucketSortBy)
     return rows
   }
 
-  const lowRankedCount = filter(mapSelected, target => !target?.search_meta?.search_normalized_score || target?.search_meta?.search_normalized_score < candidatesScore.available)?.length
-  const availableCount = filter(mapSelected, target => target?.search_meta?.search_normalized_score >= candidatesScore.available && target?.search_meta?.search_normalized_score < candidatesScore.recommended)?.length
-  const recommendedCount = filter(mapSelected, target => target?.search_meta?.search_normalized_score >= candidatesScore.recommended)?.length
+  // Rows with a proposed match count by its score; rows with candidates and no
+  // decision yet, by their best candidate (ocl_issues#2837).
+  const rowQualities = getRowQualities({
+    rowIndexes: data?.length ? map(data, '__index') : [],
+    mapSelected,
+    decisions,
+    bestCandidateScores: getBestCandidateScores(),
+  }, candidatesScore)
+  const { recommended: recommendedCount, available: availableCount, low_ranked: lowRankedCount } = countQualityBuckets(rowQualities)
 
   const getStateFromIndex = index => {
     if(rowStatuses.reviewed.includes(index))

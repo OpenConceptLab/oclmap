@@ -449,6 +449,8 @@
     "recommended": "Recommended",
     "state": "State",
     "unranked": "Unranked",
+    "match_quality_counts_help": "Rows by the score of their proposed match or, where no match is proposed yet, of their best candidate.",
+    "best_candidate_quality": "Best candidate. No match is proposed yet.",
     "low_ranked": "Low Ranked",
     "field_configuration": "Field Configuration",
     "field_configuration_description": "Associate fields in the input data to fields that the matching algorithms are able to understand. Assign input fields that contain concept codes or mappings to specific repositories. Learn more",

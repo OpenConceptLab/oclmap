@@ -438,6 +438,8 @@
     "recommended": "推荐",
     "state": "状态",
     "unranked": "未排名",
+    "match_quality_counts_help": "按行的建议匹配得分统计；尚无建议匹配的行按其最佳候选项得分统计。",
+    "best_candidate_quality": "最佳候选项。尚未建议匹配。",
     "low_ranked": "低排名",
     "field_configuration": "字段配置",
     "field_configuration_description": "将输入数据中的字段与匹配算法能够理解的字段关联。将包含概念代码或映射的输入字段分配给特定存储库。了解更多",
