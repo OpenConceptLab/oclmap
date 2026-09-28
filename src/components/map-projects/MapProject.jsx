@@ -3629,9 +3629,10 @@ const MapProject = () => {
           log({action: 'algo_failed', extras: {...logExtras, error: response.detail, status: response.status, ...(offset ? {offset} : {})}}, __row.__index)
           setAlert({message: response.detail, severity: 'error'})
           if(offset) {
-            // A failed "load more" keeps the pages already loaded, and the
-            // algorithm stays done for the row.
-            markAlgo(__row.__index, algoId, 1)
+            // A failed "load more" keeps the pages already loaded. The
+            // algorithm stays done if it loaded a page; "load more" also runs
+            // algorithms that never did, and those stay failed.
+            markAlgo(__row.__index, algoId, hasSuccessfulAlgorithmResponse(rowMatchStateRef.current?.[__row.__index], algoId) ? 1 : -2)
           } else {
             markAlgo(__row.__index, algoId, -2)
             mergeIntoRowMatchState(__row.__index, normalizeAlgorithmInvocation(null, {
@@ -3807,7 +3808,8 @@ const MapProject = () => {
             setIsLoadingInDecisionView(false)
             return response
           }
-          setAlert({message: t('map_project.scispacy_warming_up'), severity: 'info'})
+          // Don't cover an error an earlier algorithm for this row showed.
+          setAlert(prev => (prev?.severity === 'error' ? prev : {message: t('map_project.scispacy_warming_up'), severity: 'info'}))
           await new Promise(resolve => setTimeout(resolve, SCISPACY_WARMUP_RETRY_MS))
         } else {
           warmingUp = false
