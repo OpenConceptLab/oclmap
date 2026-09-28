@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 
 import {
   getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep,
-  getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults
+  getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups
 } from '../autoMatchRows.js'
 
 const rows = [
@@ -237,4 +237,16 @@ test('getScispacyRowResults: reads the row\'s own results, keyed by its row inde
   assert.deepEqual(getScispacyRowResults(data, 0), [])
   assert.deepEqual(getScispacyRowResults({ '7': [{ code: 'C' }] }, 7), [{ code: 'C' }])
   assert.deepEqual(getScispacyRowResults(undefined, 7), [])
+})
+
+// ocl_online#258 review: after a rerank quota stop a row's AI step can come
+// before its lookups settle, so it waits for them the way rerank does.
+test('getPendingRowLookups: the in-flight lookups for the row\'s own concepts only', () => {
+  const a = Promise.resolve('a')
+  const c = Promise.resolve('c')
+  const inFlight = new Map([['k:a', a], ['k:c', c]])
+  const rowState = { concept_rows: { 'k:a': {}, 'k:b': {} } }
+  assert.deepEqual(getPendingRowLookups(rowState, inFlight), [a])
+  assert.deepEqual(getPendingRowLookups({ concept_rows: {} }, inFlight), [])
+  assert.deepEqual(getPendingRowLookups(undefined, inFlight), [])
 })

@@ -87,7 +87,7 @@ import MapProjectDeleteConfirmDialog from './MapProjectDeleteConfirmDialog';
 import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
 import DataGridControls from './DataGridControls'
-import { getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults } from './autoMatchRows'
+import { getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups } from './autoMatchRows'
 import { createAutosaveScheduler, saveOnLeave, trackSave, whenSaved, installUnloadGuard } from './autosave'
 import MatchSummaryCard from './MatchSummaryCard'
 import MappingDecisionResult from './MappingDecisionResult'
@@ -3902,9 +3902,7 @@ const MapProject = () => {
     // (processRerankWithConcurrency calls rerank() directly, bypassing scheduleRerank).
     const rowStateForLookup = rowMatchStateRef.current[index]
     if(rowStateForLookup?.concept_rows) {
-      const pendingLookups = Object.keys(rowStateForLookup.concept_rows)
-        .filter(key => inFlightLookupsRef.current.has(key))
-        .map(key => inFlightLookupsRef.current.get(key))
+      const pendingLookups = getPendingRowLookups(rowStateForLookup, inFlightLookupsRef.current)
       if(pendingLookups.length) {
         await Promise.all(pendingLookups)
         // The settling lookups fired scheduleRerank via settle()/writeConceptCachePatch,
@@ -5057,6 +5055,14 @@ const MapProject = () => {
     // single-row clicks always append a new entry to the analysis history.
     const isAutoMatch = Boolean(resolvedPromptTemplate)
     const existingAnalyses = analysis[__index] || []
+    // After a rerank quota stop, a bulk run reaches this row without rerank
+    // having waited for its lookups; wait here so the AI, and the pool
+    // fingerprint, see the looked-up concepts.
+    if(isBulk && isNumber(__index)) {
+      const pendingLookups = getPendingRowLookups(rowMatchStateRef.current[__index], inFlightLookupsRef.current)
+      if(pendingLookups.length)
+        await Promise.all(pendingLookups)
+    }
     const v2 = isNumber(__index) ? buildV2RecommendationPayload(__index) : null
     const candidatePoolFingerprint = getCandidatePoolFingerprint(v2?.recommendable_concepts)
     const alreadyAnalyzed = isAutoMatch && hasCurrentAnalysis(existingAnalyses, candidatePoolFingerprint)

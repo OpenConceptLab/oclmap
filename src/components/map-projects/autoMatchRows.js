@@ -121,3 +121,11 @@ export const hasCurrentAnalysis = (analyses, fingerprint) => {
 // The ScispaCy service keys each row's results by the itemid sent, which is
 // the row's index, not its position in the run (ocl_online#258).
 export const getScispacyRowResults = (responseData, rowIndex) => responseData?.[rowIndex] || []
+
+// The in-flight $lookups for a row's concepts. Rerank waits for them, and so
+// does a bulk run's AI step, which can reach a row whose rerank was skipped
+// (after a rerank quota stop), so the AI sees the looked-up concepts.
+export const getPendingRowLookups = (rowState, inFlightLookups) =>
+  Object.keys(rowState?.concept_rows || {})
+    .filter(key => inFlightLookups.has(key))
+    .map(key => inFlightLookups.get(key))
