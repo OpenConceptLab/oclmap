@@ -86,7 +86,7 @@ import MapProjectDeleteConfirmDialog from './MapProjectDeleteConfirmDialog';
 import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
 import DataGridControls from './DataGridControls'
-import { getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, AI_LOOKUP_WAIT_MS } from './autoMatchRows'
+import { getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, AI_LOOKUP_WAIT_MS, RERANK_LOOKUP_WAIT_MS } from './autoMatchRows'
 import { createAutosaveScheduler, saveOnLeave, trackSave, whenSaved, installUnloadGuard } from './autosave'
 import MatchSummaryCard from './MatchSummaryCard'
 import MappingDecisionResult from './MappingDecisionResult'
@@ -108,7 +108,7 @@ import QuotaDialog from '../common/QuotaDialog'
 import { getQuotaError } from '../common/quotaErrors'
 import MapperQuotaChip from './MapperQuotaChip'
 import { getPreviewLimitError, isAIPreviewLimitError } from './previewLimits'
-import { formatRowNumbers, runMatchBatch } from './matchBatch'
+import { formatRowNumbers, runMatchBatch, requestSingleMatch } from './matchBatch'
 import { getAIAssistantChoices, getModelUsed, getPromptTemplateKey, createLatestRequestGate } from './aiVisibility'
 import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
 import { normalizeAlgorithmInvocation, lookupStatusRank, buildRecommendableConceptEntry, stripConstantClassAndDatatype, buildLookupConceptUrl, serializeCandidates, toStoredRowMatchState } from './normalizers'
@@ -3530,23 +3530,36 @@ const MapProject = () => {
       return
     }
     const service = getMatchAPIService(algoDef)
-    service.post(
+    // service.request rejects on a network error or a non-2xx; service.post
+    // resolved, so a failed call showed as "no candidates" (ocl_online#283).
+    // requestSingleMatch retries it like a bulk batch; a call that still fails
+    // reaches the callback as an error body, which shows the error and marks
+    // the algorithm failed for the row.
+    requestSingleMatch(() => service.request(
+      'POST',
       payload,
       (algoDef.type === 'custom' && algoDef.url) ? algoDef.token : null,
-      null,
       {
-        includeSearchMeta: true,
-        includeRetired: isBoolean(_retired) ? _retired : retired,
-        includeMappings: true,
-        mappingBrief: true,
-        mapTypes: 'SAME-AS,SAME AS,SAME_AS',
-        verbose: true,
-        limit: algoDef.limit || CANDIDATES_LIMIT,
-        offset: offset || 0,
-        semantic: ['ocl-semantic', 'custom'].includes(algoDef.type),
-        reranker: !isMultiAlgo && algoDef.provider === 'ocl',
-        encoder_model: !isMultiAlgo && encoderModel ? encoderModel : undefined
-      }).then(response => callback(response, payload))
+        query: {
+          includeSearchMeta: true,
+          includeRetired: isBoolean(_retired) ? _retired : retired,
+          includeMappings: true,
+          mappingBrief: true,
+          mapTypes: 'SAME-AS,SAME AS,SAME_AS',
+          verbose: true,
+          limit: algoDef.limit || CANDIDATES_LIMIT,
+          offset: offset || 0,
+          semantic: ['ocl-semantic', 'custom'].includes(algoDef.type),
+          reranker: !isMultiAlgo && algoDef.provider === 'ocl',
+          encoder_model: !isMultiAlgo && encoderModel ? encoderModel : undefined
+        }
+      }
+    )).then(({ok, response, errorBody, previewLimit}) => {
+      if(ok)
+        return callback(response, payload)
+      // A preview limit keeps the server's body, which opens the limit dialog.
+      callback(previewLimit ? errorBody : {...errorBody, detail: t('map_project.match_request_failed', {error: errorBody.detail})}, payload)
+    })
   }
 
   const fetchAllCandidatesForRow = (algoId, _row, offset=0, _retired, scrollToBottom, _filters, forceReload=false) => {
@@ -3614,7 +3627,7 @@ const MapProject = () => {
           clearRefreshRowStageSnapshot(__row.__index)
           refreshMapperQuotaCache()
           markAlgo(__row.__index, algoId, -2)
-          log({action: 'algo_failed', extras: logExtras}, __row.__index)
+          log({action: 'algo_failed', extras: {...logExtras, error: response.detail, status: response.status}}, __row.__index)
           setAlert({message: response.detail, severity: 'error'})
           mergeIntoRowMatchState(__row.__index, normalizeAlgorithmInvocation(null, {
             algorithmId: algoId,
@@ -3625,6 +3638,15 @@ const MapProject = () => {
             error: response.detail,
             rawResponse: response
           }))
+          // One algorithm failing doesn't stop the row's others, and the
+          // panel stops loading (ocl_online#283).
+          setIsLoadingInDecisionView(false)
+          const nextAlgoAfterFailure = getNextAlgoDef(algoId)
+          if(nextAlgoAfterFailure?.id && (offset === 0 || nextAlgoAfterFailure.type !== 'ocl-scispacy')) {
+            markAlgo(__row.__index, nextAlgoAfterFailure.id, 0)
+            fetchAllCandidatesForRow(nextAlgoAfterFailure.id, __row, offset, _retired, scrollToBottom, _filters, forceReload)
+          } else
+            scheduleRerank(__row.__index)
           return
         }
         log({action: 'algo_finished', extras: logExtras}, __row.__index)
@@ -3905,7 +3927,9 @@ const MapProject = () => {
     if(rowStateForLookup?.concept_rows) {
       const pendingLookups = getPendingRowLookups(rowStateForLookup, inFlightLookupsRef.current)
       if(pendingLookups.length) {
-        await Promise.all(pendingLookups)
+        // Bounded, so a lookup that never settles can't stall rerank, and
+        // with it a run (ocl_online#283).
+        await waitForLookups(pendingLookups, RERANK_LOOKUP_WAIT_MS, stuckLookupsRef.current)
         // The settling lookups fired scheduleRerank via settle()/writeConceptCachePatch,
         // setting a 300ms debounce timer. Clear it — we're already inside rerank() and
         // about to run, so that timer would only queue a redundant rerankRerunNeeded.
@@ -4447,9 +4471,16 @@ const MapProject = () => {
       const body = toResolve.map(({reference}) => reference.version
         ? {url: reference.url, version: reference.version}
         : {url: reference.url})
+      // service.request rejects on any error, a 429 included, so the catch
+      // below marks these lookups failed and settles them. APIService.post
+      // answers a 429 with a promise that never settles, which left every
+      // wait on these lookups hanging (ocl_online#283).
       resolvePromise = APIService.new()
         .overrideURL('/$resolveReference/')
-        .post(body, currentToken, attrHeaders({rowIndex: logRowIndex, isRunTraffic}), resolveNamespace ? {namespace: resolveNamespace} : undefined)
+        .request('POST', body, currentToken, {
+          headers: attrHeaders({rowIndex: logRowIndex, isRunTraffic}),
+          query: resolveNamespace ? {namespace: resolveNamespace} : {},
+        })
         .then(async response => {
           const items = Array.isArray(response?.data) ? response.data : []
           await Promise.all(toResolve.map(async ({key, reference}, i) => {

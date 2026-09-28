@@ -113,3 +113,30 @@ export const formatRowNumbers = (rowIndexes, {maxRanges = 10} = {}) => {
     shown.push('…')
   return shown.join(', ')
 }
+
+/**
+ * Send one single-row $match (the row panel's match and "load more"),
+ * retrying transient failures like a bulk batch (ocl_online#283). Never
+ * rejects. After the retries it gives an errorBody for the row's existing
+ * failure path: the server's JSON when it carries a detail or an error_code
+ * (so a preview limit still opens its dialog), else {detail, status}.
+ *
+ * @param {function} send  attempt => Promise<axios response>; must reject on failure
+ * @param {object}   [opts.retryOptions] overrides MATCH_RETRY_OPTIONS
+ * @returns {Promise<{ok: true, response: object}|{ok: false, errorBody: object, previewLimit: boolean}>}
+ */
+export const requestSingleMatch = async (send, { retryOptions = {} } = {}) => {
+  try {
+    const response = await retryWithBackoff(send, {...MATCH_RETRY_OPTIONS, ...retryOptions, isRetryable: isRetryableMatchError})
+    return { ok: true, response }
+  } catch (err) {
+    const data = err?.response?.data
+    const hasServerBody = data && typeof data === 'object' && !Array.isArray(data) && (data.detail || data.error_code)
+    const { error, status } = getFailure(err, 0)
+    return {
+      ok: false,
+      errorBody: hasServerBody ? data : { detail: error, status },
+      previewLimit: isPreviewLimitError(err),
+    }
+  }
+}

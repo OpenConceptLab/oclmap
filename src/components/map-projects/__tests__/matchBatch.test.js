@@ -12,7 +12,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { formatRowNumbers, isRetryableMatchError, runMatchBatch } from '../matchBatch.js'
+import { formatRowNumbers, isRetryableMatchError, runMatchBatch, requestSingleMatch } from '../matchBatch.js'
 import { createLatestRequestGate } from '../aiVisibility.js'
 
 const NO_WAIT = {baseDelayMs: 0}
@@ -241,4 +241,48 @@ test('formatRowNumbers: 1-based, sorted, de-duplicated, runs collapsed', () => {
 
 test('formatRowNumbers: caps the number of ranges shown', () => {
   assert.equal(formatRowNumbers([0, 2, 4, 6, 8], {maxRanges: 3}), '1, 3, 5, …')
+})
+
+// ocl_online#283: the row panel's $match (and "load more") resolved a failed
+// call as an empty success, so it showed "no candidates" with no error.
+test('requestSingleMatch: a transient failure that recovers on retry returns the response', async () => {
+  let calls = 0
+  const result = await requestSingleMatch(async () => {
+    calls += 1
+    if(calls === 1) throw networkError()
+    return ok([{ row: { __index: 3 }, results: [] }])
+  }, { retryOptions: NO_WAIT })
+  assert.equal(result.ok, true)
+  assert.equal(result.response.data.length, 1)
+  assert.equal(calls, 2)
+})
+
+test('requestSingleMatch: a network error that persists gives an error body for the row\'s failure path', async () => {
+  let calls = 0
+  const result = await requestSingleMatch(async () => { calls += 1; throw networkError() }, { retryOptions: NO_WAIT })
+  assert.equal(calls, 3)
+  assert.equal(result.ok, false)
+  assert.deepEqual(result.errorBody, { detail: 'Network Error', status: null })
+})
+
+test('requestSingleMatch: gateway errors retry, a 500 fails at once with the server\'s own body', async () => {
+  let calls = 0
+  let result = await requestSingleMatch(async () => { calls += 1; throw httpError(503) }, { retryOptions: NO_WAIT })
+  assert.equal(calls, 3)
+  assert.equal(result.errorBody.status, 503)
+  calls = 0
+  result = await requestSingleMatch(async () => { calls += 1; throw httpError(500, { detail: 'boom' }) }, { retryOptions: NO_WAIT })
+  assert.equal(calls, 1)
+  // the server's own body passes through, as the row's failure path reads its detail
+  assert.deepEqual(result.errorBody, { detail: 'boom' })
+})
+
+test('requestSingleMatch: a preview-limit 403 passes its body through unchanged and is not retried', async () => {
+  let calls = 0
+  const limit = { detail: 'Match operation limit reached.', error_code: 'mapper_match_operations_limit_reached', limit: 100, used: 100 }
+  const result = await requestSingleMatch(async () => { calls += 1; throw httpError(403, limit) }, { retryOptions: NO_WAIT })
+  assert.equal(calls, 1)
+  assert.equal(result.ok, false)
+  assert.equal(result.previewLimit, true)
+  assert.deepEqual(result.errorBody, limit)
 })

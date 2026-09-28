@@ -133,6 +133,12 @@ export const getPendingRowLookups = (rowState, inFlightLookups) =>
 // How long a bulk run's AI step waits for a row's lookups before going ahead.
 export const AI_LOOKUP_WAIT_MS = 15000
 
+// How long rerank waits for a row's lookups before going ahead without them
+// (ocl_online#283). A guard against a lookup that never settles, longer than
+// the AI step's wait: a rerank that goes ahead early drops the concepts still
+// being looked up, which a later rerank then scores.
+export const RERANK_LOOKUP_WAIT_MS = 60000
+
 // Resolves true once every lookup settles, or false after ms, whichever comes
 // first. A lookup can stay pending for good (APIService.post answers a 429 with
 // a promise that never settles), and a run must not wait on it forever. Pass a

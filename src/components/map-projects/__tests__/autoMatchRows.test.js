@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 
 import {
   getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep,
-  getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups
+  getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, RERANK_LOOKUP_WAIT_MS, AI_LOOKUP_WAIT_MS
 } from '../autoMatchRows.js'
 
 const rows = [
@@ -280,4 +280,12 @@ test('waitForLookups: a lookup that timed out is not waited on again', async () 
   const started = Date.now()
   assert.equal(await waitForLookups([never], 5000, stuck), true)
   assert.ok(Date.now() - started < 1000)
+})
+
+// ocl_online#283 (b): rerank's wait on a row's lookups is bounded too, as a
+// guard against a lookup that never settles; longer than the AI step's, since
+// a rerank that goes ahead early drops the concepts still being looked up.
+test('RERANK_LOOKUP_WAIT_MS: a hang guard, longer than the AI step\'s wait', () => {
+  assert.ok(RERANK_LOOKUP_WAIT_MS >= 30000)
+  assert.ok(RERANK_LOOKUP_WAIT_MS > AI_LOOKUP_WAIT_MS)
 })

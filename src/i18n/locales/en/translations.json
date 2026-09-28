@@ -588,6 +588,7 @@
     "auto_match_selected_rows_note_no_count": "Note: Select rows in the left panel to enable this option",
     "auto_match_rows_failed": "Matching failed for {{count}} input row(s), so they're missing candidates: {{details}}. Rows count from the first data row of your file. Run Auto Match on those rows again to retry them.",
     "auto_match_rows_failed_algorithm": "{{algorithm}} on row(s) {{rows}}",
+    "match_request_failed": "Couldn't get candidates ({{error}}). Try again.",
     "run_ai_analysis": "Run AI Analysis",
     "run_ai_analysis_note": "Note: Enabling this feature will run AI Analysis on results of each row. This has direct cost implications.",
     "decision": "Decision",
