@@ -30,6 +30,11 @@ const getFailure = (err, attempts) => ({
  * Mark the batch's rows running, send it (retrying transient failures), then
  * mark each row done (1) or failed (-2). Never rejects.
  *
+ * shouldStop is checked before every retry, including after the backoff
+ * sleep. A batch stopped there (the run was cancelled, or another batch hit
+ * the match quota) sends nothing more and puts its rows back to not run (-1),
+ * like the rows the run never reached.
+ *
  * @param {object}   opts
  * @param {number[]} opts.rowIndexes       the batch's row __index values
  * @param {function} opts.send             attempt => Promise<axios response>; must reject on failure
@@ -37,22 +42,42 @@ const getFailure = (err, attempts) => ({
  * @param {function} opts.onRowFinished    rowIndex => void
  * @param {function} opts.onRowFailed      (rowIndex, {error, status, attempts, previewLimit}) => void
  * @param {function} [opts.onPreviewLimit] err => void, for a preview-limit 403 (never retried)
- * @param {function} [opts.isCancelled]    stops further retries once true
+ * @param {function} [opts.shouldStop]     () => boolean; true skips any further retry
  * @param {object}   [opts.retryOptions]   overrides MATCH_RETRY_OPTIONS
- * @returns {Promise<object[]>} the batch's $match results, or [] when it failed
+ * @returns {Promise<object[]>} the batch's $match results, or [] when it failed or stopped
  */
 export const runMatchBatch = async ({
-  rowIndexes, send, setStage, onRowFinished, onRowFailed, onPreviewLimit, isCancelled = () => false, retryOptions = {},
+  rowIndexes, send, setStage, onRowFinished, onRowFailed, onPreviewLimit, shouldStop = () => false, retryOptions = {},
 }) => {
   rowIndexes.forEach(index => setStage(index, 0))
   let attempts = 0
+  let lastError
+  let stopped = false
+  // retryWithBackoff asks this only when it would otherwise retry.
+  const stopBeforeRetry = () => {
+    stopped = shouldStop()
+    return stopped
+  }
   let response
   try {
     response = await retryWithBackoff(attempt => {
+      // The run may have stopped while this batch slept in its backoff.
+      if(attempt > 0 && stopBeforeRetry())
+        throw lastError
       attempts = attempt + 1
       return send(attempt)
-    }, {...MATCH_RETRY_OPTIONS, ...retryOptions, isCancelled, isRetryable: isRetryableMatchError})
+    }, {
+      ...MATCH_RETRY_OPTIONS,
+      ...retryOptions,
+      isCancelled: stopBeforeRetry,
+      isRetryable: isRetryableMatchError,
+      onAttemptFailed: err => { lastError = err },
+    })
   } catch (err) {
+    if(stopped) {
+      rowIndexes.forEach(index => setStage(index, -1))
+      return []
+    }
     const failure = getFailure(err, attempts)
     rowIndexes.forEach(index => {
       setStage(index, -2)

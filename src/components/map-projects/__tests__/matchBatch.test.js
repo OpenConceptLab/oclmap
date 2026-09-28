@@ -123,14 +123,61 @@ test('runMatchBatch: a preview-limit 403 is not retried and is handed to onPrevi
   assert.deepEqual(rec.failed.map(f => [f.index, f.previewLimit]), [[3, true], [4, true]])
 })
 
-test('runMatchBatch: stops retrying once the run is cancelled', async () => {
+test('runMatchBatch: a stop before a retry sends nothing more and puts the rows back to not run', async () => {
+  const rec = recorder()
   let calls = 0
-  let cancelled = false
-  const send = async () => { calls += 1; cancelled = true; throw networkError() }
+  let stopped = false
+  const send = async () => { calls += 1; stopped = true; throw networkError() }
 
-  await runMatchBatch({rowIndexes: [0], send, ...recorder(), isCancelled: () => cancelled, retryOptions: NO_WAIT})
+  const data = await runMatchBatch({rowIndexes: [0, 1], send, ...rec, shouldStop: () => stopped, retryOptions: NO_WAIT})
+
+  assert.deepEqual(data, [])
+  assert.equal(calls, 1)
+  assert.deepEqual(rec.stages, {0: [0, -1], 1: [0, -1]})
+  assert.deepEqual(rec.failed, [])
+  assert.deepEqual(rec.finished, [])
+})
+
+test('runMatchBatch: a stop during the backoff sleep is honoured before the next send', async () => {
+  const rec = recorder()
+  let calls = 0
+  let stopped = false
+  const send = async () => {
+    calls += 1
+    setTimeout(() => { stopped = true }, 5)
+    throw networkError()
+  }
+
+  await runMatchBatch({rowIndexes: [0], send, ...rec, shouldStop: () => stopped, retryOptions: {baseDelayMs: 40, jitterFactor: 0}})
 
   assert.equal(calls, 1)
+  assert.deepEqual(rec.stages, {0: [0, -1]})
+  assert.deepEqual(rec.failed, [])
+})
+
+test('runMatchBatch: a preview-limit 403 on one batch stops another batch that is waiting to retry', async () => {
+  const rec = recorder()
+  let quotaStop = false
+  const sends = {a: 0, b: 0}
+  const sendA = async () => { sends.a += 1; throw networkError() }
+  const sendB = async () => {
+    sends.b += 1
+    await new Promise(resolve => setTimeout(resolve, 5))
+    throw httpError(403, {error_code: 'mapper_match_operations_limit_reached'})
+  }
+  const common = {...rec, shouldStop: () => quotaStop, onPreviewLimit: () => { quotaStop = true }, retryOptions: {baseDelayMs: 40, jitterFactor: 0}}
+
+  await Promise.all([
+    runMatchBatch({rowIndexes: [0, 1], send: sendA, ...common}),
+    runMatchBatch({rowIndexes: [2, 3], send: sendB, ...common}),
+  ])
+
+  assert.deepEqual(sends, {a: 1, b: 1})
+  // batch A never got an answer and was stopped: not run, not a failure
+  assert.deepEqual(rec.stages[0], [0, -1])
+  assert.deepEqual(rec.stages[1], [0, -1])
+  // batch B hit the limit: failed, flagged as a preview limit
+  assert.deepEqual(rec.failed.map(f => [f.index, f.previewLimit]), [[2, true], [3, true]])
 })
 
 test('runMatchBatch: a 2xx with no body resolves to no results, not a failure', async () => {

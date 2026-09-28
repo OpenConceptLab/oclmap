@@ -2009,10 +2009,9 @@ const MapProject = () => {
       algorithm_count: selectedAlgos.length,
       run_ai_analysis: Boolean(inAIAssistantGroup && autoRunAIAnalysis)
     })
-    // Rows whose $match batch still failed after the retries, reported at the
-    // end of the run so the user knows which rows to re-run.
-    const failedMatchRows = new Set()
-    const failedMatchAlgos = new Set()
+    // Rows whose $match batch still failed after the retries, per algorithm id,
+    // reported at the end of the run so the user knows which rows to re-run.
+    const failedMatchRows = {}
 
     // Function to process a single batch
     const processBatch = async (_repo, rowBatch, algo) => {
@@ -2066,15 +2065,15 @@ const MapProject = () => {
         onRowFinished: index => log({action: 'algo_finished', extras: logExtras}, index),
         onRowFailed: (index, {error, status, attempts, previewLimit}) => {
           log({action: 'algo_failed', extras: {...logExtras, error, status, attempts}}, index)
-          if(!previewLimit) {
-            failedMatchRows.add(index)
-            failedMatchAlgos.add(algo.name || algo.id)
-          }
+          if(!previewLimit)
+            failedMatchRows[algo.id] = [...(failedMatchRows[algo.id] || []), index]
         },
         // Sets matchQuotaStopRef, which stops the rest of the $match requests
         // but lets the run finish with what it has.
         onPreviewLimit: err => handlePreviewLimitError(err),
-        isCancelled: () => abortRef.current,
+        // A batch waiting to retry stops on a cancel, or once another batch
+        // has hit the match quota.
+        shouldStop: () => Boolean(abortRef.current || (matchQuotaStopRef.current && spendsMatchQuota(algo, {canBridge}))),
       })
     };
 
@@ -2272,16 +2271,23 @@ const MapProject = () => {
           setLoadingMatches(false)
           setEndMatchingAt(moment())
         }
-        if(!abortRef.current && failedMatchRows.size) {
-          const failedRowIndexes = [...failedMatchRows].sort((a, b) => a - b)
-          const failedAlgorithms = [...failedMatchAlgos]
-          projectLog({action: 'auto_match_rows_failed', extras: {algorithms: failedAlgorithms, row_indexes: failedRowIndexes}})
+        const failedAlgoIds = keys(failedMatchRows)
+        if(!abortRef.current && failedAlgoIds.length) {
+          const rowsByAlgo = {}
+          failedAlgoIds.forEach(algoId => { rowsByAlgo[algoId] = uniq(failedMatchRows[algoId]).sort((a, b) => a - b) })
+          const getAlgoLabel = algoId => {
+            const name = find(_selectedAlgos, {id: algoId})?.name
+            return isString(name) && name ? name : algoId
+          }
+          projectLog({action: 'auto_match_rows_failed', extras: {row_indexes_by_algorithm: rowsByAlgo}})
           setAlert({
             severity: 'warning',
             message: t('map_project.auto_match_rows_failed', {
-              algorithms: failedAlgorithms.join(', '),
-              count: failedRowIndexes.length,
-              rows: formatRowNumbers(failedRowIndexes),
+              count: uniq(flatten(values(rowsByAlgo))).length,
+              details: failedAlgoIds.map(algoId => t('map_project.auto_match_rows_failed_algorithm', {
+                algorithm: getAlgoLabel(algoId),
+                rows: formatRowNumbers(rowsByAlgo[algoId]),
+              })).join('; '),
             }),
           })
         }
