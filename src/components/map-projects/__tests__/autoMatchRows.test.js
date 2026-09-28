@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 
 import {
   getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep,
-  getAIRequestIdempotencyKey
+  getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups
 } from '../autoMatchRows.js'
 
 const rows = [
@@ -156,4 +156,128 @@ test('getAIRequestIdempotencyKey: one key per project, row and request, whatever
   assert.equal(getAIRequestIdempotencyKey('p1', 3, 1700000000000), 'p1-3-1700000000000')
   assert.notEqual(getAIRequestIdempotencyKey('p1', 3, 1700000000000), getAIRequestIdempotencyKey('p1', 4, 1700000000000))
   assert.notEqual(getAIRequestIdempotencyKey('p1', 3, 1700000000000), getAIRequestIdempotencyKey('p1', 3, 1700000009999))
+})
+
+// ocl_online#258: a bulk re-run skipped the AI for any row analysed before,
+// so a row kept the verdict from its old candidate pool.
+const pool = (...entries) => entries.map(([concept_key, ...algos]) => ({
+  concept_key, rerank_score: Math.random() * 100, evidence: algos.map(algorithm_id => ({ algorithm_id, score: Math.random() })),
+}))
+
+test('getCandidatePoolFingerprint: the same concepts from the same algorithms give the same fingerprint, in any order and at any score', () => {
+  const a = pool(['loinc|2336-6', 'ocl-semantic'], ['loinc|10834-0', 'ocl-search', 'ocl-semantic'])
+  const b = pool(['loinc|10834-0', 'ocl-semantic', 'ocl-search'], ['loinc|2336-6', 'ocl-semantic'])
+  assert.equal(getCandidatePoolFingerprint(a), getCandidatePoolFingerprint(b))
+})
+
+test('getCandidatePoolFingerprint: a new concept, a dropped one, or another algorithm backing one changes it', () => {
+  const before = getCandidatePoolFingerprint(pool(['loinc|2336-6', 'ocl-search']))
+  assert.notEqual(getCandidatePoolFingerprint(pool(['loinc|2336-6', 'ocl-search'], ['loinc|10834-0', 'ocl-semantic'])), before)
+  assert.notEqual(getCandidatePoolFingerprint(pool()), before)
+  assert.notEqual(getCandidatePoolFingerprint(pool(['loinc|2336-6', 'ocl-search', 'ocl-scispacy-loinc'])), before)
+})
+
+test('getCandidatePoolFingerprint: another bridge, or another map type through it, changes it', () => {
+  const viaBridge = (bridgeKey, mapType) => [{
+    concept_key: 'loinc|2336-6', display_name: 'Globulin',
+    evidence: [{ algorithm_id: 'ocl-bridge', candidate_type: 'bridge_child', score: 1, via: { bridge_concept_key: bridgeKey, bridge_map_type: mapType } }],
+  }]
+  const before = getCandidatePoolFingerprint(viaBridge('ciel|1', 'SAME-AS'))
+  assert.notEqual(getCandidatePoolFingerprint(viaBridge('ciel|2', 'SAME-AS')), before)
+  assert.notEqual(getCandidatePoolFingerprint(viaBridge('ciel|1', 'NARROWER-THAN')), before)
+  assert.equal(getCandidatePoolFingerprint(viaBridge('ciel|1', 'SAME-AS')), before)
+})
+
+test('getCandidatePoolFingerprint: a concept a later lookup filled in changes it', () => {
+  // a failed lookup leaves the concept with its name only; a later run's
+  // lookup adds its names and properties, which the AI then sees
+  const sparse = [{ concept_key: 'loinc|2336-6', display_name: 'Globulin', evidence: [{ algorithm_id: 'ocl-scispacy-loinc' }] }]
+  const full = [{ ...sparse[0], names: [{ name: 'Globulin [Mass/volume] in Serum', locale: 'en' }], property: { SYSTEM: 'Ser', COMPONENT: 'Globulin' } }]
+  assert.notEqual(getCandidatePoolFingerprint(full), getCandidatePoolFingerprint(sparse))
+})
+
+test('getCandidatePoolFingerprint: scores, highlights and key order are left out', () => {
+  const a = [{ concept_key: 'k', display_name: 'X', rerank_score: 91, property: { A: 1, B: 2 }, evidence: [{ algorithm_id: 'ocl-search', score: 7, highlights: { name: ['<em>X</em>'] } }] }]
+  const b = [{ property: { B: 2, A: 1 }, evidence: [{ highlights: { name: ['X'] }, score: 3, algorithm_id: 'ocl-search' }], rerank_score: 40, display_name: 'X', concept_key: 'k' }]
+  assert.equal(getCandidatePoolFingerprint(a), getCandidatePoolFingerprint(b))
+})
+
+test('getCandidatePoolFingerprint: no pool has no fingerprint', () => {
+  assert.equal(getCandidatePoolFingerprint(undefined), null)
+  assert.equal(getCandidatePoolFingerprint(null), null)
+})
+
+test('hasCurrentAnalysis: only the latest analysis of the same pool counts', () => {
+  const fp = getCandidatePoolFingerprint(pool(['loinc|2336-6', 'ocl-search']))
+  const other = getCandidatePoolFingerprint(pool(['loinc|2336-6', 'ocl-semantic']))
+  assert.equal(hasCurrentAnalysis([{ candidate_pool_fingerprint: fp }], fp), true)
+  assert.equal(hasCurrentAnalysis([{ candidate_pool_fingerprint: other }], fp), false)
+  assert.equal(hasCurrentAnalysis([{ candidate_pool_fingerprint: fp }, { candidate_pool_fingerprint: other }], fp), false)
+})
+
+test('hasCurrentAnalysis: an analysis saved before fingerprints existed is redone', () => {
+  const fp = getCandidatePoolFingerprint(pool(['loinc|2336-6', 'ocl-search']))
+  assert.equal(hasCurrentAnalysis([{ output: { recommendation: 'RECOMMEND' } }], fp), false)
+})
+
+test('hasCurrentAnalysis: no analysis yet, or no pool to compare, is not current', () => {
+  const fp = getCandidatePoolFingerprint(pool(['loinc|2336-6', 'ocl-search']))
+  assert.equal(hasCurrentAnalysis([], fp), false)
+  assert.equal(hasCurrentAnalysis(undefined, fp), false)
+  assert.equal(hasCurrentAnalysis([{ candidate_pool_fingerprint: null }], null), false)
+})
+
+// ocl_online#258: the bulk ScispaCy path read each row's results by its
+// position in the run instead of its row index, so a Selected Rows re-run
+// (rows 61–70 at positions 0–9) got no ScispaCy candidates.
+test('getScispacyRowResults: reads the row\'s own results, keyed by its row index', () => {
+  const data = { 60: [{ code: 'A' }], 61: [{ code: 'B' }] }
+  assert.deepEqual(getScispacyRowResults(data, 60), [{ code: 'A' }])
+  assert.deepEqual(getScispacyRowResults(data, 61), [{ code: 'B' }])
+  assert.deepEqual(getScispacyRowResults(data, 0), [])
+  assert.deepEqual(getScispacyRowResults({ '7': [{ code: 'C' }] }, 7), [{ code: 'C' }])
+  assert.deepEqual(getScispacyRowResults(undefined, 7), [])
+})
+
+// ocl_online#258 review: after a rerank quota stop a row's AI step can come
+// before its lookups settle, so it waits for them the way rerank does.
+test('getPendingRowLookups: the in-flight lookups for the row\'s own concepts only', () => {
+  const a = Promise.resolve('a')
+  const c = Promise.resolve('c')
+  const inFlight = new Map([['k:a', a], ['k:c', c]])
+  const rowState = { concept_rows: { 'k:a': {}, 'k:b': {} } }
+  assert.deepEqual(getPendingRowLookups(rowState, inFlight), [a])
+  assert.deepEqual(getPendingRowLookups({ concept_rows: {} }, inFlight), [])
+  assert.deepEqual(getPendingRowLookups(undefined, inFlight), [])
+})
+
+// Codex pass 2: a lookup can stay pending for good (APIService.post answers a
+// 429 with a promise that never settles), so the AI step's wait is bounded.
+test('waitForLookups: resolves true once every lookup settles', async () => {
+  assert.equal(await waitForLookups([Promise.resolve(1), Promise.resolve(2)], 1000), true)
+  assert.equal(await waitForLookups([], 1000), true)
+})
+
+test('waitForLookups: gives up after the timeout when a lookup never settles', async () => {
+  const started = Date.now()
+  assert.equal(await waitForLookups([new Promise(() => {})], 30), false)
+  assert.ok(Date.now() - started < 1000)
+})
+
+test('waitForLookups: a rejected lookup counts as settled', async () => {
+  assert.equal(await waitForLookups([Promise.reject(new Error('x'))], 1000), true)
+})
+
+// Codex pass 3: a lookup that timed out once is not waited on again, so rows
+// sharing a stuck lookup don't each wait the full timeout.
+test('waitForLookups: a lookup that timed out is not waited on again', async () => {
+  const stuck = new WeakSet()
+  const never = new Promise(() => {})
+  const done = Promise.resolve()
+  assert.equal(await waitForLookups([never, done], 30, stuck), false)
+  assert.equal(stuck.has(never), true)
+  assert.equal(stuck.has(done), false)
+  const started = Date.now()
+  assert.equal(await waitForLookups([never], 5000, stuck), true)
+  assert.ok(Date.now() - started < 1000)
 })

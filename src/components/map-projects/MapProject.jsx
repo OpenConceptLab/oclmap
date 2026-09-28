@@ -87,7 +87,7 @@ import MapProjectDeleteConfirmDialog from './MapProjectDeleteConfirmDialog';
 import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
 import DataGridControls from './DataGridControls'
-import { getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep, getAIRequestIdempotencyKey } from './autoMatchRows'
+import { getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, AI_LOOKUP_WAIT_MS } from './autoMatchRows'
 import { createAutosaveScheduler, saveOnLeave, trackSave, whenSaved, installUnloadGuard } from './autosave'
 import MatchSummaryCard from './MatchSummaryCard'
 import MappingDecisionResult from './MappingDecisionResult'
@@ -549,6 +549,9 @@ const MapProject = () => {
   // dedupes concurrent calls for the same key by awaiting the existing
   // Promise instead of issuing a duplicate fetch.
   const inFlightLookupsRef = React.useRef(new Map())
+  // Lookups a bulk AI step gave up waiting for (they may never settle), so
+  // later rows don't wait on them again (ocl_online#258).
+  const stuckLookupsRef = React.useRef(new WeakSet())
 
   // URL-level fetch dedup for ensureLoaded. Keyed by ocl_url. Stores
   // Promise<data|null>: in-flight entries deduplicate concurrent requests for
@@ -2466,7 +2469,7 @@ const MapProject = () => {
       setLoadingMatches(true)
       await fetchScispacyCandidates(_rows[index], false, false, true, (response => {
         const _index = _rows[index].__index
-        const results = [{row: _rows[index], results: fromScispacyResultsToConcepts(get(response.data, index) || [])}]
+        const results = [{row: _rows[index], results: fromScispacyResultsToConcepts(getScispacyRowResults(response.data, _index))}]
         log({action: 'algo_finished', extras: getAlgoLogExtras(algo)}, _index)
         markAlgo(_index, algo.id, 1)
         // Mirror the bulk-bridge wiring — the per-row scispacy path goes via
@@ -3628,7 +3631,7 @@ const MapProject = () => {
         log({action: 'algo_finished', extras: logExtras}, __row.__index)
         let data = isArray(response) ? response : (response?.data || [])
         if(offset === 0) {
-          const results = algoId === 'ocl-scispacy-loinc' ? [{row: __row, results: fromScispacyResultsToConcepts(get(response.data, __row.__index) || [])}] : data
+          const results = algoId === 'ocl-scispacy-loinc' ? [{row: __row, results: fromScispacyResultsToConcepts(getScispacyRowResults(response.data, __row.__index))}] : data
           // Normalize the invocation for this row and merge into rowMatchState.
           const rowPayload = find(results, r => r?.row?.__index === __row.__index)
           if(rowPayload) {
@@ -3901,9 +3904,7 @@ const MapProject = () => {
     // (processRerankWithConcurrency calls rerank() directly, bypassing scheduleRerank).
     const rowStateForLookup = rowMatchStateRef.current[index]
     if(rowStateForLookup?.concept_rows) {
-      const pendingLookups = Object.keys(rowStateForLookup.concept_rows)
-        .filter(key => inFlightLookupsRef.current.has(key))
-        .map(key => inFlightLookupsRef.current.get(key))
+      const pendingLookups = getPendingRowLookups(rowStateForLookup, inFlightLookupsRef.current)
       if(pendingLookups.length) {
         await Promise.all(pendingLookups)
         // The settling lookups fired scheduleRerank via settle()/writeConceptCachePatch,
@@ -5050,13 +5051,26 @@ const MapProject = () => {
       console.error('AI ASSISTANT is not enabled for you.')
       return false
     }
-    // Auto-match (caller supplied resolvedPromptTemplate) fires once per row;
-    // user-initiated single-row clicks always append a new entry to the
-    // per-row analysis history.
+    // Auto Match (caller supplied resolvedPromptTemplate) skips a row whose
+    // latest analysis saw this same candidate pool; a re-run whose candidates
+    // changed analyses the row again (ocl_online#258). User-initiated
+    // single-row clicks always append a new entry to the analysis history.
     const isAutoMatch = Boolean(resolvedPromptTemplate)
     const existingAnalyses = analysis[__index] || []
-    const alreadyAnalyzed = isAutoMatch && existingAnalyses.length > 0
+    // After a rerank quota stop, a bulk run reaches this row without rerank
+    // having waited for its lookups; wait here so the AI, and the pool
+    // fingerprint, see the looked-up concepts. The wait is bounded: a lookup
+    // can stay pending for good, and the run then goes ahead without it, and
+    // doesn't wait on that lookup again for later rows.
+    if(isBulk && isNumber(__index)) {
+      await waitForLookups(getPendingRowLookups(rowMatchStateRef.current[__index], inFlightLookupsRef.current), AI_LOOKUP_WAIT_MS, stuckLookupsRef.current)
+      // The user may have pressed Stop while this row waited.
+      if(abortRef.current)
+        return false
+    }
     const v2 = isNumber(__index) ? buildV2RecommendationPayload(__index) : null
+    const candidatePoolFingerprint = getCandidatePoolFingerprint(v2?.recommendable_concepts)
+    const alreadyAnalyzed = isAutoMatch && hasCurrentAnalysis(existingAnalyses, candidatePoolFingerprint)
     if(isNumber(__index) && repoVersion && !alreadyAnalyzed && (v2?.recommendable_concepts?.length || 0) > 0) {
       if(!isBulk)
         GAService.recordActionEvent('MapProject', 'ai_assistant_run', undefined, { mode: 'single' })
@@ -5171,7 +5185,7 @@ const MapProject = () => {
           version: resolvedVersion,
           uri: resolvedVersion && promptTemplateRef?.key ? `/prompts/${promptTemplateRef.key}/${resolvedVersion}/` : (promptTemplateRef?.uri || null)
         }
-        const newEntry = {...response.data, model: modelUsed, model_name: modelUsedRef?.name, prompt_template: resolvedPromptRef, prompt_template_uri: resolvedPromptRef.uri, output_locale: promptOutputLocale || null, timestamp: timestamp, user: user.username || user.id}
+        const newEntry = {...response.data, model: modelUsed, model_name: modelUsedRef?.name, prompt_template: resolvedPromptRef, prompt_template_uri: resolvedPromptRef.uri, output_locale: promptOutputLocale || null, candidate_pool_fingerprint: candidatePoolFingerprint, timestamp: timestamp, user: user.username || user.id}
         setAnalysis(prev => ({...prev, [__index]: [...(prev[__index] || []), newEntry]}))
         // Schedule a save, or leaving loses the result
         // (OpenConceptLab/ocl_issues#2833). Auto Match rows (isBulk) are saved

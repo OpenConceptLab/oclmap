@@ -66,3 +66,92 @@ export const shouldStopAIStep = ({ quotaExhausted = false, failuresInARow = 0 } 
 // The same key for every retry of one AI request: the AI Assistant charges a
 // key once, and serves a call that already succeeded again for free.
 export const getAIRequestIdempotencyKey = (projectId, rowIndex, requestedAt) => `${projectId}-${rowIndex}-${requestedAt}`
+
+// FNV-1a, 32-bit: short and stable, for comparing candidate pools only.
+const hashString = text => {
+  let hash = 0x811c9dc5
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0')
+}
+
+// JSON with object keys sorted, so the same content always gives the same text.
+const stableStringify = value => {
+  if(Array.isArray(value))
+    return `[${value.map(stableStringify).join(',')}]`
+  if(value && typeof value === 'object')
+    return `{${Object.keys(value).sort().filter(key => value[key] !== undefined).map(key => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(',')}}`
+  return JSON.stringify(value) ?? 'null'
+}
+
+// A fingerprint of the candidate pool an AI analysis saw (ocl_online#258):
+// each recommendable concept as sent to the AI (names, properties and so on,
+// so a concept a later lookup filled in counts as changed), with the evidence
+// of which algorithms surfaced it and through which bridge. Scores and search
+// highlights are left out; they move between runs while the pool stays the same.
+export const getCandidatePoolFingerprint = recommendableConcepts => {
+  if(!Array.isArray(recommendableConcepts))
+    return null
+  const parts = recommendableConcepts.map(concept => {
+    const content = {}
+    Object.keys(concept || {}).forEach(key => {
+      if(key !== 'rerank_score' && key !== 'evidence')
+        content[key] = concept[key]
+    })
+    const evidenceParts = [...new Set((concept?.evidence || []).map(e => stableStringify({
+      algorithm_id: e?.algorithm_id,
+      candidate_type: e?.candidate_type,
+      via: e?.via,
+    })))].sort()
+    return stableStringify({ ...content, evidence: evidenceParts })
+  }).sort()
+  return `${parts.length}-${hashString(parts.join('\n'))}`
+}
+
+// Whether a row's latest AI analysis saw this same candidate pool, so an Auto
+// Match run can skip its AI step. An analysis saved before fingerprints
+// existed can't be compared, so it's redone.
+export const hasCurrentAnalysis = (analyses, fingerprint) => {
+  const latest = Array.isArray(analyses) && analyses.length ? analyses[analyses.length - 1] : null
+  return Boolean(fingerprint && latest?.candidate_pool_fingerprint === fingerprint)
+}
+
+// The ScispaCy service keys each row's results by the itemid sent, which is
+// the row's index, not its position in the run (ocl_online#258).
+export const getScispacyRowResults = (responseData, rowIndex) => responseData?.[rowIndex] || []
+
+// The in-flight $lookups for a row's concepts. Rerank waits for them, and so
+// does a bulk run's AI step, which can reach a row whose rerank was skipped
+// (after a rerank quota stop), so the AI sees the looked-up concepts.
+export const getPendingRowLookups = (rowState, inFlightLookups) =>
+  Object.keys(rowState?.concept_rows || {})
+    .filter(key => inFlightLookups.has(key))
+    .map(key => inFlightLookups.get(key))
+
+// How long a bulk run's AI step waits for a row's lookups before going ahead.
+export const AI_LOOKUP_WAIT_MS = 15000
+
+// Resolves true once every lookup settles, or false after ms, whichever comes
+// first. A lookup can stay pending for good (APIService.post answers a 429 with
+// a promise that never settles), and a run must not wait on it forever. Pass a
+// WeakSet as stuck to remember lookups that timed out, so later rows sharing
+// them don't each wait the full timeout again.
+export const waitForLookups = (lookups, ms, stuck) => {
+  const waiting = (lookups || []).filter(lookup => !stuck?.has(lookup))
+  if(!waiting.length)
+    return Promise.resolve(true)
+  const pending = new Set(waiting)
+  let timer
+  const timeout = new Promise(resolve => {
+    timer = setTimeout(() => {
+      pending.forEach(lookup => stuck?.add(lookup))
+      resolve(false)
+    }, ms)
+  })
+  const settled = Promise.all(waiting.map(lookup =>
+    Promise.resolve(lookup).catch(() => null).finally(() => pending.delete(lookup))
+  )).then(() => true)
+  return Promise.race([settled, timeout]).finally(() => clearTimeout(timer))
+}
