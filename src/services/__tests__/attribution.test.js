@@ -231,3 +231,11 @@ test('a user cancel wins over throttled rows', () => {
   const r = summarizeRunCompletion({ rowStages: {0: {'ocl-search': -4}}, rowIndices: [0], algoIds: ['ocl-search'], aborted: true })
   assert.equal(r.completion_status, 'cancelled')
 })
+
+// Codex pass 4: a run whose matching finished but whose reranks stayed
+// throttled isn't complete either.
+test('a throttled rerank (-4) makes the run partial; the row still counts as completed', () => {
+  const rowStages = { 0: {'ocl-search': 1, rerank: -4}, 1: {'ocl-search': 1, rerank: 1} }
+  const r = summarizeRunCompletion({ rowStages, rowIndices: [0, 1], algoIds: ['ocl-search'] })
+  assert.deepEqual(r, { completed_rows: 2, failed_rows: 0, completion_status: 'partial' })
+})

@@ -4204,6 +4204,10 @@ const MapProject = () => {
     // A run's rerank ends when the run stops, and a stopped run proposes no
     // more mappings; a row reranked by hand isn't stopped (ocl_issues#2849).
     const isStopped = isRunTraffic ? getRunStopCheck() : () => false
+    // The run this call belongs to, captured now: a newer run's stages are
+    // its own (ocl_issues#2849).
+    const runTicket = autoMatchRunTicketRef.current
+    const isSuperseded = () => isRunTraffic && runTicket !== autoMatchRunTicketRef.current
     // A proposal lands a second later: skip it if the run stopped meanwhile.
     const proposeMapping = () => setTimeout(() => {
       if(!isStopped())
@@ -4236,6 +4240,13 @@ const MapProject = () => {
         // Bounded, so a lookup that never settles can't stall rerank, and
         // with it a run (ocl_online#283).
         await waitForLookups(pendingLookups, RERANK_LOOKUP_WAIT_MS, stuckLookupsRef.current)
+        // The run may have stopped, and another started, during the wait:
+        // touch nothing of the new run's (ocl_issues#2849).
+        if(isStopped())
+          return null
+        // Another rerank for the row may have started meanwhile: join it.
+        if(inFlightRerankRef.current.has(index))
+          return rerank(index, isBulk, isRunTraffic)
         // The settling lookups fired scheduleRerank via settle()/writeConceptCachePatch,
         // setting a 300ms debounce timer. Clear it — we're already inside rerank() and
         // about to run, so that timer would only queue a redundant rerankRerunNeeded.
@@ -4266,13 +4277,11 @@ const MapProject = () => {
       return null
     }
     let settleInFlight
-    inFlightRerankRef.current.set(index, new Promise(resolve => { settleInFlight = resolve }))
+    const ownInFlight = new Promise(resolve => { settleInFlight = resolve })
+    inFlightRerankRef.current.set(index, ownInFlight)
     markAlgo(index, 'rerank', 0)
     const service = APIService.concepts().appendToUrl('$rerank/')
     const isCancelled = isStopped
-    // A run's rerank that ends after a newer run started leaves its stages alone.
-    const runTicket = autoMatchRunTicketRef.current
-    const isSuperseded = () => isRunTraffic && runTicket !== autoMatchRunTicketRef.current
     let release = null
     try {
       // At most RERANK_MAX_IN_FLIGHT $rerank calls at once, whatever fired
@@ -4325,7 +4334,7 @@ const MapProject = () => {
       }
       const response = result.response
       // A newer run may rank with another encoder or input: its scores are
-      // its own (Codex pass 3).
+      // its own (ocl_issues#2849).
       if(isSuperseded())
         return null
 
@@ -4378,7 +4387,8 @@ const MapProject = () => {
       return null
     } finally {
       release?.()
-      inFlightRerankRef.current.delete(index)
+      if(inFlightRerankRef.current.get(index) === ownInFlight)
+        inFlightRerankRef.current.delete(index)
       settleInFlight()
       // If new ConceptRows arrived while we were in flight, fire again.
       if(rerankRerunNeededRef.current.has(index)) {
