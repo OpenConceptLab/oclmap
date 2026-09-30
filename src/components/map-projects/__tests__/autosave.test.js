@@ -364,3 +364,32 @@ test('createLatestSender: after it settles, the next trigger sends again', async
   await sender.trigger()
   assert.equal(sends, 2)
 })
+
+// Codex review, pass 1: the payload belongs to the sender (one per project),
+// so a retry for project A can't pick up project B's log from shared state.
+test('createLatestSender: the send reads the latest payload triggered on this sender, on every attempt', async () => {
+  const gate = deferred()
+  const seen = []
+  const sender = createLatestSender(async getPayload => {
+    seen.push(getPayload())
+    if(seen.length === 1) {
+      await gate.promise
+      // a retry within the same send reads it again
+      seen.push(getPayload())
+    }
+  })
+  const first = sender.trigger({logs: 'a1'})
+  sender.trigger({logs: 'a2'})
+  sender.trigger({logs: 'a3'})
+  gate.resolve()
+  await first
+  assert.deepEqual(seen, [{logs: 'a1'}, {logs: 'a3'}, {logs: 'a3'}])
+})
+
+test('createLatestSender: two senders keep their own payloads', async () => {
+  const seen = []
+  const a = createLatestSender(async getPayload => { seen.push(['a', getPayload()]) })
+  const b = createLatestSender(async getPayload => { seen.push(['b', getPayload()]) })
+  await Promise.all([a.trigger('project A'), b.trigger('project B')])
+  assert.deepEqual(seen.sort(), [['a', 'project A'], ['b', 'project B']])
+})

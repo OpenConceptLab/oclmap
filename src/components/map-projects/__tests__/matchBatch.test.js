@@ -495,3 +495,46 @@ test('runWithConcurrency: shouldSkipRest drops the queue but lets the batches in
   assert.equal(done, true)
   assert.deepEqual(finished.sort(), [1, 2])
 })
+
+test('runWithConcurrency: onSkipped gets the batches shouldSkipRest dropped, once', async () => {
+  let skip = false
+  const skipped = []
+  await runWithConcurrency([1, 2, 3, 4, 5], {
+    concurrency: 1,
+    shouldSkipRest: () => skip,
+    onSkipped: items => skipped.push(items),
+    run: async item => { if(item === 2) skip = true },
+  })
+  assert.deepEqual(skipped, [[3, 4, 5]])
+})
+
+test('runWithConcurrency: onSkipped isn\'t called when nothing was dropped', async () => {
+  const skipped = []
+  await runWithConcurrency([1, 2], {concurrency: 2, onSkipped: items => skipped.push(items), run: async () => {}})
+  assert.deepEqual(skipped, [])
+})
+
+// Codex review, pass 1
+test('runWithConcurrency: Stop returns even while a batch in flight never answers', async () => {
+  let stopped = false
+  setTimeout(() => { stopped = true }, 20)
+  const started = Date.now()
+  const done = await runWithConcurrency([1, 2, 3], {
+    concurrency: 1,
+    pollMs: 5,
+    shouldAbort: () => stopped,
+    run: () => new Promise(() => {}),
+  })
+  assert.equal(done, false)
+  assert.ok(Date.now() - started < 1000)
+})
+
+test('runWithConcurrency: a pause longer than maxHoldMs doesn\'t hold the queue (its batches end throttled at once instead)', async () => {
+  const gate = createCapacityGate()
+  gate.pause(60 * 60 * 1000)
+  const ran = []
+  const started = Date.now()
+  await runWithConcurrency([1, 2, 3], {concurrency: 1, gate, maxHoldMs: 30 * 60 * 1000, pollMs: 5, run: async item => { ran.push(item) }})
+  assert.deepEqual(ran, [1, 2, 3])
+  assert.ok(Date.now() - started < 1000)
+})

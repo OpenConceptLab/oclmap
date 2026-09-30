@@ -11,7 +11,7 @@
  * busy server makes a run slower, not broken.
  */
 import { isPreviewLimitError } from './previewLimits.js'
-import { isRetryableError, requestWithCapacityRetry } from '../../services/capacity.js'
+import { isRetryableError, requestWithCapacityRetry, untilCancelled } from '../../services/capacity.js'
 
 // How long the row panel waits out a 429 before showing the row as throttled.
 // A person is watching it, so less than a run's 30 minutes.
@@ -103,37 +103,46 @@ export const runMatchBatch = async ({
  * The bulk Auto Match scheduler: runs each item through run(item) with at most
  * concurrency in flight. While the gate is paused (a request got a 429) it
  * sends nothing new, and waits for the gate to reopen or a request in flight
- * to settle, so a throttled run doesn't drain its queue into more refusals.
+ * to settle, so a throttled run doesn't drain its queue into more refusals. A
+ * pause longer than maxHoldMs doesn't hold the queue: its items go out and
+ * end throttled at once, without sending.
  *
- * shouldAbort stops it at once (the requests in flight are left to finish on
- * their own) and returns false. shouldSkipRest drops the rest of the queue but
- * waits for the requests in flight. Otherwise returns true once every item ran.
+ * shouldAbort stops it at once, even while a request in flight never answers
+ * (those are left to finish on their own), and returns false. shouldSkipRest
+ * drops the rest of the queue, handing it to onSkipped, but waits for the
+ * requests in flight. Otherwise returns true once every item ran.
  */
 export const runWithConcurrency = async (items, {
-  concurrency, run, shouldAbort = () => false, shouldSkipRest = () => false, gate = null, pollMs,
+  concurrency, run, shouldAbort = () => false, shouldSkipRest = () => false, onSkipped, gate = null, maxHoldMs = Infinity, pollMs,
 }) => {
   const queue = items.slice()
   const active = new Set()
+  const isHeld = () => Boolean(gate?.isPaused() && gate.pausedForMs() <= maxHoldMs)
   while(queue.length || active.size) {
     while(queue.length && active.size < concurrency) {
       if(shouldAbort())
         return false
       if(shouldSkipRest()) {
-        queue.length = 0
+        // Empty the queue before the optional call: onSkipped?.() skips
+        // evaluating its argument when there's no callback.
+        const skipped = queue.splice(0)
+        onSkipped?.(skipped)
         break
       }
-      if(gate?.isPaused())
+      if(isHeld())
         break
       const item = queue.shift()
       const promise = run(item).finally(() => active.delete(promise))
       active.add(promise)
     }
-    if(queue.length && active.size < concurrency && gate?.isPaused()) {
-      await Promise.race([gate.wait(shouldAbort, {pollMs}), ...active])
+    const waitingOn = [...active]
+    if(queue.length && active.size < concurrency && isHeld())
+      waitingOn.push(gate.wait(shouldAbort, {pollMs, maxMs: maxHoldMs}))
+    if(!waitingOn.length)
       continue
-    }
-    if(active.size)
-      await Promise.race(active)
+    const { settled } = await untilCancelled(Promise.race(waitingOn), shouldAbort, {pollMs})
+    if(!settled)
+      return false
   }
   return true
 }

@@ -127,10 +127,16 @@ export const createCapacityGate = ({ now = Date.now } = {}) => {
     pause: ms => { resumeAt = Math.max(resumeAt, now() + ms) },
     pausedForMs,
     isPaused: () => pausedForMs() > 0,
-    // Resolves true once the gate is open, false if cancelled first.
-    wait: async (isCancelled = () => false, { sleep, pollMs } = {}) => {
+    // Resolves true once the gate is open, false if cancelled first, or
+    // 'timeout' once maxMs has passed with the gate still paused (other
+    // requests' 429s can keep extending the pause).
+    wait: async (isCancelled = () => false, { sleep, pollMs, maxMs = Infinity } = {}) => {
+      const startedAt = now()
       while(pausedForMs() > 0) {
-        if(!(await sleepUnlessCancelled(pausedForMs(), isCancelled, { sleep, pollMs })))
+        const leftMs = maxMs - (now() - startedAt)
+        if(leftMs <= 0)
+          return 'timeout'
+        if(!(await sleepUnlessCancelled(Math.min(pausedForMs(), leftMs), isCancelled, { sleep, pollMs })))
           return false
       }
       return true
@@ -198,18 +204,23 @@ export const requestWithCapacityRetry = async (send, {
 
     if(gate?.isPaused()) {
       const pauseMs = gate.pausedForMs()
-      if(waitedMs + pauseMs > maxWaitMs)
+      const budgetMs = maxWaitMs - waitedMs
+      if(pauseMs > budgetMs)
         return end({ ok: false, reason: 'throttled', error: lastError })
       onWait?.({ reason: 'paused', delayMs: pauseMs, status: null, retryAfterMs: pauseMs })
       const startedAt = now()
-      let open = await gate.wait(isCancelled, { sleep, pollMs })
-      // Spread out the requests the pause held back.
-      if(open)
-        open = await sleepUnlessCancelled(pauseMs * THROTTLE_JITTER * random(), isCancelled, { sleep, pollMs })
+      let outcome = await gate.wait(isCancelled, { sleep, pollMs, maxMs: budgetMs })
+      // Spread out the requests the pause held back, within the budget.
+      if(outcome === true) {
+        const jitterMs = Math.min(pauseMs * THROTTLE_JITTER * random(), Math.max(budgetMs - (now() - startedAt), 0))
+        outcome = await sleepUnlessCancelled(jitterMs, isCancelled, { sleep, pollMs })
+      }
       waitedMs += now() - startedAt
       onWaitEnd?.()
-      if(!open)
+      if(outcome === false)
         return cancelled()
+      if(outcome === 'timeout' || waitedMs > maxWaitMs)
+        return end({ ok: false, reason: 'throttled', error: lastError })
       continue
     }
 
@@ -227,9 +238,11 @@ export const requestWithCapacityRetry = async (send, {
           Math.max(retryAfterMs, MIN_THROTTLE_WAIT_MS)
         throttles += 1
         const delayMs = baseMs * (1 + random() * THROTTLE_JITTER)
+        // The other requests to this server hold back as long, even when
+        // this one gives up now.
+        gate?.pause(baseMs)
         if(waitedMs + delayMs > maxWaitMs)
           return end({ ok: false, reason: 'throttled', error: err })
-        gate?.pause(baseMs)
         if(!(await waitFor(delayMs, { reason: 'throttled', status: 429, retryAfterMs, capacity: getCapacityHeaders(err.response) })))
           return cancelled()
         continue
@@ -249,6 +262,26 @@ export const requestWithCapacityRetry = async (send, {
     reportCapacity(response)
     return end({ ok: true, response })
   }
+}
+
+/**
+ * Waits for promise, unless isCancelled turns true first: resolves
+ * {settled: true, value}, or {settled: false} on Stop, leaving the promise to
+ * finish on its own. A rejection passes through. For a run that must not wait
+ * on a request that never answers once the user stops it.
+ */
+export const untilCancelled = (promise, isCancelled = () => false, { pollMs = POLL_MS, sleep = defaultSleep } = {}) => {
+  let done = false
+  const outcome = Promise.resolve(promise).then(value => ({ settled: true, value })).finally(() => { done = true })
+  const stopped = (async () => {
+    while(!done) {
+      if(isCancelled())
+        return { settled: false }
+      await sleep(pollMs)
+    }
+    return null
+  })()
+  return Promise.race([outcome, stopped.then(result => result || outcome)])
 }
 
 /**

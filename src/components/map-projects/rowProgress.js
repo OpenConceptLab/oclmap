@@ -32,6 +32,9 @@ export const getRowProgressLabel = (stageMap, algos, { t, capacityWait = false }
 
   // -3: the algorithm isn't available to this user, so there's nothing to wait for.
   if (stages.every(v => v === 1 || v === -3)) {
+    // The candidates are in, but the server stayed too busy to rank them.
+    if(stageMap.rerank === -4)
+      return {label: t('map_project.row_throttled'), status: 'throttled'}
     return true
   }
 

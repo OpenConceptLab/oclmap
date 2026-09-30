@@ -144,19 +144,23 @@ export const installUnloadGuard = () => {
 
 /**
  * One send at a time; triggers that arrive during it coalesce into one more
- * send, which reads its payload then (ocl_issues#2849). For the project logs
- * POST, which sends the whole log: once it waits out a 429, an older POST
- * could otherwise land after a newer one and overwrite it. trigger() resolves,
+ * send (ocl_issues#2849). For the project logs POST, which sends the whole
+ * log: once it waits out a 429, an older POST could otherwise land after a
+ * newer one and overwrite it. send(getPayload) reads the latest payload
+ * triggered on this sender, on each attempt; keep one sender per project, so
+ * a retry for one project never sends another's. trigger(payload) resolves,
  * never rejects, once nothing is left to send.
  */
 export const createLatestSender = send => {
   let chain = null
   let pending = false
+  let latest
+  const getPayload = () => latest
   const loop = async () => {
     do {
       pending = false
       try {
-        await send()
+        await send(getPayload)
       } catch (_) {
         // Best effort: the next change sends the whole log again.
       }
@@ -164,7 +168,8 @@ export const createLatestSender = send => {
     chain = null
   }
   return {
-    trigger: () => {
+    trigger: payload => {
+      latest = payload
       if(chain)
         pending = true
       else

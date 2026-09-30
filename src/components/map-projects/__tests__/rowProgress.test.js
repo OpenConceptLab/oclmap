@@ -57,3 +57,17 @@ test('getRowProgressLabel: an algorithm that can\'t run for this user (-3, n/a) 
   assert.equal(getRowProgressLabel({'ocl-semantic': 1, 'ocl-bridge': -3}, ALGOS, {t}).label, undefined)
   assert.equal(getRowProgressLabel({'ocl-semantic': -2, 'ocl-bridge': -3}, ALGOS, {t}).status, 'partial')
 })
+
+// Codex review, pass 1: the rerank's own stage counts too.
+test('getRowProgressLabel: a throttled rerank asks for a retry once the algorithms are done', () => {
+  assert.deepEqual(
+    getRowProgressLabel({'ocl-semantic': 1, 'ocl-bridge': 1, rerank: -4}, ALGOS, {t}),
+    {label: 'map_project.row_throttled', status: 'throttled'},
+  )
+  assert.equal(getRowProgressLabel({'ocl-semantic': 1, 'ocl-bridge': -3, rerank: -4}, ALGOS, {t}).status, 'throttled')
+})
+
+test('getRowProgressLabel: a done or failed rerank leaves the label as before', () => {
+  assert.equal(getRowProgressLabel({'ocl-semantic': 1, 'ocl-bridge': 1, rerank: 1}, ALGOS, {t}).label, undefined)
+  assert.equal(getRowProgressLabel({'ocl-semantic': 1, 'ocl-bridge': 1, rerank: -2}, ALGOS, {t}).label, undefined)
+})

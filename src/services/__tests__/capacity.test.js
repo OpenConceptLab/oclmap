@@ -23,6 +23,7 @@ import {
   getRetryAfterMs,
   requestWithCapacityRetry,
   sleepUnlessCancelled,
+  untilCancelled,
 } from '../capacity.js'
 
 const networkError = () => Object.assign(new Error('Network Error'), {isAxiosError: true, code: 'ERR_NETWORK'})
@@ -482,4 +483,59 @@ test('requestWithCapacityRetry: a throttled wait carries the 429\'s capacity hea
   await requestWithCapacityRetry(send, {now: clock.now, sleep: clock.sleep, onWait: info => waits.push(info.capacity)})
 
   assert.deepEqual(waits, [{decision: 'refused', tier: 'preview'}, null])
+})
+
+// ── Codex review, pass 1 ────────────────────────────────────────────────────
+
+test('createCapacityGate: wait gives up once maxMs has passed, even as the pause keeps extending', async () => {
+  const clock = virtualClock()
+  const gate = createCapacityGate({now: clock.now})
+  gate.pause(10000)
+  // another request's 429 keeps pushing the pause out
+  const sleep = async ms => { await clock.sleep(ms); gate.pause(10000) }
+  assert.equal(await gate.wait(() => false, {sleep, maxMs: 30000}), 'timeout')
+  assert.ok(clock.t >= 30000 && clock.t <= 30250, `waited ${clock.t}`)
+})
+
+test('requestWithCapacityRetry: a gate pause that keeps extending ends "throttled" at the cap, without sending', async () => {
+  const clock = virtualClock()
+  const gate = createCapacityGate({now: clock.now})
+  gate.pause(20000)
+  const sleep = async ms => { await clock.sleep(ms); gate.pause(20000) }
+  const {send, sent} = scripted(ok())
+
+  const result = await requestWithCapacityRetry(send, {gate, now: clock.now, sleep, maxWaitMs: 60000})
+
+  assert.equal(result.reason, 'throttled')
+  assert.equal(sent.length, 0)
+  assert.ok(clock.t <= 60250, `waited ${clock.t}`)
+})
+
+test('requestWithCapacityRetry: a Retry-After past the cap still pauses the gate, so the other requests hold back too', async () => {
+  const clock = virtualClock()
+  const gate = createCapacityGate({now: clock.now})
+
+  const first = await requestWithCapacityRetry(scripted(throttled(86400)).send, {gate, now: clock.now, sleep: clock.sleep})
+  const second = scripted(ok())
+  const next = await requestWithCapacityRetry(second.send, {gate, now: clock.now, sleep: clock.sleep})
+
+  assert.equal(first.reason, 'throttled')
+  assert.equal(gate.pausedForMs(), 86400 * 1000)
+  // the next request doesn't ask again: the server said when to come back
+  assert.equal(next.reason, 'throttled')
+  assert.equal(second.sent.length, 0)
+  assert.equal(clock.t, 0)
+})
+
+test('untilCancelled: the promise\'s value when it settles, or cancelled when Stop comes first', async () => {
+  assert.deepEqual(await untilCancelled(Promise.resolve(7), () => false, {pollMs: 5}), {settled: true, value: 7})
+  let stopped = false
+  setTimeout(() => { stopped = true }, 15)
+  const started = Date.now()
+  assert.deepEqual(await untilCancelled(new Promise(() => {}), () => stopped, {pollMs: 5}), {settled: false})
+  assert.ok(Date.now() - started < 500)
+})
+
+test('untilCancelled: a rejection passes through', async () => {
+  await assert.rejects(untilCancelled(Promise.reject(new Error('boom')), () => false, {pollMs: 5}), /boom/)
 })

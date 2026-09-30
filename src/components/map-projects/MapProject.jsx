@@ -71,7 +71,7 @@ import { OperationsContext } from '../app/LayoutContext';
 
 import APIService, { isTransientNetworkError, retryWithBackoff } from '../../services/APIService';
 import { buildAttributionHeaders, buildConfigSnapshot, summarizeRunCompletion } from '../../services/attribution'
-import { CAPACITY_WAIT_CAP_MS, createCapacityGate, createLimiter, isRetryableError, requestWithCapacityRetry, sleepUnlessCancelled } from '../../services/capacity'
+import { CAPACITY_WAIT_CAP_MS, createCapacityGate, createLimiter, isRetryableError, requestWithCapacityRetry, sleepUnlessCancelled, untilCancelled } from '../../services/capacity'
 import { highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, hasCapability, getMapperPreview, getNewProjectBlockReason, downloadObject, currentUserToken, refreshCurrentUserCapabilitiesCache } from '../../common/utils';
 import { WHITE, SURFACE_COLORS, TEXT_GRAY } from '../../common/colors';
 
@@ -589,8 +589,9 @@ const MapProject = () => {
   // in-flight check"). Replaces the legacy "wait for every algo to
   // complete" trigger with: any ConceptRow with rerank_score === undefined
   // makes its row eligible; debounce coalesces rapid algo completions;
-  // in-flight set prevents double-firing.
-  const inFlightRerankRef = React.useRef(new Set())
+  // in-flight map (row -> a promise that settles when its rerank ends)
+  // prevents double-firing.
+  const inFlightRerankRef = React.useRef(new Map())
   const rerankDebounceRef = React.useRef({})
   const rerankRerunNeededRef = React.useRef(new Set())
   // Forward-ref pointer for mergeIntoRowMatchState (declared earlier in
@@ -1579,6 +1580,7 @@ const MapProject = () => {
       })
       return
     }
+    const rowLogsForSave = options.logs || logsRef.current
     const projectLogsForSave = options.projectLogs || projectLogsRef.current
     setIsSaving(true)
     const f = getFileObjectFromRows()
@@ -1677,7 +1679,9 @@ const MapProject = () => {
         if(!isAutoSave)
           baseSetAlert({severity: 'success', message: t('map_project.successfully_saved'), duration: 2000})
 
-        postProjectLogs(response.data.url)
+        // The logs as they were when this save started: it can land after
+        // the user moved on to another project.
+        postProjectLogs(response.data.url, {row_logs: rowLogsForSave, project_logs: savedProjectLogs})
       } else if(options.leaving && status !== 401) {
         // The user has left the project, so no dialog can show: say so once.
         baseSetAlert({severity: 'error', message: t('map_project.leave_save_failed', {name: name || project?.name, detail: errorData?.detail || t('unknown_error')}), duration: 12000})
@@ -1713,27 +1717,23 @@ const MapProject = () => {
     projectLogsRef.current = newLogs
     setProjectLogs(newLogs)
     if(project?.url)
-      postProjectLogs(project.url)
+      postProjectLogs(project.url, {row_logs: logsRef.current, project_logs: newLogs})
   }
 
-  // POSTs the project's logs as they stand when it sends, waiting out a busy
-  // server. One POST at a time per project: each sends the whole log, so an
-  // older one that waited out a 429 mustn't land after a newer one
-  // (ocl_issues#2849). Best effort, like before.
-  const postProjectLogs = url => {
+  // POSTs the project's logs, waiting out a busy server. One POST at a time
+  // per project: each sends the whole log, so an older one that waited out a
+  // 429 mustn't land after a newer one, and a retry sends the latest log
+  // triggered for that project, never another project's (ocl_issues#2849).
+  // Best effort, like before.
+  const postProjectLogs = (url, logs) => {
     if(!url)
       return
     if(!logsSendersRef.current.has(url))
-      logsSendersRef.current.set(url, createLatestSender(() => requestWithCapacityRetry(
-        () => APIService.new().overrideURL(url).appendToUrl('logs/').request(
-          'POST',
-          {logs: {row_logs: logsRef.current, project_logs: projectLogsRef.current}},
-          null,
-          {handlesThrottle: true}
-        ),
+      logsSendersRef.current.set(url, createLatestSender(getPayload => requestWithCapacityRetry(
+        () => APIService.new().overrideURL(url).appendToUrl('logs/').request('POST', getPayload(), null, {handlesThrottle: true}),
         {maxWaitMs: INTERACTIVE_WAIT_CAP_MS}
       )))
-    logsSendersRef.current.get(url).trigger()
+    logsSendersRef.current.get(url).trigger({logs})
   }
 
   const scheduleAutoSave = reason => autosaveSchedulerRef.current.schedule(reason)
@@ -1804,6 +1804,16 @@ const MapProject = () => {
       [algoId]: uniq([...(throttledRunRowsRef.current[algoId] || []), index]),
     }
   }
+
+  // Once a request for an algorithm (or rerank) stayed refused for the whole
+  // cap, the run stops asking for it: the rest of its rows end throttled at
+  // once, "not run, retry", instead of each waiting out the cap again.
+  const isRunThrottled = algoId => Boolean(throttledRunRowsRef.current[algoId]?.length)
+  const markRowsThrottled = (indexes, algoId, logExtras = {}) => indexes.forEach(index => {
+    markAlgo(index, algoId, -4)
+    log({action: algoId === 'rerank' ? 'rerank_throttled' : 'algo_throttled', description: t('map_project.row_throttled'), extras: {...logExtras, skipped: true}}, index)
+    noteThrottledRunRow(algoId, index)
+  })
 
   // ── ocl_online#105 Phase 5: AutomatchRun attribution ──────────────────────
   // Build the X-OCL-Request-Source + X-OCL-Event-Metadata headers for a single
@@ -2302,12 +2312,23 @@ const MapProject = () => {
       const { batchSize, concurrentRequests } = getRequestSettings(algo, requestLimits)
       // While a 429 holds the server's gate, no new batch goes out: the queue
       // waits instead of draining into refusals (ocl_issues#2849).
+      const isQuotaStopped = () => Boolean(matchQuotaStopRef.current && spendsMatchQuota(algo, {canBridge}))
       const finished = await runWithConcurrency(chunk(_rows, batchSize), {
         concurrency: concurrentRequests,
         gate: getCapacityGate(getMatchAPIService(algo).URL),
+        maxHoldMs: CAPACITY_WAIT_CAP_MS,
         shouldAbort: () => abortRef.current,
-        shouldSkipRest: () => Boolean(matchQuotaStopRef.current && spendsMatchQuota(algo, {canBridge})),
+        shouldSkipRest: () => isQuotaStopped() || isRunThrottled(algo.id),
+        // A quota stop leaves the rest not run, as before; a server that
+        // stayed too busy leaves them throttled.
+        onSkipped: rowBatches => {
+          if(!isQuotaStopped())
+            markRowsThrottled(map(flatten(rowBatches), '__index'), algo.id, getAlgoLogExtras(algo))
+        },
         run: rowBatch => processBatch(_repo, rowBatch, algo).then((data) => {
+          // A batch that answers after a newer run started belongs to no run.
+          if(!isCurrentRun())
+            return
           // Populate rowMatchState before any consumer (setStateViews /
           // setAutoMatched) tries to read it. The per-row fetch flow
           // routes through `onResponse` which already calls
@@ -2345,31 +2366,17 @@ const MapProject = () => {
         setLoadingMatches(false)
     };
 
+    // Reranks the run's rows, at most maxConcurrent at once, through the same
+    // limiter as every other rerank. Stop returns at once.
     const processRerankWithConcurrency = async (_rows, maxConcurrent = 2) => {
-      const queue = _rows.slice();
-      const activeRequests = new Set();
-
-      while (queue.length > 0 || activeRequests.size > 0) {
-        while (queue.length > 0 && activeRequests.size < maxConcurrent) {
-          if (abortRef.current) {
-            setLoadingMatches(false)
-            return
-          }
-          if(rerankQuotaStopRef.current) {
-            queue.length = 0
-            break
-          }
-
-          const row = queue.shift();
-          const promise = rerank(row.__index, true)
-            .catch(() => null)
-            .finally(() => activeRequests.delete(promise));
-          activeRequests.add(promise);
-        }
-
-        if(activeRequests.size > 0)
-          await Promise.race(activeRequests);
-      }
+      const finished = await runWithConcurrency(_rows, {
+        concurrency: maxConcurrent,
+        shouldAbort: () => abortRef.current,
+        shouldSkipRest: () => Boolean(rerankQuotaStopRef.current),
+        run: row => rerank(row.__index, true).catch(() => null),
+      })
+      if(!finished)
+        setLoadingMatches(false)
     };
     // Capped users' algorithms carry the settings they run with, so the
     // AutomatchRun's config snapshot records what ran (ocl_online#274).
@@ -2597,9 +2604,14 @@ const MapProject = () => {
         break;
       };
       if (matchQuotaStopRef.current) break;
+      if(isRunThrottled(algo.id)) {
+        markRowsThrottled(map(_rows.slice(index), '__index'), algo.id, getAlgoLogExtras(algo))
+        break
+      }
       markAlgo(_rows[index].__index, algo.id, 0)
 
-      await fetchBridgeCandidates(_rows[index], 0, undefined, undefined, undefined, false, true, ((response, payload) => {
+      // Stop doesn't wait on a request that never answers (ocl_issues#2849).
+      await untilCancelled(fetchBridgeCandidates(_rows[index], 0, undefined, undefined, undefined, false, true, ((response, payload) => {
         const index = payload.rows[0].__index
         const results = (isArray(response) ? response : response?.data)
         log({action: 'algo_finished', extras: getAlgoLogExtras(algo)}, index)
@@ -2617,7 +2629,7 @@ const MapProject = () => {
             rawResponse: response
           }), {isRunTraffic: true})
         }
-      })); // wait for completion
+      })), () => abortRef.current); // wait for completion
       await new Promise(resolve => setTimeout(resolve, 200)); // 1s delay
     }
     const now = moment()
@@ -2633,10 +2645,15 @@ const MapProject = () => {
         break;
       };
 
+      if(isRunThrottled(algo.id) || isRunThrottled('ocl-scispacy-loinc')) {
+        markRowsThrottled(map(_rows.slice(index), '__index'), algo.id, getAlgoLogExtras(algo))
+        break
+      }
       markAlgo(_rows[index].__index, algo.id, 0)
 
       setLoadingMatches(true)
-      await fetchScispacyCandidates(_rows[index], false, false, true, (response => {
+      // Stop doesn't wait on a request that never answers (ocl_issues#2849).
+      await untilCancelled(fetchScispacyCandidates(_rows[index], false, false, true, (response => {
         const _index = _rows[index].__index
         const results = [{row: _rows[index], results: fromScispacyResultsToConcepts(getScispacyRowResults(response.data, _index))}]
         log({action: 'algo_finished', extras: getAlgoLogExtras(algo)}, _index)
@@ -2654,7 +2671,7 @@ const MapProject = () => {
             rawResponse: response
           }), {isRunTraffic: true})
         }
-      })); // wait for completion
+      })), () => abortRef.current); // wait for completion
       await new Promise(resolve => setTimeout(resolve, 500)); // 1s delay
     }
     const now = moment()
@@ -4132,9 +4149,16 @@ const MapProject = () => {
   const rerank = async (_index, isBulk=false, isRunTraffic=isBulk) => {
     const index = isNumber(_index) ? _index : rowIndex
     if(!isNumber(index)) return null
-    if(inFlightRerankRef.current.has(index)) {
-      // Another rerank is in flight for this row; flag a rerun and bail.
+    const rerankInFlight = inFlightRerankRef.current.get(index)
+    if(rerankInFlight) {
+      // Another rerank is in flight, or waiting its turn, for this row; flag
+      // a rerun. The run's sweep waits for it, then proposes the row's
+      // mapping, which only the sweep's own call does (ocl_issues#2849).
       rerankRerunNeededRef.current.add(index)
+      if(!isBulk)
+        return null
+      await rerankInFlight
+      setTimeout(() => setAutoMatched([index]), 1000)
       return null
     }
     // Wait for any in-flight $lookups for this row's concepts. buildRerankRowsForRow
@@ -4171,11 +4195,21 @@ const MapProject = () => {
         setTimeout(() => setAutoMatched([index]), 1000)
       return null
     }
-    inFlightRerankRef.current.add(index)
+    // A rerank in this run already stayed refused for the whole cap: don't
+    // ask again, the row's rerank is throttled ("not run, retry").
+    if(isRunTraffic && isRunThrottled('rerank')) {
+      markRowsThrottled([index], 'rerank', {algo: 'reranker'})
+      return null
+    }
+    let settleInFlight
+    inFlightRerankRef.current.set(index, new Promise(resolve => { settleInFlight = resolve }))
     markAlgo(index, 'rerank', 0)
     const service = APIService.concepts().appendToUrl('$rerank/')
     // A run's rerank ends when the run stops; a row reranked by hand doesn't.
     const isCancelled = isRunTraffic ? getRunStopCheck() : () => false
+    // A run's rerank that ends after a newer run started leaves its stages alone.
+    const runTicket = autoMatchRunTicketRef.current
+    const isSuperseded = () => isRunTraffic && runTicket !== autoMatchRunTicketRef.current
     let release = null
     try {
       // At most RERANK_MAX_IN_FLIGHT $rerank calls at once, whatever fired
@@ -4184,7 +4218,8 @@ const MapProject = () => {
       if(!release) {
         // Stopped before its turn; a stopped run reranks nothing more.
         rerankRerunNeededRef.current.delete(index)
-        markAlgo(index, 'rerank', -1)
+        if(!isSuperseded())
+          markAlgo(index, 'rerank', -1)
         return null
       }
       // Score the candidates that arrived while this call waited its turn too.
@@ -4203,11 +4238,14 @@ const MapProject = () => {
       })
       if(result.reason === 'cancelled') {
         rerankRerunNeededRef.current.delete(index)
-        markAlgo(index, 'rerank', -1)
+        if(!isSuperseded())
+          markAlgo(index, 'rerank', -1)
         return null
       }
       if(result.reason === 'throttled') {
         log({action: 'rerank_throttled', description: t('map_project.row_throttled'), extras: {attempts: result.attempts, waited_ms: result.waitedMs}}, index)
+        if(isSuperseded())
+          return null
         markAlgo(index, 'rerank', -4)
         if(isRunTraffic)
           noteThrottledRunRow('rerank', index)
@@ -4270,6 +4308,7 @@ const MapProject = () => {
     } finally {
       release?.()
       inFlightRerankRef.current.delete(index)
+      settleInFlight()
       // If new ConceptRows arrived while we were in flight, fire again.
       if(rerankRerunNeededRef.current.has(index)) {
         rerankRerunNeededRef.current.delete(index)
