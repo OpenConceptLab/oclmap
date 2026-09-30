@@ -125,11 +125,12 @@ export const buildConfigSnapshot = ({
  * Derive AutomatchRun completion counts + status from the per-row algo stages
  * captured during a run (oclapi2 PATCH /auto-match-runs/<id>/).
  *
- * Stage vocabulary (oclmap rowStageRef): -2 failed, -1 not run yet, 0 running,
- * 1 done. A row is **completed** when ANY attempted algo finished (1) and
- * **failed** when EVERY attempted algo failed (-2). Rows that never ran
- * (-1/undefined — e.g. a run cancelled before reaching them) or were still in
- * flight (0) count as NEITHER, so a cancelled run never over-reports
+ * Stage vocabulary (oclmap rowStageRef): -4 throttled, -2 failed, -1 not run
+ * yet, 0 running, 1 done. A row is **completed** when ANY attempted algo
+ * finished (1) and **failed** when EVERY attempted algo failed (-2). Rows that
+ * never ran (-1/undefined — e.g. a run cancelled before reaching them), were
+ * still in flight (0) or were throttled (-4: the server stayed too busy, so
+ * the row wasn't run) count as NEITHER, so a cancelled run never over-reports
  * completed_rows (ocl_online#115 review).
  *
  * @param {object}   [opts]
@@ -148,10 +149,12 @@ export const summarizeRunCompletion = ({
 } = {}) => {
   let completed = 0
   let failed = 0
+  let throttled = 0
   rowIndices.forEach(idx => {
     const stage = rowStages[idx] || {}
     const attempted = algoIds.map(id => stage[id]).filter(s => s !== undefined && s !== -1)
     if(!attempted.length) return
+    if(attempted.some(s => s === -4)) throttled += 1
     if(attempted.some(s => s === 1)) completed += 1
     else if(attempted.every(s => s === -2)) failed += 1
   })
@@ -161,6 +164,9 @@ export const summarizeRunCompletion = ({
   // Running out of match quota isn't a user cancel: the rows that finished are
   // kept. completion_status has no quota value yet, so it's recorded as partial.
   else if(stoppedForQuota) completion_status = 'partial'
+  // Rows the server was too busy to match can be run again: not a failure
+  // (ocl_issues#2849).
+  else if(throttled) completion_status = 'partial'
   else if(completed === 0) completion_status = 'failed'
   else if(completed < total) completion_status = 'partial'
   return { completed_rows: completed, failed_rows: failed, completion_status }

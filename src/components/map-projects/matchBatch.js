@@ -6,18 +6,22 @@
  * candidates. The caller's `send` must reject instead (service.request does),
  * so a failure is caught here, retried when it's transient, and reported per
  * row.
+ *
+ * A 429 waits for the server's Retry-After and resumes (ocl_issues#2849): a
+ * busy server makes a run slower, not broken.
  */
 import { isPreviewLimitError } from './previewLimits.js'
-import { isTransientNetworkError, retryWithBackoff } from '../../services/retry.js'
+import { isRetryableError, requestWithCapacityRetry } from '../../services/capacity.js'
 
-// The gateway answers these while the API rolls out or a task restarts. A 500
-// comes from the API itself, and retrying it only adds load.
-const RETRYABLE_STATUSES = new Set([502, 503, 504])
+// How long the row panel waits out a 429 before showing the row as throttled.
+// A person is watching it, so less than a run's 30 minutes.
+export const INTERACTIVE_WAIT_CAP_MS = 5 * 60 * 1000
 
 export const MATCH_RETRY_OPTIONS = {maxRetries: 2, baseDelayMs: 3000, backoffFactor: 4, jitterFactor: 0.25}
 
-export const isRetryableMatchError = err =>
-  isTransientNetworkError(err) || RETRYABLE_STATUSES.has(err?.response?.status)
+// Network errors and 502/503/504. A 429 isn't an error to retry: it's waited
+// out, however many times it comes.
+export const isRetryableMatchError = isRetryableError
 
 const getFailure = (err, attempts) => ({
   error: err?.response?.data?.detail || err?.message || 'unknown',
@@ -27,13 +31,19 @@ const getFailure = (err, attempts) => ({
 })
 
 /**
- * Mark the batch's rows running, send it (retrying transient failures), then
- * mark each row done (1) or failed (-2). Never rejects.
+ * Mark the batch's rows running, send it, then mark each row done (1), failed
+ * (-2) or throttled (-4). Never rejects.
  *
- * shouldStop is checked before every retry, including after the backoff
- * sleep. A batch stopped there (the run was cancelled, or another batch hit
- * the match quota) sends nothing more and puts its rows back to not run (-1),
- * like the rows the run never reached.
+ * A network error or a 502/503/504 is retried a bounded number of times, then
+ * fails the rows. A 429 waits for Retry-After, however often it comes, until
+ * the long cap; a batch still refused then is throttled (-4): "not run, retry",
+ * never failed. Waits on a gate shared with the run's other requests hold them
+ * all back together.
+ *
+ * shouldStop is checked before every send and during every wait. A batch
+ * stopped there (the run was cancelled, or another batch hit the match quota)
+ * sends nothing more and puts its rows back to not run (-1), like the rows the
+ * run never reached.
  *
  * @param {object}   opts
  * @param {number[]} opts.rowIndexes       the batch's row __index values
@@ -41,57 +51,91 @@ const getFailure = (err, attempts) => ({
  * @param {function} opts.setStage         (rowIndex, stage) => void
  * @param {function} opts.onRowFinished    rowIndex => void
  * @param {function} opts.onRowFailed      (rowIndex, {error, status, attempts, previewLimit}) => void
+ * @param {function} [opts.onRowThrottled] (rowIndex, {attempts, waitedMs}) => void
  * @param {function} [opts.onPreviewLimit] err => void, for a preview-limit 403 (never retried)
- * @param {function} [opts.shouldStop]     () => boolean; true skips any further retry
- * @param {object}   [opts.retryOptions]   overrides MATCH_RETRY_OPTIONS
- * @returns {Promise<object[]>} the batch's $match results, or [] when it failed or stopped
+ * @param {function} [opts.onWait]         info => void, as each wait starts (see requestWithCapacityRetry)
+ * @param {function} [opts.onWaitEnd]      () => void, as each wait ends
+ * @param {function} [opts.shouldStop]     () => boolean; true skips any further send
+ * @param {object}   [opts.retryOptions]   overrides MATCH_RETRY_OPTIONS; also takes gate, onCapacity and maxWaitMs
+ * @returns {Promise<object[]>} the batch's $match results, or [] when it failed, was throttled or stopped
  */
 export const runMatchBatch = async ({
-  rowIndexes, send, setStage, onRowFinished, onRowFailed, onPreviewLimit, shouldStop = () => false, retryOptions = {},
+  rowIndexes, send, setStage, onRowFinished, onRowFailed, onRowThrottled, onPreviewLimit, onWait, onWaitEnd,
+  shouldStop = () => false, retryOptions = {},
 }) => {
   rowIndexes.forEach(index => setStage(index, 0))
-  let attempts = 0
-  let lastError
-  let stopped = false
-  // retryWithBackoff asks this only when it would otherwise retry.
-  const stopBeforeRetry = () => {
-    stopped = shouldStop()
-    return stopped
-  }
-  let response
-  try {
-    response = await retryWithBackoff(attempt => {
-      // The run may have stopped while this batch slept in its backoff.
-      if(attempt > 0 && stopBeforeRetry())
-        throw lastError
-      attempts = attempt + 1
-      return send(attempt)
-    }, {
-      ...MATCH_RETRY_OPTIONS,
-      ...retryOptions,
-      isCancelled: stopBeforeRetry,
-      isRetryable: isRetryableMatchError,
-      onAttemptFailed: err => { lastError = err },
-    })
-  } catch (err) {
-    if(stopped) {
-      rowIndexes.forEach(index => setStage(index, -1))
-      return []
-    }
-    const failure = getFailure(err, attempts)
+  const result = await requestWithCapacityRetry(send, {
+    ...MATCH_RETRY_OPTIONS,
+    ...retryOptions,
+    isCancelled: shouldStop,
+    onWait,
+    onWaitEnd,
+  })
+  if(result.ok) {
     rowIndexes.forEach(index => {
-      setStage(index, -2)
-      onRowFailed(index, failure)
+      setStage(index, 1)
+      onRowFinished(index)
     })
-    if(failure.previewLimit)
-      onPreviewLimit?.(err)
+    return result.response?.data || []
+  }
+  if(result.reason === 'cancelled') {
+    rowIndexes.forEach(index => setStage(index, -1))
     return []
   }
+  if(result.reason === 'throttled') {
+    rowIndexes.forEach(index => {
+      setStage(index, -4)
+      onRowThrottled?.(index, {attempts: result.attempts, waitedMs: result.waitedMs})
+    })
+    return []
+  }
+  const failure = getFailure(result.error, result.attempts)
   rowIndexes.forEach(index => {
-    setStage(index, 1)
-    onRowFinished(index)
+    setStage(index, -2)
+    onRowFailed(index, failure)
   })
-  return response?.data || []
+  if(failure.previewLimit)
+    onPreviewLimit?.(result.error)
+  return []
+}
+
+/**
+ * The bulk Auto Match scheduler: runs each item through run(item) with at most
+ * concurrency in flight. While the gate is paused (a request got a 429) it
+ * sends nothing new, and waits for the gate to reopen or a request in flight
+ * to settle, so a throttled run doesn't drain its queue into more refusals.
+ *
+ * shouldAbort stops it at once (the requests in flight are left to finish on
+ * their own) and returns false. shouldSkipRest drops the rest of the queue but
+ * waits for the requests in flight. Otherwise returns true once every item ran.
+ */
+export const runWithConcurrency = async (items, {
+  concurrency, run, shouldAbort = () => false, shouldSkipRest = () => false, gate = null, pollMs,
+}) => {
+  const queue = items.slice()
+  const active = new Set()
+  while(queue.length || active.size) {
+    while(queue.length && active.size < concurrency) {
+      if(shouldAbort())
+        return false
+      if(shouldSkipRest()) {
+        queue.length = 0
+        break
+      }
+      if(gate?.isPaused())
+        break
+      const item = queue.shift()
+      const promise = run(item).finally(() => active.delete(promise))
+      active.add(promise)
+    }
+    if(queue.length && active.size < concurrency && gate?.isPaused()) {
+      await Promise.race([gate.wait(shouldAbort, {pollMs}), ...active])
+      continue
+    }
+    if(active.size)
+      await Promise.race(active)
+  }
+  return true
 }
 
 /**
@@ -116,27 +160,29 @@ export const formatRowNumbers = (rowIndexes, {maxRanges = 10} = {}) => {
 
 /**
  * Send one single-row $match (the row panel's match and "load more"),
- * retrying transient failures like a bulk batch (ocl_online#283). Never
- * rejects. After the retries it gives an errorBody for the row's existing
- * failure path: the server's JSON when it carries a detail or an error_code
- * (so a preview limit still opens its dialog), else {detail, status}.
+ * retrying transient failures like a bulk batch (ocl_online#283) and waiting
+ * out 429s for up to INTERACTIVE_WAIT_CAP_MS (ocl_issues#2849). Never rejects.
+ * After the retries it gives an errorBody for the row's existing failure
+ * path: the server's JSON when it carries a detail or an error_code (so a
+ * preview limit still opens its dialog), else {detail, status}. throttled is
+ * true when the server was still busy at the cap.
  *
  * @param {function} send  attempt => Promise<axios response>; must reject on failure
- * @param {object}   [opts.retryOptions] overrides MATCH_RETRY_OPTIONS
- * @returns {Promise<{ok: true, response: object}|{ok: false, errorBody: object, previewLimit: boolean}>}
+ * @param {object}   [opts.retryOptions] overrides MATCH_RETRY_OPTIONS; also takes gate, onWait, onWaitEnd, onCapacity
+ * @returns {Promise<{ok: true, response: object}|{ok: false, errorBody: object, previewLimit: boolean, throttled: boolean}>}
  */
 export const requestSingleMatch = async (send, { retryOptions = {} } = {}) => {
-  try {
-    const response = await retryWithBackoff(send, {...MATCH_RETRY_OPTIONS, ...retryOptions, isRetryable: isRetryableMatchError})
-    return { ok: true, response }
-  } catch (err) {
-    const data = err?.response?.data
-    const hasServerBody = data && typeof data === 'object' && !Array.isArray(data) && (data.detail || data.error_code)
-    const { error, status } = getFailure(err, 0)
-    return {
-      ok: false,
-      errorBody: hasServerBody ? data : { detail: error, status },
-      previewLimit: isPreviewLimitError(err),
-    }
+  const result = await requestWithCapacityRetry(send, {maxWaitMs: INTERACTIVE_WAIT_CAP_MS, ...MATCH_RETRY_OPTIONS, ...retryOptions})
+  if(result.ok)
+    return { ok: true, response: result.response }
+  const err = result.error
+  const data = err?.response?.data
+  const hasServerBody = data && typeof data === 'object' && !Array.isArray(data) && (data.detail || data.error_code)
+  const { error, status } = getFailure(err, 0)
+  return {
+    ok: false,
+    errorBody: hasServerBody ? data : { detail: error, status },
+    previewLimit: isPreviewLimitError(err),
+    throttled: result.reason === 'throttled',
   }
 }

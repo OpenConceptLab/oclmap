@@ -13,7 +13,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { createAutosaveScheduler, saveOnLeave, trackSave, whenSaved, hasSaveInFlight, AUTOSAVE_DELAY_MS } from '../autosave.js'
+import { createAutosaveScheduler, createLatestSender, saveOnLeave, trackSave, whenSaved, hasSaveInFlight, AUTOSAVE_DELAY_MS } from '../autosave.js'
 
 // Virtual clock standing in for setTimeout/clearTimeout. Timers scheduled
 // while the clock is being advanced land in a later window, as real timers
@@ -303,4 +303,64 @@ test('trackSave: an older save settling does not untrack a newer one for the sam
   await newer
   await nextTick()
   assert.equal(hasSaveInFlight(), false)
+})
+
+// ── createLatestSender (ocl_issues#2849) ───────────────────────────────────
+// The logs POST sends the whole log each time. With retries, an older POST
+// that waited out a 429 could land after a newer one and overwrite it; so one
+// POST at a time, and triggers during it coalesce into one more, which reads
+// the log as it is then.
+
+const deferred = () => {
+  let resolve
+  const promise = new Promise(r => { resolve = r })
+  return {promise, resolve}
+}
+
+test('createLatestSender: one trigger sends once', async () => {
+  let sends = 0
+  const sender = createLatestSender(async () => { sends += 1 })
+  await sender.trigger()
+  assert.equal(sends, 1)
+})
+
+test('createLatestSender: triggers while a send is in flight coalesce into one more send', async () => {
+  const gates = [deferred(), deferred()]
+  let sends = 0
+  const sender = createLatestSender(() => gates[sends++].promise)
+  const first = sender.trigger()
+  sender.trigger()
+  sender.trigger()
+  const last = sender.trigger()
+  assert.equal(sends, 1)
+  gates[0].resolve()
+  await new Promise(resolve => setTimeout(resolve, 0))
+  assert.equal(sends, 2)
+  gates[1].resolve()
+  // every trigger's promise settles once the log is sent as it stood last
+  await Promise.all([first, last])
+  assert.equal(sends, 2)
+})
+
+test('createLatestSender: a failed send doesn\'t stop the pending one, and nothing rejects', async () => {
+  let sends = 0
+  const sender = createLatestSender(async () => {
+    sends += 1
+    if(sends === 1) {
+      await new Promise(resolve => setTimeout(resolve, 5))
+      throw new Error('boom')
+    }
+  })
+  const first = sender.trigger()
+  const second = sender.trigger()
+  await Promise.all([first, second])
+  assert.equal(sends, 2)
+})
+
+test('createLatestSender: after it settles, the next trigger sends again', async () => {
+  let sends = 0
+  const sender = createLatestSender(async () => { sends += 1 })
+  await sender.trigger()
+  await sender.trigger()
+  assert.equal(sends, 2)
 })

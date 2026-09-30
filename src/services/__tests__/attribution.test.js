@@ -212,3 +212,22 @@ test('user cancel wins over a quota stop', () => {
   const r = summarizeRunCompletion({ rowStages: {0: {'ocl-search': 1}}, rowIndices: [0], algoIds: ['ocl-search'], aborted: true, stoppedForQuota: true })
   assert.equal(r.completion_status, 'cancelled')
 })
+
+// ocl_issues#2849: a row the server was too busy to match (-4) wasn't run, it
+// didn't fail. It counts as neither, and a run with such rows is partial.
+test('throttled rows (-4) count as neither completed nor failed', () => {
+  const rowStages = { 0: {'ocl-search': 1}, 1: {'ocl-search': -4}, 2: {'ocl-search': -2} }
+  const r = summarizeRunCompletion({ rowStages, rowIndices: [0, 1, 2], algoIds: ['ocl-search'] })
+  assert.deepEqual(r, { completed_rows: 1, failed_rows: 1, completion_status: 'partial' })
+})
+
+test('a run whose rows were all throttled is partial, not failed', () => {
+  const rowStages = { 0: {'ocl-search': -4}, 1: {'ocl-search': -4, 'ocl-semantic': -2} }
+  const r = summarizeRunCompletion({ rowStages, rowIndices: [0, 1], algoIds: ALGOS })
+  assert.deepEqual(r, { completed_rows: 0, failed_rows: 0, completion_status: 'partial' })
+})
+
+test('a user cancel wins over throttled rows', () => {
+  const r = summarizeRunCompletion({ rowStages: {0: {'ocl-search': -4}}, rowIndices: [0], algoIds: ['ocl-search'], aborted: true })
+  assert.equal(r.completion_status, 'cancelled')
+})

@@ -122,6 +122,16 @@ export const hasCurrentAnalysis = (analyses, fingerprint) => {
 // the row's index, not its position in the run (ocl_online#258).
 export const getScispacyRowResults = (responseData, rowIndex) => responseData?.[rowIndex] || []
 
+// Whether a failed ScispaCy call means the service is still starting: it
+// answers 503 {status: 'warming_up'} while its host boots, then a 502 until
+// the app is up. The row waits for it rather than failing.
+export const isScispacyWarmingUp = (err, seenWarmingUp = false) => {
+  const data = err?.response?.data
+  if(data?.status === 'warming_up')
+    return true
+  return Boolean(seenWarmingUp && err?.response?.status === 502)
+}
+
 // The in-flight $lookups for a row's concepts. Rerank waits for them, and so
 // does a bulk run's AI step, which can reach a row whose rerank was skipped
 // (after a rerank quota stop), so the AI sees the looked-up concepts.
@@ -132,6 +142,11 @@ export const getPendingRowLookups = (rowState, inFlightLookups) =>
 
 // How long a bulk run's AI step waits for a row's lookups before going ahead.
 export const AI_LOOKUP_WAIT_MS = 15000
+
+// $rerank calls in flight at once, per tab, whatever fired them: the rerank
+// sweep, or the per-row reranks as batches finish (ocl_issues#2849). Each ties
+// up an API worker for seconds, and a finished 10-row batch used to fire ten.
+export const RERANK_MAX_IN_FLIGHT = 2
 
 // How long rerank waits for a row's lookups before going ahead without them
 // (ocl_online#283). A guard against a lookup that never settles, longer than

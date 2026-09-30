@@ -3,8 +3,9 @@ import assert from 'node:assert/strict'
 
 import {
   getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep,
-  getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, RERANK_LOOKUP_WAIT_MS, AI_LOOKUP_WAIT_MS
+  getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, RERANK_LOOKUP_WAIT_MS, AI_LOOKUP_WAIT_MS, isScispacyWarmingUp, RERANK_MAX_IN_FLIGHT
 } from '../autoMatchRows.js'
+import { createLimiter } from '../../../services/capacity.js'
 
 const rows = [
   { __index: 0, label: 'zero' },
@@ -288,4 +289,44 @@ test('waitForLookups: a lookup that timed out is not waited on again', async () 
 test('RERANK_LOOKUP_WAIT_MS: a hang guard, longer than the AI step\'s wait', () => {
   assert.ok(RERANK_LOOKUP_WAIT_MS >= 30000)
   assert.ok(RERANK_LOOKUP_WAIT_MS > AI_LOOKUP_WAIT_MS)
+})
+
+// ocl_issues#2849: ScispaCy now goes through service.request, which rejects on
+// a non-2xx. Its warm-up answers must still read as "wait", not as a failure.
+test('isScispacyWarmingUp: a 503 warming_up body means the service is starting', () => {
+  const err = {response: {status: 503, data: {status: 'warming_up', message: 'Starting'}}}
+  assert.equal(isScispacyWarmingUp(err), true)
+})
+
+test('isScispacyWarmingUp: a 502 while the host boots counts only once warm-up was seen', () => {
+  const err = {response: {status: 502, data: {error: 'Bad gateway'}}}
+  assert.equal(isScispacyWarmingUp(err), false)
+  assert.equal(isScispacyWarmingUp(err, true), true)
+})
+
+test('isScispacyWarmingUp: other errors are not warm-up', () => {
+  assert.equal(isScispacyWarmingUp({response: {status: 500, data: {detail: 'boom'}}}, true), false)
+  assert.equal(isScispacyWarmingUp({response: {status: 429, data: {}}}, true), false)
+  assert.equal(isScispacyWarmingUp(new Error('Network Error'), true), false)
+  assert.equal(isScispacyWarmingUp(undefined), false)
+})
+
+// ocl_issues#2849: every $rerank goes through one limiter per tab. A finished
+// 10-row batch used to fire 10 at once, on top of the rerank sweep's 2.
+test('RERANK_MAX_IN_FLIGHT: a batch\'s reranks and the sweep\'s together keep at most 2 in flight', async () => {
+  assert.equal(RERANK_MAX_IN_FLIGHT, 2)
+  const limiter = createLimiter(RERANK_MAX_IN_FLIGHT)
+  let inFlight = 0
+  let maxInFlight = 0
+  const rerank = async () => {
+    const release = await limiter.acquire()
+    inFlight += 1
+    maxInFlight = Math.max(maxInFlight, inFlight)
+    await new Promise(resolve => setTimeout(resolve, 2))
+    inFlight -= 1
+    release()
+  }
+  // ten per-row reranks as one batch finishes, and the sweep's two
+  await Promise.all([...Array(10).keys(), 'sweep-a', 'sweep-b'].map(rerank))
+  assert.equal(maxInFlight, 2)
 })
