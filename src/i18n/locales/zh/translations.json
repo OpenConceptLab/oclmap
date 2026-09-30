@@ -579,6 +579,7 @@
     "auto_match_rows_failed_algorithm": "{{algorithm}}：第 {{rows}} 行",
     "match_request_failed": "无法获取候选项（{{error}}）。请重试。",
     "waiting_for_capacity": "正在等待容量：由于需求量大，结果可能需要更长时间",
+    "waiting_for_capacity_short": "正在等待容量",
     "row_throttled": "服务器繁忙：尚未匹配。请稍后重试",
     "algorithm_throttled": "服务器繁忙，本次未能匹配此行。没有出错：请稍后重新运行。",
     "auto_match_rows_throttled": "服务器繁忙，{{count}} 个输入行未能匹配：{{details}}。没有出错。请稍后对这些行重新运行自动匹配以完成匹配。",

@@ -24,6 +24,14 @@ const MAX_ERROR_RETRY_AFTER_MS = 60000
 // to listen to.
 const POLL_MS = 250
 
+// Transport timeouts: a send that never answers can't hold a run, a rerank
+// slot or the logs forever. A heavy call ($match, $rerank) gets longer than
+// the API itself runs a request before giving up on it, so a timeout never
+// cuts short (and re-sends, and re-meters) work the server is still doing.
+// Light calls (logs, run records, lookups, search) answer within seconds.
+export const HEAVY_REQUEST_TIMEOUT_MS = 11 * 60 * 1000
+export const LIGHT_REQUEST_TIMEOUT_MS = 60 * 1000
+
 // The gateway answers these while the API rolls out or a task restarts. A 500
 // comes from the API itself, and retrying it only adds load.
 const RETRYABLE_STATUSES = new Set([502, 503, 504])
@@ -238,11 +246,13 @@ export const requestWithCapacityRetry = async (send, {
           Math.max(retryAfterMs, MIN_THROTTLE_WAIT_MS)
         throttles += 1
         const delayMs = baseMs * (1 + random() * THROTTLE_JITTER)
-        // The other requests to this server hold back as long, even when
-        // this one gives up now.
-        gate?.pause(baseMs)
+        // Past the cap, this request gives up alone. Pausing the gate for so
+        // long would hold back every other request to the server (another
+        // algorithm, rerank, the row panel) for as long; the caller stops
+        // asking for what was refused instead.
         if(waitedMs + delayMs > maxWaitMs)
           return end({ ok: false, reason: 'throttled', error: err })
+        gate?.pause(baseMs)
         if(!(await waitFor(delayMs, { reason: 'throttled', status: 429, retryAfterMs, capacity: getCapacityHeaders(err.response) })))
           return cancelled()
         continue

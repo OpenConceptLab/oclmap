@@ -21,6 +21,8 @@ import {
   createLimiter,
   getCapacityHeaders,
   getRetryAfterMs,
+  HEAVY_REQUEST_TIMEOUT_MS,
+  LIGHT_REQUEST_TIMEOUT_MS,
   requestWithCapacityRetry,
   sleepUnlessCancelled,
   untilCancelled,
@@ -511,19 +513,22 @@ test('requestWithCapacityRetry: a gate pause that keeps extending ends "throttle
   assert.ok(clock.t <= 60250, `waited ${clock.t}`)
 })
 
-test('requestWithCapacityRetry: a Retry-After past the cap still pauses the gate, so the other requests hold back too', async () => {
+// The e2e re-run (scenario T): pausing the whole server for a Retry-After past
+// the cap blocked every other algorithm, rerank and later run in the tab for
+// as long. The request gives up alone; the run stops asking for that
+// algorithm (MapProject's run-level throttle), and the others carry on.
+test('requestWithCapacityRetry: a Retry-After past the cap ends "throttled" without pausing the gate for the others', async () => {
   const clock = virtualClock()
   const gate = createCapacityGate({now: clock.now})
 
-  const first = await requestWithCapacityRetry(scripted(throttled(86400)).send, {gate, now: clock.now, sleep: clock.sleep})
-  const second = scripted(ok())
-  const next = await requestWithCapacityRetry(second.send, {gate, now: clock.now, sleep: clock.sleep})
+  const first = await requestWithCapacityRetry(scripted(throttled(4000)).send, {gate, now: clock.now, sleep: clock.sleep})
+  const other = scripted(ok())
+  const next = await requestWithCapacityRetry(other.send, {gate, now: clock.now, sleep: clock.sleep})
 
   assert.equal(first.reason, 'throttled')
-  assert.equal(gate.pausedForMs(), 86400 * 1000)
-  // the next request doesn't ask again: the server said when to come back
-  assert.equal(next.reason, 'throttled')
-  assert.equal(second.sent.length, 0)
+  assert.equal(gate.isPaused(), false)
+  assert.equal(next.ok, true)
+  assert.equal(other.sent.length, 1)
   assert.equal(clock.t, 0)
 })
 
@@ -538,4 +543,18 @@ test('untilCancelled: the promise\'s value when it settles, or cancelled when St
 
 test('untilCancelled: a rejection passes through', async () => {
   await assert.rejects(untilCancelled(Promise.reject(new Error('boom')), () => false, {pollMs: 5}), /boom/)
+})
+
+// Codex review, pass 2: transport timeouts bound a send that never answers.
+test('request timeouts: heavy calls outlast any answer the API gives; light calls give up within a minute', () => {
+  assert.ok(HEAVY_REQUEST_TIMEOUT_MS > 10 * 60 * 1000)
+  assert.equal(LIGHT_REQUEST_TIMEOUT_MS, 60 * 1000)
+})
+
+test('requestWithCapacityRetry: an attempt that timed out (axios ECONNABORTED) is retried like a network error', async () => {
+  const timedOut = Object.assign(new Error('timeout of 60000ms exceeded'), {isAxiosError: true, code: 'ECONNABORTED'})
+  const {send, sent} = scripted(timedOut, ok())
+  const result = await requestWithCapacityRetry(send, {sleep: async () => {}})
+  assert.equal(result.ok, true)
+  assert.equal(sent.length, 2)
 })

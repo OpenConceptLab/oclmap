@@ -538,3 +538,17 @@ test('runWithConcurrency: a pause longer than maxHoldMs doesn\'t hold the queue 
   assert.deepEqual(ran, [1, 2, 3])
   assert.ok(Date.now() - started < 1000)
 })
+
+// Codex review, pass 2: the scheduler's hold budget is cumulative.
+test('runWithConcurrency: a pause that keeps extending holds the queue for maxHoldMs in all, then lets it go', async () => {
+  const gate = createCapacityGate()
+  gate.pause(40)
+  // other requests keep pushing the pause out
+  const timer = setInterval(() => gate.pause(40), 10)
+  const started = Date.now()
+  const ran = []
+  await runWithConcurrency([1, 2], {concurrency: 1, gate, maxHoldMs: 150, pollMs: 5, run: async () => { ran.push(Date.now() - started) }})
+  clearInterval(timer)
+  assert.equal(ran.length, 2)
+  assert.ok(ran[0] >= 140 && ran[0] < 1000, `first batch went out at ${ran[0]} ms`)
+})

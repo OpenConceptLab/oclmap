@@ -103,9 +103,10 @@ export const runMatchBatch = async ({
  * The bulk Auto Match scheduler: runs each item through run(item) with at most
  * concurrency in flight. While the gate is paused (a request got a 429) it
  * sends nothing new, and waits for the gate to reopen or a request in flight
- * to settle, so a throttled run doesn't drain its queue into more refusals. A
- * pause longer than maxHoldMs doesn't hold the queue: its items go out and
- * end throttled at once, without sending.
+ * to settle, so a throttled run doesn't drain its queue into more refusals.
+ * It holds the queue for at most maxHoldMs in all, however often the pause is
+ * extended; after that, and for a pause longer than what's left of it, the
+ * items go out and wait (or end throttled) as requests of their own.
  *
  * shouldAbort stops it at once, even while a request in flight never answers
  * (those are left to finish on their own), and returns false. shouldSkipRest
@@ -117,7 +118,8 @@ export const runWithConcurrency = async (items, {
 }) => {
   const queue = items.slice()
   const active = new Set()
-  const isHeld = () => Boolean(gate?.isPaused() && gate.pausedForMs() <= maxHoldMs)
+  let heldMs = 0
+  const isHeld = () => Boolean(gate?.isPaused() && gate.pausedForMs() <= maxHoldMs - heldMs)
   while(queue.length || active.size) {
     while(queue.length && active.size < concurrency) {
       if(shouldAbort())
@@ -136,11 +138,15 @@ export const runWithConcurrency = async (items, {
       active.add(promise)
     }
     const waitingOn = [...active]
-    if(queue.length && active.size < concurrency && isHeld())
-      waitingOn.push(gate.wait(shouldAbort, {pollMs, maxMs: maxHoldMs}))
+    const holding = queue.length && active.size < concurrency && isHeld()
+    if(holding)
+      waitingOn.push(gate.wait(shouldAbort, {pollMs, maxMs: maxHoldMs - heldMs}))
     if(!waitingOn.length)
       continue
+    const waitStartedAt = Date.now()
     const { settled } = await untilCancelled(Promise.race(waitingOn), shouldAbort, {pollMs})
+    if(holding)
+      heldMs += Date.now() - waitStartedAt
     if(!settled)
       return false
   }

@@ -71,7 +71,7 @@ import { OperationsContext } from '../app/LayoutContext';
 
 import APIService, { isTransientNetworkError, retryWithBackoff } from '../../services/APIService';
 import { buildAttributionHeaders, buildConfigSnapshot, summarizeRunCompletion } from '../../services/attribution'
-import { CAPACITY_WAIT_CAP_MS, createCapacityGate, createLimiter, isRetryableError, requestWithCapacityRetry, sleepUnlessCancelled, untilCancelled } from '../../services/capacity'
+import { CAPACITY_WAIT_CAP_MS, HEAVY_REQUEST_TIMEOUT_MS, LIGHT_REQUEST_TIMEOUT_MS, createCapacityGate, createLimiter, isRetryableError, requestWithCapacityRetry, sleepUnlessCancelled, untilCancelled } from '../../services/capacity'
 import { highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, hasCapability, getMapperPreview, getNewProjectBlockReason, downloadObject, currentUserToken, refreshCurrentUserCapabilitiesCache } from '../../common/utils';
 import { WHITE, SURFACE_COLORS, TEXT_GRAY } from '../../common/colors';
 
@@ -1662,9 +1662,17 @@ const MapProject = () => {
           user: user.username || user.id,
           extras: isAutoSave ? {reasons: options.reasons || []} : (isUpdate ? undefined : {project: response.data})
         }
-        const savedProjectLogs = [saveLog, ...projectLogsForSave]
-        projectLogsRef.current = savedProjectLogs
-        setProjectLogs(savedProjectLogs)
+        // Entries logged while the save was in flight are kept. A save that
+        // lands after the user opened another project uses the logs as they
+        // were when it started, and leaves the open project's alone
+        // (ocl_issues#2849).
+        const isOtherProjectOpen = isUpdate && String(projectIdRef.current) !== String(response.data.id)
+        const savedProjectLogs = [saveLog, ...(isOtherProjectOpen ? projectLogsForSave : projectLogsRef.current)]
+        const savedRowLogs = isOtherProjectOpen ? rowLogsForSave : logsRef.current
+        if(!isOtherProjectOpen) {
+          projectLogsRef.current = savedProjectLogs
+          setProjectLogs(savedProjectLogs)
+        }
         if(options.closeConfigure !== false) {
           configSnapshotOnOpenRef.current = null
           setConfigure(false)
@@ -1679,9 +1687,7 @@ const MapProject = () => {
         if(!isAutoSave)
           baseSetAlert({severity: 'success', message: t('map_project.successfully_saved'), duration: 2000})
 
-        // The logs as they were when this save started: it can land after
-        // the user moved on to another project.
-        postProjectLogs(response.data.url, {row_logs: rowLogsForSave, project_logs: savedProjectLogs})
+        postProjectLogs(response.data.url, {row_logs: savedRowLogs, project_logs: savedProjectLogs})
       } else if(options.leaving && status !== 401) {
         // The user has left the project, so no dialog can show: say so once.
         baseSetAlert({severity: 'error', message: t('map_project.leave_save_failed', {name: name || project?.name, detail: errorData?.detail || t('unknown_error')}), duration: 12000})
@@ -1730,7 +1736,7 @@ const MapProject = () => {
       return
     if(!logsSendersRef.current.has(url))
       logsSendersRef.current.set(url, createLatestSender(getPayload => requestWithCapacityRetry(
-        () => APIService.new().overrideURL(url).appendToUrl('logs/').request('POST', getPayload(), null, {handlesThrottle: true}),
+        () => APIService.new().overrideURL(url).appendToUrl('logs/').request('POST', getPayload(), null, {handlesThrottle: true, timeout: LIGHT_REQUEST_TIMEOUT_MS}),
         {maxWaitMs: INTERACTIVE_WAIT_CAP_MS}
       )))
     logsSendersRef.current.get(url).trigger({logs})
@@ -1857,13 +1863,28 @@ const MapProject = () => {
       }),
     }
     try {
-      // A busy server's 429 is waited out, and Stop ends the wait. Nothing
-      // else is retried: after a 502 the run may exist already, and a retry
-      // would open a second one (ocl_issues#2849).
-      const result = await requestWithCapacityRetry(
-        () => APIService.new().overrideURL(project.url).appendToUrl('auto-match-runs/').request('POST', body, null, {handlesThrottle: true}),
-        {maxWaitMs: INTERACTIVE_WAIT_CAP_MS, isCancelled: getRunStopCheck(), isRetryable: () => false, onCapacity: noteCapacity}
+      // A busy server's 429 is waited out, and Stop ends the wait, and the
+      // wait for an answer. Nothing else is retried: after a 502 or a timeout
+      // the run may exist already, and a retry would open a second one
+      // (ocl_issues#2849).
+      const isStopped = getRunStopCheck()
+      const request = requestWithCapacityRetry(
+        () => APIService.new().overrideURL(project.url).appendToUrl('auto-match-runs/').request('POST', body, null, {handlesThrottle: true, timeout: LIGHT_REQUEST_TIMEOUT_MS}),
+        {maxWaitMs: INTERACTIVE_WAIT_CAP_MS, isCancelled: isStopped, isRetryable: () => false, onCapacity: noteCapacity}
       )
+      const outcome = await untilCancelled(request, isStopped)
+      if(!outcome.settled) {
+        // Stopped before the server answered: close a run it opens anyway.
+        request.then(late => {
+          const lateId = late.ok && late.response?.data?.id
+          if(lateId)
+            APIService.new().overrideURL('/auto-match-runs/' + lateId + '/')
+              .request('PATCH', {completed_rows: 0, failed_rows: 0, completion_status: 'cancelled'}, null, {handlesThrottle: true, timeout: LIGHT_REQUEST_TIMEOUT_MS})
+              .catch(() => {})
+        })
+        return
+      }
+      const result = outcome.value
       const response = result.ok ? result.response : result.error?.response
       const status = response?.status
       const data = response?.data
@@ -1905,7 +1926,7 @@ const MapProject = () => {
     // retried; Stop doesn't end it, so a stopped run is closed too
     // (ocl_issues#2849). requestWithCapacityRetry never rejects.
     await requestWithCapacityRetry(
-      () => APIService.new().overrideURL('/auto-match-runs/' + run.id + '/').request('PATCH', payload, null, {handlesThrottle: true}),
+      () => APIService.new().overrideURL('/auto-match-runs/' + run.id + '/').request('PATCH', payload, null, {handlesThrottle: true, timeout: LIGHT_REQUEST_TIMEOUT_MS}),
       {maxWaitMs: INTERACTIVE_WAIT_CAP_MS}
     )
   }
@@ -2064,7 +2085,7 @@ const MapProject = () => {
     service.post = (body, token, headers, query) => {
       const context = bridgeCallContextRef.current || {}
       context.posted = true
-      return requestWithCapacityRetry(() => service.request('POST', body, token, {headers: headers || {}, query, handlesThrottle: true}), {
+      return requestWithCapacityRetry(() => service.request('POST', body, token, {headers: headers || {}, query, handlesThrottle: true, timeout: HEAVY_REQUEST_TIMEOUT_MS}), {
         gate: getCapacityGate(service.URL),
         isCancelled: context.isCancelled || (() => false),
         maxWaitMs: context.isBulk ? CAPACITY_WAIT_CAP_MS : INTERACTIVE_WAIT_CAP_MS,
@@ -2274,6 +2295,7 @@ const MapProject = () => {
               ...extraParams
             },
             handlesThrottle: true,
+            timeout: HEAVY_REQUEST_TIMEOUT_MS,
           }
         ),
         retryOptions: {gate: getCapacityGate(service.URL), onCapacity: noteCapacity},
@@ -2596,6 +2618,8 @@ const MapProject = () => {
   }
 
   const fetchBulkBridgeCandidates = async (_rows, algo) => {
+    // A row answered after a newer run started belongs to no run.
+    const runTicket = autoMatchRunTicketRef.current
     setLoadingMatches(true)
     setBridgeCandidatesStartedAt(moment())
     for (let index = 0; index < _rows.length; index++) {
@@ -2612,6 +2636,8 @@ const MapProject = () => {
 
       // Stop doesn't wait on a request that never answers (ocl_issues#2849).
       await untilCancelled(fetchBridgeCandidates(_rows[index], 0, undefined, undefined, undefined, false, true, ((response, payload) => {
+        if(runTicket !== autoMatchRunTicketRef.current)
+          return
         const index = payload.rows[0].__index
         const results = (isArray(response) ? response : response?.data)
         log({action: 'algo_finished', extras: getAlgoLogExtras(algo)}, index)
@@ -2637,6 +2663,8 @@ const MapProject = () => {
   }
 
   const fetchBulkScispacyCandidates = async (_rows, algo) => {
+    // A row answered after a newer run started belongs to no run.
+    const runTicket = autoMatchRunTicketRef.current
     setLoadingMatches(true)
     setScispacyCandidatesStartedAt(moment())
     for (let index = 0; index < _rows.length; index++) {
@@ -2654,6 +2682,8 @@ const MapProject = () => {
       setLoadingMatches(true)
       // Stop doesn't wait on a request that never answers (ocl_issues#2849).
       await untilCancelled(fetchScispacyCandidates(_rows[index], false, false, true, (response => {
+        if(runTicket !== autoMatchRunTicketRef.current)
+          return
         const _index = _rows[index].__index
         const results = [{row: _rows[index], results: fromScispacyResultsToConcepts(getScispacyRowResults(response.data, _index))}]
         log({action: 'algo_finished', extras: getAlgoLogExtras(algo)}, _index)
@@ -3741,6 +3771,7 @@ const MapProject = () => {
           encoder_model: !isMultiAlgo && encoderModel ? encoderModel : undefined
         },
         handlesThrottle: true,
+        timeout: HEAVY_REQUEST_TIMEOUT_MS,
       }
     ), {retryOptions: {
       gate: getCapacityGate(service.URL),
@@ -3815,6 +3846,18 @@ const MapProject = () => {
       }
       markAlgo(__row.__index, algoId, 0)
       setIsLoadingInDecisionView(true)
+      // One algorithm failing doesn't stop the row's others, and the panel
+      // stops loading (ocl_online#283). ScispaCy and the bridge show their own
+      // failures, then go on here too (ocl_issues#2849).
+      const goOnAfterFailure = () => {
+        setIsLoadingInDecisionView(false)
+        const nextAlgoAfterFailure = getNextAlgoDef(algoId)
+        if(nextAlgoAfterFailure?.id && (offset === 0 || nextAlgoAfterFailure.type !== 'ocl-scispacy')) {
+          markAlgo(__row.__index, nextAlgoAfterFailure.id, 0)
+          fetchAllCandidatesForRow(nextAlgoAfterFailure.id, __row, offset, _retired, scrollToBottom, _filters, forceReload, true)
+        } else
+          scheduleRerank(__row.__index)
+      }
       const onResponse = (response, payload) => {
         const projectContext = buildProjectContext()
         const logExtras = getAlgoLogExtras(getAlgoDef(algoId))
@@ -3847,15 +3890,7 @@ const MapProject = () => {
               rawResponse: response
             }))
           }
-          // One algorithm failing doesn't stop the row's others, and the
-          // panel stops loading (ocl_online#283).
-          setIsLoadingInDecisionView(false)
-          const nextAlgoAfterFailure = getNextAlgoDef(algoId)
-          if(nextAlgoAfterFailure?.id && (offset === 0 || nextAlgoAfterFailure.type !== 'ocl-scispacy')) {
-            markAlgo(__row.__index, nextAlgoAfterFailure.id, 0)
-            fetchAllCandidatesForRow(nextAlgoAfterFailure.id, __row, offset, _retired, scrollToBottom, _filters, forceReload, true)
-          } else
-            scheduleRerank(__row.__index)
+          goOnAfterFailure()
           return
         }
         log({action: 'algo_finished', extras: logExtras}, __row.__index)
@@ -3929,9 +3964,9 @@ const MapProject = () => {
       if(['ocl-semantic', 'ocl-search', 'custom'].includes(algoDef.type)) {
         fetchOCLOrCustomCandidates(algoDef, _row, offset, _retired, _filters, onResponse)
       } else if (algoDef.type === 'ocl-scispacy') {
-        fetchScispacyCandidates(__row, scrollToBottom, forceReload, false, onResponse)
+        fetchScispacyCandidates(__row, scrollToBottom, forceReload, false, onResponse, goOnAfterFailure)
       } else if (['ocl-bridge', 'ocl-ciel-bridge'].includes(algoDef.type)) {
-        fetchBridgeCandidates(__row, offset, _retired, scrollToBottom, _filters, forceReload, false, onResponse)
+        fetchBridgeCandidates(__row, offset, _retired, scrollToBottom, _filters, forceReload, false, onResponse, goOnAfterFailure)
       }
     } else {
       setAlert({message: t('map_project.no_valid_columns_for_matching')})
@@ -3939,7 +3974,9 @@ const MapProject = () => {
     }
   }
 
-  const fetchScispacyCandidates = async (_row, scrollToBottom, forceReload=false, isBulk=false, callback) => {
+  // onFailure: a row matched by hand goes on to its next algorithm after
+  // ScispaCy fails or stays throttled (ocl_issues#2849).
+  const fetchScispacyCandidates = async (_row, scrollToBottom, forceReload=false, isBulk=false, callback, onFailure) => {
     let __row = isEmpty(_row) ? row : _row
     // Gate on AlgorithmResponse presence, not candidate count: a successful
     // invocation that returned zero matches still writes an algorithm_response
@@ -3989,9 +4026,13 @@ const MapProject = () => {
     // A run's waits end when it stops; a row matched by hand isn't stopped.
     // (abortRef stays set after a Stop, so it can't gate a manual call.)
     const isCancelled = isBulk ? getRunStopCheck() : () => false
+    // A run's call that ends after a newer run started leaves its stages alone.
+    const runTicket = autoMatchRunTicketRef.current
+    const isSuperseded = () => isBulk && runTicket !== autoMatchRunTicketRef.current
     const capacityWait = trackCapacityWait([__row.__index], {algo: SCISPACY_ALGO_ID})
     const endStopped = () => {
-      markAlgo(__row.__index, SCISPACY_ALGO_ID, -1)
+      if(!isSuperseded())
+        markAlgo(__row.__index, SCISPACY_ALGO_ID, -1)
       setIsLoadingInDecisionView(false)
     }
 
@@ -4007,6 +4048,7 @@ const MapProject = () => {
         // scalar row_index; isBulk distinguishes a run call from a manual one.
         headers: attrHeaders({rowIndex: __row.__index, algorithmId: SCISPACY_ALGO_ID, isRunTraffic: isBulk}),
         handlesThrottle: true,
+        timeout: HEAVY_REQUEST_TIMEOUT_MS,
       }), {
         gate: getCapacityGate(service.URL),
         isCancelled,
@@ -4030,6 +4072,8 @@ const MapProject = () => {
         return
       }
       if(result.reason === 'throttled') {
+        if(isSuperseded())
+          return
         // Not run, not failed: the row can be run again.
         markAlgo(__row.__index, SCISPACY_ALGO_ID, -4)
         log({action: 'algo_throttled', description: t('map_project.row_throttled'), extras: {algo: SCISPACY_ALGO_ID, attempts: result.attempts, waited_ms: result.waitedMs}}, __row.__index)
@@ -4037,10 +4081,13 @@ const MapProject = () => {
           noteThrottledRunRow(SCISPACY_ALGO_ID, __row.__index)
         setAlert(prev => (prev?.severity === 'error' ? prev : {message: t('map_project.algorithm_throttled'), severity: 'warning'}))
         setIsLoadingInDecisionView(false)
+        onFailure?.()
         return
       }
 
       const err = result.error
+      if(isSuperseded())
+        return
       const body = err?.response?.data
       // The service's host is booting: it answers 503 warming_up, then 502
       // until the app is up.
@@ -4052,6 +4099,7 @@ const MapProject = () => {
           log({action: 'algo_failed', extras: {algo: SCISPACY_ALGO_ID, status: 503, detail: 'warming_up_timeout'}}, __row.__index)
           setAlert({message: "OCL's scispacy service did not come up within 10 minutes.", severity: 'error'})
           setIsLoadingInDecisionView(false)
+          onFailure?.()
           return body
         }
         // Don't cover an error an earlier algorithm for this row showed.
@@ -4071,6 +4119,7 @@ const MapProject = () => {
       log({action: 'algo_failed', extras: {algo: SCISPACY_ALGO_ID, status: err?.response?.status || null, detail: body?.detail, error: err?.message}}, __row.__index)
       setAlert({message: body?.detail || SCISPACY_ERROR_MESSAGE, severity: 'warning'})
       setIsLoadingInDecisionView(false)
+      onFailure?.()
       return body
     }
   }
@@ -4149,17 +4198,29 @@ const MapProject = () => {
   const rerank = async (_index, isBulk=false, isRunTraffic=isBulk) => {
     const index = isNumber(_index) ? _index : rowIndex
     if(!isNumber(index)) return null
+    // A run's rerank ends when the run stops, and a stopped run proposes no
+    // more mappings; a row reranked by hand isn't stopped (ocl_issues#2849).
+    const isStopped = isRunTraffic ? getRunStopCheck() : () => false
+    // A proposal lands a second later: skip it if the run stopped meanwhile.
+    const proposeMapping = () => setTimeout(() => {
+      if(!isStopped())
+        setAutoMatched([index])
+    }, 1000)
     const rerankInFlight = inFlightRerankRef.current.get(index)
     if(rerankInFlight) {
-      // Another rerank is in flight, or waiting its turn, for this row; flag
-      // a rerun. The run's sweep waits for it, then proposes the row's
-      // mapping, which only the sweep's own call does (ocl_issues#2849).
-      rerankRerunNeededRef.current.add(index)
-      if(!isBulk)
+      if(!isBulk) {
+        // Another rerank is in flight, or waiting its turn, for this row:
+        // flag a rerun for the candidates that arrive meanwhile.
+        rerankRerunNeededRef.current.add(index)
         return null
+      }
+      // The run's sweep waits for it, then runs again for any candidates
+      // that arrived meanwhile, and proposes the row's mapping, which only
+      // the sweep's own call does (ocl_issues#2849).
       await rerankInFlight
-      setTimeout(() => setAutoMatched([index]), 1000)
-      return null
+      if(isStopped())
+        return null
+      return rerank(index, true, isRunTraffic)
     }
     // Wait for any in-flight $lookups for this row's concepts. buildRerankRowsForRow
     // filters out nameless entries, so running before lookups complete silently
@@ -4192,7 +4253,7 @@ const MapProject = () => {
       // Without the setAutoMatched trigger, auto-match would never propose
       // a mapping even for rows with a clearly-recommended top candidate.
       if(isBulk && isNumber(index))
-        setTimeout(() => setAutoMatched([index]), 1000)
+        proposeMapping()
       return null
     }
     // A rerank in this run already stayed refused for the whole cap: don't
@@ -4205,8 +4266,7 @@ const MapProject = () => {
     inFlightRerankRef.current.set(index, new Promise(resolve => { settleInFlight = resolve }))
     markAlgo(index, 'rerank', 0)
     const service = APIService.concepts().appendToUrl('$rerank/')
-    // A run's rerank ends when the run stops; a row reranked by hand doesn't.
-    const isCancelled = isRunTraffic ? getRunStopCheck() : () => false
+    const isCancelled = isStopped
     // A run's rerank that ends after a newer run started leaves its stages alone.
     const runTicket = autoMatchRunTicketRef.current
     const isSuperseded = () => isRunTraffic && runTicket !== autoMatchRunTicketRef.current
@@ -4230,7 +4290,7 @@ const MapProject = () => {
         q: query,
         rows: latestRerankRows.length ? latestRerankRows : rerankRows,
         ...(encoderModel ? { encoder_model: encoderModel } : {})
-      }, null, {headers: attrHeaders({rowIndex: index, algorithmId: 'reranker', isRunTraffic}), handlesThrottle: true}), {
+      }, null, {headers: attrHeaders({rowIndex: index, algorithmId: 'reranker', isRunTraffic}), handlesThrottle: true, timeout: HEAVY_REQUEST_TIMEOUT_MS}), {
         gate: getCapacityGate(service.URL),
         isCancelled,
         onCapacity: noteCapacity,
@@ -4252,6 +4312,8 @@ const MapProject = () => {
         return null
       }
       if(!result.ok) {
+        if(isSuperseded())
+          return null
         if(handlePreviewLimitError(result.error, index, 'rerank', {isRun: isRunTraffic, stopPhase: 'rerank'}))
           return null
         log({action: 'rerank_failed', description: `Rerank failed with ${encoderModel}`, extras: {status: result.error?.response?.status || null, error: result.error?.response?.data?.detail || result.error?.message || null}}, index)
@@ -4296,10 +4358,12 @@ const MapProject = () => {
 
       // (Removed legacy allCandidates re-stamp: rerank_score now lives on
       //  rowMatchState[idx].concept_rows[concept_key], which we updated above.)
-      markAlgo(index, 'rerank', 1)
+      // The scores stand either way; a newer run's stages are its own.
+      if(!isSuperseded())
+        markAlgo(index, 'rerank', 1)
       log({action: 'rerank_finished', description: `Reranked with ${encoderModel}`}, index)
       if(isBulk)
-        setTimeout(() => setAutoMatched([index]), 1000)
+        proposeMapping()
       return response
     } catch (e) {
       log({action: 'rerank_failed', description: `Rerank failed with ${encoderModel}`, extras: {error: e?.message || null}}, index)
@@ -4511,7 +4575,9 @@ const MapProject = () => {
     return formatted
   }
 
-  const fetchBridgeCandidates = (_row, offset=0, _retired, scrollToBottom, _filters, forceReload=false, isBulk=false, callback) => {
+  // onFailure: a row matched by hand goes on to its next algorithm after the
+  // bridge fails or stays throttled (ocl_issues#2849).
+  const fetchBridgeCandidates = (_row, offset=0, _retired, scrollToBottom, _filters, forceReload=false, isBulk=false, callback, onFailure) => {
     let __row = isEmpty(_row) ? row : _row
     const bridgeAlgoId = bridgeAlgo?.id || 'ocl-ciel-bridge'
     const rowEntry = rowMatchStateRef.current?.[__row.__index]
@@ -4542,6 +4608,9 @@ const MapProject = () => {
       // context tells that post() the row, and whether a Stop ends its waits
       // (ocl_issues#2849).
       const context = {rowIndex: __row.__index, isBulk, isCancelled: isBulk ? getRunStopCheck() : () => false, posted: false}
+      // A run's call that ends after a newer run started leaves its stages alone.
+      const runTicket = autoMatchRunTicketRef.current
+      const isSuperseded = () => isBulk && runTicket !== autoMatchRunTicketRef.current
       bridgeCallContextRef.current = context
       try {
         bridgeRef.current?.fetchBridgeCandidates(
@@ -4565,6 +4634,10 @@ const MapProject = () => {
             resolve()
           },
           (response, errorMsg) => {
+            if(isSuperseded()) {
+              resolve()
+              return
+            }
             if(response?.cancelled) {
               markAlgo(__row.__index, bridgeAlgoId, -1)
               setIsLoadingInDecisionView(false)
@@ -4580,6 +4653,7 @@ const MapProject = () => {
                 noteThrottledRunRow(bridgeAlgoId, __row.__index)
               setAlert(prev => (prev?.severity === 'error' ? prev : {message: response.detail, severity: 'warning'}))
               setIsLoadingInDecisionView(false)
+              onFailure?.()
               resolve()
               return
             }
@@ -4593,6 +4667,7 @@ const MapProject = () => {
             log({action: 'algo_failed', extras: getAlgoLogExtras(bridgeAlgo)}, __row.__index)
             setAlert({message: response?.detail || errorMsg, severity: 'error'})
             setIsLoadingInDecisionView(false)
+            onFailure?.()
             resolve()
           },
           // ocl_online#105 Phase 5: attribution headers for the bridge $match,
@@ -4603,6 +4678,7 @@ const MapProject = () => {
         )
       } catch (err) {
         failBridgeRow(err?.message || t('unknown_error'))
+        onFailure?.()
         resolve()
         return
       } finally {
@@ -4615,6 +4691,7 @@ const MapProject = () => {
         markAlgo(__row.__index, bridgeAlgoId, -3)
         log({action: 'algo_skipped', extras: {...getAlgoLogExtras(bridgeAlgo), reason: 'bridge_unavailable'}}, __row.__index)
         setIsLoadingInDecisionView(false)
+        onFailure?.()
         resolve()
       }
     })
@@ -4765,7 +4842,7 @@ const MapProject = () => {
           // A busy server's 429 is waited out, and a gateway error retried
           // (ocl_issues#2849); a 404 is retried below.
           const result = await requestWithCapacityRetry(
-            () => service.request('GET', undefined, authToken, {query: {includeMappings: true, mappingBrief: true, mapTypes: 'SAME-AS,SAME AS,SAME_AS', verbose: true}, headers: attrHeaders({rowIndex: logRowIndex, isRunTraffic}), handlesThrottle: true}),
+            () => service.request('GET', undefined, authToken, {query: {includeMappings: true, mappingBrief: true, mapTypes: 'SAME-AS,SAME AS,SAME_AS', verbose: true}, headers: attrHeaders({rowIndex: logRowIndex, isRunTraffic}), handlesThrottle: true, timeout: LIGHT_REQUEST_TIMEOUT_MS}),
             {maxWaitMs: INTERACTIVE_WAIT_CAP_MS, onCapacity: noteCapacity}
           )
           if(!result.ok)
@@ -4834,6 +4911,7 @@ const MapProject = () => {
           headers: attrHeaders({rowIndex: logRowIndex, isRunTraffic}),
           query: resolveNamespace ? {namespace: resolveNamespace} : {},
           handlesThrottle: true,
+          timeout: LIGHT_REQUEST_TIMEOUT_MS,
         }),
         {maxWaitMs: INTERACTIVE_WAIT_CAP_MS, onCapacity: noteCapacity}
       )
@@ -4941,7 +5019,7 @@ const MapProject = () => {
     // which then threw here. A 429 is waited out; an error says so
     // (ocl_issues#2849).
     requestWithCapacityRetry(
-      () => getLookupService().request('GET', undefined, lookupConfig?.token, {query, handlesThrottle: true}),
+      () => getLookupService().request('GET', undefined, lookupConfig?.token, {query, handlesThrottle: true, timeout: LIGHT_REQUEST_TIMEOUT_MS}),
       {maxWaitMs: INTERACTIVE_WAIT_CAP_MS, onCapacity: noteCapacity, ...trackCapacityWait([])}
     ).then(result => {
       if(!result.ok) {
@@ -5002,7 +5080,7 @@ const MapProject = () => {
     // A failed facets call isn't cached, so the next look tries again
     // (ocl_issues#2849).
     const request = requestWithCapacityRetry(
-      () => getLookupService().request('GET', undefined, lookupConfig?.token, {query, handlesThrottle: true}),
+      () => getLookupService().request('GET', undefined, lookupConfig?.token, {query, handlesThrottle: true, timeout: LIGHT_REQUEST_TIMEOUT_MS}),
       {maxWaitMs: INTERACTIVE_WAIT_CAP_MS, onCapacity: noteCapacity, ...trackCapacityWait([])}
     ).then(result => {
       if(!result.ok)
@@ -5872,15 +5950,18 @@ const MapProject = () => {
                   {
                     // A request is waiting out a busy server: the run is
                     // slower, not stuck (ocl_issues#2849).
+                    // Short in the split view, where the full notice would be cut off.
                     capacityWaitRows &&
-                      <Chip
-                        icon={<PendingIcon fontSize='small' />}
-                        color='warning'
-                        variant='outlined'
-                        size='small'
-                        label={t('map_project.waiting_for_capacity')}
-                        sx={{margin: '5px'}}
-                      />
+                      <Tooltip title={t('map_project.waiting_for_capacity')}>
+                        <Chip
+                          icon={<PendingIcon fontSize='small' />}
+                          color='warning'
+                          variant='outlined'
+                          size='small'
+                          label={isSplitView ? t('map_project.waiting_for_capacity_short') : t('map_project.waiting_for_capacity')}
+                          sx={{margin: '5px'}}
+                        />
+                      </Tooltip>
                   }
                 </span>
             }
