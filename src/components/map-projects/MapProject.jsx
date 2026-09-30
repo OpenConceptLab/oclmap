@@ -4460,10 +4460,12 @@ const MapProject = () => {
       if(inFlightRerankRef.current.get(index) === ownInFlight)
         inFlightRerankRef.current.delete(index)
       settleInFlight()
-      // If new ConceptRows arrived while we were in flight, fire again.
+      // If new ConceptRows arrived while we were in flight, fire again,
+      // through the current render's scheduler: this call's closure may hold
+      // an older encoder or row input (ocl_issues#2849).
       if(rerankRerunNeededRef.current.has(index)) {
         rerankRerunNeededRef.current.delete(index)
-        scheduleRerank(index)
+        scheduleRerankRef.current(index)
       }
     }
   }
