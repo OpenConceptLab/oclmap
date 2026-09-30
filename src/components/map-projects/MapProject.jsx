@@ -101,7 +101,7 @@ import Concept from './Concept'
 import ImportToCollection from './ImportToCollection'
 import ProjectLogs from './ProjectLogs';
 import { useAlgos, ensureConceptIdentity } from './algorithms'
-import { applyRequestSettings, getRequestSettings, hasFullRequestLimits } from './requestLimits'
+import { applyRequestSettings, getRequestLimits, getRequestSettings } from './requestLimits'
 import { countQualityBuckets, createBestCandidateScoreCache, filterRowsByQualityBucket, getRowQualities } from './rowQuality'
 import AutoMatchDialog from './AutoMatchDialog'
 import PreviewLimitDialog from './PreviewLimitDialog'
@@ -608,8 +608,9 @@ const MapProject = () => {
   const OCL_ONLINE_API_URL = window.OCL_ONLINE_API_URL || process.env.OCL_ONLINE_API_URL
   const inAIAssistantGroup = Boolean(hasCapability(user, 'users.mapper_ai_assistant') && AI_ASSISTANT_API_URL)
   const isCoreUser = hasAuthGroup(user, 'core_user')
-  // Batch size and concurrent requests per algorithm (ocl_online#274)
-  const fullRequestLimits = hasFullRequestLimits(user)
+  // Batch size and concurrent requests per algorithm, by the user's tier
+  // (ocl_online#274, ocl_issues#2849)
+  const requestLimits = getRequestLimits(user)
   const mapperPreview = getMapperPreview()
   // Only staff choose the AI model and prompt template (canSelectAIModel gates
   // both pickers). Core, early-access and unlimited-AI users keep the output
@@ -2298,7 +2299,7 @@ const MapProject = () => {
     // Function to handle concurrency
     const processWithConcurrency = async (_repo, algo, _rows) => {
       // A project's saved settings run within this user's limits.
-      const { batchSize, concurrentRequests } = getRequestSettings(algo, fullRequestLimits)
+      const { batchSize, concurrentRequests } = getRequestSettings(algo, requestLimits)
       // While a 429 holds the server's gate, no new batch goes out: the queue
       // waits instead of draining into refusals (ocl_issues#2849).
       const finished = await runWithConcurrency(chunk(_rows, batchSize), {
@@ -2374,7 +2375,7 @@ const MapProject = () => {
     // AutomatchRun's config snapshot records what ran (ocl_online#274).
     let _selectedAlgos = map(
       filter(algosSelected, algo => selectedAlgos.includes(algo.id)),
-      algo => applyRequestSettings(algo, fullRequestLimits)
+      algo => applyRequestSettings(algo, requestLimits)
     )
     let subActions = [...map(_selectedAlgos, algo => algo.name || algo.id)]
     subActions.push('reranker')
@@ -5644,7 +5645,7 @@ const MapProject = () => {
       bridgeEnabled={bridgeEnabled}
       canBridge={canBridge}
       isCoreUser={isCoreUser}
-      fullRequestLimits={fullRequestLimits}
+      requestLimits={requestLimits}
       canSelectAIModel={canSelectAIModel}
       canSetAIOutputLocale={canSetAIOutputLocale}
       canScispacy={canScispacy}
