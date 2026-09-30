@@ -1902,7 +1902,7 @@ const MapProject = () => {
       const id = data?.id
       if(id) {
         automatchRunRef.current = {id, algoIds: map(selectedAlgos, 'id')}
-        return
+        return automatchRunRef.current
       }
       if(status === 403 && data?.error_code) {
         abortRef.current = true
@@ -1922,15 +1922,17 @@ const MapProject = () => {
   // over the rows we set out to process; a row counts as failed only when EVERY
   // attempted algo failed for it. Never throws — a failed PATCH (or a run that
   // was never created) must not surface to the user.
-  const completeAutomatchRun = async (selectedAlgos, intendedRows) => {
-    const run = automatchRunRef.current
-    automatchRunRef.current = null
+  // Each run closes its own record, passed in: by the time a stopped run gets
+  // here, a newer run's record may be the current one (ocl_issues#2849).
+  const completeAutomatchRun = async (selectedAlgos, intendedRows, run, aborted) => {
+    if(automatchRunRef.current === run)
+      automatchRunRef.current = null
     if(!run?.id) return
     const payload = summarizeRunCompletion({
       rowStages: rowStageRef.current || [],
       rowIndices: map(intendedRows, '__index'),
       algoIds: run.algoIds?.length ? run.algoIds : map(selectedAlgos, 'id'),
-      aborted: abortRef.current,
+      aborted,
       stoppedForQuota: Boolean(matchQuotaStopRef.current),
     })
     // Closing the run is idempotent, so a busy server or a gateway error is
@@ -2256,12 +2258,17 @@ const MapProject = () => {
     const runTicket = autoMatchRunGateRef.current.next()
     autoMatchRunTicketRef.current = runTicket
     const isCurrentRun = () => autoMatchRunGateRef.current.isCurrent(runTicket)
+    // This run's Stop: the user stopped it, or a newer run started (which
+    // resets abortRef). Every phase checks this, not abortRef alone, so a
+    // stopped run can't carry on once the next one starts (ocl_issues#2849).
+    const isRunStopped = () => Boolean(abortRef.current || !isCurrentRun())
     throttledRunRowsRef.current = {}
 
     // Function to process a single batch
     const processBatch = async (_repo, rowBatch, algo) => {
-      if (abortRef.current) {
-        setLoadingMatches(false)
+      if (isRunStopped()) {
+        if(isCurrentRun())
+          setLoadingMatches(false)
         return []
       };
       if (matchQuotaStopRef.current && spendsMatchQuota(algo, {canBridge}))
@@ -2354,7 +2361,7 @@ const MapProject = () => {
         concurrency: concurrentRequests,
         gate: getCapacityGate(getMatchAPIService(algo).URL),
         maxHoldMs: CAPACITY_WAIT_CAP_MS,
-        shouldAbort: () => abortRef.current,
+        shouldAbort: isRunStopped,
         shouldSkipRest: () => isQuotaStopped() || isRunThrottled(algo.id),
         // A quota stop leaves the rest not run, as before; a server that
         // stayed too busy leaves them throttled.
@@ -2401,7 +2408,7 @@ const MapProject = () => {
             saveLateRunResult()
         }),
       })
-      if(!finished)
+      if(!finished && isCurrentRun())
         setLoadingMatches(false)
     };
 
@@ -2410,11 +2417,11 @@ const MapProject = () => {
     const processRerankWithConcurrency = async (_rows, maxConcurrent = 2) => {
       const finished = await runWithConcurrency(_rows, {
         concurrency: maxConcurrent,
-        shouldAbort: () => abortRef.current,
+        shouldAbort: isRunStopped,
         shouldSkipRest: () => Boolean(rerankQuotaStopRef.current),
         run: row => rerank(row.__index, true).catch(() => null),
       })
-      if(!finished)
+      if(!finished && isCurrentRun())
         setLoadingMatches(false)
     };
     // Capped users' algorithms carry the settings they run with, so the
@@ -2478,10 +2485,10 @@ const MapProject = () => {
       // ocl_online#105 Phase 5: open the run record, then guarantee it is
       // closed out (completed / partial / failed / cancelled) via the finally,
       // even on cancel or an unexpected throw mid-pipeline.
-      await createAutomatchRun(_selectedAlgos, rowsToProcess)
+      const runRecord = await createAutomatchRun(_selectedAlgos, rowsToProcess)
       // False when the run was refused (a preview limit) or stopped before it
       // began: it changed nothing to save.
-      const runStarted = !abortRef.current
+      const runStarted = !isRunStopped()
       try {
         bulkMatchAlgoIdsRef.current = map(_selectedAlgos, 'id')
         // Reset all algo stages to -1 for every row before starting so that
@@ -2504,14 +2511,14 @@ const MapProject = () => {
         isBulkMatchRunningRef.current = true
         try {
           for(const algo of _selectedAlgos) {
-            if(abortRef.current) break
+            if(isRunStopped()) break
             if(matchQuotaStopRef.current && spendsMatchQuota(algo, {canBridge})) continue
             if(['custom', 'ocl-search', 'ocl-semantic'].includes(algo.type))
               await processWithConcurrency(repo, algo, rowsToProcess)
             else if(['ocl-bridge', 'ocl-ciel-bridge'].includes(algo.type) && canBridge)
-              await fetchBulkBridgeCandidates(rowsToProcess, algo)
+              await fetchBulkBridgeCandidates(rowsToProcess, algo, isRunStopped)
             else if(algo.type === 'ocl-scispacy' && canScispacy)
-              await fetchBulkScispacyCandidates(rowsToProcess, algo)
+              await fetchBulkScispacyCandidates(rowsToProcess, algo, isRunStopped)
           }
         } finally {
           isBulkMatchRunningRef.current = false
@@ -2524,10 +2531,13 @@ const MapProject = () => {
           rowsToProcess
         if(_selectedAlgos.length)
           await processRerankWithConcurrency(finishedRows, 2)
-        if(inAIAssistantGroup && autoRunAIAnalysis) {
+        const runAIStep = Boolean(inAIAssistantGroup && autoRunAIAnalysis && !isRunStopped())
+        if(runAIStep)
           await new Promise(resolve => setTimeout(resolve, 1000))
-          await runBulkAIAnalysis(finishedRows)
-        } else {
+        if(runAIStep && !isRunStopped()) {
+          await runBulkAIAnalysis(finishedRows, {isStopped: isRunStopped, isCurrent: isCurrentRun})
+        } else if(isCurrentRun()) {
+          // A newer run's loading state is its own.
           setIsLoadingInDecisionView(false)
           setLoadingMatches(false)
           setEndMatchingAt(moment())
@@ -2549,7 +2559,7 @@ const MapProject = () => {
         })).join('; ')
         const endOfRunNotices = []
         const failedAlgoIds = keys(failedMatchRows)
-        if(!abortRef.current && failedAlgoIds.length) {
+        if(!isRunStopped() && failedAlgoIds.length) {
           const rowsByAlgo = getRowsByAlgo(failedMatchRows)
           projectLog({action: 'auto_match_rows_failed', extras: {row_indexes_by_algorithm: rowsByAlgo}})
           endOfRunNotices.push(t('map_project.auto_match_rows_failed', {
@@ -2559,7 +2569,7 @@ const MapProject = () => {
         }
         // Rows the server stayed too busy for weren't run: say so apart from
         // the failures (ocl_issues#2849).
-        if(!abortRef.current && keys(throttledRunRowsRef.current).length) {
+        if(!isRunStopped() && keys(throttledRunRowsRef.current).length) {
           const rowsByAlgo = getRowsByAlgo(throttledRunRowsRef.current)
           projectLog({action: 'auto_match_rows_throttled', extras: {row_indexes_by_algorithm: rowsByAlgo}})
           endOfRunNotices.push(t('map_project.auto_match_rows_throttled', {
@@ -2569,9 +2579,9 @@ const MapProject = () => {
         }
         if(endOfRunNotices.length)
           setAlert({severity: 'warning', message: endOfRunNotices.join(' ')})
-        if(!abortRef.current && matchQuotaStopRef.current)
+        if(!isRunStopped() && matchQuotaStopRef.current)
           projectLog({action: 'auto_match_stopped_for_quota', extras: {reason: matchQuotaStopRef.current}})
-        if(!abortRef.current)
+        if(!isRunStopped())
           projectLog({
             action: 'auto_match_finished',
             extras: {
@@ -2590,8 +2600,8 @@ const MapProject = () => {
         // Save what the run matched, also when it was stopped or failed part
         // way (ocl_issues#2849).
         if(runStarted)
-          scheduleAutoSave(abortRef.current ? 'auto_match_stopped' : 'auto_match')
-        await completeAutomatchRun(_selectedAlgos, rowsToProcess)
+          scheduleAutoSave(isRunStopped() ? 'auto_match_stopped' : 'auto_match')
+        await completeAutomatchRun(_selectedAlgos, rowsToProcess, runRecord, isRunStopped())
         refreshMapperQuotaCache()
       }
     }, 1000)
@@ -2601,7 +2611,9 @@ const MapProject = () => {
     conceptCacheRef.current = conceptCache;
   }, [conceptCache]);
 
-  const runBulkAIAnalysis = async (_rows) => {
+  // isStopped: the run's Stop; isCurrent: false once a newer run started, whose
+  // loading state is its own (ocl_issues#2849).
+  const runBulkAIAnalysis = async (_rows, {isStopped = () => abortRef.current, isCurrent = () => true} = {}) => {
     GAService.recordActionEvent('MapProject', 'ai_assistant_run', undefined, {
       mode: 'bulk',
       row_count: _rows.length
@@ -2622,7 +2634,7 @@ const MapProject = () => {
     }
     aiFailuresInARowRef.current = 0
     for (let index = 0; index < _rows.length; index++) {
-      if (abortRef.current) break;
+      if (isStopped()) break;
       // AI quota exhausted, or the AI service failing row after row: stop calling
       // the AI step only. Matching itself already finished before this loop
       // starts, so nothing else aborts.
@@ -2630,6 +2642,8 @@ const MapProject = () => {
 
       await fetchRecommendation(_rows[index], resolvedPromptTemplate, true);
     }
+    if(!isCurrent())
+      return
     const now = moment()
     setBulkAIAnalysisEndedAt(now)
     setEndMatchingAt(now)
@@ -2637,14 +2651,17 @@ const MapProject = () => {
     setIsLoadingInDecisionView(false)
   }
 
-  const fetchBulkBridgeCandidates = async (_rows, algo) => {
+  // isStopped: the run's Stop, which stays true once a newer run starts.
+  const fetchBulkBridgeCandidates = async (_rows, algo, isStopped = () => abortRef.current) => {
     // A row answered after a newer run started belongs to no run.
     const runTicket = autoMatchRunTicketRef.current
     setLoadingMatches(true)
     setBridgeCandidatesStartedAt(moment())
     for (let index = 0; index < _rows.length; index++) {
-      if (abortRef.current) {
-        setLoadingMatches(false)
+      if (isStopped()) {
+        // A newer run's loading state is its own.
+        if(runTicket === autoMatchRunTicketRef.current)
+          setLoadingMatches(false)
         break;
       };
       if (matchQuotaStopRef.current) break;
@@ -2676,21 +2693,24 @@ const MapProject = () => {
             rawResponse: response
           }), {isRunTraffic: true})
         }
-      })), () => abortRef.current); // wait for completion
+      })), isStopped); // wait for completion
       await new Promise(resolve => setTimeout(resolve, 200)); // 1s delay
     }
     const now = moment()
     setBridgeCandidatesEndedAt(now)
   }
 
-  const fetchBulkScispacyCandidates = async (_rows, algo) => {
+  // isStopped: the run's Stop, which stays true once a newer run starts.
+  const fetchBulkScispacyCandidates = async (_rows, algo, isStopped = () => abortRef.current) => {
     // A row answered after a newer run started belongs to no run.
     const runTicket = autoMatchRunTicketRef.current
     setLoadingMatches(true)
     setScispacyCandidatesStartedAt(moment())
     for (let index = 0; index < _rows.length; index++) {
-      if (abortRef.current) {
-        setLoadingMatches(false)
+      if (isStopped()) {
+        // A newer run's loading state is its own.
+        if(runTicket === autoMatchRunTicketRef.current)
+          setLoadingMatches(false)
         break;
       };
 
@@ -2723,7 +2743,7 @@ const MapProject = () => {
             rawResponse: response
           }), {isRunTraffic: true})
         }
-      })), () => abortRef.current); // wait for completion
+      })), isStopped); // wait for completion
       await new Promise(resolve => setTimeout(resolve, 500)); // 1s delay
     }
     const now = moment()
