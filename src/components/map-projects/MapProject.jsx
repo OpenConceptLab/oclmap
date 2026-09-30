@@ -1875,12 +1875,15 @@ const MapProject = () => {
       const outcome = await untilCancelled(request, isStopped)
       if(!outcome.settled) {
         // Stopped before the server answered: close a run it opens anyway.
+        // Idempotent, so retried like the normal close; never rejects.
         request.then(late => {
           const lateId = late.ok && late.response?.data?.id
           if(lateId)
-            APIService.new().overrideURL('/auto-match-runs/' + lateId + '/')
-              .request('PATCH', {completed_rows: 0, failed_rows: 0, completion_status: 'cancelled'}, null, {handlesThrottle: true, timeout: LIGHT_REQUEST_TIMEOUT_MS})
-              .catch(() => {})
+            requestWithCapacityRetry(
+              () => APIService.new().overrideURL('/auto-match-runs/' + lateId + '/')
+                .request('PATCH', {completed_rows: 0, failed_rows: 0, completion_status: 'cancelled'}, null, {handlesThrottle: true, timeout: LIGHT_REQUEST_TIMEOUT_MS}),
+              {maxWaitMs: INTERACTIVE_WAIT_CAP_MS}
+            )
         })
         return
       }
@@ -4321,6 +4324,10 @@ const MapProject = () => {
         return null
       }
       const response = result.response
+      // A newer run may rank with another encoder or input: its scores are
+      // its own (Codex pass 3).
+      if(isSuperseded())
+        return null
 
       // Write rerank_score into the row's ConceptRows. matchRerankResultToKey
       // throws on canonical-identity miss; surface to the alert state so a
