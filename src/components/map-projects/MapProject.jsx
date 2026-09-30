@@ -1804,6 +1804,14 @@ const MapProject = () => {
     return () => Boolean(abortRef.current || ticket !== autoMatchRunTicketRef.current)
   }
 
+  // A result that lands after the user stopped its run is kept (a graceful
+  // stop), so save it too: the stopped run's own autosave may have gone
+  // already (ocl_issues#2849).
+  const saveLateRunResult = () => {
+    if(abortRef.current)
+      scheduleAutoSave('auto_match_stopped')
+  }
+
   const noteThrottledRunRow = (algoId, index) => {
     throttledRunRowsRef.current = {
       ...throttledRunRowsRef.current,
@@ -2322,7 +2330,11 @@ const MapProject = () => {
         },
         // Sets matchQuotaStopRef, which stops the rest of the $match requests
         // but lets the run finish with what it has.
-        onPreviewLimit: err => handlePreviewLimitError(err),
+        // Not once a newer run started: its quota state is its own.
+        onPreviewLimit: err => {
+          if(isCurrentRun())
+            handlePreviewLimitError(err)
+        },
         // A batch waiting to retry stops on a cancel, once another batch has
         // hit the match quota, or once a newer run has started.
         shouldStop: () => Boolean(
@@ -2385,6 +2397,8 @@ const MapProject = () => {
           if(!isMultiAlgo)
             setStateViews(data, _repo)
           setMatchedConcepts(prev => [...prev, ...data]);
+          if(Array.isArray(data) && data.length)
+            saveLateRunResult()
         }),
       })
       if(!finished)
@@ -2644,6 +2658,7 @@ const MapProject = () => {
       await untilCancelled(fetchBridgeCandidates(_rows[index], 0, undefined, undefined, undefined, false, true, ((response, payload) => {
         if(runTicket !== autoMatchRunTicketRef.current)
           return
+        saveLateRunResult()
         const index = payload.rows[0].__index
         const results = (isArray(response) ? response : response?.data)
         log({action: 'algo_finished', extras: getAlgoLogExtras(algo)}, index)
@@ -2690,6 +2705,7 @@ const MapProject = () => {
       await untilCancelled(fetchScispacyCandidates(_rows[index], false, false, true, (response => {
         if(runTicket !== autoMatchRunTicketRef.current)
           return
+        saveLateRunResult()
         const _index = _rows[index].__index
         const results = [{row: _rows[index], results: fromScispacyResultsToConcepts(getScispacyRowResults(response.data, _index))}]
         log({action: 'algo_finished', extras: getAlgoLogExtras(algo)}, _index)
@@ -4391,6 +4407,8 @@ const MapProject = () => {
       // The scores stand either way; a newer run's stages are its own.
       if(!isSuperseded())
         markAlgo(index, 'rerank', 1)
+      if(isRunTraffic)
+        saveLateRunResult()
       log({action: 'rerank_finished', description: `Reranked with ${encoderModel}`}, index)
       if(isBulk)
         proposeMapping()
