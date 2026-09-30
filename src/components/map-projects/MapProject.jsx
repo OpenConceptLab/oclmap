@@ -2622,7 +2622,20 @@ const MapProject = () => {
     setBulkAIAnalysisStartedAt(moment())
     let resolvedPromptTemplate
     try {
-      resolvedPromptTemplate = await resolvePromptTemplateForInvocation()
+      // Stop doesn't wait on a call that never answers (ocl_issues#2849); the
+      // AI Assistant calls' own retries are OpenConceptLab/ocl_online#206.
+      const outcome = await untilCancelled(resolvePromptTemplateForInvocation(), isStopped)
+      if(!outcome.settled) {
+        if(isCurrent()) {
+          const now = moment()
+          setBulkAIAnalysisEndedAt(now)
+          setEndMatchingAt(now)
+          setLoadingMatches(false)
+          setIsLoadingInDecisionView(false)
+        }
+        return
+      }
+      resolvedPromptTemplate = outcome.value
     } catch (err) {
       const now = moment()
       setBulkAIAnalysisEndedAt(now)
@@ -2640,7 +2653,8 @@ const MapProject = () => {
       // starts, so nothing else aborts.
       if (shouldStopAIStep({quotaExhausted: aiQuotaExhaustedRef.current, failuresInARow: aiFailuresInARowRef.current})) break;
 
-      await fetchRecommendation(_rows[index], resolvedPromptTemplate, true);
+      // A stopped run moves on; the row's call finishes in the background.
+      await untilCancelled(fetchRecommendation(_rows[index], resolvedPromptTemplate, true), isStopped);
     }
     if(!isCurrent())
       return
@@ -4072,9 +4086,11 @@ const MapProject = () => {
     const runTicket = autoMatchRunTicketRef.current
     const isSuperseded = () => isBulk && runTicket !== autoMatchRunTicketRef.current
     const capacityWait = trackCapacityWait([__row.__index], {algo: SCISPACY_ALGO_ID})
+    // A newer run's stages and panel state are its own.
     const endStopped = () => {
-      if(!isSuperseded())
-        markAlgo(__row.__index, SCISPACY_ALGO_ID, -1)
+      if(isSuperseded())
+        return
+      markAlgo(__row.__index, SCISPACY_ALGO_ID, -1)
       setIsLoadingInDecisionView(false)
     }
 
@@ -4102,6 +4118,8 @@ const MapProject = () => {
 
       if(result.ok) {
         const response = result.response
+        if(isSuperseded())
+          return response
         // Clear ScispaCy's own warming-up or starting notice, but not an
         // error another algorithm for this row showed (ocl_online#283).
         setAlert(prev => (prev?.severity === 'error' ? prev : false))
