@@ -4527,8 +4527,14 @@ const MapProject = () => {
     if(!hasEligiblePending) return
     if(rerankDebounceRef.current[rowIndex])
       clearTimeout(rerankDebounceRef.current[rowIndex])
+    // A run's rerank belongs to that run: if a newer run started before the
+    // timer fired, drop it (the newer run reranks its own rows) rather than
+    // let it pass as the newer run's (ocl_issues#2849).
+    const scheduledTicket = autoMatchRunTicketRef.current
     rerankDebounceRef.current[rowIndex] = setTimeout(() => {
       delete rerankDebounceRef.current[rowIndex]
+      if(isRunTraffic && scheduledTicket !== autoMatchRunTicketRef.current)
+        return
       // isBulk=false (don't double the setAutoMatched side-effect the explicit
       // bulk rerank already performs); isRunTraffic carries the run attribution.
       rerank(rowIndex, false, isRunTraffic)
