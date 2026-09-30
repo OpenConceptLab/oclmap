@@ -865,12 +865,22 @@ export const consumeAndValidateOAuthState = returnedState => {
   return !returnedState || returnedState === storedState
 }
 
+// A route's path as the router sees it: decoded once, as history does, so /%73ignup is /signup. A malformed
+// encoding makes the router throw, so it has no path.
+const routePath = route => {
+  try {
+    return decodeURI(route.split(/[?#]/)[0])
+  } catch {
+    return null
+  }
+}
+
 // Keycloak only redeems a code when the token request repeats the sign-in's redirect_uri exactly, and the
 // callback can't rebuild a page's query string (e.g. ?referrer= on links from openconceptlab.org). So sign-in
 // always goes through LOGIN_REDIRECT_URL, and the page to come back to (its hash route) waits here, in this tab.
 const prepareOAuthReturnTo = returnTo => {
   const route = returnTo?.includes('#') ? returnTo.slice(returnTo.indexOf('#') + 1) : null
-  const path = route?.split(/[?#]/)[0]
+  const path = route && routePath(route)
   // The router matches paths case-insensitively, so /SIGNUP would start a sign-up too.
   if(path?.startsWith('/') && !/^\/(oidc\/login|signin|signup)(\/|$)/i.test(path))
     sessionStorage.setItem(OAUTH_RETURN_TO_KEY, route)
