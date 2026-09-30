@@ -3,7 +3,7 @@ import React from 'react';
 import { withTranslation } from 'react-i18next';
 import Button from '@mui/material/Button';
 import {
-  refreshCurrentUserCache, consumeStoredPKCECodeVerifier, consumeAndValidateOAuthState,
+  refreshCurrentUserCache, consumeStoredPKCECodeVerifier, consumeAndValidateOAuthState, consumeOAuthReturnTo,
   isSignupOAuthState, isLoggedIn, getLoginURL
 } from '../../common/utils';
 import APIService from '../../services/APIService'
@@ -16,6 +16,7 @@ class OIDLoginCallback extends React.Component {
     super(props)
     this.state = {
       next: null,
+      returnTo: null,
     }
   }
   componentDidMount() {
@@ -32,12 +33,14 @@ class OIDLoginCallback extends React.Component {
       const { setAlert } = this.context
       const isStateValid = consumeAndValidateOAuthState(state)
       const codeVerifier = consumeStoredPKCECodeVerifier()
+      const returnTo = consumeOAuthReturnTo()
       if(!isStateValid || !codeVerifier) {
         this.onSignInStartedElsewhere(state, next)
         return
       }
       setAlert({message: this.props.t('auth.signing_in'), severity: 'info'})
-      this.setState({next: next && next !== '/' ? next : null }, () => {
+      // next still decides the redirect_uri sent for sign-ins that started before redirect_uri was fixed.
+      this.setState({next: next && next !== '/' ? next : null, returnTo: returnTo }, () => {
         const redirectURL = this.state.next ? window.location.origin + this.state.next : (window.LOGIN_REDIRECT_URL || process.env.LOGIN_REDIRECT_URL)
         const clientId = window.OIDC_RP_CLIENT_ID || process.env.OIDC_RP_CLIENT_ID
 
@@ -86,7 +89,9 @@ class OIDLoginCallback extends React.Component {
 
   cacheUserData() {
     refreshCurrentUserCache(() => {
-      if(this.state.next)
+      if(this.state.returnTo)
+        window.location.hash = '#' + this.state.returnTo
+      else if(this.state.next)
         window.location.hash = '#' + this.state.next
       else {
         let returnToURL = '/'
