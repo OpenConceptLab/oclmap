@@ -870,7 +870,9 @@ export const consumeAndValidateOAuthState = returnedState => {
 // always goes through LOGIN_REDIRECT_URL, and the page to come back to (its hash route) waits here, in this tab.
 const prepareOAuthReturnTo = returnTo => {
   const route = returnTo?.includes('#') ? returnTo.slice(returnTo.indexOf('#') + 1) : null
-  if(route?.startsWith('/') && !/^\/(oidc\/login|signin|signup)(\/|\?|$)/.test(route))
+  const path = route?.split(/[?#]/)[0]
+  // The router matches paths case-insensitively, so /SIGNUP would start a sign-up too.
+  if(path?.startsWith('/') && !/^\/(oidc\/login|signin|signup)(\/|$)/i.test(path))
     sessionStorage.setItem(OAUTH_RETURN_TO_KEY, route)
   else
     sessionStorage.removeItem(OAUTH_RETURN_TO_KEY)
