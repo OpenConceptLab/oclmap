@@ -2479,6 +2479,9 @@ const MapProject = () => {
             const rowId = row.__index
             const rowState = { ...(next[rowId] || {}) }
             _selectedAlgos.forEach(algo => { rowState[algo.id] = -1 })
+            // A rerank an earlier run left throttled is this run's to retry.
+            if(rowState.rerank === -4)
+              rowState.rerank = -1
             next[rowId] = rowState
           })
           rowStageRef.current = next
@@ -4266,6 +4269,11 @@ const MapProject = () => {
       // scheduleRerank that already scored the row from algo onResponse.
       // Without the setAutoMatched trigger, auto-match would never propose
       // a mapping even for rows with a clearly-recommended top candidate.
+      // Every candidate already has a score (e.g. inline, from a
+      // single-algorithm $match): the row's rerank is done.
+      const conceptRows = Object.values(rowMatchStateRef.current[index]?.concept_rows || {})
+      if(query && conceptRows.length && conceptRows.every(cr => isNumber(cr?.rerank_score)) && rowStageRef.current[index]?.rerank !== 1 && !isSuperseded())
+        markAlgo(index, 'rerank', 1)
       if(isBulk && isNumber(index))
         proposeMapping()
       return null
@@ -4292,6 +4300,12 @@ const MapProject = () => {
         rerankRerunNeededRef.current.delete(index)
         if(!isSuperseded())
           markAlgo(index, 'rerank', -1)
+        return null
+      }
+      // Another of the run's reranks stayed refused for the whole cap while
+      // this one waited its turn: don't ask again.
+      if(isRunTraffic && isRunThrottled('rerank')) {
+        markRowsThrottled([index], 'rerank', {algo: 'reranker'})
         return null
       }
       // Score the candidates that arrived while this call waited its turn too.
