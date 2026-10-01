@@ -500,7 +500,7 @@
     "view_raw_json": "View Raw JSON",
     "comment": "Comment",
     "rejected": "Rejected",
-    "preview_splash_headline": "Map your terms to LOINC, SNOMED CT, CIEL and ICD-11 - with AI doing the first pass.",
+    "preview_splash_headline": "Map your terms to SNOMED GPS, ICD-10, LOINC, CIEL, or your own custom terminology - with AI doing the first pass.",
     "preview_splash_subhead": "The OCL Mapper takes a spreadsheet of local clinical terms and proposes standard-terminology matches, ranked, with the evidence for each one.",
     "preview_splash_sign_in_cta": "Sign in and start mapping",
     "preview_splash_register_cta": "Create a free account",
