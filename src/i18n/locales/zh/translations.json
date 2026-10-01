@@ -767,9 +767,10 @@
   },
   "unknown_error": "未知错误",
   "announcement": {
-    "title": "欢迎体验 OCL Mapper 公开预览版！",
-    "text": "正式版即将推出，现在就来抢先试用吧。",
+    "title": "订阅将于 11 月 1 日开放。",
+    "text": "使用高级功能的现有账户可享受宽限期至 12 月 1 日。",
     "link_label": "了解更多",
+    "pricing_link_label": "查看价格",
     "dismiss": "关闭"
   },
   "quota": {
