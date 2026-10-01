@@ -47,6 +47,9 @@ const isPresent = value =>
  * @param {string|null}         [opts.algorithmId]   algorithm_id (semantic / bridge / reranker / …)
  * @param {number|null}         [opts.clientAttemptN] retry attempt number, 1-based
  * @param {string|null}         [opts.source]        explicit request_source override
+ * @param {boolean}             [opts.capacityAware] the call waits out a capacity 429: tells oclapi2's capacity limit
+ *                                                   it may refuse it (OpenConceptLab/ocl_online#275). Only for OCL's
+ *                                                   gated calls: semantic or reranked $match, and $rerank
  * @returns {Object<string,string>} the two headers
  */
 export const buildAttributionHeaders = ({
@@ -58,6 +61,7 @@ export const buildAttributionHeaders = ({
   algorithmId = null,
   clientAttemptN = null,
   source = null,
+  capacityAware = false,
 } = {}) => {
   const requestSource = source || (isPresent(runId) ? REQUEST_SOURCE.AUTOMATCH : REQUEST_SOURCE.MANUAL)
 
@@ -78,6 +82,7 @@ export const buildAttributionHeaders = ({
 
   if(isPresent(algorithmId)) meta.algorithm_id = String(algorithmId)
   if(isPresent(clientAttemptN)) meta.client_attempt_n = String(clientAttemptN)
+  if(capacityAware) meta.capacity_aware = 'true'
 
   return {
     [REQUEST_SOURCE_HEADER]: requestSource,

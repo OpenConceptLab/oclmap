@@ -239,3 +239,21 @@ test('a throttled rerank (-4) makes the run partial; the row still counts as com
   const r = summarizeRunCompletion({ rowStages, rowIndices: [0, 1], algoIds: ['ocl-search'] })
   assert.deepEqual(r, { completed_rows: 2, failed_rows: 0, completion_status: 'partial' })
 })
+
+test('capacityAware: the capacity_aware flag, as the string "true" (oclapi2 enforce_for=aware)', () => {
+  const m = meta(buildAttributionHeaders({ runId: 7, projectId: 2, rowIndices: [1, 2], algorithmId: 'ocl-semantic', capacityAware: true }))
+  assert.equal(m.capacity_aware, 'true')
+  assert.equal(typeof m.capacity_aware, 'string')
+  assert.equal(m.automatch_run_id, '7')
+})
+
+test('capacityAware: left out unless asked for', () => {
+  assert.equal('capacity_aware' in meta(buildAttributionHeaders({ runId: 7, algorithmId: 'ocl-semantic' })), false)
+  assert.equal('capacity_aware' in meta(buildAttributionHeaders({ capacityAware: false })), false)
+})
+
+test('capacityAware on a manual call: mapper-ui-manual source, flag still sent', () => {
+  const h = buildAttributionHeaders({ projectId: 2, rowIndex: 5, algorithmId: 'ocl-semantic', capacityAware: true })
+  assert.equal(h[REQUEST_SOURCE_HEADER], REQUEST_SOURCE.MANUAL)
+  assert.deepEqual(meta(h), { map_project_id: '2', row_index: '5', algorithm_id: 'ocl-semantic', capacity_aware: 'true' })
+})

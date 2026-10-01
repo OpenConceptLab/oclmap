@@ -1836,11 +1836,13 @@ const MapProject = () => {
   // call (panel open, single rerun, per-row AI) that overlaps a running
   // auto-match is correctly stamped 'mapper-ui-manual' — the active-run ref
   // alone can't distinguish concurrent manual traffic from run traffic.
-  const attrHeaders = ({rowIndex, rowIndices, batchSize, algorithmId, clientAttemptN, isRunTraffic = false} = {}) =>
+  // capacityAware: the call waits out a capacity 429 (OpenConceptLab/ocl_online#275). Set it on OCL's gated calls
+  // (semantic or reranked $match, $rerank), never on a custom algorithm's own server.
+  const attrHeaders = ({rowIndex, rowIndices, batchSize, algorithmId, clientAttemptN, isRunTraffic = false, capacityAware = false} = {}) =>
     buildAttributionHeaders({
       runId: isRunTraffic ? (automatchRunRef.current?.id ?? null) : null,
       projectId: params.projectId,
-      rowIndex, rowIndices, batchSize, algorithmId, clientAttemptN,
+      rowIndex, rowIndices, batchSize, algorithmId, clientAttemptN, capacityAware,
     })
 
   // Create the AutomatchRun system-of-record at run start (oclapi2#876), which
@@ -2306,7 +2308,7 @@ const MapProject = () => {
           payload,
           (algo.type === 'custom' && algo.url && algo.token) ? algo.token : null,
           {
-            headers: attrHeaders({rowIndices: rowIndexes, batchSize: rowBatch.length, algorithmId: algo.id, clientAttemptN: attempt + 1, isRunTraffic: true}),
+            headers: attrHeaders({rowIndices: rowIndexes, batchSize: rowBatch.length, algorithmId: algo.id, clientAttemptN: attempt + 1, isRunTraffic: true, capacityAware: algo.type !== 'custom'}),
             query: {
               includeSearchMeta: true,
               ...(algo.query_params || {}),
@@ -3813,6 +3815,8 @@ const MapProject = () => {
       payload,
       (algoDef.type === 'custom' && algoDef.url) ? algoDef.token : null,
       {
+        // A custom algorithm's own server gets no new header (it might not allow it in CORS).
+        ...(algoDef.type === 'custom' && algoDef.url ? {} : {headers: attrHeaders({rowIndex: __row.__index, algorithmId: algoDef.id, capacityAware: true})}),
         query: {
           includeSearchMeta: true,
           includeRetired: isBoolean(_retired) ? _retired : retired,
@@ -4370,7 +4374,7 @@ const MapProject = () => {
         q: query,
         rows: latestRerankRows.length ? latestRerankRows : rerankRows,
         ...(encoderModel ? { encoder_model: encoderModel } : {})
-      }, null, {headers: attrHeaders({rowIndex: index, algorithmId: 'reranker', isRunTraffic}), handlesThrottle: true, timeout: HEAVY_REQUEST_TIMEOUT_MS}), {
+      }, null, {headers: attrHeaders({rowIndex: index, algorithmId: 'reranker', isRunTraffic, capacityAware: true}), handlesThrottle: true, timeout: HEAVY_REQUEST_TIMEOUT_MS}), {
         gate: getCapacityGate(service.URL),
         isCancelled,
         onCapacity: noteCapacity,
@@ -4769,7 +4773,7 @@ const MapProject = () => {
           // applied by the premium component (react-bridge-match). Per-row here
           // (single-row payload) → scalar row_index. isBulk distinguishes a run
           // call from a manual per-row bridge fetch.
-          attrHeaders({rowIndex: __row.__index, algorithmId: bridgeAlgoId, isRunTraffic: isBulk})
+          attrHeaders({rowIndex: __row.__index, algorithmId: bridgeAlgoId, isRunTraffic: isBulk, capacityAware: true})
         )
       } catch (err) {
         failBridgeRow(err?.message || t('unknown_error'))
