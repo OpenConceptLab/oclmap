@@ -775,9 +775,10 @@
   },
   "unknown_error": "Unknown error",
   "announcement": {
-    "title": "Welcome to the public preview of the OCL Mapper!",
-    "text": "Try it now, ahead of the full release coming soon.",
+    "title": "Subscriptions open November 1.",
+    "text": "Existing accounts using premium features have a grace period until December 1.",
     "link_label": "Learn more",
+    "pricing_link_label": "See pricing",
     "dismiss": "Dismiss"
   },
   "quota": {
