@@ -70,7 +70,7 @@ import pick from 'lodash/pick'
 import { OperationsContext } from '../app/LayoutContext';
 
 import APIService, { isTransientNetworkError, retryWithBackoff } from '../../services/APIService';
-import { buildAttributionHeaders, buildConfigSnapshot, summarizeRunCompletion } from '../../services/attribution'
+import { buildAttributionHeaders, buildConfigSnapshot, summarizeRunCompletion, matchesOnOCL } from '../../services/attribution'
 import { CAPACITY_WAIT_CAP_MS, HEAVY_REQUEST_TIMEOUT_MS, LIGHT_REQUEST_TIMEOUT_MS, createCapacityGate, createLimiter, isRetryableError, requestWithCapacityRetry, sleepUnlessCancelled, untilCancelled } from '../../services/capacity'
 import { highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, hasCapability, getMapperPreview, getNewProjectBlockReason, downloadObject, currentUserToken, refreshCurrentUserCapabilitiesCache } from '../../common/utils';
 import { WHITE, SURFACE_COLORS, TEXT_GRAY } from '../../common/colors';
@@ -2308,7 +2308,7 @@ const MapProject = () => {
           payload,
           (algo.type === 'custom' && algo.url && algo.token) ? algo.token : null,
           {
-            headers: attrHeaders({rowIndices: rowIndexes, batchSize: rowBatch.length, algorithmId: algo.id, clientAttemptN: attempt + 1, isRunTraffic: true, capacityAware: algo.type !== 'custom'}),
+            headers: attrHeaders({rowIndices: rowIndexes, batchSize: rowBatch.length, algorithmId: algo.id, clientAttemptN: attempt + 1, isRunTraffic: true, capacityAware: matchesOnOCL(algo)}),
             query: {
               includeSearchMeta: true,
               ...(algo.query_params || {}),
@@ -3815,8 +3815,7 @@ const MapProject = () => {
       payload,
       (algoDef.type === 'custom' && algoDef.url) ? algoDef.token : null,
       {
-        // A custom algorithm's own server gets no new header (it might not allow it in CORS).
-        ...(algoDef.type === 'custom' && algoDef.url ? {} : {headers: attrHeaders({rowIndex: __row.__index, algorithmId: algoDef.id, capacityAware: true})}),
+        ...(matchesOnOCL(algoDef) ? {headers: attrHeaders({rowIndex: __row.__index, algorithmId: algoDef.id, capacityAware: true})} : {}),
         query: {
           includeSearchMeta: true,
           includeRetired: isBoolean(_retired) ? _retired : retired,

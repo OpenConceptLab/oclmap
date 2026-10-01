@@ -32,6 +32,13 @@ const isPresent = value =>
   value !== null && value !== undefined && !(typeof value === 'number' && Number.isNaN(value))
 
 /**
+ * Whether an algorithm's $match goes to OCL's API: every algorithm but a custom one with its own URL (which falls
+ * back to OCL's $match without one, like getMatchAPIService). OCL's calls carry capacity_aware (ocl_online#275);
+ * a custom algorithm's own server gets no new header, since it might not allow it in CORS.
+ */
+export const matchesOnOCL = algo => !(algo?.type === 'custom' && algo?.url)
+
+/**
  * Build the attribution request headers for a single backend call.
  *
  * Manual (non-run) callers pass no `runId`, which yields

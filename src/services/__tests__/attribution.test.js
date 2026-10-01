@@ -16,6 +16,7 @@ import assert from 'node:assert/strict'
 
 import {
   buildAttributionHeaders,
+  matchesOnOCL,
   buildConfigSnapshot,
   summarizeRunCompletion,
   REQUEST_SOURCE,
@@ -256,4 +257,13 @@ test('capacityAware on a manual call: mapper-ui-manual source, flag still sent',
   const h = buildAttributionHeaders({ projectId: 2, rowIndex: 5, algorithmId: 'ocl-semantic', capacityAware: true })
   assert.equal(h[REQUEST_SOURCE_HEADER], REQUEST_SOURCE.MANUAL)
   assert.deepEqual(meta(h), { map_project_id: '2', row_index: '5', algorithm_id: 'ocl-semantic', capacity_aware: 'true' })
+})
+
+test('matchesOnOCL: built-in algorithms and a custom one without a URL go to OCL; a custom URL does not', () => {
+  assert.equal(matchesOnOCL({ id: 'ocl-semantic', type: 'ocl-semantic' }), true)
+  assert.equal(matchesOnOCL({ id: 'ocl-search', type: 'ocl-search' }), true)
+  assert.equal(matchesOnOCL({ id: 'ocl-bridge', type: 'ocl-bridge' }), true)
+  assert.equal(matchesOnOCL({ id: 'c', type: 'custom' }), true)
+  assert.equal(matchesOnOCL({ id: 'c', type: 'custom', url: 'https://example.org/$match/' }), false)
+  assert.equal(matchesOnOCL(undefined), true)
 })
