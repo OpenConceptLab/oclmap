@@ -156,6 +156,9 @@ class APIService {
     };
   }
 
+  // config.handlesThrottle: the caller waits out a 429 itself
+  // (services/capacity.js), so the full-screen "Too many requests" countdown,
+  // which would also cover the Stop button, stays closed (ocl_issues#2849).
   request(method, data, token, config) {
     let headers = {};
     let query = {};
@@ -164,9 +167,10 @@ class APIService {
       query = get(config, 'query', {});
     }
     let request = this.getRequest(method, data, token, headers, query);
-    request = {...request, ...omit(config, ['headers', 'query'])};
+    request = {...request, ...omit(config, ['headers', 'query', 'handlesThrottle'])};
     return axios(request).catch(error => {
-      handleAPIError(error);
+      if(!(config?.handlesThrottle && error?.response?.status === 429))
+        handleAPIError(error);
       return Promise.reject(error);
     });
   };

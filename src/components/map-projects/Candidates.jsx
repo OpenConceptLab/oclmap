@@ -23,6 +23,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import SortIcon from '@mui/icons-material/Sort';
 import GroupIcon from '@mui/icons-material/Layers';
 import AssistantIcon from '@mui/icons-material/Assistant';
+import HourglassIcon from '@mui/icons-material/HourglassEmpty';
 
 import isEmpty from 'lodash/isEmpty'
 import flatten from 'lodash/flatten'
@@ -53,38 +54,7 @@ import {
   conceptForMapping,
   getAIAnalysisCandidateIDs
 } from './viewBuilders.js'
-
-const getRowProgressLabel = (stageMap, algos) => {
-  if(stageMap === undefined)
-    return {label: false}
-  if(!stageMap)
-    return {label: 'Preparing...', status: 'partial'}
-
-  const stages = algos.map(k => stageMap[k.id]);
-
-  if (!stages.length || stages.every(v => v === -1)) {
-    return { label: 'Not started', status: 'idle' };
-  }
-
-  const runningIndex = stages.findIndex(v => v === 0);
-  if (runningIndex !== -1) {
-    return {
-      label: `Running: ${algos[runningIndex].id}...`,
-      status: 'running',
-    };
-  }
-
-  if (stages.every(v => v === 1)) {
-    return true
-  }
-
-  const waitingIndex = stages.findIndex(v => v === -1)
-  if(waitingIndex !== -1) {
-    return {label: `Waiting: ${algos[waitingIndex].id}`, status: 'waiting'} // AutoMatch Bulk
-  }
-
-  return { label: 'Partially completed', status: 'partial' };
-}
+import { getRowProgressLabel } from './rowProgress.js'
 
 const Sort = ({ selected, onSort }) => {
   const { t } = useTranslation();
@@ -407,7 +377,7 @@ const CandidateList = ({rowViews, header, rowIndex, sortBy, order, openConceptPa
 //   conceptCache — project-wide ConceptDefinition store, keyed by concept_key.
 //   algosSelected — algorithm definitions (for headers/grouping).
 // (plans/unified-mapper-model.md "How the views map onto this model".)
-const Candidates = ({rowIndex, rowState, conceptCache, targetCanonical, targetRelativeUrl, openConceptPanel, showItem, isSelectedForMap, onMap, onFetchMore, isLoading, candidatesScore, repoVersion, analysis, onFetchRecommendation, appliedFacets, setAppliedFacets, filters, facets, columns, defaultFilters, locales, models, selectedModel, onModelChange, promptTemplates, promptTemplate, onPromptTemplateChange, onRefreshClick, rowStage, inAIAssistantGroup, algosSelected, canSelectAIModel}) => {
+const Candidates = ({rowIndex, rowState, conceptCache, targetCanonical, targetRelativeUrl, openConceptPanel, showItem, isSelectedForMap, onMap, onFetchMore, isLoading, candidatesScore, repoVersion, analysis, onFetchRecommendation, appliedFacets, setAppliedFacets, filters, facets, columns, defaultFilters, locales, models, selectedModel, onModelChange, promptTemplates, promptTemplate, onPromptTemplateChange, onRefreshClick, rowStage, inAIAssistantGroup, algosSelected, canSelectAIModel, capacityWait=false}) => {
   const { t } = useTranslation();
   const [sortBy, setSortBy] = React.useState('rerank_score')
   const [groupBy, setGroupBy] = React.useState('quality')
@@ -466,7 +436,9 @@ const Candidates = ({rowIndex, rowState, conceptCache, targetCanonical, targetRe
   const canFetchMore = hasAnyView
   const algoStagesValue = values(rowStage || {}).filter((_, i) => Object.keys(rowStage || {})[i] !== 'recommend')
   const areAlgoRun = algoStagesValue.length > 0 && algoStagesValue.every(v => v === 1)
-  const { label } = getRowProgressLabel(rowStage, algosSelected);
+  const { label, status: progressStatus } = getRowProgressLabel(rowStage, algosSelected, {t, capacityWait});
+  // Waiting out a busy server, or given up on for now: not a spinner (ocl_issues#2849).
+  const isCapacityStatus = ['capacity_wait', 'throttled'].includes(progressStatus)
 
   const byAlgoScore = sortBy === 'algo_score'
   const byRerankScore = sortBy === 'rerank_score'
@@ -628,7 +600,7 @@ const Candidates = ({rowIndex, rowState, conceptCache, targetCanonical, targetRe
         <span style={{display: 'flex', alignItems: 'center'}}>
           {
             !areAlgoRun && label &&
-              <Chip icon={<CircularProgress sx={{width: '14px !important', height: '14px !important', marginLeft: '6px !important', marginRight: '0px !important'}} />} variant='outlined' color='warning' size='small' label={label} sx={{margin: '0 8px'}} />
+              <Chip icon={isCapacityStatus ? <HourglassIcon fontSize='small' /> : <CircularProgress sx={{width: '14px !important', height: '14px !important', marginLeft: '6px !important', marginRight: '0px !important'}} />} variant='outlined' color='warning' size='small' label={label} sx={{margin: '0 8px'}} />
           }
           {
             // Refresh stays visible even when there are zero candidates so

@@ -12,7 +12,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { formatRowNumbers, isRetryableMatchError, runMatchBatch, requestSingleMatch } from '../matchBatch.js'
+import { formatRowNumbers, isRetryableMatchError, runMatchBatch, requestSingleMatch, runWithConcurrency } from '../matchBatch.js'
+import { createCapacityGate } from '../../../services/capacity.js'
 import { createLatestRequestGate } from '../aiVisibility.js'
 
 const NO_WAIT = {baseDelayMs: 0}
@@ -285,4 +286,269 @@ test('requestSingleMatch: a preview-limit 403 passes its body through unchanged 
   assert.equal(result.ok, false)
   assert.equal(result.previewLimit, true)
   assert.deepEqual(result.errorBody, limit)
+})
+
+// ── Waiting out a busy server (OpenConceptLab/ocl_issues#2849) ────────────────
+// A 429 used to fail the batch at once. Now it waits for Retry-After (plus
+// jitter) and resumes; a batch still throttled after the long cap is marked
+// throttled (-4, "not run, retry"), never failed.
+
+const throttled = () => httpError(429, {})
+const withRetryAfter = (err, seconds) => { err.response.headers = {'retry-after': String(seconds)}; return err }
+const virtualClock = () => {
+  const clock = {t: 0}
+  clock.now = () => clock.t
+  clock.sleep = async ms => { clock.t += ms }
+  return clock
+}
+
+test('runMatchBatch: a 429 waits for Retry-After and the batch then succeeds; its rows are never marked failed', async () => {
+  const rec = recorder()
+  const clock = virtualClock()
+  const waits = []
+  let calls = 0
+  const send = async () => {
+    calls += 1
+    if(calls === 1) throw withRetryAfter(throttled(), 12)
+    return ok([{row: {__index: 0}, results: []}, {row: {__index: 1}, results: []}])
+  }
+
+  const data = await runMatchBatch({
+    rowIndexes: [0, 1], send, ...rec,
+    onWait: info => waits.push(info.reason), onWaitEnd: () => waits.push('end'),
+    retryOptions: {now: clock.now, sleep: clock.sleep, random: () => 0},
+  })
+
+  assert.equal(data.length, 2)
+  assert.equal(calls, 2)
+  assert.equal(clock.t, 12000)
+  assert.deepEqual(rec.stages, {0: [0, 1], 1: [0, 1]})
+  assert.deepEqual(rec.failed, [])
+  assert.deepEqual(rec.finished, [0, 1])
+  assert.deepEqual(waits, ['throttled', 'end'])
+})
+
+test('runMatchBatch: a batch still throttled after the cap is marked throttled (-4), not failed', async () => {
+  const rec = recorder()
+  const clock = virtualClock()
+  const throttledRows = []
+
+  const data = await runMatchBatch({
+    rowIndexes: [5, 6], send: async () => { throw withRetryAfter(throttled(), 60) }, ...rec,
+    onRowThrottled: (index, info) => throttledRows.push([index, info.attempts > 1]),
+    retryOptions: {now: clock.now, sleep: clock.sleep, random: () => 0, maxWaitMs: 5 * 60 * 1000},
+  })
+
+  assert.deepEqual(data, [])
+  assert.deepEqual(rec.stages, {5: [0, -4], 6: [0, -4]})
+  assert.deepEqual(rec.failed, [])
+  assert.deepEqual(rec.finished, [])
+  assert.deepEqual(throttledRows, [[5, true], [6, true]])
+})
+
+test('runMatchBatch: Stop during a 429 wait puts the rows back to not run and sends nothing more', async () => {
+  const rec = recorder()
+  let calls = 0
+  let stopped = false
+  const send = async () => {
+    calls += 1
+    setTimeout(() => { stopped = true }, 20)
+    throw withRetryAfter(throttled(), 600)
+  }
+  const started = Date.now()
+
+  const data = await runMatchBatch({rowIndexes: [0, 1], send, ...rec, shouldStop: () => stopped, retryOptions: {pollMs: 5}})
+
+  assert.deepEqual(data, [])
+  assert.equal(calls, 1)
+  assert.ok(Date.now() - started < 1000)
+  assert.deepEqual(rec.stages, {0: [0, -1], 1: [0, -1]})
+  assert.deepEqual(rec.failed, [])
+})
+
+test('runMatchBatch: a 503 is still retried, then fails the rows with its status', async () => {
+  const rec = recorder()
+  let calls = 0
+  await runMatchBatch({rowIndexes: [0], send: async () => { calls += 1; throw httpError(503) }, ...rec, retryOptions: NO_WAIT})
+  assert.equal(calls, 3)
+  assert.deepEqual(rec.stages, {0: [0, -2]})
+  assert.equal(rec.failed[0].status, 503)
+})
+
+test('runMatchBatch: a 429 on one batch holds back another batch sharing the gate', async () => {
+  const clock = virtualClock()
+  const gate = createCapacityGate({now: clock.now})
+  const sentAt = {a: [], b: []}
+  const sendA = async () => {
+    sentAt.a.push(clock.t)
+    if(sentAt.a.length === 1) throw withRetryAfter(throttled(), 30)
+    return ok([])
+  }
+  const sendB = async () => { sentAt.b.push(clock.t); return ok([]) }
+  const common = {retryOptions: {gate, now: clock.now, sleep: clock.sleep, random: () => 0}}
+
+  await runMatchBatch({rowIndexes: [0], send: sendA, ...recorder(), ...common})
+  gate.pause(30000)
+  await runMatchBatch({rowIndexes: [1], send: sendB, ...recorder(), ...common})
+
+  assert.deepEqual(sentAt.a, [0, 30000])
+  assert.deepEqual(sentAt.b, [60000])
+})
+
+test('requestSingleMatch: a 429 waits and then returns the response', async () => {
+  const clock = virtualClock()
+  let calls = 0
+  const result = await requestSingleMatch(async () => {
+    calls += 1
+    if(calls === 1) throw withRetryAfter(throttled(), 5)
+    return ok([{ row: { __index: 3 }, results: [] }])
+  }, { retryOptions: {now: clock.now, sleep: clock.sleep, random: () => 0} })
+  assert.equal(result.ok, true)
+  assert.equal(calls, 2)
+  assert.equal(clock.t, 5000)
+})
+
+test('requestSingleMatch: still throttled after its cap, it reports throttled, not a failure', async () => {
+  const clock = virtualClock()
+  const result = await requestSingleMatch(async () => { throw withRetryAfter(throttled(), 60) }, { retryOptions: {now: clock.now, sleep: clock.sleep, random: () => 0} })
+  assert.equal(result.ok, false)
+  assert.equal(result.throttled, true)
+  assert.equal(result.previewLimit, false)
+  assert.equal(result.errorBody.status, 429)
+  // a person is waiting on the row panel: 5 minutes, not a run's 30
+  assert.ok(clock.t <= 5 * 60 * 1000 && clock.t >= 4 * 60 * 1000, `waited ${clock.t}`)
+})
+
+// ── the bulk scheduler ─────────────────────────────────────────────────────────
+
+test('runWithConcurrency: at most `concurrency` in flight, every item run once', async () => {
+  let inFlight = 0
+  let maxInFlight = 0
+  const ran = []
+  const done = await runWithConcurrency([1, 2, 3, 4, 5, 6, 7], {
+    concurrency: 3,
+    run: async item => {
+      inFlight += 1
+      maxInFlight = Math.max(maxInFlight, inFlight)
+      await new Promise(resolve => setTimeout(resolve, 3))
+      ran.push(item)
+      inFlight -= 1
+    },
+  })
+  assert.equal(done, true)
+  assert.equal(maxInFlight, 3)
+  assert.deepEqual(ran.sort(), [1, 2, 3, 4, 5, 6, 7])
+})
+
+test('runWithConcurrency: sends no new batch while the gate is paused, then resumes', async () => {
+  const gate = createCapacityGate()
+  const started = Date.now()
+  const dispatchedAt = {}
+  const done = await runWithConcurrency([1, 2, 3, 4], {
+    concurrency: 2,
+    gate,
+    pollMs: 5,
+    run: async item => {
+      dispatchedAt[item] = Date.now() - started
+      // the first batch is throttled: the server asks everyone to wait 80 ms
+      if(item === 1)
+        gate.pause(80)
+      await new Promise(resolve => setTimeout(resolve, 5))
+    },
+  })
+  assert.equal(done, true)
+  assert.ok(dispatchedAt[1] < 40)
+  for(const item of [2, 3, 4])
+    assert.ok(dispatchedAt[item] >= 75, `batch ${item} went out at ${dispatchedAt[item]} ms, during the pause`)
+})
+
+test('runWithConcurrency: Stop during a pause returns at once, and sends nothing more', async () => {
+  const gate = createCapacityGate()
+  let stopped = false
+  const ran = []
+  const started = Date.now()
+  setTimeout(() => { stopped = true }, 20)
+  const done = await runWithConcurrency([1, 2, 3], {
+    concurrency: 1,
+    gate,
+    pollMs: 5,
+    shouldAbort: () => stopped,
+    run: async item => { ran.push(item); gate.pause(60000) },
+  })
+  assert.equal(done, false)
+  assert.deepEqual(ran, [1])
+  assert.ok(Date.now() - started < 1000)
+})
+
+test('runWithConcurrency: shouldSkipRest drops the queue but lets the batches in flight finish', async () => {
+  let skip = false
+  const finished = []
+  const done = await runWithConcurrency([1, 2, 3, 4, 5], {
+    concurrency: 2,
+    shouldSkipRest: () => skip,
+    run: async item => {
+      if(item === 2) skip = true
+      await new Promise(resolve => setTimeout(resolve, 3))
+      finished.push(item)
+    },
+  })
+  assert.equal(done, true)
+  assert.deepEqual(finished.sort(), [1, 2])
+})
+
+test('runWithConcurrency: onSkipped gets the batches shouldSkipRest dropped, once', async () => {
+  let skip = false
+  const skipped = []
+  await runWithConcurrency([1, 2, 3, 4, 5], {
+    concurrency: 1,
+    shouldSkipRest: () => skip,
+    onSkipped: items => skipped.push(items),
+    run: async item => { if(item === 2) skip = true },
+  })
+  assert.deepEqual(skipped, [[3, 4, 5]])
+})
+
+test('runWithConcurrency: onSkipped isn\'t called when nothing was dropped', async () => {
+  const skipped = []
+  await runWithConcurrency([1, 2], {concurrency: 2, onSkipped: items => skipped.push(items), run: async () => {}})
+  assert.deepEqual(skipped, [])
+})
+
+// Codex review, pass 1
+test('runWithConcurrency: Stop returns even while a batch in flight never answers', async () => {
+  let stopped = false
+  setTimeout(() => { stopped = true }, 20)
+  const started = Date.now()
+  const done = await runWithConcurrency([1, 2, 3], {
+    concurrency: 1,
+    pollMs: 5,
+    shouldAbort: () => stopped,
+    run: () => new Promise(() => {}),
+  })
+  assert.equal(done, false)
+  assert.ok(Date.now() - started < 1000)
+})
+
+test('runWithConcurrency: a pause longer than maxHoldMs doesn\'t hold the queue (its batches end throttled at once instead)', async () => {
+  const gate = createCapacityGate()
+  gate.pause(60 * 60 * 1000)
+  const ran = []
+  const started = Date.now()
+  await runWithConcurrency([1, 2, 3], {concurrency: 1, gate, maxHoldMs: 30 * 60 * 1000, pollMs: 5, run: async item => { ran.push(item) }})
+  assert.deepEqual(ran, [1, 2, 3])
+  assert.ok(Date.now() - started < 1000)
+})
+
+// Codex review, pass 2: the scheduler's hold budget is cumulative.
+test('runWithConcurrency: a pause that keeps extending holds the queue for maxHoldMs in all, then lets it go', async () => {
+  const gate = createCapacityGate()
+  gate.pause(40)
+  // other requests keep pushing the pause out
+  const timer = setInterval(() => gate.pause(40), 10)
+  const started = Date.now()
+  const ran = []
+  await runWithConcurrency([1, 2], {concurrency: 1, gate, maxHoldMs: 150, pollMs: 5, run: async () => { ran.push(Date.now() - started) }})
+  clearInterval(timer)
+  assert.equal(ran.length, 2)
+  assert.ok(ran[0] >= 140 && ran[0] < 1000, `first batch went out at ${ran[0]} ms`)
 })

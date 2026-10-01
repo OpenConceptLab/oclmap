@@ -111,12 +111,11 @@ export default function MultiAlgoSelector({
   maxAlgos=5,
   repo,
   isCoreUser,
-  fullRequestLimits=false,
+  requestLimits=getRequestLimits(null),
 }) {
   const { t } = useTranslation()
-  // Non-core users get at most 10 rows per batch and 5 concurrent requests
-  // (ocl_online#274).
-  const requestLimits = getRequestLimits(fullRequestLimits)
+  // Non-core users get at most 10 rows per batch, and early-access users 5
+  // concurrent requests, preview users 2 (ocl_online#274, ocl_issues#2849).
   const { setAlert } = React.useContext(OperationsContext)
   const [expanded, setExpanded] = useState(() => new Map());
   const [errors, setErrors] = React.useState({})
@@ -186,8 +185,8 @@ export default function MultiAlgoSelector({
   const getRequestFieldsSettings = (sel, algo) => getRequestSettings({
     batch_size: sel.batch_size ?? algo?.batch_size,
     concurrent_requests: sel.concurrent_requests ?? algo?.concurrent_requests,
-  }, fullRequestLimits)
-  const getLimitHelperText = max => fullRequestLimits ? undefined : t('map_project.request_limit_up_to', {max})
+  }, requestLimits)
+  const getLimitHelperText = max => requestLimits.capped ? t('map_project.request_limit_up_to', {max}) : undefined
   const getBatchSizeProps = (sel, algo) => ({
     value: getRequestFieldsSettings(sel, algo).batchSize,
     onChange: e => updateSelected(sel.__key, { batch_size: clampInt(e.target.value, 1, requestLimits.batchSize) }),
@@ -314,8 +313,8 @@ export default function MultiAlgoSelector({
       ...omit(algo, ['getIcon', 'disabled', 'description', 'url']),
       id: id,
       name: name,
-      batch_size: getRequestSettings(algo, fullRequestLimits).batchSize,
-      concurrent_requests: getRequestSettings(algo, fullRequestLimits).concurrentRequests,
+      batch_size: getRequestSettings(algo, requestLimits).batchSize,
+      concurrent_requests: getRequestSettings(algo, requestLimits).concurrentRequests,
       __key: Math.random(100).toString()
     };
 

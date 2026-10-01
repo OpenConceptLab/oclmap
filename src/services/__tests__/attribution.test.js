@@ -16,6 +16,7 @@ import assert from 'node:assert/strict'
 
 import {
   buildAttributionHeaders,
+  matchesOnOCL,
   buildConfigSnapshot,
   summarizeRunCompletion,
   REQUEST_SOURCE,
@@ -211,4 +212,58 @@ test('run stopped for match quota → partial (not cancelled), finished rows kep
 test('user cancel wins over a quota stop', () => {
   const r = summarizeRunCompletion({ rowStages: {0: {'ocl-search': 1}}, rowIndices: [0], algoIds: ['ocl-search'], aborted: true, stoppedForQuota: true })
   assert.equal(r.completion_status, 'cancelled')
+})
+
+// ocl_issues#2849: a row the server was too busy to match (-4) wasn't run, it
+// didn't fail. It counts as neither, and a run with such rows is partial.
+test('throttled rows (-4) count as neither completed nor failed', () => {
+  const rowStages = { 0: {'ocl-search': 1}, 1: {'ocl-search': -4}, 2: {'ocl-search': -2} }
+  const r = summarizeRunCompletion({ rowStages, rowIndices: [0, 1, 2], algoIds: ['ocl-search'] })
+  assert.deepEqual(r, { completed_rows: 1, failed_rows: 1, completion_status: 'partial' })
+})
+
+test('a run whose rows were all throttled is partial, not failed', () => {
+  const rowStages = { 0: {'ocl-search': -4}, 1: {'ocl-search': -4, 'ocl-semantic': -2} }
+  const r = summarizeRunCompletion({ rowStages, rowIndices: [0, 1], algoIds: ALGOS })
+  assert.deepEqual(r, { completed_rows: 0, failed_rows: 0, completion_status: 'partial' })
+})
+
+test('a user cancel wins over throttled rows', () => {
+  const r = summarizeRunCompletion({ rowStages: {0: {'ocl-search': -4}}, rowIndices: [0], algoIds: ['ocl-search'], aborted: true })
+  assert.equal(r.completion_status, 'cancelled')
+})
+
+// Codex pass 4: a run whose matching finished but whose reranks stayed
+// throttled isn't complete either.
+test('a throttled rerank (-4) makes the run partial; the row still counts as completed', () => {
+  const rowStages = { 0: {'ocl-search': 1, rerank: -4}, 1: {'ocl-search': 1, rerank: 1} }
+  const r = summarizeRunCompletion({ rowStages, rowIndices: [0, 1], algoIds: ['ocl-search'] })
+  assert.deepEqual(r, { completed_rows: 2, failed_rows: 0, completion_status: 'partial' })
+})
+
+test('capacityAware: the capacity_aware flag, as the string "true" (oclapi2 enforce_for=aware)', () => {
+  const m = meta(buildAttributionHeaders({ runId: 7, projectId: 2, rowIndices: [1, 2], algorithmId: 'ocl-semantic', capacityAware: true }))
+  assert.equal(m.capacity_aware, 'true')
+  assert.equal(typeof m.capacity_aware, 'string')
+  assert.equal(m.automatch_run_id, '7')
+})
+
+test('capacityAware: left out unless asked for', () => {
+  assert.equal('capacity_aware' in meta(buildAttributionHeaders({ runId: 7, algorithmId: 'ocl-semantic' })), false)
+  assert.equal('capacity_aware' in meta(buildAttributionHeaders({ capacityAware: false })), false)
+})
+
+test('capacityAware on a manual call: mapper-ui-manual source, flag still sent', () => {
+  const h = buildAttributionHeaders({ projectId: 2, rowIndex: 5, algorithmId: 'ocl-semantic', capacityAware: true })
+  assert.equal(h[REQUEST_SOURCE_HEADER], REQUEST_SOURCE.MANUAL)
+  assert.deepEqual(meta(h), { map_project_id: '2', row_index: '5', algorithm_id: 'ocl-semantic', capacity_aware: 'true' })
+})
+
+test('matchesOnOCL: built-in algorithms and a custom one without a URL go to OCL; a custom URL does not', () => {
+  assert.equal(matchesOnOCL({ id: 'ocl-semantic', type: 'ocl-semantic' }), true)
+  assert.equal(matchesOnOCL({ id: 'ocl-search', type: 'ocl-search' }), true)
+  assert.equal(matchesOnOCL({ id: 'ocl-bridge', type: 'ocl-bridge' }), true)
+  assert.equal(matchesOnOCL({ id: 'c', type: 'custom' }), true)
+  assert.equal(matchesOnOCL({ id: 'c', type: 'custom', url: 'https://example.org/$match/' }), false)
+  assert.equal(matchesOnOCL(undefined), true)
 })

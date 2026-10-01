@@ -32,6 +32,13 @@ const isPresent = value =>
   value !== null && value !== undefined && !(typeof value === 'number' && Number.isNaN(value))
 
 /**
+ * Whether an algorithm's $match goes to OCL's API: every algorithm but a custom one with its own URL (which falls
+ * back to OCL's $match without one, like getMatchAPIService). OCL's calls carry capacity_aware (ocl_online#275);
+ * a custom algorithm's own server gets no new header, since it might not allow it in CORS.
+ */
+export const matchesOnOCL = algo => !(algo?.type === 'custom' && algo?.url)
+
+/**
  * Build the attribution request headers for a single backend call.
  *
  * Manual (non-run) callers pass no `runId`, which yields
@@ -47,6 +54,9 @@ const isPresent = value =>
  * @param {string|null}         [opts.algorithmId]   algorithm_id (semantic / bridge / reranker / …)
  * @param {number|null}         [opts.clientAttemptN] retry attempt number, 1-based
  * @param {string|null}         [opts.source]        explicit request_source override
+ * @param {boolean}             [opts.capacityAware] the call waits out a capacity 429: tells oclapi2's capacity limit
+ *                                                   it may refuse it (OpenConceptLab/ocl_online#275). Only for OCL's
+ *                                                   gated calls: semantic or reranked $match, and $rerank
  * @returns {Object<string,string>} the two headers
  */
 export const buildAttributionHeaders = ({
@@ -58,6 +68,7 @@ export const buildAttributionHeaders = ({
   algorithmId = null,
   clientAttemptN = null,
   source = null,
+  capacityAware = false,
 } = {}) => {
   const requestSource = source || (isPresent(runId) ? REQUEST_SOURCE.AUTOMATCH : REQUEST_SOURCE.MANUAL)
 
@@ -78,6 +89,7 @@ export const buildAttributionHeaders = ({
 
   if(isPresent(algorithmId)) meta.algorithm_id = String(algorithmId)
   if(isPresent(clientAttemptN)) meta.client_attempt_n = String(clientAttemptN)
+  if(capacityAware) meta.capacity_aware = 'true'
 
   return {
     [REQUEST_SOURCE_HEADER]: requestSource,
@@ -125,11 +137,12 @@ export const buildConfigSnapshot = ({
  * Derive AutomatchRun completion counts + status from the per-row algo stages
  * captured during a run (oclapi2 PATCH /auto-match-runs/<id>/).
  *
- * Stage vocabulary (oclmap rowStageRef): -2 failed, -1 not run yet, 0 running,
- * 1 done. A row is **completed** when ANY attempted algo finished (1) and
- * **failed** when EVERY attempted algo failed (-2). Rows that never ran
- * (-1/undefined — e.g. a run cancelled before reaching them) or were still in
- * flight (0) count as NEITHER, so a cancelled run never over-reports
+ * Stage vocabulary (oclmap rowStageRef): -4 throttled, -2 failed, -1 not run
+ * yet, 0 running, 1 done. A row is **completed** when ANY attempted algo
+ * finished (1) and **failed** when EVERY attempted algo failed (-2). Rows that
+ * never ran (-1/undefined — e.g. a run cancelled before reaching them), were
+ * still in flight (0) or were throttled (-4: the server stayed too busy, so
+ * the row wasn't run) count as NEITHER, so a cancelled run never over-reports
  * completed_rows (ocl_online#115 review).
  *
  * @param {object}   [opts]
@@ -148,10 +161,13 @@ export const summarizeRunCompletion = ({
 } = {}) => {
   let completed = 0
   let failed = 0
+  let throttled = 0
   rowIndices.forEach(idx => {
     const stage = rowStages[idx] || {}
     const attempted = algoIds.map(id => stage[id]).filter(s => s !== undefined && s !== -1)
     if(!attempted.length) return
+    // A row whose rerank stayed throttled is matched but not ranked.
+    if(attempted.some(s => s === -4) || stage.rerank === -4) throttled += 1
     if(attempted.some(s => s === 1)) completed += 1
     else if(attempted.every(s => s === -2)) failed += 1
   })
@@ -161,6 +177,9 @@ export const summarizeRunCompletion = ({
   // Running out of match quota isn't a user cancel: the rows that finished are
   // kept. completion_status has no quota value yet, so it's recorded as partial.
   else if(stoppedForQuota) completion_status = 'partial'
+  // Rows the server was too busy to match can be run again: not a failure
+  // (ocl_issues#2849).
+  else if(throttled) completion_status = 'partial'
   else if(completed === 0) completion_status = 'failed'
   else if(completed < total) completion_status = 'partial'
   return { completed_rows: completed, failed_rows: failed, completion_status }
