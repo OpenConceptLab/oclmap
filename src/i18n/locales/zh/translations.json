@@ -489,7 +489,7 @@
     "view_raw_json": "查看原始 JSON",
     "comment": "评论",
     "rejected": "已拒绝",
-    "preview_splash_headline": "将你的术语映射到 SNOMED GPS、ICD-10、LOINC 和 CIEL —— 由 AI 完成初步匹配。",
+    "preview_splash_headline": "将你的术语映射到 SNOMED GPS、ICD-10、LOINC、CIEL 或你自己的自定义术语 —— 由 AI 完成初步匹配。",
     "preview_splash_subhead": "OCL Mapper 读取本地临床术语表，提出经过排序的标准术语匹配建议，并附带每条建议的依据。",
     "preview_splash_sign_in_cta": "登录并开始映射",
     "preview_splash_register_cta": "创建免费账户",

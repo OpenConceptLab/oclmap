@@ -464,7 +464,7 @@
     "view_raw_json": "Ver JSON Sin Procesar",
     "comment": "Comentario",
     "rejected": "Rechazado",
-    "preview_splash_headline": "Asigna tus términos a SNOMED GPS, ICD-10, LOINC y CIEL, con la IA haciendo la primera pasada.",
+    "preview_splash_headline": "Asigna tus términos a SNOMED GPS, ICD-10, LOINC, CIEL o tu propia terminología personalizada, con la IA haciendo la primera pasada.",
     "preview_splash_subhead": "El Mapper de OCL toma una hoja de cálculo de términos clínicos locales y propone coincidencias con terminologías estándar, clasificadas, con la evidencia de cada una.",
     "preview_splash_sign_in_cta": "Iniciar sesión y empezar a mapear",
     "preview_splash_register_cta": "Crear una cuenta gratuita",
