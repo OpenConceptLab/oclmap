@@ -3,6 +3,7 @@ import { initReactI18next } from 'react-i18next';
 import en from './locales/en/translations.json'
 import es from './locales/es/translations.json'
 import zh from './locales/zh/translations.json'
+import ptBR from './locales/pt-BR/translations.json'
 
 i18n.use(initReactI18next).init({
   fallbackLng: 'en',
@@ -16,6 +17,9 @@ i18n.use(initReactI18next).init({
     },
     zh: {
       translations: zh
+    },
+    'pt-BR': {
+      translations: ptBR
     }
   },
   ns: ['translations'],
@@ -23,6 +27,6 @@ i18n.use(initReactI18next).init({
   interpolation: { escapeValue: false }
 });
 
-i18n.languages = ['en', 'es', 'zh'];
+i18n.languages = ['en', 'es', 'zh', 'pt-BR'];
 
 export default i18n;

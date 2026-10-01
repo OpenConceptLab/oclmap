@@ -4,7 +4,8 @@ export const OCL_CLIENT = `oclmap/${packageJson.version}`;
 export const LANGUAGES = [
   {locale: 'en', name: 'English'},
   {locale: 'es', name: "Español"},
-  {locale: 'zh', name: "中文"}
+  {locale: 'zh', name: "中文"},
+  {locale: 'pt-BR', name: "Português (Brasil)"}
 ]
 
 
