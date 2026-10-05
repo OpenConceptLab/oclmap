@@ -552,7 +552,7 @@
     "preview_limit_body_generic": "Você atingiu um limite de prévia ({{used}} de {{limit}}).",
     "preview_limit_body_generic_no_count": "Você atingiu um limite de prévia para o Mapper.",
     "preview_limit_hardship_note": "Trabalhando com um orçamento de concessão que não estica, ou para um ministério da saúde? Use \"Solicitar mais acesso\" abaixo - se o limite não funciona para sua situação, nós encontraremos algo que funcione.",
-    "preview_limit_notify_me": "Notifique-me quando planos lançarem",
+    "preview_limit_notify_me": "Notifique-me quando os planos forem lançados",
     "preview_limit_request_access": "Solicitar mais acesso",
     "preview_limit_dismiss": "Voltar ao meu projeto",
     "preview_config_unavailable_title": "Este projeto usa configurações restritas de prévia",
