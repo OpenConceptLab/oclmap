@@ -471,7 +471,7 @@
     "save_this_project": "Salvar este projeto",
     "download_this_project_as_csv": "Baixar",
     "delete_this_project": "Excluir projeto de mapeamento",
-    "last_saved": "salvo em {{time}}",
+    "last_saved": "salvo {{time}}",
     "successfully_deleted": "Excluído com sucesso.",
     "delete_map_project": "Excluir Projeto de Mapeamento",
     "delete_map_project_warning": "Isso excluirá o projeto de mapeamento e suas decisões e arquivo carregado.",
