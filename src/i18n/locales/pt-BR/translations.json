@@ -428,7 +428,7 @@
     "ai_effective_locales": "IA receberá nomes em: {{locales}}",
     "ai_all_locales": "IA receberá nomes em: todas as localidades (sem filtro)",
     "default_filter": "Filtro Padrão",
-    "matching_algorithm": "Inteligência de mapeamento",
+    "matching_algorithm": "Algoritmo de correspondência",
     "matching_algorithm_description": "Selecione um ou mais algoritmos de mapeamento. <0>Saiba mais</0>",
     "custom_match_api": "API de Correspondência Personalizada",
     "custom_match_api_description": "Configurar URL e Token da API de Correspondência Externa",
