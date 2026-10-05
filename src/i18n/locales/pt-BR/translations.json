@@ -744,7 +744,7 @@
     "algo_canonical_url": "URL Canônica",
     "algo_canonical_url_required": "URL canônica é obrigatória para algoritmos personalizados (ex.: http://loinc.org).",
     "algo_canonical_url_invalid": "Insira uma URL completa começando com http:// ou https://",
-    "algo_canonical_url_description": "URL canônica do code system que este algoritmo corresponde (ex.: http://loinc.org).",
+    "algo_canonical_url_description": "URL canônica do code system no qual este algoritmo busca correspondências (ex.: http://loinc.org).",
     "config_errors_title": "Configuração do projeto está incompleta",
     "config_error_missing_canonical": "Algoritmo personalizado \"{{name}}\" está sem uma URL canônica válida.",
     "target_repo_required_on_load": "Este projeto está sem um repositório de destino. Configure o repositório de destino para ver candidatos salvos.",
