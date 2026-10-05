@@ -537,7 +537,7 @@
     "preview_limit_body_rows_no_count": "O limite de linhas de sua prévia gratuita para este projeto foi atingido. Nada está bloqueado: continue revisando, editando e exportando este projeto quanto quiser.",
     "preview_limit_body_match_operations": "Sua prévia gratuita cobre {{limit}} operações de correspondência - você usou todas as {{limit}}. Nada está bloqueado: continue revisando, editando e exportando este projeto quanto quiser.",
     "preview_limit_body_match_operations_no_count": "O limite de operações de correspondência de sua prévia gratuita foi atingido. Nada está bloqueado: continue revisando, editando e exportando este projeto quanto quiser.",
-    "preview_limit_body_projects": "Você já tem um projeto do Mapper ativo. A prévia gratuita cobre um projeto por vez - delete o que você tem, ou peça mais acesso abaixo.",
+    "preview_limit_body_projects": "Você já tem um projeto do Mapper ativo. A prévia gratuita cobre um projeto por vez - exclua o que você tem, ou peça mais acesso abaixo.",
     "preview_limit_body_projects_no_count": "Você já tem um projeto do Mapper ativo. A prévia gratuita cobre um projeto por vez.",
     "preview_limit_body_org_projects": "Projetos de mapeamento pertencentes a organizações não fazem parte da prévia ainda. Crie um projeto sob sua própria conta, ou peça mais acesso abaixo.",
     "preview_limit_body_org_projects_no_count": "Projetos de mapeamento pertencentes a organizações não fazem parte da prévia ainda.",
