@@ -385,8 +385,8 @@
     "canonical_url": "URL Canônica",
     "resolve_success_with_entry": "{{url}} resolvido para <0/> em <1/> usando uma entrada no Registro <2/>",
     "resolve_success_without_entry": "{{url}} resolvido para <0/> em <1/> por correspondência com um repositório no <2/>",
-    "resolve_failed_with_entry": "{{url}} correspondeu a uma entrada no <0/> Registro mas não resolveu para um repositório",
-    "resolve_failed_without_entry": "{{url}} não correspondeu a uma entrada no <0/> Registro ou no Registro Global e não resolveu para um repositório",
+    "resolve_failed_with_entry": "{{url}} correspondeu a uma entrada no Registro <0/> mas não resolveu para um repositório",
+    "resolve_failed_without_entry": "{{url}} não correspondeu a uma entrada no Registro <0/> ou no Registro Global e não resolveu para um repositório",
     "resolve_failed_without_entry_global": "{{url}} não correspondeu a uma entrada no Registro Global",
     "target_owner": "Proprietário de Destino",
     "view_canonical_url_registry": "Ver Registro de URL Canônica"
