@@ -507,7 +507,7 @@
     "preview_splash_sign_in_cta": "Entre e comece a mapear",
     "preview_splash_register_cta": "Criar uma conta gratuita",
     "preview_quota_chip": "Prévia: {{limit}} linhas por projeto",
-    "preview_quota_tooltip_title": "Sua prévia do Mapper (permissão única)",
+    "preview_quota_tooltip_title": "Sua prévia do Mapper (cota única)",
     "preview_quota_projects": "Projetos",
     "preview_quota_rows": "Linhas por projeto",
     "preview_quota_rows_cap": "primeiras {{limit}} linhas de cada projeto",
