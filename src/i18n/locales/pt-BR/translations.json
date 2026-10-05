@@ -626,7 +626,7 @@
     "fetching": "Buscando...",
     "fetch_more": "Buscar Mais",
     "unrecognized_algorithm": "Algoritmo não reconhecido",
-    "source_code": "Código Fonte",
+    "source_code": "Código de Origem",
     "class": "Classe",
     "datatype": "Tipo de Dado",
     "mapped_to_column": "Mapeado para a coluna {{columnName}} da planilha de entrada",
