@@ -561,7 +561,7 @@
     "semantic_search_not_configured": "{{owner}}:{{repo}}:{{version}} não está configurado para executar Busca Semântica",
     "no_valid_columns_for_matching": "Nenhuma das colunas é válida para correspondência, por favor edite e atribua colunas válidas.",
     "proposed_successfully": "Proposto com sucesso.",
-    "algorithm_es_label": "Correspondência Genérica de Busca Elástica",
+    "algorithm_es_label": "Correspondência Genérica com Elasticsearch",
     "algorithm_es_description": "Busca por token e palavra-chave usando Elasticsearch",
     "algorithm_llm_label": "Busca Semântica (all-MiniLM-L6-v2)",
     "algorithm_llm_description": "Busca baseada em vetor que corresponde por significado, não apenas palavras-chave",
