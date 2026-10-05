@@ -383,7 +383,7 @@
     "add_entry": "Adicionar URL Canônica",
     "test_canonical_url_description": "Digite uma URL canônica para testar como o OCL a resolverá em um namespace específico, como seu espaço de trabalho de usuário ou uma organização da qual você é membro. Use isso para simular como o OCL avaliará referências e mapeamentos em seus repositórios. <0>Saiba mais no OCL Docs</0>",
     "canonical_url": "URL Canônica",
-    "resolve_success_with_entry": "{{url}} resolvido para <0/> em <1/> usando uma entrada no <2/> Registro",
+    "resolve_success_with_entry": "{{url}} resolvido para <0/> em <1/> usando uma entrada no Registro <2/>",
     "resolve_success_without_entry": "{{url}} resolvido para <0/> em <1/> por correspondência com um repositório no <2/>",
     "resolve_failed_with_entry": "{{url}} correspondeu a uma entrada no <0/> Registro mas não resolveu para um repositório",
     "resolve_failed_without_entry": "{{url}} não correspondeu a uma entrada no <0/> Registro ou no Registro Global e não resolveu para um repositório",
