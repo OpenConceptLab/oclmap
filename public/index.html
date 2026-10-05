@@ -8,7 +8,7 @@
          manifest.json provides metadata used when your web app is added to the
          homescreen on Android. See https://developers.google.com/web/fundamentals/engage-and-retain/web-app-manifest/
     -->
-    <link rel="shortcut icon" href="./favicon.ico">
+    <link rel="shortcut icon" href="/favicon.ico">
     <!--
          Notice the use of %PUBLIC_URL% in the tags above.
          It will be replaced with the URL of the `public` folder during the build.
@@ -19,40 +19,35 @@
          Learn how to configure a non-root public URL by running `npm run build`.
     -->
     <!-- CSS -->
-    <link rel="stylesheet" href="bootstrap.min.css">
+    <link rel="stylesheet" href="/bootstrap.min.css">
     <!-- Font Awesome 6/7 full bundle -->
     <link
       rel="stylesheet"
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.1/css/all.min.css"
     />
-    <link rel="stylesheet" href="fontello/css/fontello.css">
+    <link rel="stylesheet" href="/fontello/css/fontello.css">
     <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Roboto&display=swap" rel="stylesheet">
 
     <!-- ENV config -->
-    <script src="./env-config.js"></script>
+    <script src="/env-config.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mark.js"></script>
     <script>
-     if(window.location.pathname.startsWith('/search')) {
-       window.location = '/#/search/' + window.location.search;
-     }
-     if(window.location.hash.startsWith('#/state=')) {
-       window.location = '/#/oidc/login/' + window.location.hash.replace('#/', '?') + '&next=' + window.location.pathname;
-     }
-     if(window.location.hash.startsWith('#state=')) {
-       window.location = '/#/oidc/login/' + window.location.hash.replace('#', '?') + '&next=' + window.location.pathname;
-     }
-     if(!window.location.hash && (window.location.search || '').includes('code=')) {
-       window.location = '/#/oidc/login/' + window.location.search + '&next=' + window.location.pathname;
-     }
-     if(window.location.href.includes('/?session_state=')) {
-       window.location = '/';
-     }
-     if((window.location.search || '').includes('origin=openmrs')) {
-       window.location = '/#/search/?origin=openmrs&type=organizations'
-     }
+     (function() {
+       var loc = window.location;
+       var go = function(path) { window.history.replaceState(null, '', path); };
+       if(loc.hash.startsWith('#/state=') || loc.hash.startsWith('#state=')) {
+         go('/oidc/login/?' + loc.hash.replace(/^#\/?/, '') + '&next=' + loc.pathname);
+       } else if(loc.pathname === '/' && !loc.hash && (loc.search || '').includes('code=')) {
+         go('/oidc/login/' + loc.search + '&next=' + loc.pathname);
+       } else if(loc.href.includes('/?session_state=')) {
+         go('/');
+       } else if((loc.search || '').includes('origin=openmrs')) {
+         go('/search/?origin=openmrs&type=organizations');
+       }
+     })();
     </script>
     <title></title>
   </head>

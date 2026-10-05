@@ -25,7 +25,7 @@ const GAService = {
     if(!enabled())
       return;
 
-    ReactGA.send({ hitType: 'pageview', page: window.location.pathname + window.location.hash.split('?')[0] });
+    ReactGA.send({ hitType: 'pageview', page: window.location.pathname });
   },
 
   recordUpsertEvent(category, edit, resource) {
