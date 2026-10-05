@@ -548,7 +548,7 @@
     "preview_limit_body_ai_assistant": "Sua prévia gratuita cobre {{limit}} chamadas do Assistente de IA - você usou {{used}} de {{limit}}. A correspondência pode continuar sem análise de IA para as linhas restantes.",
     "preview_limit_body_ai_assistant_no_count": "O Assistente de IA não está disponível para sua conta. Peça mais acesso abaixo e nós resolveremos.",
     "preview_limit_body_scispacy_no_count": "A correspondência ScispaCy LOINC não está disponível para sua conta. Peça mais acesso abaixo e nós resolveremos.",
-    "preview_limit_body_rows_not_entitled_no_count": "Este projeto não tem uma permissão de linhas configurada ainda. Peça mais acesso abaixo e nós resolveremos.",
+    "preview_limit_body_rows_not_entitled_no_count": "Este projeto ainda não tem uma cota de linhas configurada. Peça mais acesso abaixo e nós resolveremos.",
     "preview_limit_body_match_operations_not_entitled_no_count": "Sua conta não tem acesso a operações de correspondência configurado ainda. Peça mais acesso abaixo e nós resolveremos.",
     "preview_limit_body_projects_not_entitled_no_count": "Sua conta não tem acesso a projetos de mapeamento configurado ainda. Peça mais acesso abaixo e nós resolveremos.",
     "preview_limit_body_generic": "Você atingiu um limite de prévia ({{used}} de {{limit}}).",
