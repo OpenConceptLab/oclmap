@@ -581,7 +581,7 @@
     "none": "Nenhum",
     "decision_changed_to_none": "Decisão Alterada para Nenhum",
     "loading_project": "Carregando projeto...",
-    "stopping_gracefully": "Parando graciosamente...",
+    "stopping_gracefully": "Encerrando com segurança...",
     "stop_processing": "Parar Processamento",
     "auto_match_unmapped_only_note": "Nota: Apenas linhas não mapeadas serão correspondidas",
     "auto_match_note": "Nota: Isso não afetará {{approvedCount}} linhas de entrada aprovadas mas substituirá {{proposedCount}} linhas de entrada propostas",
