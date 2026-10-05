@@ -87,7 +87,7 @@ import MapProjectDeleteConfirmDialog from './MapProjectDeleteConfirmDialog';
 import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
 import DataGridControls from './DataGridControls'
-import { getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, AI_LOOKUP_WAIT_MS, RERANK_LOOKUP_WAIT_MS, RERANK_MAX_IN_FLIGHT, isScispacyWarmingUp } from './autoMatchRows'
+import { getPreviewEligibleRowIndexes, getRowsToProcess, countAIOnlyRows, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, AI_LOOKUP_WAIT_MS, RERANK_LOOKUP_WAIT_MS, RERANK_MAX_IN_FLIGHT, isScispacyWarmingUp } from './autoMatchRows'
 import { createAutosaveScheduler, createLatestSender, saveOnLeave, trackSave, whenSaved, installUnloadGuard } from './autosave'
 import MatchSummaryCard from './MatchSummaryCard'
 import MappingDecisionResult from './MappingDecisionResult'
@@ -285,6 +285,7 @@ const MapProject = () => {
   const [scoreBucketSortBy, setScoreBucketSortBy] = React.useState('desc')
 
   const [matchDialog, setMatchDialog] = React.useState(false)
+  const [aiAnalysableRowIndexes, setAIAnalysableRowIndexes] = React.useState(null)
   const [showItem, setShowItem] = React.useState(false)
   const [autoMatchScope, setAutoMatchScope] = React.useState('unmapped')
   const [autoRunAIAnalysis, setAutoRunAIAnalysis] = React.useState(false)
@@ -1903,7 +1904,7 @@ const MapProject = () => {
       const data = response?.data
       const id = data?.id
       if(id) {
-        automatchRunRef.current = {id, algoIds: map(selectedAlgos, 'id')}
+        automatchRunRef.current = {id, algoIds: map(selectedAlgos, 'id'), aiOnly: !selectedAlgos?.length && withAI}
         return automatchRunRef.current
       }
       if(status === 403 && data?.error_code) {
@@ -1934,8 +1935,9 @@ const MapProject = () => {
       rowStages: rowStageRef.current || [],
       rowIndices: map(intendedRows, '__index'),
       algoIds: run.algoIds?.length ? run.algoIds : map(selectedAlgos, 'id'),
+      aiOnly: Boolean(run.aiOnly),
       aborted,
-      stoppedForQuota: Boolean(matchQuotaStopRef.current),
+      stoppedForQuota: Boolean(matchQuotaStopRef.current || (run.aiOnly && aiQuotaExhaustedRef.current)),
     })
     // Closing the run is idempotent, so a busy server or a gateway error is
     // retried; Stop doesn't end it, so a stopped run is closed too
@@ -2432,6 +2434,7 @@ const MapProject = () => {
       filter(algosSelected, algo => selectedAlgos.includes(algo.id)),
       algo => applyRequestSettings(algo, requestLimits)
     )
+    const isAIOnly = !_selectedAlgos.length && Boolean(inAIAssistantGroup && autoRunAIAnalysis)
     let subActions = [...map(_selectedAlgos, algo => algo.name || algo.id)]
     subActions.push('reranker')
     if(isAutoMatchUnmappedOnly)
@@ -2457,11 +2460,12 @@ const MapProject = () => {
       }
     })
 
-    if(isAutoMatchAllRows)
+    // An AI-only run doesn't match, so nothing would set these statuses again.
+    if(isAutoMatchAllRows && !isAIOnly)
       setRowStatuses(prev => ({...prev, readyForReview: []}))
-    if(isAutoMatchAllIncludingApproved)
+    if(isAutoMatchAllIncludingApproved && !isAIOnly)
       setRowStatuses(prev => ({...prev, readyForReview: [], reviewed: []}))
-    if(isAutoMatchSelectedRows)
+    if(isAutoMatchSelectedRows && !isAIOnly)
       setRowStatuses(prev => ({
         ...prev,
         readyForReview: without(prev.readyForReview, ...selectedRowIndexes),
@@ -2483,6 +2487,8 @@ const MapProject = () => {
         rowsToProcess = rowsToProcess.slice(0, rowCap)
         projectLog({action: 'auto_match_pre_truncated', extras: {requested, allowed: rowCap}})
       }
+      if(isAIOnly)
+        rowsToProcess = getAIAnalysableRows(rowsToProcess)
 
       // ocl_online#105 Phase 5: open the run record, then guarantee it is
       // closed out (completed / partial / failed / cancelled) via the finally,
@@ -2502,6 +2508,8 @@ const MapProject = () => {
             const rowId = row.__index
             const rowState = { ...(next[rowId] || {}) }
             _selectedAlgos.forEach(algo => { rowState[algo.id] = -1 })
+            if(isAIOnly)
+              rowState.recommend = -1
             // A rerank an earlier run left throttled is this run's to retry.
             if(rowState.rerank === -4)
               rowState.rerank = -1
@@ -2888,14 +2896,32 @@ const MapProject = () => {
     event.stopPropagation()
     event.preventDefault()
     setAutoMatchScope(getSelectedRowIndexes().length ? 'selected' : (rowStatuses.unmapped.length ? 'unmapped' : 'all'))
+    setAIAnalysableRowIndexes(inAIAssistantGroup ? map(getAIAnalysableRows(data), '__index') : null)
     setMatchDialog(true)
+  }
+
+  const onAutoMatchConfigure = () => {
+    setMatchDialog(false)
+    setConfigureWithAutosave(true)
+  }
+
+  // A run that would do nothing opens no AutomatchRun (ocl_issues#2872).
+  const hasAutoMatchWork = selectedAlgos => {
+    if(filter(algosSelected, algo => selectedAlgos.includes(algo.id)).length)
+      return true
+    if(!(inAIAssistantGroup && autoRunAIAnalysis))
+      return false
+    const scopeRows = getRowsToProcess(data, rowStatuses, autoMatchScope, getSelectedRowIndexes(data), getPreviewEligibleRowIndexes(data, getMapperPreview()))
+    return getAIAnalysableRows(scopeRows).length > 0
   }
 
   const onGetCandidatesSubmit = (event, selectedAlgos) => {
     event.stopPropagation()
     event.preventDefault()
     setAlert(false)
-    if(isAnyValidColumn()){
+    if(!hasAutoMatchWork(selectedAlgos)) {
+      setAlert({message: t('map_project.auto_match_nothing_to_run'), severity: 'warning'})
+    } else if(isAnyValidColumn()){
       setStartMatchingAt(moment())
       setBulkAIAnalysisStartedAt(null)
       setBulkAIAnalysisEndedAt(null)
@@ -5230,6 +5256,11 @@ const MapProject = () => {
   const visibleRowIds = rows.map(_row => _row.__index)
   const visibleRowIdKey = visibleRowIds.join(',')
   const selectedRowsCount = getSelectedRowIndexes(rows).length
+  const aiOnlyRowCounts = (matchDialog && aiAnalysableRowIndexes) ?
+    countAIOnlyRows(
+      map(getRowsToProcess(data, rowStatuses, autoMatchScope, getSelectedRowIndexes(data), previewEligibleRowIndexes), '__index'),
+      aiAnalysableRowIndexes
+    ) : null
   React.useEffect(() => {
     setSelectedRowIds(prev => {
       const visibleRowIdSet = new Set(visibleRowIds.map(id => id?.toString()))
@@ -5629,6 +5660,12 @@ const MapProject = () => {
       bridge_context
     }
   }
+
+  // Rows with candidates and no analysis of them yet; fetchRecommendation skips the rest.
+  const getAIAnalysableRows = _rows => filter(_rows, _row => {
+    const concepts = isNumber(_row?.__index) ? buildV2RecommendationPayload(_row.__index)?.recommendable_concepts : null
+    return Boolean(concepts?.length) && !hasCurrentAnalysis(analysis[_row.__index], getCandidatePoolFingerprint(concepts))
+  })
 
   const fetchRecommendation = async (_row, resolvedPromptTemplate = null, isBulk = false) => {
     let __row = row;
@@ -6348,7 +6385,9 @@ const MapProject = () => {
               algosSelected,
               canSelectAIModel,
               previewEligibleRowIndexes,
-              matchAlgorithmIds
+              matchAlgorithmIds,
+              aiOnlyRowCounts,
+              onConfigure: onAutoMatchConfigure
             }}
           />
           {

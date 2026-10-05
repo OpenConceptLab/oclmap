@@ -145,10 +145,13 @@ export const buildConfigSnapshot = ({
  * the row wasn't run) count as NEITHER, so a cancelled run never over-reports
  * completed_rows (ocl_online#115 review).
  *
+ * An AI-only run is recorded by its 'recommend' stage instead (ocl_issues#2872).
+ *
  * @param {object}   [opts]
  * @param {object[]} [opts.rowStages]  array indexed by row __index → {algoId: stage}
  * @param {number[]} [opts.rowIndices] the run's intended row indices
  * @param {string[]} [opts.algoIds]    the selected match-algorithm ids
+ * @param {boolean}  [opts.aiOnly]     an AI-only run, recorded by its 'recommend' stage
  * @param {boolean}  [opts.aborted]    whether the run was cancelled
  * @returns {{completed_rows:number, failed_rows:number, completion_status:string}}
  */
@@ -156,15 +159,17 @@ export const summarizeRunCompletion = ({
   rowStages = [],
   rowIndices = [],
   algoIds = [],
+  aiOnly = false,
   aborted = false,
   stoppedForQuota = false,
 } = {}) => {
+  const stageIds = aiOnly ? ['recommend'] : algoIds
   let completed = 0
   let failed = 0
   let throttled = 0
   rowIndices.forEach(idx => {
     const stage = rowStages[idx] || {}
-    const attempted = algoIds.map(id => stage[id]).filter(s => s !== undefined && s !== -1)
+    const attempted = stageIds.map(id => stage[id]).filter(s => s !== undefined && s !== -1)
     if(!attempted.length) return
     // A row whose rerank stayed throttled is matched but not ranked.
     if(attempted.some(s => s === -4) || stage.rerank === -4) throttled += 1

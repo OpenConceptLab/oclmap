@@ -25,7 +25,7 @@ import TagCountLabel from '../common/TagCountLabel'
 import RepoChip from '../repos/RepoVersionChip'
 import AIAssistantSelectorPanel from './AIAssistantSelectorPanel'
 import { getMapperPreview } from '../../common/utils'
-import { getRowCapByMatchOperations } from './autoMatchRows'
+import { getRowCapByMatchOperations, getAutoMatchBlocker } from './autoMatchRows'
 
 
 const AutoMatchDialog = ({
@@ -49,7 +49,9 @@ const AutoMatchDialog = ({
   algosSelected,
   canSelectAIModel,
   previewEligibleRowIndexes,
-  matchAlgorithmIds
+  matchAlgorithmIds,
+  aiOnlyRowCounts,
+  onConfigure
 }) => {
   const { t } = useTranslation()
   const [algos, setAlgos] = React.useState(true)
@@ -80,13 +82,18 @@ const AutoMatchDialog = ({
   const hasUnmappedRows = unmappedRowsCount > 0
   const hasApprovedRows = reviewedRowsCount > 0
   const isAllIncludingApproved = autoMatchScope === 'allIncludingApproved'
+  const hasAlgorithms = algosSelected.length > 0
+  const retrieveCandidates = algos && hasAlgorithms
+  const runAI = Boolean(inAIAssistantGroup && autoRunAIAnalysis)
+  const isAIOnly = runAI && !retrieveCandidates
+  const aiRowsToAnalyse = isAIOnly ? (aiOnlyRowCounts?.analyse || 0) : 0
 
   // One-time allowance (R2, no reset). Each row costs one match operation per
   // selected algorithm that calls $match (TQ6); scispacy, custom algorithms
   // with their own url and a bridge the user can't run don't spend any.
   const preview = getMapperPreview()
   const matchAlgorithmIdSet = React.useMemo(() => new Set(matchAlgorithmIds || []), [matchAlgorithmIds])
-  const matchAlgorithmCount = algos ? algosSelected.filter(algo => matchAlgorithmIdSet.has(algo.id)).length : 0
+  const matchAlgorithmCount = retrieveCandidates ? algosSelected.filter(algo => matchAlgorithmIdSet.has(algo.id)).length : 0
   const operationsRemaining = (preview.matchOperations.unlimited || !matchAlgorithmCount) ? null : preview.matchOperations.remaining
   const rowCap = getRowCapByMatchOperations(preview.matchOperations, matchAlgorithmCount)
   const willTruncate = rowCap !== null && rowsToMatchCount > rowCap
@@ -96,7 +103,8 @@ const AutoMatchDialog = ({
   // One $invoke per row. The AI quota never caps rows: once it runs out, the
   // rest of the run is matched without AI recommendations.
   const aiCallsRemaining = preview.aiAssistantCalls.unlimited ? null : preview.aiAssistantCalls.remaining
-  const aiRowsCovered = (inAIAssistantGroup && autoRunAIAnalysis && aiCallsRemaining !== null) ? Math.min(aiCallsRemaining, rowsThisRun) : null
+  const aiRows = isAIOnly ? aiRowsToAnalyse : rowsThisRun
+  const aiRowsCovered = (runAI && aiCallsRemaining !== null) ? Math.min(aiCallsRemaining, aiRows) : null
   const getPreviewEstimate = () => {
     if(isPreviewQuotaExhausted)
       return t('map_project.preview_estimate_no_operations_left')
@@ -113,15 +121,17 @@ const AutoMatchDialog = ({
         allowed: rowsThisRun.toLocaleString(),
         requested: rowsToMatchCount.toLocaleString()
       }))
-    if(aiRowsCovered !== null) {
-      if(aiRowsCovered >= rowsThisRun)
-        parts.push(t('map_project.preview_estimate_ai_all', {count: rowsThisRun.toLocaleString()}))
-      else if(aiRowsCovered === 0)
-        parts.push(t('map_project.preview_estimate_ai_none'))
+    if(aiRowsCovered !== null && aiRows > 0) {
+      if(aiRowsCovered >= aiRows)
+        parts.push(t('map_project.preview_estimate_ai_all', {count: aiRows.toLocaleString()}))
+      else if(aiRowsCovered === 0) {
+        if(!isAIOnly)
+          parts.push(t('map_project.preview_estimate_ai_none'))
+      }
       else
-        parts.push(t('map_project.preview_estimate_ai_partial', {
+        parts.push(t(isAIOnly ? 'map_project.preview_estimate_ai_only_partial' : 'map_project.preview_estimate_ai_partial', {
           covered: aiRowsCovered.toLocaleString(),
-          rest: (rowsThisRun - aiRowsCovered).toLocaleString()
+          rest: (aiRows - aiRowsCovered).toLocaleString()
         }))
     }
     return parts.join(' ')
@@ -182,11 +192,26 @@ const AutoMatchDialog = ({
     }
   ]
 
+  const blocker = getAutoMatchBlocker({
+    rowsInScope: rowsToMatchCount,
+    hasAlgorithms,
+    retrieveCandidates,
+    runAI,
+    aiRowsToAnalyse,
+    aiCallsRemaining
+  })
+  const blockerMessages = {
+    no_rows: t('map_project.auto_match_blocked_no_rows'),
+    no_algorithms: t(inAIAssistantGroup ? 'map_project.auto_match_blocked_no_algorithms_ai' : 'map_project.auto_match_blocked_no_algorithms'),
+    no_step: t(inAIAssistantGroup ? 'map_project.auto_match_blocked_no_step_ai' : 'map_project.auto_match_blocked_no_step'),
+    no_ai_rows: t('map_project.auto_match_blocked_no_ai_rows'),
+    no_ai_calls: t('map_project.auto_match_blocked_no_ai_calls'),
+  }
+
   const isDisabled =
     !repoVersion?.version_url ||
-    rowsToMatchCount === 0 ||
+    Boolean(blocker) ||
     isPreviewQuotaExhausted ||
-    (!algos && !autoRunAIAnalysis) ||
     (isAllIncludingApproved && !confirmAllIncludingApproved)
 
   return (
@@ -266,19 +291,36 @@ const AutoMatchDialog = ({
         </FormControl>
 
         <FormControl sx={{marginTop: '8px'}}>
-          <FormControlLabel control={<Checkbox checked={algos} onChange={() => setAlgos(!algos)} />} label={t('map_project.retrieve_candidates')} />
-          <FormLabel id="algorithms" sx={{marginTop: '-4px', marginLeft: '12px'}}>
-            {t('map_project.retrieve_candidates_helper_text')}
-          </FormLabel>
-          <div className='col-xs-12 padding-0' style={{marginLeft: '8px'}}>
-            {
-              algosSelected.map(algo => {
-                return (
-                  <Chip variant='outlined' size='small' color='warning' label={algo.id} key={algo.id} sx={{margin: '4px'}} />
-                )
-              })
-            }
-          </div>
+          <FormControlLabel control={<Checkbox checked={retrieveCandidates} disabled={!hasAlgorithms} onChange={() => setAlgos(!algos)} />} label={t('map_project.retrieve_candidates')} />
+          {
+            hasAlgorithms ?
+              <>
+                <FormLabel id="algorithms" sx={{marginTop: '-4px', marginLeft: '12px'}}>
+                  {t('map_project.retrieve_candidates_helper_text')}
+                </FormLabel>
+                <div className='col-xs-12 padding-0' style={{marginLeft: '8px'}}>
+                  {
+                    algosSelected.map(algo => {
+                      return (
+                        <Chip variant='outlined' size='small' color='warning' label={algo.id} key={algo.id} sx={{margin: '4px'}} />
+                      )
+                    })
+                  }
+                </div>
+              </> :
+              <Alert
+                severity='warning'
+                sx={{marginTop: '4px', marginLeft: '12px'}}
+                action={
+                  onConfigure &&
+                    <Button variant='contained' color='primary' size='small' sx={{textTransform: 'none', whiteSpace: 'nowrap'}} onClick={onConfigure}>
+                      {t('map_project.auto_match_configure_algorithms')}
+                    </Button>
+                }
+              >
+                {t('map_project.auto_match_no_algorithms')}
+              </Alert>
+          }
         </FormControl>
 
         {
@@ -300,6 +342,15 @@ const AutoMatchDialog = ({
                 {t('map_project.run_ai_analysis_note')}
               </FormHelperText>
               {
+                isAIOnly && rowsToMatchCount > 0 && aiOnlyRowCounts &&
+                  <Alert severity={aiRowsToAnalyse ? 'info' : 'warning'} sx={{marginTop: '8px'}}>
+                    {t('map_project.auto_match_ai_only_rows', {
+                      analyse: aiOnlyRowCounts.analyse.toLocaleString(),
+                      skip: aiOnlyRowCounts.skip.toLocaleString()
+                    })}
+                  </Alert>
+              }
+              {
                 autoRunAIAnalysis && canSelectAIModel &&
                   <AIAssistantSelectorPanel
                     promptTemplates={promptTemplates}
@@ -315,13 +366,19 @@ const AutoMatchDialog = ({
         }
       </DialogContent>
       <DialogActions sx={{padding: '16px'}}>
+        {
+          blocker &&
+            <FormHelperText sx={{margin: 0, color: 'warning.main'}}>
+              {blockerMessages[blocker]}
+            </FormHelperText>
+        }
         <Button
           variant='contained'
           size='small'
           sx={{textTransform: 'none', marginLeft: '12px'}}
           endIcon={<DoubleArrowIcon />}
           disabled={isDisabled}
-          onClick={event => onSubmit(event, algos ? map(algosSelected, val => val?.id) : [])}
+          onClick={event => onSubmit(event, retrieveCandidates ? map(algosSelected, val => val?.id) : [])}
         >
           {t('common.submit')}
         </Button>

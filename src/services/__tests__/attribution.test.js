@@ -241,6 +241,31 @@ test('a throttled rerank (-4) makes the run partial; the row still counts as com
   assert.deepEqual(r, { completed_rows: 2, failed_rows: 0, completion_status: 'partial' })
 })
 
+// ocl_issues#2872
+test('an AI-only run that analysed every row is completed', () => {
+  const rowStages = { 0: {recommend: 1}, 1: {recommend: 1} }
+  const r = summarizeRunCompletion({ rowStages, rowIndices: [0, 1], algoIds: [], aiOnly: true })
+  assert.deepEqual(r, { completed_rows: 2, failed_rows: 0, completion_status: 'completed' })
+})
+
+test('an AI-only run counts failed analyses, and rows it never reached as neither', () => {
+  const rowStages = { 0: {recommend: 1}, 1: {recommend: -2}, 2: {recommend: -1} }
+  const r = summarizeRunCompletion({ rowStages, rowIndices: [0, 1, 2], algoIds: [], aiOnly: true })
+  assert.deepEqual(r, { completed_rows: 1, failed_rows: 1, completion_status: 'partial' })
+})
+
+test('an AI-only run stopped by the AI quota is partial', () => {
+  const rowStages = { 0: {recommend: 1}, 1: {recommend: -3} }
+  const r = summarizeRunCompletion({ rowStages, rowIndices: [0, 1], algoIds: [], aiOnly: true, stoppedForQuota: true })
+  assert.deepEqual(r, { completed_rows: 1, failed_rows: 0, completion_status: 'partial' })
+})
+
+test('a run with match algorithms is still recorded by them, not by its AI step', () => {
+  const rowStages = { 0: {'ocl-search': -2, recommend: 1} }
+  const r = summarizeRunCompletion({ rowStages, rowIndices: [0], algoIds: ['ocl-search'] })
+  assert.deepEqual(r, { completed_rows: 0, failed_rows: 1, completion_status: 'failed' })
+})
+
 test('capacityAware: the capacity_aware flag, as the string "true" (oclapi2 enforce_for=aware)', () => {
   const m = meta(buildAttributionHeaders({ runId: 7, projectId: 2, rowIndices: [1, 2], algorithmId: 'ocl-semantic', capacityAware: true }))
   assert.equal(m.capacity_aware, 'true')

@@ -54,6 +54,35 @@ export const getRowCapByMatchOperations = (matchOperations, matchAlgorithmCount)
   return Math.floor(Math.max(matchOperations.remaining || 0, 0) / matchAlgorithmCount)
 }
 
+export const countAIOnlyRows = (rowIndexes, analysableRowIndexes) => {
+  const analysable = new Set((analysableRowIndexes || []).map(index => index?.toString()))
+  const all = rowIndexes || []
+  const analyse = all.filter(index => analysable.has(index?.toString())).length
+  return { analyse, skip: all.length - analyse }
+}
+
+// Why an Auto Match run would do nothing, or null (ocl_issues#2872).
+export const getAutoMatchBlocker = ({
+  rowsInScope = 0,
+  hasAlgorithms = false,
+  retrieveCandidates = false,
+  runAI = false,
+  aiRowsToAnalyse = 0,
+  aiCallsRemaining = null,
+} = {}) => {
+  if(!rowsInScope)
+    return 'no_rows'
+  if(!retrieveCandidates && !runAI)
+    return hasAlgorithms ? 'no_step' : 'no_algorithms'
+  if(!retrieveCandidates) {
+    if(!aiRowsToAnalyse)
+      return 'no_ai_rows'
+    if(aiCallsRemaining !== null && aiCallsRemaining <= 0)
+      return 'no_ai_calls'
+  }
+  return null
+}
+
 // How many consecutive rows may fail, for a reason other than AI quota, before
 // a run's AI step gives up. The AI Assistant charges each call before the model
 // runs, so while the AI service is down every further call would spend the
