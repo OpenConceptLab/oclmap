@@ -106,7 +106,7 @@
     "sort": "Ordenar",
     "group": "Agrupar",
     "remove": "Remover",
-    "at": "às"
+    "at": "em"
   },
   "errors": {
     "401": "Login é necessário",
