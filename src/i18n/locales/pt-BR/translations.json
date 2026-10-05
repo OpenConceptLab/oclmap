@@ -609,7 +609,7 @@
     "bulk_change_map_type": "Alterar tipo de mapeamento",
     "bulk_clear_selection": "Limpar seleção",
     "bulk_confirm_title": "Aplicar ação em massa?",
-    "bulk_confirm_body": "{{action}} será aplicada a {{count}} linha(s) selecionada(s).",
+    "bulk_confirm_body": "A ação \"{{action}}\" será aplicada a {{count}} linha(s) selecionada(s).",
     "bulk_confirm_map_type": "{{count}} linha(s) selecionada(s) usarão {{mapType}}.",
     "bulk_apply": "Aplicar",
     "bulk_action_summary": "{{changed}} linha(s) atualizada(s). {{skipped}} ignorada(s).",
