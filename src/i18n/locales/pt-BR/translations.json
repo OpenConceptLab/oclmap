@@ -437,7 +437,7 @@
     "match_api_token": "Token da API de Correspondência",
     "match_api_token_placeholder": "ex.: XXXXXXXXXXX",
     "batch_size": "Tamanho do Lote",
-    "concurrent_requests": "Requisições Concurrentes",
+    "concurrent_requests": "Requisições Simultâneas",
     "request_limit_up_to": "Até {{max}}",
     "api_url": "URL da API",
     "api_token": "Token da API",
