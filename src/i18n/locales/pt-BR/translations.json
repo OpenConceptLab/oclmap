@@ -553,7 +553,7 @@
     "preview_limit_body_projects_not_entitled_no_count": "Sua conta não tem acesso a projetos de mapeamento configurado ainda. Peça mais acesso abaixo e nós resolveremos.",
     "preview_limit_body_generic": "Você atingiu um limite de prévia ({{used}} de {{limit}}).",
     "preview_limit_body_generic_no_count": "Você atingiu um limite de prévia para o Mapper.",
-    "preview_limit_hardship_note": "Trabalhando com um orçamento de concessão que não estica, ou para um ministério da saúde? Use \"Solicitar mais acesso\" abaixo - se o limite não funciona para sua situação, nós encontraremos algo que funcione.",
+    "preview_limit_hardship_note": "Trabalha com recursos de financiamento (grant) que não cobrem esse custo, ou para um ministério da saúde? Use \"Solicitar mais acesso\" abaixo - se o limite não funcionar para a sua situação, encontraremos algo que funcione.",
     "preview_limit_notify_me": "Notifique-me quando os planos forem lançados",
     "preview_limit_request_access": "Solicitar mais acesso",
     "preview_limit_dismiss": "Voltar ao meu projeto",
