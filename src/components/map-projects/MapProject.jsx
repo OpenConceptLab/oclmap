@@ -5673,7 +5673,7 @@ const MapProject = () => {
       return null
     const scopeRows = getRowsToProcess(data, rowStatuses, autoMatchScope, getSelectedRowIndexes(data), previewEligibleRowIndexes)
     return countAIOnlyRows(map(scopeRows, '__index'), map(getAIAnalysableRows(scopeRows), '__index'))
-  }, [matchDialog, isAutoMatchAIOnly, data, rowStatuses, autoMatchScope, selectedRowIds, previewEligibleRowIndexes, analysis, rowMatchState, conceptCache, repoVersion])
+  }, [matchDialog, isAutoMatchAIOnly, data, rowStatuses, autoMatchScope, selectedRowIds, previewEligibleRowIndexes, analysis, rowMatchState, conceptCache, repoVersion, buildProjectContext, filters, inputLocale])
 
   const fetchRecommendation = async (_row, resolvedPromptTemplate = null, isBulk = false) => {
     let __row = row;
@@ -5711,7 +5711,7 @@ const MapProject = () => {
     if(isBulk && isNumber(__index)) {
       await waitForLookups(getPendingRowLookups(rowMatchStateRef.current[__index], inFlightLookupsRef.current), AI_LOOKUP_WAIT_MS, stuckLookupsRef.current)
       // The user may have pressed Stop while this row waited.
-      if(abortRef.current)
+      if(abortRef.current || isSuperseded())
         return null
     }
     const v2 = isNumber(__index) ? buildV2RecommendationPayload(__index) : null
