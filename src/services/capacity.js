@@ -77,6 +77,13 @@ export const getRetryAfterMs = (response, { now = Date.now } = {}) => {
   return typeof seconds === 'number' && Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : null
 }
 
+export const CAPACITY_LIMIT = 'capacity'
+export const RATE_LIMIT = 'rate_limit'
+
+// Which limit refused a 429 (ocl_issues#2865).
+export const getThrottleLimit = response =>
+  response?.data?.error_code === 'capacity_exceeded' ? CAPACITY_LIMIT : RATE_LIMIT
+
 const CAPACITY_HEADERS = {
   decision: ['x-ocl-capacity-decision', String],
   limit: ['x-ocl-capacity-limit', Number],
@@ -130,10 +137,18 @@ export const sleepUnlessCancelled = async (ms, isCancelled = () => false, { slee
  */
 export const createCapacityGate = ({ now = Date.now } = {}) => {
   let resumeAt = 0
+  let pausedBy = CAPACITY_LIMIT
   const pausedForMs = () => Math.max(resumeAt - now(), 0)
   return {
-    pause: ms => { resumeAt = Math.max(resumeAt, now() + ms) },
+    pause: (ms, limit = CAPACITY_LIMIT) => {
+      const at = now() + ms
+      if(at >= resumeAt) {
+        resumeAt = at
+        pausedBy = limit
+      }
+    },
     pausedForMs,
+    limit: () => pausedBy,
     isPaused: () => pausedForMs() > 0,
     // Resolves true once the gate is open, false if cancelled first, or
     // 'timeout' once maxMs has passed with the gate still paused (other
@@ -163,7 +178,7 @@ export const createCapacityGate = ({ now = Date.now } = {}) => {
  * @param {number}   [opts.maxWaitMs]   how long to wait in all before ending "throttled"
  * @param {number}   [opts.maxRetries]  retries for a network error or 502/503/504 (429s don't count)
  * @param {function} [opts.isRetryable] err => boolean; replaces the network-or-gateway check
- * @param {function} [opts.onWait]      ({reason: 'throttled'|'paused'|'error', delayMs, status, retryAfterMs, capacity}) => void
+ * @param {function} [opts.onWait]      ({reason: 'throttled'|'paused'|'error', delayMs, status, retryAfterMs, capacity, limit}) => void
  * @param {function} [opts.onWaitEnd]   () => void, after each wait, however it ended
  * @param {function} [opts.onCapacity]  capacityHeaders => void, for each response that carries them
  * @returns {Promise<{ok: true, response, attempts, waitedMs}|{ok: false, reason: 'throttled'|'cancelled'|'error', error, attempts, waitedMs}>}
@@ -215,7 +230,7 @@ export const requestWithCapacityRetry = async (send, {
       const budgetMs = maxWaitMs - waitedMs
       if(pauseMs > budgetMs)
         return end({ ok: false, reason: 'throttled', error: lastError })
-      onWait?.({ reason: 'paused', delayMs: pauseMs, status: null, retryAfterMs: pauseMs })
+      onWait?.({ reason: 'paused', delayMs: pauseMs, status: null, retryAfterMs: pauseMs, limit: gate.limit?.() ?? CAPACITY_LIMIT })
       const startedAt = now()
       let outcome = await gate.wait(isCancelled, { sleep, pollMs, maxMs: budgetMs })
       // Spread out the requests the pause held back, within the budget.
@@ -241,6 +256,7 @@ export const requestWithCapacityRetry = async (send, {
       reportCapacity(err?.response)
       if(err?.response?.status === 429) {
         const retryAfterMs = getRetryAfterMs(err.response, { now })
+        const limit = getThrottleLimit(err.response)
         const baseMs = retryAfterMs === null ?
           Math.min(DEFAULT_THROTTLE_WAIT_MS * 2 ** throttles, MAX_DEFAULT_THROTTLE_WAIT_MS) :
           Math.max(retryAfterMs, MIN_THROTTLE_WAIT_MS)
@@ -252,8 +268,8 @@ export const requestWithCapacityRetry = async (send, {
         // asking for what was refused instead.
         if(waitedMs + delayMs > maxWaitMs)
           return end({ ok: false, reason: 'throttled', error: err })
-        gate?.pause(baseMs)
-        if(!(await waitFor(delayMs, { reason: 'throttled', status: 429, retryAfterMs, capacity: getCapacityHeaders(err.response) })))
+        gate?.pause(baseMs, limit)
+        if(!(await waitFor(delayMs, { reason: 'throttled', status: 429, retryAfterMs, capacity: getCapacityHeaders(err.response), limit })))
           return cancelled()
         continue
       }
@@ -263,7 +279,7 @@ export const requestWithCapacityRetry = async (send, {
           baseDelayMs * backoffFactor ** errorRetries * (1 - jitterFactor + random() * jitterFactor * 2) :
           Math.min(retryAfterMs, MAX_ERROR_RETRY_AFTER_MS) * (1 + random() * THROTTLE_JITTER)
         errorRetries += 1
-        if(!(await waitFor(delayMs, { reason: 'error', status: err?.response?.status ?? null, retryAfterMs })))
+        if(!(await waitFor(delayMs, { reason: 'error', status: err?.response?.status ?? null, retryAfterMs, limit: null })))
           return cancelled()
         continue
       }

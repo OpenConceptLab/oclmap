@@ -555,6 +555,8 @@
     "match_request_failed": "No se pudieron obtener candidatos ({{error}}). Inténtalo de nuevo.",
     "waiting_for_capacity": "Esperando capacidad: los resultados pueden tardar más debido a la demanda",
     "waiting_for_capacity_short": "Esperando capacidad",
+    "rate_limited": "Estás enviando solicitudes demasiado rápido: se reintentará a las {{time}}",
+    "rate_limited_short": "Demasiadas solicitudes",
     "row_throttled": "Servidor ocupado: aún sin procesar. Reintenta más tarde",
     "algorithm_throttled": "El servidor está ocupado, así que esta fila no se procesó esta vez. Nada falló: vuelve a ejecutarla más tarde.",
     "auto_match_rows_throttled": "El servidor estaba ocupado, así que {{count}} fila(s) de entrada no se procesaron: {{details}}. Nada falló. Vuelve a ejecutar Auto Match en esas filas más tarde para terminarlas.",

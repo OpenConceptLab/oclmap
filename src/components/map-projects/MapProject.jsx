@@ -116,6 +116,7 @@ import { normalizeAlgorithmInvocation, hasSuccessfulAlgorithmResponse, getAlgori
 import { parseConceptKey } from './conceptKey'
 import { getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId } from './projectTargetRepo'
 import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, formatBridgeTargetDownloadEntry, resolveAICandidateID, getScoreDetails, getAIAnalysisCandidateIDs } from './viewBuilders.js'
+import { getCapacityWaitLabel, mergeCapacityWaits } from './rowProgress.js'
 
 import './MapProject.scss'
 import '../common/ResizablePanel.scss'
@@ -240,7 +241,7 @@ const MapProject = () => {
   // The requests waiting for capacity now, each with its rows, for the
   // "Waiting for capacity" notices.
   const capacityWaitsRef = React.useRef(new Map())
-  const [capacityWaitRows, setCapacityWaitRows] = React.useState(null)
+  const [capacityWaits, setCapacityWaits] = React.useState(null)
   // A run's rows the server stayed too busy for, by algorithm id ('rerank'
   // included), for the end-of-run notice.
   const throttledRunRowsRef = React.useRef({})
@@ -1759,31 +1760,38 @@ const MapProject = () => {
   }
 
   const syncCapacityWaits = () => {
+    if(!capacityWaitsRef.current.size)
+      return setCapacityWaits(null)
     const rows = {}
-    capacityWaitsRef.current.forEach(rowIndexes => rowIndexes.forEach(index => { rows[index] = true }))
-    setCapacityWaitRows(capacityWaitsRef.current.size ? rows : null)
+    let all = null
+    capacityWaitsRef.current.forEach(({rowIndexes, wait}) => {
+      rowIndexes.forEach(index => { rows[index] = mergeCapacityWaits(rows[index], wait) })
+      all = mergeCapacityWaits(all, wait)
+    })
+    setCapacityWaits({rows, wait: all})
   }
 
   // onWait/onWaitEnd for one request on these rows. While it waits out a busy
   // server (a 429, or a pause another request's 429 started; not an error
-  // backoff), its rows show "Waiting for capacity", and its first wait goes in
+  // backoff), its rows show why (ocl_issues#2865), and its first wait goes in
   // each row's log with the server's capacity headers.
   const trackCapacityWait = (rowIndexes, logExtras = {}) => {
     const waitId = {}
     let logged = false
     return {
-      onWait: ({reason, retryAfterMs, capacity}) => {
+      onWait: ({reason, delayMs, retryAfterMs, capacity, limit}) => {
         if(reason === 'error')
           return
-        capacityWaitsRef.current.set(waitId, rowIndexes)
+        const wait = {limit, retryAt: Date.now() + delayMs}
+        capacityWaitsRef.current.set(waitId, {rowIndexes, wait})
         syncCapacityWaits()
         if(logged)
           return
         logged = true
         rowIndexes.forEach(index => log({
           action: 'capacity_wait',
-          description: t('map_project.waiting_for_capacity'),
-          extras: {...logExtras, reason, retry_after_ms: retryAfterMs ?? null, ...(capacity ? {capacity} : {})}
+          description: getCapacityWaitLabel(wait, {t}),
+          extras: {...logExtras, reason, limit, retry_after_ms: retryAfterMs ?? null, ...(capacity ? {capacity} : {})}
         }, index))
       },
       onWaitEnd: () => {
@@ -6049,14 +6057,14 @@ const MapProject = () => {
                     // A request is waiting out a busy server: the run is
                     // slower, not stuck (ocl_issues#2849).
                     // Short in the split view, where the full notice would be cut off.
-                    capacityWaitRows &&
-                      <Tooltip title={t('map_project.waiting_for_capacity')}>
+                    capacityWaits &&
+                      <Tooltip title={getCapacityWaitLabel(capacityWaits.wait, {t})}>
                         <Chip
                           icon={<PendingIcon fontSize='small' />}
                           color='warning'
                           variant='outlined'
                           size='small'
-                          label={isSplitView ? t('map_project.waiting_for_capacity_short') : t('map_project.waiting_for_capacity')}
+                          label={getCapacityWaitLabel(capacityWaits.wait, {t, short: isSplitView})}
                           sx={{margin: '5px'}}
                         />
                       </Tooltip>
@@ -6466,7 +6474,7 @@ const MapProject = () => {
                       candidatesScore={candidatesScore}
                       rowIndex={rowIndex}
                       rowStage={rowStageRef.current[rowIndex]}
-                      capacityWait={Boolean(capacityWaitRows?.[rowIndex])}
+                      capacityWait={capacityWaits?.rows?.[rowIndex] || false}
                       rowState={rowMatchStateRef.current[rowIndex]}
                       conceptCache={conceptCache}
                       targetCanonical={buildProjectContext()?.target_repo?.canonical_url}

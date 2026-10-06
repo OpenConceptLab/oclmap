@@ -591,6 +591,8 @@
     "match_request_failed": "Couldn't get candidates ({{error}}). Try again.",
     "waiting_for_capacity": "Waiting for capacity: results may take longer due to demand",
     "waiting_for_capacity_short": "Waiting for capacity",
+    "rate_limited": "You're sending requests too quickly: retrying at {{time}}",
+    "rate_limited_short": "Too many requests",
     "row_throttled": "Server busy: not matched yet. Retry later",
     "algorithm_throttled": "The server is busy, so this row wasn't matched this time. Nothing failed: run it again later.",
     "auto_match_rows_throttled": "The server was busy, so {{count}} input row(s) weren't matched: {{details}}. Nothing failed. Run Auto Match on those rows again later to finish them.",

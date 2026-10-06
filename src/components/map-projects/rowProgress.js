@@ -1,3 +1,27 @@
+import { RATE_LIMIT } from '../../services/capacity.js'
+
+const formatClockTime = ms => new Date(ms).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit', second: '2-digit'})
+
+// wait is {limit, retryAt}; anything but a rate limit reads as a capacity wait (ocl_issues#2865).
+export const getCapacityWaitLabel = (wait, { t, short = false, formatTime = formatClockTime } = {}) => {
+  if(wait?.limit === RATE_LIMIT)
+    return short ?
+      t('map_project.rate_limited_short') :
+      t('map_project.rate_limited', {time: formatTime(wait.retryAt)})
+  return t(short ? 'map_project.waiting_for_capacity_short' : 'map_project.waiting_for_capacity')
+}
+
+// A capacity wait wins; between two rate-limit waits, the later retry.
+export const mergeCapacityWaits = (a, b) => {
+  if(!a || !b)
+    return a || b
+  if(a.limit !== RATE_LIMIT)
+    return a
+  if(b.limit !== RATE_LIMIT)
+    return b
+  return b.retryAt > a.retryAt ? b : a
+}
+
 /**
  * The row panel's progress chip: which of the row's algorithms is running or
  * still to run. {label: false} before the row has stages; no label once every
@@ -8,11 +32,11 @@
  * server stayed too busy for (-4) asks for a retry: it wasn't run, it didn't
  * fail.
  */
-export const getRowProgressLabel = (stageMap, algos, { t, capacityWait = false } = {}) => {
+export const getRowProgressLabel = (stageMap, algos, { t, capacityWait = false, formatTime } = {}) => {
   if(stageMap === undefined)
     return {label: false}
   if(capacityWait)
-    return {label: t('map_project.waiting_for_capacity'), status: 'capacity_wait'}
+    return {label: getCapacityWaitLabel(capacityWait, {t, formatTime}), status: 'capacity_wait'}
   if(!stageMap)
     return {label: 'Preparing...', status: 'partial'}
 
