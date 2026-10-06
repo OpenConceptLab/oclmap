@@ -337,10 +337,7 @@
     "bio": "Short bio",
     "about_me": "About me",
     "about_me_description": "Create an introduction for visiting your profile (200 characters).",
-    "user_has_not_created_public_repos_suffix": "has not created any public repositories",
-    "recent_activity": "recent activity",
-    "own_recent_activity": "Your recent activity",
-    "recent_activity_of": "{{name}}'s recent activity"
+    "user_has_not_created_public_repos_suffix": "has not created any public repositories"
   },
   "search": {
     "filters": "Filters",

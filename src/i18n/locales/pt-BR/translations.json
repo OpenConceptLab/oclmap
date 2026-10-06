@@ -337,10 +337,7 @@
     "bio": "Bio curta",
     "about_me": "Sobre mim",
     "about_me_description": "Crie uma introdução para quem visita seu perfil (200 caracteres).",
-    "user_has_not_created_public_repos_suffix": "não criou nenhum repositório público",
-    "recent_activity": "atividade recente",
-    "own_recent_activity": "Sua atividade recente",
-    "recent_activity_of": "Atividade recente de {{name}}"
+    "user_has_not_created_public_repos_suffix": "não criou nenhum repositório público"
   },
   "search": {
     "filters": "Filtros",
