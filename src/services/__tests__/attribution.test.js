@@ -260,6 +260,12 @@ test('an AI-only run stopped by the AI quota is partial', () => {
   assert.deepEqual(r, { completed_rows: 1, failed_rows: 0, completion_status: 'partial' })
 })
 
+test('a throttled rerank doesn\'t make an AI-only run partial', () => {
+  const rowStages = { 0: {recommend: 1, rerank: -4}, 1: {recommend: 1} }
+  const r = summarizeRunCompletion({ rowStages, rowIndices: [0, 1], algoIds: [], aiOnly: true })
+  assert.deepEqual(r, { completed_rows: 2, failed_rows: 0, completion_status: 'completed' })
+})
+
 test('a run with match algorithms is still recorded by them, not by its AI step', () => {
   const rowStages = { 0: {'ocl-search': -2, recommend: 1} }
   const r = summarizeRunCompletion({ rowStages, rowIndices: [0], algoIds: ['ocl-search'] })

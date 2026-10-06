@@ -171,8 +171,9 @@ export const summarizeRunCompletion = ({
     const stage = rowStages[idx] || {}
     const attempted = stageIds.map(id => stage[id]).filter(s => s !== undefined && s !== -1)
     if(!attempted.length) return
-    // A row whose rerank stayed throttled is matched but not ranked.
-    if(attempted.some(s => s === -4) || stage.rerank === -4) throttled += 1
+    // A row whose rerank stayed throttled is matched but not ranked. An AI-only
+    // run doesn't rerank, so a rerank stage isn't part of its outcome.
+    if(attempted.some(s => s === -4) || (!aiOnly && stage.rerank === -4)) throttled += 1
     if(attempted.some(s => s === 1)) completed += 1
     else if(attempted.every(s => s === -2)) failed += 1
   })

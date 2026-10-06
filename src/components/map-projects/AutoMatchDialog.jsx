@@ -47,6 +47,9 @@ const AutoMatchDialog = ({
   onSubmit,
   inAIAssistantGroup,
   algosSelected,
+  runnableAlgos,
+  retrieveCandidates: retrieveCandidatesChecked,
+  setRetrieveCandidates,
   canSelectAIModel,
   previewEligibleRowIndexes,
   matchAlgorithmIds,
@@ -54,7 +57,6 @@ const AutoMatchDialog = ({
   onConfigure
 }) => {
   const { t } = useTranslation()
-  const [algos, setAlgos] = React.useState(true)
   const [confirmAllIncludingApproved, setConfirmAllIncludingApproved] = React.useState(false)
   const previewEligibleRowIndexSet = React.useMemo(
     () => Array.isArray(previewEligibleRowIndexes) ? new Set(previewEligibleRowIndexes.map(id => id?.toString())) : null,
@@ -82,8 +84,9 @@ const AutoMatchDialog = ({
   const hasUnmappedRows = unmappedRowsCount > 0
   const hasApprovedRows = reviewedRowsCount > 0
   const isAllIncludingApproved = autoMatchScope === 'allIncludingApproved'
-  const hasAlgorithms = algosSelected.length > 0
-  const retrieveCandidates = algos && hasAlgorithms
+  // Only the algorithms this user can run retrieve candidates (ocl_issues#2872).
+  const hasAlgorithms = runnableAlgos.length > 0
+  const retrieveCandidates = retrieveCandidatesChecked && hasAlgorithms
   const runAI = Boolean(inAIAssistantGroup && autoRunAIAnalysis)
   const isAIOnly = runAI && !retrieveCandidates
   const aiRowsToAnalyse = isAIOnly ? (aiOnlyRowCounts?.analyse || 0) : 0
@@ -93,7 +96,7 @@ const AutoMatchDialog = ({
   // with their own url and a bridge the user can't run don't spend any.
   const preview = getMapperPreview()
   const matchAlgorithmIdSet = React.useMemo(() => new Set(matchAlgorithmIds || []), [matchAlgorithmIds])
-  const matchAlgorithmCount = retrieveCandidates ? algosSelected.filter(algo => matchAlgorithmIdSet.has(algo.id)).length : 0
+  const matchAlgorithmCount = retrieveCandidates ? runnableAlgos.filter(algo => matchAlgorithmIdSet.has(algo.id)).length : 0
   const operationsRemaining = (preview.matchOperations.unlimited || !matchAlgorithmCount) ? null : preview.matchOperations.remaining
   const rowCap = getRowCapByMatchOperations(preview.matchOperations, matchAlgorithmCount)
   const willTruncate = rowCap !== null && rowsToMatchCount > rowCap
@@ -291,7 +294,7 @@ const AutoMatchDialog = ({
         </FormControl>
 
         <FormControl sx={{marginTop: '8px'}}>
-          <FormControlLabel control={<Checkbox checked={retrieveCandidates} disabled={!hasAlgorithms} onChange={() => setAlgos(!algos)} />} label={t('map_project.retrieve_candidates')} />
+          <FormControlLabel control={<Checkbox checked={retrieveCandidates} disabled={!hasAlgorithms} onChange={event => setRetrieveCandidates(event.target.checked)} />} label={t('map_project.retrieve_candidates')} />
           {
             hasAlgorithms ?
               <>
@@ -300,7 +303,7 @@ const AutoMatchDialog = ({
                 </FormLabel>
                 <div className='col-xs-12 padding-0' style={{marginLeft: '8px'}}>
                   {
-                    algosSelected.map(algo => {
+                    runnableAlgos.map(algo => {
                       return (
                         <Chip variant='outlined' size='small' color='warning' label={algo.id} key={algo.id} sx={{margin: '4px'}} />
                       )
@@ -318,7 +321,7 @@ const AutoMatchDialog = ({
                     </Button>
                 }
               >
-                {t('map_project.auto_match_no_algorithms')}
+                {t(algosSelected.length ? 'map_project.auto_match_no_runnable_algorithms' : 'map_project.auto_match_no_algorithms')}
               </Alert>
           }
         </FormControl>
@@ -378,7 +381,7 @@ const AutoMatchDialog = ({
           sx={{textTransform: 'none', marginLeft: '12px'}}
           endIcon={<DoubleArrowIcon />}
           disabled={isDisabled}
-          onClick={event => onSubmit(event, retrieveCandidates ? map(algosSelected, val => val?.id) : [])}
+          onClick={event => onSubmit(event, retrieveCandidates ? map(runnableAlgos, val => val?.id) : [])}
         >
           {t('common.submit')}
         </Button>

@@ -46,6 +46,15 @@ export const spendsMatchQuota = (algo, { canBridge = false } = {}) => {
   return true
 }
 
+// Whether getRowsResults runs this algorithm for this user (ocl_issues#2872).
+export const canRunAlgorithm = (algo, { canBridge = false, canScispacy = false } = {}) => {
+  if(['ocl-bridge', 'ocl-ciel-bridge'].includes(algo?.type))
+    return Boolean(canBridge)
+  if(algo?.type === 'ocl-scispacy')
+    return Boolean(canScispacy)
+  return ['custom', 'ocl-search', 'ocl-semantic'].includes(algo?.type)
+}
+
 // Rows a run can match before it runs out of match operations: each row costs
 // one operation per $match-spending algorithm. null when there is no cap.
 export const getRowCapByMatchOperations = (matchOperations, matchAlgorithmCount) => {
