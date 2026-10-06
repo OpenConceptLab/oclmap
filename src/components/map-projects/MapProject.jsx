@@ -87,7 +87,7 @@ import MapProjectDeleteConfirmDialog from './MapProjectDeleteConfirmDialog';
 import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
 import DataGridControls from './DataGridControls'
-import { getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, AI_LOOKUP_WAIT_MS, RERANK_LOOKUP_WAIT_MS, RERANK_MAX_IN_FLIGHT, isScispacyWarmingUp } from './autoMatchRows'
+import { getPreviewEligibleRowIndexes, getRowsToProcess, countAIOnlyRows, canRunAlgorithm, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, AI_LOOKUP_WAIT_MS, RERANK_LOOKUP_WAIT_MS, RERANK_MAX_IN_FLIGHT, isScispacyWarmingUp } from './autoMatchRows'
 import { createAutosaveScheduler, createLatestSender, saveOnLeave, trackSave, whenSaved, installUnloadGuard } from './autosave'
 import MatchSummaryCard from './MatchSummaryCard'
 import MappingDecisionResult from './MappingDecisionResult'
@@ -188,7 +188,7 @@ const MapProject = () => {
   // concept_key (makeConceptKey output). The two key namespaces don't
   // collide — opaque keys are JSON.stringify'd arrays, URLs start with '/'.
   // PR3 collapses to key-only when legacy save/load is dropped.
-  const [, setRowMatchState] = React.useState({})
+  const [rowMatchState, setRowMatchState] = React.useState({})
   const rowMatchStateRef = React.useRef({})
 
   const [searchedConcepts, setSearchedConcepts] = React.useState({});
@@ -285,6 +285,7 @@ const MapProject = () => {
   const [scoreBucketSortBy, setScoreBucketSortBy] = React.useState('desc')
 
   const [matchDialog, setMatchDialog] = React.useState(false)
+  const [autoRetrieveCandidates, setAutoRetrieveCandidates] = React.useState(true)
   const [showItem, setShowItem] = React.useState(false)
   const [autoMatchScope, setAutoMatchScope] = React.useState('unmapped')
   const [autoRunAIAnalysis, setAutoRunAIAnalysis] = React.useState(false)
@@ -624,6 +625,7 @@ const MapProject = () => {
   const canScispacy = Boolean(
     hasCapability(user, 'users.mapper_scispacy') && canBridge && SCISPACY_API_URL && toggles.SCISPACY_LOINC_TOGGLE === true
   )
+  const runnableAlgos = filter(algosSelected, algo => canRunAlgorithm(algo, {canBridge, canScispacy}))
   const matchAlgorithmIds = map(filter(algosSelected, algo => spendsMatchQuota(algo, {canBridge})), 'id')
   const isMultiAlgo = algosSelected.length > 1
   const scispacyEnabled = find(algosSelected, {type: 'ocl-scispacy'})
@@ -1903,7 +1905,7 @@ const MapProject = () => {
       const data = response?.data
       const id = data?.id
       if(id) {
-        automatchRunRef.current = {id, algoIds: map(selectedAlgos, 'id')}
+        automatchRunRef.current = {id, algoIds: map(selectedAlgos, 'id'), aiOnly: !selectedAlgos?.length && withAI}
         return automatchRunRef.current
       }
       if(status === 403 && data?.error_code) {
@@ -1926,16 +1928,21 @@ const MapProject = () => {
   // was never created) must not surface to the user.
   // Each run closes its own record, passed in: by the time a stopped run gets
   // here, a newer run's record may be the current one (ocl_issues#2849).
-  const completeAutomatchRun = async (selectedAlgos, intendedRows, run, aborted) => {
+  // An AI-only run is recorded from aiOutcomes, its own AI results, not the
+  // shared row stages a manual action or a stopped run's late call can change.
+  const completeAutomatchRun = async (selectedAlgos, intendedRows, run, aborted, aiOutcomes = {}) => {
     if(automatchRunRef.current === run)
       automatchRunRef.current = null
     if(!run?.id) return
+    const aiStages = {}
+    forEach(aiOutcomes, (stage, index) => { aiStages[index] = {recommend: stage} })
     const payload = summarizeRunCompletion({
-      rowStages: rowStageRef.current || [],
+      rowStages: run.aiOnly ? aiStages : (rowStageRef.current || []),
       rowIndices: map(intendedRows, '__index'),
       algoIds: run.algoIds?.length ? run.algoIds : map(selectedAlgos, 'id'),
+      aiOnly: Boolean(run.aiOnly),
       aborted,
-      stoppedForQuota: Boolean(matchQuotaStopRef.current),
+      stoppedForQuota: Boolean(matchQuotaStopRef.current || (run.aiOnly && aiQuotaExhaustedRef.current)),
     })
     // Closing the run is idempotent, so a busy server or a gateway error is
     // retried; Stop doesn't end it, so a stopped run is closed too
@@ -2429,9 +2436,10 @@ const MapProject = () => {
     // Capped users' algorithms carry the settings they run with, so the
     // AutomatchRun's config snapshot records what ran (ocl_online#274).
     let _selectedAlgos = map(
-      filter(algosSelected, algo => selectedAlgos.includes(algo.id)),
+      filter(runnableAlgos, algo => selectedAlgos.includes(algo.id)),
       algo => applyRequestSettings(algo, requestLimits)
     )
+    const isAIOnly = !_selectedAlgos.length && Boolean(inAIAssistantGroup && autoRunAIAnalysis)
     let subActions = [...map(_selectedAlgos, algo => algo.name || algo.id)]
     subActions.push('reranker')
     if(isAutoMatchUnmappedOnly)
@@ -2457,11 +2465,12 @@ const MapProject = () => {
       }
     })
 
-    if(isAutoMatchAllRows)
+    // An AI-only run doesn't match, so nothing would set these statuses again.
+    if(isAutoMatchAllRows && !isAIOnly)
       setRowStatuses(prev => ({...prev, readyForReview: []}))
-    if(isAutoMatchAllIncludingApproved)
+    if(isAutoMatchAllIncludingApproved && !isAIOnly)
       setRowStatuses(prev => ({...prev, readyForReview: [], reviewed: []}))
-    if(isAutoMatchSelectedRows)
+    if(isAutoMatchSelectedRows && !isAIOnly)
       setRowStatuses(prev => ({
         ...prev,
         readyForReview: without(prev.readyForReview, ...selectedRowIndexes),
@@ -2483,6 +2492,8 @@ const MapProject = () => {
         rowsToProcess = rowsToProcess.slice(0, rowCap)
         projectLog({action: 'auto_match_pre_truncated', extras: {requested, allowed: rowCap}})
       }
+      if(isAIOnly)
+        rowsToProcess = getAIAnalysableRows(rowsToProcess)
 
       // ocl_online#105 Phase 5: open the run record, then guarantee it is
       // closed out (completed / partial / failed / cancelled) via the finally,
@@ -2491,6 +2502,7 @@ const MapProject = () => {
       // False when the run was refused (a preview limit) or stopped before it
       // began: it changed nothing to save.
       const runStarted = !isRunStopped()
+      const aiOutcomes = {}
       try {
         bulkMatchAlgoIdsRef.current = map(_selectedAlgos, 'id')
         // Reset all algo stages to -1 for every row before starting so that
@@ -2537,7 +2549,7 @@ const MapProject = () => {
         if(runAIStep)
           await new Promise(resolve => setTimeout(resolve, 1000))
         if(runAIStep && !isRunStopped()) {
-          await runBulkAIAnalysis(finishedRows, {isStopped: isRunStopped, isCurrent: isCurrentRun})
+          await runBulkAIAnalysis(finishedRows, {isStopped: isRunStopped, isCurrent: isCurrentRun, outcomes: aiOutcomes})
         } else if(isCurrentRun()) {
           // A newer run's loading state is its own.
           setIsLoadingInDecisionView(false)
@@ -2603,7 +2615,7 @@ const MapProject = () => {
         // way (ocl_issues#2849).
         if(runStarted)
           scheduleAutoSave(isRunStopped() ? 'auto_match_stopped' : 'auto_match')
-        await completeAutomatchRun(_selectedAlgos, rowsToProcess, runRecord, isRunStopped())
+        await completeAutomatchRun(_selectedAlgos, rowsToProcess, runRecord, isRunStopped(), aiOutcomes)
         refreshMapperQuotaCache()
       }
     }, 1000)
@@ -2614,8 +2626,9 @@ const MapProject = () => {
   }, [conceptCache]);
 
   // isStopped: the run's Stop; isCurrent: false once a newer run started, whose
-  // loading state is its own (ocl_issues#2849).
-  const runBulkAIAnalysis = async (_rows, {isStopped = () => abortRef.current, isCurrent = () => true} = {}) => {
+  // loading state is its own (ocl_issues#2849). outcomes collects each row's
+  // AI result (fetchRecommendation's return) for the run's record.
+  const runBulkAIAnalysis = async (_rows, {isStopped = () => abortRef.current, isCurrent = () => true, outcomes = null} = {}) => {
     GAService.recordActionEvent('MapProject', 'ai_assistant_run', undefined, {
       mode: 'bulk',
       row_count: _rows.length
@@ -2656,7 +2669,9 @@ const MapProject = () => {
       if (shouldStopAIStep({quotaExhausted: aiQuotaExhaustedRef.current, failuresInARow: aiFailuresInARowRef.current})) break;
 
       // A stopped run moves on; the row's call finishes in the background.
-      await untilCancelled(fetchRecommendation(_rows[index], resolvedPromptTemplate, true), isStopped);
+      const result = await untilCancelled(fetchRecommendation(_rows[index], resolvedPromptTemplate, true), isStopped);
+      if(outcomes && result.settled && isNumber(result.value))
+        outcomes[_rows[index].__index] = result.value
     }
     if(!isCurrent())
       return
@@ -2891,11 +2906,25 @@ const MapProject = () => {
     setMatchDialog(true)
   }
 
+  const onAutoMatchConfigure = () => {
+    setMatchDialog(false)
+    setConfigureWithAutosave(true)
+  }
+
+  // A run that would do nothing opens no AutomatchRun (ocl_issues#2872).
+  const hasAutoMatchWork = selectedAlgos => {
+    if(filter(runnableAlgos, algo => selectedAlgos.includes(algo.id)).length)
+      return true
+    return Boolean(inAIAssistantGroup && autoRunAIAnalysis) && (aiOnlyRowCounts?.analyse || 0) > 0
+  }
+
   const onGetCandidatesSubmit = (event, selectedAlgos) => {
     event.stopPropagation()
     event.preventDefault()
     setAlert(false)
-    if(isAnyValidColumn()){
+    if(!hasAutoMatchWork(selectedAlgos)) {
+      setAlert({message: t('map_project.auto_match_nothing_to_run'), severity: 'warning'})
+    } else if(isAnyValidColumn()){
       setStartMatchingAt(moment())
       setBulkAIAnalysisStartedAt(null)
       setBulkAIAnalysisEndedAt(null)
@@ -5630,6 +5659,22 @@ const MapProject = () => {
     }
   }
 
+  // Rows with candidates and no analysis of them yet; fetchRecommendation skips the rest.
+  const getAIAnalysableRows = _rows => filter(_rows, _row => {
+    const concepts = isNumber(_row?.__index) ? buildV2RecommendationPayload(_row.__index)?.recommendable_concepts : null
+    return Boolean(concepts?.length) && !hasCurrentAnalysis(analysis[_row.__index], getCandidatePoolFingerprint(concepts))
+  })
+
+  // Counted only while the dialog shows it, over the scope's rows, and again
+  // as their candidates or analyses change.
+  const isAutoMatchAIOnly = Boolean(inAIAssistantGroup && autoRunAIAnalysis) && !(autoRetrieveCandidates && runnableAlgos.length)
+  const aiOnlyRowCounts = React.useMemo(() => {
+    if(!matchDialog || !isAutoMatchAIOnly)
+      return null
+    const scopeRows = getRowsToProcess(data, rowStatuses, autoMatchScope, getSelectedRowIndexes(data), previewEligibleRowIndexes)
+    return countAIOnlyRows(map(scopeRows, '__index'), map(getAIAnalysableRows(scopeRows), '__index'))
+  }, [matchDialog, isAutoMatchAIOnly, data, rowStatuses, autoMatchScope, selectedRowIds, previewEligibleRowIndexes, analysis, rowMatchState, conceptCache, repoVersion, buildProjectContext, filters, inputLocale])
+
   const fetchRecommendation = async (_row, resolvedPromptTemplate = null, isBulk = false) => {
     let __row = row;
     let __index = rowIndex;
@@ -5637,10 +5682,20 @@ const MapProject = () => {
       __row = _row
       __index = _row.__index
     }
+    // Returns the row's AI outcome as a stage (1 analysed, -2 failed, -3 not
+    // run), or null when the row was skipped or the run stopped. A run's call
+    // that ends after a newer run started leaves that run's stages and failure
+    // count alone (ocl_issues#2872).
+    const runTicket = autoMatchRunTicketRef.current
+    const isSuperseded = () => isBulk && runTicket !== autoMatchRunTicketRef.current
+    const markRecommend = stage => {
+      if(!isSuperseded())
+        markAlgo(__index, 'recommend', stage)
+    }
     if(!AI_ASSISTANT_API_URL) {
-      markAlgo(__index, 'recommend', -3)
+      markRecommend(-3)
       console.error('AI ASSISTANT is not enabled for you.')
-      return false
+      return -3
     }
     // Auto Match (caller supplied resolvedPromptTemplate) skips a row whose
     // latest analysis saw this same candidate pool; a re-run whose candidates
@@ -5656,8 +5711,8 @@ const MapProject = () => {
     if(isBulk && isNumber(__index)) {
       await waitForLookups(getPendingRowLookups(rowMatchStateRef.current[__index], inFlightLookupsRef.current), AI_LOOKUP_WAIT_MS, stuckLookupsRef.current)
       // The user may have pressed Stop while this row waited.
-      if(abortRef.current)
-        return false
+      if(abortRef.current || isSuperseded())
+        return null
     }
     const v2 = isNumber(__index) ? buildV2RecommendationPayload(__index) : null
     const candidatePoolFingerprint = getCandidatePoolFingerprint(v2?.recommendable_concepts)
@@ -5665,7 +5720,7 @@ const MapProject = () => {
     if(isNumber(__index) && repoVersion && !alreadyAnalyzed && (v2?.recommendable_concepts?.length || 0) > 0) {
       if(!isBulk)
         GAService.recordActionEvent('MapProject', 'ai_assistant_run', undefined, { mode: 'single' })
-      markAlgo(__index, 'recommend', 0)
+      markRecommend(0)
       let rowData = prepareRow(__row, true, true)
 
       const requestedModel = getRequestedAIModel()
@@ -5674,8 +5729,8 @@ const MapProject = () => {
         activePromptTemplate = resolvedPromptTemplate || await resolvePromptTemplateForInvocation()
         if(!activePromptTemplate?.key) {
           setAlert({message: 'AI Assistant prompt template is not available', severity: 'error'})
-          markAlgo(__index, 'recommend', -3)
-          return false
+          markRecommend(-3)
+          return -3
         }
         // Single-row invocations (no caller-supplied resolvedPromptTemplate)
         // should always hit the latest prompt template, NOT a pinned version.
@@ -5697,12 +5752,12 @@ const MapProject = () => {
           }
         }
       } catch (err) {
-        markAlgo(__index, 'recommend', -2)
+        markRecommend(-2)
         const errorMessage = err?.message || t('unknown_error')
         let timestamp = moment().toDate()
         log({created_at: timestamp, action: 'AIRecommendation', description: errorMessage, extras: {error: errorMessage, model: requestedModel, prompt_template: getPromptTemplateRef(), prompt_template_uri: getPromptTemplateRef()?.uri}}, __index)
         setAlert({message: errorMessage, severity: 'error'})
-        return false
+        return -2
       }
       const promptTemplateRef = getPromptTemplateRef(activePromptTemplate)
       const payload = {
@@ -5749,21 +5804,23 @@ const MapProject = () => {
           }
         )
         let timestamp = moment().toDate()
-        if(handlePreviewLimitError(response, __index, 'recommend', {isRun: isBulk, stopPhase: 'ai'})) {
-          markAlgo(__index, 'recommend', -3)
+        if(handlePreviewLimitError(response, isSuperseded() ? null : __index, 'recommend', {isRun: isBulk, stopPhase: 'ai'})) {
+          markRecommend(-3)
           log({created_at: timestamp, action: 'AIRecommendationLimitReached', extras: {model: requestedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}})
-          return false
+          return -3
         }
         if(response?.detail) {
-          markAlgo(__index, 'recommend', -2)
-          aiFailuresInARowRef.current += 1
+          markRecommend(-2)
+          if(!isSuperseded())
+            aiFailuresInARowRef.current += 1
           log({created_at: timestamp, action: 'AIRecommendation', description: response.detail, extras: {error: response.detail, model: requestedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}})
           setAlert({message: response.detail, severity: 'error'})
-          return false
+          return -2
         }
 
-        markAlgo(__index, 'recommend', 1)
-        aiFailuresInARowRef.current = 0
+        markRecommend(1)
+        if(!isSuperseded())
+          aiFailuresInARowRef.current = 0
         // Record the model that answered, not the one the UI shows: the AI
         // Assistant runs the template's default for everyone but staff.
         const modelUsed = getModelUsed(response.data) || requestedModel?.id || null
@@ -5785,26 +5842,27 @@ const MapProject = () => {
         // state, possibly over a newer one.
         if(!isBulk && isMountedRef.current)
           scheduleAutoSave('ai_recommendation')
-        return true
+        return 1
       } catch (err) {
-        if(handlePreviewLimitError(err, __index, 'recommend', {isRun: isBulk, stopPhase: 'ai'})) {
-          markAlgo(__index, 'recommend', -3)
+        if(handlePreviewLimitError(err, isSuperseded() ? null : __index, 'recommend', {isRun: isBulk, stopPhase: 'ai'})) {
+          markRecommend(-3)
           log({created_at: moment().toDate(), action: 'AIRecommendationLimitReached', extras: {model: requestedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}})
-          return false
+          return -3
         }
-        markAlgo(__index, 'recommend', -2)
-        aiFailuresInARowRef.current += 1
+        markRecommend(-2)
+        if(!isSuperseded())
+          aiFailuresInARowRef.current += 1
         const errorMessage = err?.detail || err?.response?.data?.detail || err?.message || t('unknown_error')
         setAlert({message: errorMessage, severity: 'error'})
-        return false
+        return -2
       } finally {
         if(!isBulk)
           refreshMapperQuotaCache()
       }
     } else {
-      markAlgo(__index, 'recommend', analysis[__index]?.length > 0 ? 1 : -3)
+      markRecommend(analysis[__index]?.length > 0 ? 1 : -3)
     }
-    return false
+    return null
   }
 
   const getRowNameValue = _row => get(_row, find(columns, {label: 'Name'})?.dataKey)
@@ -6346,9 +6404,14 @@ const MapProject = () => {
               repoVersion,
               inAIAssistantGroup,
               algosSelected,
+              runnableAlgos,
+              retrieveCandidates: autoRetrieveCandidates,
+              setRetrieveCandidates: setAutoRetrieveCandidates,
               canSelectAIModel,
               previewEligibleRowIndexes,
-              matchAlgorithmIds
+              matchAlgorithmIds,
+              aiOnlyRowCounts,
+              onConfigure: onAutoMatchConfigure
             }}
           />
           {

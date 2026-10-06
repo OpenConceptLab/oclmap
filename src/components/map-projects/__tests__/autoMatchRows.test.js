@@ -3,7 +3,8 @@ import assert from 'node:assert/strict'
 
 import {
   getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep,
-  getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, RERANK_LOOKUP_WAIT_MS, AI_LOOKUP_WAIT_MS, isScispacyWarmingUp, RERANK_MAX_IN_FLIGHT
+  getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, RERANK_LOOKUP_WAIT_MS, AI_LOOKUP_WAIT_MS, isScispacyWarmingUp, RERANK_MAX_IN_FLIGHT,
+  countAIOnlyRows, getAutoMatchBlocker, canRunAlgorithm
 } from '../autoMatchRows.js'
 import { createLimiter } from '../../../services/capacity.js'
 
@@ -329,4 +330,60 @@ test('RERANK_MAX_IN_FLIGHT: a batch\'s reranks and the sweep\'s together keep at
   // ten per-row reranks as one batch finishes, and the sweep's two
   await Promise.all([...Array(10).keys(), 'sweep-a', 'sweep-b'].map(rerank))
   assert.equal(maxInFlight, 2)
+})
+
+test('countAIOnlyRows: rows in scope the AI analyses, and the rest it skips', () => {
+  assert.deepEqual(countAIOnlyRows([0, 1, 2, 3], [1, 3, 7]), { analyse: 2, skip: 2 })
+  assert.deepEqual(countAIOnlyRows([0, 1], []), { analyse: 0, skip: 2 })
+  assert.deepEqual(countAIOnlyRows([], [1]), { analyse: 0, skip: 0 })
+})
+
+test('countAIOnlyRows: compares row indexes as strings', () => {
+  assert.deepEqual(countAIOnlyRows([0, 1], ['1']), { analyse: 1, skip: 1 })
+})
+
+test('getAutoMatchBlocker: a run that retrieves candidates for some rows does something', () => {
+  assert.equal(getAutoMatchBlocker({ rowsInScope: 3, hasAlgorithms: true, retrieveCandidates: true }), null)
+  assert.equal(getAutoMatchBlocker({ rowsInScope: 3, hasAlgorithms: true, retrieveCandidates: true, runAI: true }), null)
+})
+
+test('getAutoMatchBlocker: no rows in scope', () => {
+  assert.equal(getAutoMatchBlocker({ rowsInScope: 0, hasAlgorithms: true, retrieveCandidates: true }), 'no_rows')
+})
+
+test('getAutoMatchBlocker: no algorithm and no AI step', () => {
+  assert.equal(getAutoMatchBlocker({ rowsInScope: 3 }), 'no_algorithms')
+  assert.equal(getAutoMatchBlocker({ rowsInScope: 3, hasAlgorithms: true }), 'no_step')
+})
+
+test('getAutoMatchBlocker: an AI-only run needs a row to analyse and AI calls left', () => {
+  assert.equal(getAutoMatchBlocker({ rowsInScope: 3, runAI: true, aiRowsToAnalyse: 2 }), null)
+  assert.equal(getAutoMatchBlocker({ rowsInScope: 3, runAI: true, aiRowsToAnalyse: 2, aiCallsRemaining: 5 }), null)
+  assert.equal(getAutoMatchBlocker({ rowsInScope: 3, runAI: true, aiRowsToAnalyse: 0 }), 'no_ai_rows')
+  assert.equal(getAutoMatchBlocker({ rowsInScope: 3, runAI: true, aiRowsToAnalyse: 2, aiCallsRemaining: 0 }), 'no_ai_calls')
+})
+
+test('getAutoMatchBlocker: AI rows and calls don\'t matter to a run that retrieves candidates', () => {
+  assert.equal(getAutoMatchBlocker({ rowsInScope: 3, hasAlgorithms: true, retrieveCandidates: true, runAI: true, aiRowsToAnalyse: 0, aiCallsRemaining: 0 }), null)
+})
+
+test('canRunAlgorithm: search, semantic and custom algorithms always run', () => {
+  ['ocl-search', 'ocl-semantic', 'custom'].forEach(type => assert.equal(canRunAlgorithm({ type }), true))
+})
+
+test('canRunAlgorithm: a bridge runs only for a user who can bridge', () => {
+  ['ocl-bridge', 'ocl-ciel-bridge'].forEach(type => {
+    assert.equal(canRunAlgorithm({ type }), false)
+    assert.equal(canRunAlgorithm({ type }, { canBridge: true }), true)
+  })
+})
+
+test('canRunAlgorithm: ScispaCy runs only for a user who can run it', () => {
+  assert.equal(canRunAlgorithm({ type: 'ocl-scispacy' }, { canBridge: true }), false)
+  assert.equal(canRunAlgorithm({ type: 'ocl-scispacy' }, { canScispacy: true }), true)
+})
+
+test('canRunAlgorithm: an unknown or missing type doesn\'t run', () => {
+  assert.equal(canRunAlgorithm({ type: 'something-else' }), false)
+  assert.equal(canRunAlgorithm(null), false)
 })
