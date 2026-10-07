@@ -337,7 +337,6 @@
     "about_me": "关于我",
     "about_me_description": "创建用于他人访问您的个人资料时阅读的简介（200 个字符）。",
     "user_has_not_created_public_repos_suffix": "尚未创建任何公开的存储库",
-    "recent_activity": "最近的活动",
     "my_mapping_projects": "我的映射项目"
   },
   "search": {
