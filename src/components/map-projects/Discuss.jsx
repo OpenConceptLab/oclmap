@@ -43,7 +43,7 @@ const Discuss = ({ logs, onAdd }) => {
     if(['mapped', 'unmapped', 'auto-matched', 'rejected'].includes(log.action)) {
       if(log.action === 'rejected' && log.description)
         return log.description
-      let description = startCase(log.action)
+      let description = startCase(log.action).replace('Auto Match', 'AutoMatch')
       if(log.extras?.name)
         description += `: ${log.extras?.name}`
       if(log?.extras?.map_type || log?.extras?.mapType) {
@@ -72,7 +72,7 @@ const Discuss = ({ logs, onAdd }) => {
         return log.description
       return <>{t('map_project.finished_reranking')}</>
     }
-    return log.description || startCase(log.action)
+    return log.description || startCase(log.action).replace('Auto Match', 'AutoMatch')
   }
 
   const getIcon = (log, color) => {
@@ -152,7 +152,7 @@ const Discuss = ({ logs, onAdd }) => {
                         }
                         body={log.description}
                       /> :
-                    <Tooltip title={startCase(log.action)}>
+                    <Tooltip title={startCase(log.action).replace('Auto Match', 'AutoMatch')}>
                     <TimelineDot color={dotColor} variant="outlined" sx={{margin: 0}}>
                         {getIcon(log, dotColor)}
                       </TimelineDot>
