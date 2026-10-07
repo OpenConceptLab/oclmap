@@ -87,7 +87,7 @@ const App = props => {
     const queryParams = new URLSearchParams(search)
     const referrer = queryParams.get('referrer')
     if(isLoggedIn()) {
-      if(hash && !pathname.startsWith('/oidc/login'))
+      if(hash?.startsWith('#/') && !pathname.startsWith('/oidc/login'))
         props.history.replace(pathname + search)
     } else if(isOtherOCLClientURL(referrer) && !isLoggedIn()) {
       const parts = hash ? hash.split('?') : referrer.split('?')

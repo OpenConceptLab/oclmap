@@ -15,7 +15,7 @@ import {
 import APIService from '../services/APIService';
 import GAService from '../services/GAService';
 import { SERVER_CONFIGS } from './serverConfigs';
-import { legacyHashRoute } from './history';
+import { legacyHashRoute, isSameSitePath } from './history';
 
 export const currentPath = () => window.location.pathname;
 
@@ -119,8 +119,6 @@ export const getAPIURL = () => {
   /*eslint no-undef: 0*/
   return get(savedConfigs, 'url') || window.API_URL || process.env.API_URL;
 }
-
-export const toFullURL = uri => window.location.origin + '/#' + uri;
 
 export const toFullAPIURL = uri => getAPIURL() + uri;
 
@@ -663,7 +661,7 @@ export const logoutUser = (redirectToLogin, forced) => {
     sessionStorage.setItem('session_expired', 'true')
 
   const redirectURL = forced ?
-    window.location.origin + '/signin?returnTo=' + encodeURIComponent(returnTo) :
+    window.location.origin + '/#/signin?returnTo=' + encodeURIComponent(returnTo) :
     undefined
   const logoutURL = getSSOLogoutURL(redirectURL)
 
@@ -894,7 +892,7 @@ const prepareOAuthReturnTo = returnTo => {
   const route = returnToRoute(returnTo)
   const path = route && routePath(route)
   // The router matches paths case-insensitively, so /SIGNUP would start a sign-up too.
-  if(path?.startsWith('/') && !/^\/(oidc\/login|signin|signup)(\/|$)/i.test(path))
+  if(isSameSitePath(path) && !/^\/(oidc\/login|signin|signup)(\/|$)/i.test(path))
     sessionStorage.setItem(OAUTH_RETURN_TO_KEY, route)
   else
     sessionStorage.removeItem(OAUTH_RETURN_TO_KEY)

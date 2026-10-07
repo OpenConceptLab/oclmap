@@ -44,8 +44,6 @@
          go('/oidc/login/' + loc.search + '&next=' + loc.pathname);
        } else if(loc.href.includes('/?session_state=')) {
          go('/');
-       } else if((loc.search || '').includes('origin=openmrs')) {
-         go('/search/?origin=openmrs&type=organizations');
        }
      })();
     </script>

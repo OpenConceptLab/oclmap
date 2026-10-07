@@ -9,10 +9,12 @@ export const toRoutePath = path => {
   return legacy ? legacy[1] : path
 }
 
+export const isSameSitePath = path => /^\/(?![/\\])/.test(path || '')
+
 export const navigate = (path, replace=false) => {
-  if(!path)
-    return
   const routePath = toRoutePath(path)
+  if(!isSameSitePath(routePath))
+    return
   if(!appHistory) {
     if(replace)
       window.location.replace(routePath)
@@ -28,7 +30,7 @@ export const navigate = (path, replace=false) => {
 
 export const legacyHashRoute = (location=window.location) => {
   const { hash, search } = location
-  if(!hash.startsWith('#/') || /[?&]referrer=/.test(search))
+  if(!hash.startsWith('#/') || /^#\/[/\\]/.test(hash) || /[?&]referrer=/.test(search))
     return null
   let route = hash.slice(1)
   const outer = search.replace(/^\?/, '')
@@ -58,8 +60,12 @@ const appLinkRoute = event => {
   const href = anchor.getAttribute('href')
   if(!href || (href.startsWith('#') && !href.startsWith('#/')) || /^(mailto|tel|javascript):/i.test(href))
     return null
+  if(href.startsWith('#/'))
+    return href.slice(1)
   const url = new URL(anchor.href, window.location.href)
-  if(url.origin !== window.location.origin)
+  if(url.origin !== window.location.origin || !/^https?:$/.test(url.protocol))
+    return null
+  if(url.hash && !url.hash.startsWith('#/') && url.pathname === window.location.pathname && url.search === window.location.search)
     return null
   return legacyHashRoute(url) || url.pathname + url.search + url.hash
 }

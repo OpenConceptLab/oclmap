@@ -99,3 +99,38 @@ test('keepLinkClickBubbling neutralises stopPropagation only for app links', () 
   external.stopPropagation()
   assert.equal(external.stopped, true)
 })
+
+test('legacyHashRoute rejects routes that would leave the site', () => {
+  assert.equal(legacyHashRoute(loc('#//example.com/')), null)
+  assert.equal(legacyHashRoute(loc('#/\\example.com/')), null)
+})
+
+test('navigate ignores anything but a single-slash path', () => {
+  pushed.length = 0
+  navigate('//example.com/')
+  navigate('/\\example.com/')
+  navigate('/#//example.com/')
+  navigate('https://example.com/')
+  navigate(undefined)
+  assert.deepEqual(pushed, [])
+})
+
+test('a relative #/ link goes to that route without the current query', () => {
+  pushed.length = 0
+  location.search = '?q=malaria&type=concepts'
+  const event = click(anchor('#/map-projects/new'))
+  handleLinkClick(event)
+  location.search = ''
+  assert.deepEqual(pushed, [['push', '/map-projects/new']])
+})
+
+test('handleLinkClick leaves same-page fragments and non-http links to the browser', () => {
+  pushed.length = 0
+  const sameFragment = click(anchor('/map-projects/#section'))
+  const blob = click(anchor('blob:http://localhost:4004/abc'))
+  handleLinkClick(sameFragment)
+  handleLinkClick(blob)
+  assert.equal(sameFragment.defaultPrevented, false)
+  assert.equal(blob.defaultPrevented, false)
+  assert.deepEqual(pushed, [])
+})
