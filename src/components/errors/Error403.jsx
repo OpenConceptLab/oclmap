@@ -66,7 +66,7 @@ const Error403 = () => {
             i18nKey='common.go_back_or_to_your_dashboard'
             components={[
               <Link key='back' sx={{minWidth: 'auto', fontSize: '16px', padding: '0 4px'}} label={t('common.back')} onClick={() => history.goBack()} />,
-              <Link key='dashboard' sx={{minWidth: 'auto', fontSize: '16px', paddingLeft: '4px'}} label={t('dashboard.name')} href='/#/' />,
+              <Link key='dashboard' sx={{minWidth: 'auto', fontSize: '16px', paddingLeft: '4px'}} label={t('dashboard.name')} href='/' />,
             ]}
           />
         </p>

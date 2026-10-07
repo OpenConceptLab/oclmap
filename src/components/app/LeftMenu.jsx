@@ -119,7 +119,7 @@ const LeftMenu = ({ isOpen, onClose }) => {
               px: 2,
               borderRadius: '100px'
             }}
-            href='/#/'
+            href='/'
             className='no-anchor-styles'
             selected={location.pathname === '/'}
           >

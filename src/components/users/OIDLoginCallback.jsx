@@ -6,6 +6,7 @@ import {
   refreshCurrentUserCache, consumeStoredPKCECodeVerifier, consumeAndValidateOAuthState, consumeOAuthReturnTo,
   isSignupOAuthState, isLoggedIn, getLoginURL
 } from '../../common/utils';
+import { navigate } from '../../common/history';
 import APIService from '../../services/APIService'
 import GAService from '../../services/GAService'
 import { OperationsContext } from '../app/LayoutContext';
@@ -84,15 +85,15 @@ class OIDLoginCallback extends React.Component {
           </Button>
         )
       })
-    window.location.hash = '#' + (next || '/')
+    navigate(next || '/', true)
   }
 
   cacheUserData() {
     refreshCurrentUserCache(() => {
       if(this.state.returnTo)
-        window.location.hash = '#' + this.state.returnTo
+        navigate(this.state.returnTo, true)
       else if(this.state.next)
-        window.location.hash = '#' + this.state.next
+        navigate(this.state.next, true)
       else {
         let returnToURL = '/'
         if(this.props?.location?.search) {
@@ -100,7 +101,7 @@ class OIDLoginCallback extends React.Component {
           if(queryParams && queryParams.get('returnTo'))
             returnToURL = queryParams.get('returnTo')
         }
-        window.location.hash  = '#' + returnToURL
+        navigate(returnToURL, true)
       }
     })
   }

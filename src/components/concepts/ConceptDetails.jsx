@@ -77,7 +77,7 @@ const ConceptDetails = ({ concept, repo, mappings, reverseMappings, loading, loa
         {t('common.last_updated')} {
           loading ?
             <Skeleton variant='text' width='40%' sx={{marginLeft: '8px', fontSize: '12px', display: 'inline-block'}} />:
-          <>{formatDateTime(concept.versioned_updated_on || concept.updated_on)} {t('common.by')} <Link sx={{fontSize: '12px', justifyContent: 'flex-start'}} href={`#/users/${updatedBy}`} label={updatedBy} /></>
+          <>{formatDateTime(concept.versioned_updated_on || concept.updated_on)} {t('common.by')} <Link sx={{fontSize: '12px', justifyContent: 'flex-start'}} href={`/users/${updatedBy}`} label={updatedBy} /></>
         }
       </Typography>
       <Typography component='span' sx={{display: 'inline-block', padding: 0, fontSize: '12px', color: 'surface.contrastText', width: '100%'}}>

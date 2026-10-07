@@ -1,13 +1,14 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import Fade from '@mui/material/Fade';
-import { HashRouter } from 'react-router-dom';
+import { BrowserRouter, useHistory } from 'react-router-dom';
 import { ThemeProvider, StyledEngineProvider, createTheme, alpha } from '@mui/material/styles';
 import App from './components/app/App';
 import LayoutContext from './components/app/LayoutContext';
 import './index.scss';
 import { COLORS } from './common/colors';
 import './i18n/config';
+import { setAppHistory, handleLinkClick, keepLinkClickBubbling, legacyHashRoute, redirectLegacyHashRoute } from './common/history';
 
 const theme = createTheme();
 const v5Theme = createTheme(theme, {
@@ -121,14 +122,28 @@ const v5Theme = createTheme(theme, {
 })
 
 
+const HistoryBridge = () => {
+  setAppHistory(useHistory())
+  return null
+}
+
+const legacyRoute = legacyHashRoute()
+if(legacyRoute)
+  window.history.replaceState(null, '', legacyRoute)
+
+window.addEventListener('click', keepLinkClickBubbling, true)
+document.addEventListener('click', handleLinkClick)
+window.addEventListener('hashchange', redirectLegacyHashRoute)
+
 const container = document.getElementById('root');
 const root = createRoot(container);
 root.render(
-  <HashRouter>
+  <BrowserRouter>
+    <HistoryBridge />
     <StyledEngineProvider injectFirst>
       <ThemeProvider theme={v5Theme}>
           <LayoutContext subPages ={(<App />)} />
       </ThemeProvider>
     </StyledEngineProvider>
-  </HashRouter>
+  </BrowserRouter>
 );

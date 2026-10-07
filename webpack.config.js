@@ -9,6 +9,7 @@ module.exports = (env) => {
   return {
     mode: env.NODE_ENV,
     output: {
+      publicPath: '/',
       // Production names carry a content hash (OpenConceptLab/ocl_issues#2824),
       // so a changed bundle gets a new URL. nginx caches these files for a year
       // and revalidates index.html on every load, so a returning browser never
@@ -101,7 +102,8 @@ module.exports = (env) => {
         directory: path.join(__dirname, 'public')
       },
       historyApiFallback: {
-        index: 'index.html',
+        index: '/index.html',
+        disableDotRule: true,
       }
     },
     devtool: env.NODE_ENV == 'production' ? "source-map" : undefined,

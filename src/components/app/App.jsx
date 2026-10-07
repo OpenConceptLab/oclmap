@@ -87,14 +87,13 @@ const App = props => {
     const queryParams = new URLSearchParams(search)
     const referrer = queryParams.get('referrer')
     if(isLoggedIn()) {
-      // OIDLoginCallback navigates away itself; resetting the hash here would undo that.
-      if(!pathname.startsWith('/oidc/login'))
-        window.location.hash = '#'  + pathname
+      if(hash?.startsWith('#/') && !pathname.startsWith('/oidc/login'))
+        props.history.replace(pathname + search)
     } else if(isOtherOCLClientURL(referrer) && !isLoggedIn()) {
       const parts = hash ? hash.split('?') : referrer.split('?')
       let params = new URLSearchParams(parts[1])
       if(params.get('auth') === 'true') {
-        getLoginURL(window.location.origin + '/#' + pathname).then(url => { window.location.href = url })
+        getLoginURL(window.location.origin + pathname).then(url => { window.location.href = url })
       }
     }
   }

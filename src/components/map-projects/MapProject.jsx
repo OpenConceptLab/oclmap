@@ -5961,7 +5961,7 @@ const MapProject = () => {
       return
     }
     if(project?.url) {
-      window.open(`/#/map-projects/new?templateFrom=${encodeURIComponent(project.url)}`, '_blank', 'noopener,noreferrer')
+      window.open(`/map-projects/new?templateFrom=${encodeURIComponent(project.url)}`, '_blank', 'noopener,noreferrer')
     }
   }
 
