@@ -92,7 +92,7 @@ const ProjectLogs = ({onClose, logs, project}) => {
       if(log.extras?.selected_rows_count)
         subActions.push(`${log.extras.selected_rows_count.toLocaleString()} Selected Rows`)
       return <span>
-               {startCase(log.action)}
+               {startCase(log.action).replace('Auto Match', 'AutoMatch')}
                {
                  subActions.length ?
                 <span style={{marginLeft: '4px'}}>
@@ -120,7 +120,7 @@ const ProjectLogs = ({onClose, logs, project}) => {
       return log.description || t('map_project.auto_saved_changes')
     if(log.description)
       return log.description
-    return startCase(log.action)
+    return startCase(log.action).replace('Auto Match', 'AutoMatch')
   }
 
   return (
@@ -152,7 +152,7 @@ const ProjectLogs = ({onClose, logs, project}) => {
               return (
                 <TimelineItem key={index}>
                   <TimelineSeparator>
-                    <Tooltip title={startCase(log.action)}>
+                    <Tooltip title={startCase(log.action).replace('Auto Match', 'AutoMatch')}>
                       <TimelineDot color={color} variant="outlined" sx={{margin: 0}}>
                         {icon}
                       </TimelineDot>

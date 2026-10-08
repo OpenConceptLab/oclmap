@@ -476,8 +476,8 @@
     "delete_map_project_type_to_confirm": "Por favor, digite <0>{{name}}</0> para confirmar",
     "clear_filter": "Limpar Filtro",
     "configure_mapping_project_tooltip": "Configurar Projeto de Mapeamento",
-    "auto_match": "Auto Match",
-    "auto_matched": "Com Auto Match",
+    "auto_match": "AutoMatch",
+    "auto_matched": "Com AutoMatch",
     "unmapped_only": "Apenas Não Mapeados",
     "map_target": "Alvo do Mapeamento",
     "propose": "Propor",
@@ -532,7 +532,7 @@
     "preview_limit_title_match_operations_not_entitled": "Operações de correspondência não fazem parte de sua conta ainda",
     "preview_limit_title_projects_not_entitled": "Projetos de mapeamento não fazem parte de sua conta ainda",
     "preview_limit_title_generic": "Você atingiu um limite de prévia",
-    "preview_limit_body_rows": "Sua prévia gratuita cobre {{limit}} linhas com Auto Match para este projeto - você usou todas as {{limit}}. Nada está bloqueado: continue revisando, editando e exportando este projeto quanto quiser.",
+    "preview_limit_body_rows": "Sua prévia gratuita cobre {{limit}} linhas com AutoMatch para este projeto - você usou todas as {{limit}}. Nada está bloqueado: continue revisando, editando e exportando este projeto quanto quiser.",
     "preview_limit_body_rows_no_count": "O limite de linhas de sua prévia gratuita para este projeto foi atingido. Nada está bloqueado: continue revisando, editando e exportando este projeto quanto quiser.",
     "preview_limit_body_match_operations": "Sua prévia gratuita cobre {{limit}} operações de correspondência - você usou todas as {{limit}}. Nada está bloqueado: continue revisando, editando e exportando este projeto quanto quiser.",
     "preview_limit_body_match_operations_no_count": "O limite de operações de correspondência de sua prévia gratuita foi atingido. Nada está bloqueado: continue revisando, editando e exportando este projeto quanto quiser.",
@@ -584,9 +584,9 @@
     "auto_match_note_no_counts": "Nota: Isso não afetará linhas de entrada aprovadas mas substituirá linhas de entrada propostas",
     "auto_match_all_including_approved_note": "Aviso: Isso executará novamente cada linha de entrada do zero e sobrescreverá {{approvedCount}} decisões aprovadas e {{proposedCount}} propostas",
     "auto_match_all_including_approved_confirm": "Entendo que {{approvedCount}} decisões aprovadas serão sobrescritas",
-    "auto_match_selected_rows_note": "Nota: isso executará Auto Match para {{count}} linha(s) de entrada selecionada(s)",
+    "auto_match_selected_rows_note": "Nota: isso executará AutoMatch para {{count}} linha(s) de entrada selecionada(s)",
     "auto_match_selected_rows_note_no_count": "Nota: Selecione linhas no painel esquerdo para habilitar esta opção",
-    "auto_match_rows_failed": "O Auto Match falhou para {{count}} linha(s) de entrada, então elas estão sem candidatos: {{details}}. As linhas contam a partir da primeira linha de dados do seu arquivo. Execute o Auto Match nessas linhas novamente para tentar de novo.",
+    "auto_match_rows_failed": "O AutoMatch falhou para {{count}} linha(s) de entrada, então elas estão sem candidatos: {{details}}. As linhas contam a partir da primeira linha de dados do seu arquivo. Execute o AutoMatch nessas linhas novamente para tentar de novo.",
     "auto_match_rows_failed_algorithm": "{{algorithm}} na(s) linha(s) {{rows}}",
     "match_request_failed": "Não foi possível obter candidatos ({{error}}). Tente novamente.",
     "waiting_for_capacity": "Aguardando capacidade: os resultados podem demorar mais devido à demanda",
@@ -820,7 +820,7 @@
       "generic": "Alguns recursos estão pausados até que sua cota seja aumentada.",
       "ai_assistant_calls": {
         "default": "Recursos que usam o Assistente de IA do OCL estão pausados.",
-        "auto_match": "O Auto Match continuará rodando sem recomendações do Assistente de IA do OCL."
+        "auto_match": "O AutoMatch continuará rodando sem recomendações do Assistente de IA do OCL."
       },
       "ai_assistant_change_comments": {
         "default": "Você ainda pode escrever o comentário de atualização sozinho, sem um rascunho do Assistente de IA do OCL.",
@@ -828,7 +828,7 @@
       },
       "match_operations": {
         "default": "Correspondência está pausada.",
-        "auto_match": "Você ainda pode revisar, editar e exportar seus projetos, mas o Auto Match está pausado.",
+        "auto_match": "Você ainda pode revisar, editar e exportar seus projetos, mas o AutoMatch está pausado.",
         "tbv3_match": "Busca continuará funcionando, mas $match com Busca Semântica do OCL está pausado."
       },
       "projects": {
