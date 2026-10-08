@@ -46,12 +46,50 @@ export const spendsMatchQuota = (algo, { canBridge = false } = {}) => {
   return true
 }
 
+// Whether getRowsResults runs this algorithm for this user (ocl_issues#2872).
+export const canRunAlgorithm = (algo, { canBridge = false, canScispacy = false } = {}) => {
+  if(['ocl-bridge', 'ocl-ciel-bridge'].includes(algo?.type))
+    return Boolean(canBridge)
+  if(algo?.type === 'ocl-scispacy')
+    return Boolean(canScispacy)
+  return ['custom', 'ocl-search', 'ocl-semantic'].includes(algo?.type)
+}
+
 // Rows a run can match before it runs out of match operations: each row costs
 // one operation per $match-spending algorithm. null when there is no cap.
 export const getRowCapByMatchOperations = (matchOperations, matchAlgorithmCount) => {
   if(!matchOperations || matchOperations.unlimited || !matchAlgorithmCount)
     return null
   return Math.floor(Math.max(matchOperations.remaining || 0, 0) / matchAlgorithmCount)
+}
+
+export const countAIOnlyRows = (rowIndexes, analysableRowIndexes) => {
+  const analysable = new Set((analysableRowIndexes || []).map(index => index?.toString()))
+  const all = rowIndexes || []
+  const analyse = all.filter(index => analysable.has(index?.toString())).length
+  return { analyse, skip: all.length - analyse }
+}
+
+// Why an Auto Match run would do nothing, or null (ocl_issues#2872).
+export const getAutoMatchBlocker = ({
+  rowsInScope = 0,
+  hasAlgorithms = false,
+  retrieveCandidates = false,
+  runAI = false,
+  aiRowsToAnalyse = 0,
+  aiCallsRemaining = null,
+} = {}) => {
+  if(!rowsInScope)
+    return 'no_rows'
+  if(!retrieveCandidates && !runAI)
+    return hasAlgorithms ? 'no_step' : 'no_algorithms'
+  if(!retrieveCandidates) {
+    if(!aiRowsToAnalyse)
+      return 'no_ai_rows'
+    if(aiCallsRemaining !== null && aiCallsRemaining <= 0)
+      return 'no_ai_calls'
+  }
+  return null
 }
 
 // How many consecutive rows may fail, for a reason other than AI quota, before

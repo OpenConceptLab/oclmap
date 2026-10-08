@@ -61,7 +61,7 @@ class ErrorBoundary extends React.Component {
   getErrorUIProps() {
     const props = {header: 'Error', message: isString(this.state.error) ? this.state.error : 'Something went wrong.'}
 
-    if(window.location.hash.match(/debug=true/))
+    if(window.location.search.match(/debug=true/))
       return {...props, error: this.state.error, errorInfo: this.state.errorInfo}
 
     return props

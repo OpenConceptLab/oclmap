@@ -15,12 +15,13 @@ import {
 import APIService from '../services/APIService';
 import GAService from '../services/GAService';
 import { SERVER_CONFIGS } from './serverConfigs';
+import { legacyHashRoute, isSameSitePath } from './history';
 
-export const currentPath = () => window.location.hash.split('?')[0];
+export const currentPath = () => window.location.pathname;
 
-export const isAtGlobalSearch = () => window.location.hash.includes('#/search') || isAtRoot();
+export const isAtGlobalSearch = () => currentPath().startsWith('/search') || isAtRoot();
 
-export const isAtRoot = () => currentPath() === '#/';
+export const isAtRoot = () => currentPath() === '/';
 
 export const formatDate = date => moment(date).format(DATE_FORMAT);
 export const formatTime = date => moment(date).format(TIME_FORMAT);
@@ -119,8 +120,6 @@ export const getAPIURL = () => {
   return get(savedConfigs, 'url') || window.API_URL || process.env.API_URL;
 }
 
-export const toFullURL = uri => window.location.origin + '/#' + uri;
-
 export const toFullAPIURL = uri => getAPIURL() + uri;
 
 export const toRelativeURL = url => url.replace(getAPIURL(), '');
@@ -210,7 +209,7 @@ export const arrayToObject = arr => {
   }, {});
 }
 
-export const currentUserHasAccess = () => hasAccessToURL(window.location.hash.replace('#/', ''))
+export const currentUserHasAccess = () => hasAccessToURL(window.location.pathname)
 
 export const hasAccessToURL = url => {
   if(!isLoggedIn())
@@ -657,7 +656,7 @@ export const logoutUser = (redirectToLogin, forced) => {
     localStorage.removeItem('visits');
   }
 
-  const returnTo = window.location.origin + '/' + window.location.hash
+  const returnTo = window.location.origin + window.location.pathname + window.location.search
   if(forced)
     sessionStorage.setItem('session_expired', 'true')
 
@@ -671,10 +670,8 @@ export const logoutUser = (redirectToLogin, forced) => {
     window.location = logoutURL
   else if(redirectToLogin)
     getLoginURL(forced ? returnTo : undefined).then(url => { window.location.href = url })
-  else {
-    window.location.hash = '#/';
-    window.location.reload();
-  }
+  else
+    window.location.assign('/');
 }
 
 
@@ -877,12 +874,25 @@ const routePath = route => {
 
 // Keycloak only redeems a code when the token request repeats the sign-in's redirect_uri exactly, and the
 // callback can't rebuild a page's query string (e.g. ?referrer= on links from openconceptlab.org). So sign-in
-// always goes through LOGIN_REDIRECT_URL, and the page to come back to (its hash route) waits here, in this tab.
+// always goes through LOGIN_REDIRECT_URL, and the page to come back to (its route) waits here, in this tab.
+const returnToRoute = returnTo => {
+  if(!returnTo)
+    return null
+  try {
+    const url = new URL(returnTo, window.location.origin)
+    if(url.origin !== window.location.origin)
+      return null
+    return legacyHashRoute(url) || url.pathname + url.search + url.hash
+  } catch {
+    return null
+  }
+}
+
 const prepareOAuthReturnTo = returnTo => {
-  const route = returnTo?.includes('#') ? returnTo.slice(returnTo.indexOf('#') + 1) : null
+  const route = returnToRoute(returnTo)
   const path = route && routePath(route)
   // The router matches paths case-insensitively, so /SIGNUP would start a sign-up too.
-  if(path?.startsWith('/') && !/^\/(oidc\/login|signin|signup)(\/|$)/i.test(path))
+  if(isSameSitePath(path) && !/^\/(oidc\/login|signin|signup)(\/|$)/i.test(path))
     sessionStorage.setItem(OAUTH_RETURN_TO_KEY, route)
   else
     sessionStorage.removeItem(OAUTH_RETURN_TO_KEY)

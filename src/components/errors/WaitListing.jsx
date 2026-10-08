@@ -65,7 +65,7 @@ const WaitListing = () => {
           <Box sx={{ mb: { xs: 3, sm: 4 } }}>
             <Box
               component="img"
-              src="FullLogo-BlackText.png"
+              src="/FullLogo-BlackText.png"
               alt="OCL"
               sx={{ width: { xs: 160, sm: 240, md: 300, lg: 380 }, height: 'auto' }}
             />
@@ -145,7 +145,7 @@ const WaitListing = () => {
           </Box>
           <Box
             component="img"
-            src="mapper_landing_placeholder.png"
+            src="/mapper_landing_placeholder.png"
             alt="OCL Mapper preview"
             loading="lazy"
             sx={{

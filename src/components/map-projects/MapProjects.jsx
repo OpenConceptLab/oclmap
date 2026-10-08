@@ -161,7 +161,7 @@ const MapProjects = () => {
               variant='contained'
               color='primary'
               startIcon={<AddIcon />}
-              href='#/map-projects/new'
+              href='/map-projects/new'
               onClick={onNewProjectClick}
               sx={{textTransform: 'none'}}
             >
