@@ -10,7 +10,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { getCapacityWaitLabel, getRowProgressLabel, mergeCapacityWaits } from '../rowProgress.js'
+import { formatClockTime, getCapacityWaitLabel, getRowProgressLabel, mergeCapacityWaits } from '../rowProgress.js'
 import { CAPACITY_LIMIT, RATE_LIMIT } from '../../../services/capacity.js'
 
 const ALGOS = [{id: 'ocl-semantic'}, {id: 'ocl-bridge'}]
@@ -110,4 +110,32 @@ test('mergeCapacityWaits: a capacity wait wins; between rate-limit waits, the la
   assert.equal(mergeCapacityWaits(capacityWait, later), capacityWait)
   assert.equal(mergeCapacityWaits(rateLimitWait, later), later)
   assert.equal(mergeCapacityWaits(later, rateLimitWait), later)
+})
+
+// Refused rows retain the limit even when no wait was announced (ocl_issues#2865).
+test('getRowProgressLabel: a refused rate limit shows when the row or rerank can run again', () => {
+  for(const stages of [
+    {'ocl-semantic': -4, 'ocl-bridge': 1},
+    {'ocl-semantic': 1, 'ocl-bridge': 1, rerank: -4},
+  ]) {
+    assert.deepEqual(getRowProgressLabel(stages, ALGOS, {t: tWith, throttle: rateLimitWait, formatTime}), {
+      label: 'map_project.row_rate_limited {"time":"t+20000"}', status: 'throttled',
+    })
+    assert.deepEqual(getRowProgressLabel(stages, ALGOS, {t: tWith, throttle: capacityWait, formatTime}), {
+      label: 'map_project.row_throttled', status: 'throttled',
+    })
+  }
+})
+
+test('formatClockTime: a retry today is a clock time; another day includes the weekday', () => {
+  const now = () => new Date(2026, 9, 7, 12).getTime()
+  const format = (date, options) => ({day: date.getDate(), ...options})
+  assert.deepEqual(formatClockTime(new Date(2026, 9, 7, 15).getTime(), {now, format}), {
+    day: 7, hour: 'numeric', minute: '2-digit', second: '2-digit',
+  })
+  for(const [date, day] of [[new Date(2026, 9, 8, 15), 8], [new Date(2026, 10, 7, 15), 7]]) {
+    assert.deepEqual(formatClockTime(date.getTime(), {now, format}), {
+      day, hour: 'numeric', minute: '2-digit', second: '2-digit', weekday: 'short',
+    })
+  }
 })

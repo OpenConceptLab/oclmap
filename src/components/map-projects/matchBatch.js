@@ -48,10 +48,10 @@ const getFailure = (err, attempts) => ({
  * @param {object}   opts
  * @param {number[]} opts.rowIndexes       the batch's row __index values
  * @param {function} opts.send             attempt => Promise<axios response>; must reject on failure
- * @param {function} opts.setStage         (rowIndex, stage) => void
+ * @param {function} opts.setStage         (rowIndex, stage, throttle) => void
  * @param {function} opts.onRowFinished    rowIndex => void
  * @param {function} opts.onRowFailed      (rowIndex, {error, status, attempts, previewLimit}) => void
- * @param {function} [opts.onRowThrottled] (rowIndex, {attempts, waitedMs}) => void
+ * @param {function} [opts.onRowThrottled] (rowIndex, {attempts, waitedMs, limit, retryAt}) => void
  * @param {function} [opts.onPreviewLimit] err => void, for a preview-limit 403 (never retried)
  * @param {function} [opts.onWait]         info => void, as each wait starts (see requestWithCapacityRetry)
  * @param {function} [opts.onWaitEnd]      () => void, as each wait ends
@@ -84,8 +84,8 @@ export const runMatchBatch = async ({
   }
   if(result.reason === 'throttled') {
     rowIndexes.forEach(index => {
-      setStage(index, -4)
-      onRowThrottled?.(index, {attempts: result.attempts, waitedMs: result.waitedMs})
+      setStage(index, -4, {limit: result.limit, retryAt: result.retryAt})
+      onRowThrottled?.(index, {attempts: result.attempts, waitedMs: result.waitedMs, limit: result.limit, retryAt: result.retryAt})
     })
     return []
   }
@@ -199,5 +199,6 @@ export const requestSingleMatch = async (send, { retryOptions = {} } = {}) => {
     errorBody: hasServerBody ? data : { detail: error, status },
     previewLimit: isPreviewLimitError(err),
     throttled: result.reason === 'throttled',
+    ...(result.reason === 'throttled' ? {limit: result.limit, retryAt: result.retryAt} : {}),
   }
 }

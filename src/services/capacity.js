@@ -228,22 +228,26 @@ export const requestWithCapacityRetry = async (send, {
     if(gate?.isPaused()) {
       const pauseMs = gate.pausedForMs()
       const budgetMs = maxWaitMs - waitedMs
+      const limit = gate.limit?.() ?? CAPACITY_LIMIT
       if(pauseMs > budgetMs)
-        return end({ ok: false, reason: 'throttled', error: lastError, limit: gate.limit?.() ?? CAPACITY_LIMIT, retryAt: now() + pauseMs })
-      onWait?.({ reason: 'paused', delayMs: pauseMs, status: null, retryAfterMs: pauseMs, limit: gate.limit?.() ?? CAPACITY_LIMIT })
+        return end({ ok: false, reason: 'throttled', error: lastError, limit, retryAt: now() + pauseMs })
+      // Announce the jitter too, and refresh an extended pause (ocl_issues#2865).
+      const jitterMs = Math.min(pauseMs * THROTTLE_JITTER * random(), budgetMs - pauseMs)
+      onWait?.({ reason: 'paused', delayMs: pauseMs + jitterMs, status: null, retryAfterMs: pauseMs, limit })
       const startedAt = now()
-      let outcome = await gate.wait(isCancelled, { sleep, pollMs, maxMs: budgetMs })
+      let outcome = await gate.wait(isCancelled, { sleep, pollMs, maxMs: pauseMs })
       // Spread out the requests the pause held back, within the budget.
       if(outcome === true) {
-        const jitterMs = Math.min(pauseMs * THROTTLE_JITTER * random(), Math.max(budgetMs - (now() - startedAt), 0))
-        outcome = await sleepUnlessCancelled(jitterMs, isCancelled, { sleep, pollMs })
+        outcome = await sleepUnlessCancelled(Math.min(jitterMs, Math.max(budgetMs - (now() - startedAt), 0)), isCancelled, { sleep, pollMs })
       }
       waitedMs += now() - startedAt
       onWaitEnd?.()
       if(outcome === false)
         return cancelled()
-      if(outcome === 'timeout' || waitedMs > maxWaitMs)
-        return end({ ok: false, reason: 'throttled', error: lastError })
+      if(outcome === 'timeout')
+        continue
+      if(waitedMs > maxWaitMs)
+        return end({ ok: false, reason: 'throttled', error: lastError, limit: gate.limit?.() ?? limit, retryAt: now() + gate.pausedForMs() })
       continue
     }
 

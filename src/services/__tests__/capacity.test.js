@@ -650,3 +650,69 @@ test('requestWithCapacityRetry: an error backoff carries no limit', async () => 
   })
   assert.deepEqual(waits, [['error', null]])
 })
+
+// Retry labels and refusals keep their time and limit (ocl_issues#2865).
+test('requestWithCapacityRetry: a paused wait announces pause plus jitter, clamped to the budget', async () => {
+  for(const [maxWaitMs, expected] of [[20000, 12500], [11000, 11000]]) {
+    const clock = virtualClock()
+    const gate = createCapacityGate({now: clock.now})
+    gate.pause(10000, RATE_LIMIT)
+    const waits = []
+    const result = await requestWithCapacityRetry(scripted(ok()).send, {
+      gate, maxWaitMs, now: clock.now, sleep: clock.sleep, random: () => 0.5,
+      onWait: info => waits.push(info.delayMs),
+    })
+    assert.equal(result.ok, true)
+    assert.deepEqual(waits, [expected])
+    assert.equal(result.waitedMs, expected)
+  }
+})
+
+test('requestWithCapacityRetry: an extended gate re-announces its new limit and retry time', async () => {
+  const clock = virtualClock()
+  const gate = createCapacityGate({now: clock.now})
+  gate.pause(1000, CAPACITY_LIMIT)
+  const events = []
+  const result = await requestWithCapacityRetry(scripted(ok()).send, {
+    gate, now: clock.now, random: () => 0.5,
+    sleep: async ms => {
+      await clock.sleep(ms)
+      if(clock.t === 250)
+        gate.pause(2750, RATE_LIMIT)
+    },
+    onWait: info => events.push([info.limit, clock.t + info.delayMs]),
+    onWaitEnd: () => events.push('end'),
+  })
+  assert.equal(result.ok, true)
+  assert.deepEqual(events, [[CAPACITY_LIMIT, 1250], 'end', [RATE_LIMIT, 3500], 'end'])
+  assert.equal(result.waitedMs, 3500)
+})
+
+test('requestWithCapacityRetry: a long rate limit returns the server retry time without waiting', async () => {
+  const clock = virtualClock()
+  clock.t = 10000
+  const waits = []
+  const result = await requestWithCapacityRetry(scripted(throttled(86400)).send, {
+    now: clock.now, sleep: clock.sleep, random: () => 0.5, onWait: info => waits.push(info),
+  })
+  assert.equal(result.reason, 'throttled')
+  assert.equal(result.limit, RATE_LIMIT)
+  assert.equal(result.retryAt, 86410000)
+  assert.equal(result.waitedMs, 0)
+  assert.deepEqual(waits, [])
+})
+
+test('requestWithCapacityRetry: a gate refusal before any attempt carries its limit and retry time', async () => {
+  for(const limit of [CAPACITY_LIMIT, RATE_LIMIT]) {
+    const clock = virtualClock()
+    clock.t = 10000
+    const gate = createCapacityGate({now: clock.now})
+    gate.pause(60000, limit)
+    const {send, sent} = scripted(ok())
+    const result = await requestWithCapacityRetry(send, {gate, maxWaitMs: 1000, now: clock.now, sleep: clock.sleep})
+    assert.equal(result.reason, 'throttled')
+    assert.equal(result.limit, limit)
+    assert.equal(result.retryAt, 70000)
+    assert.deepEqual(sent, [])
+  }
+})

@@ -71,7 +71,7 @@ import { OperationsContext } from '../app/LayoutContext';
 
 import APIService, { isTransientNetworkError, retryWithBackoff } from '../../services/APIService';
 import { buildAttributionHeaders, buildConfigSnapshot, summarizeRunCompletion, matchesOnOCL } from '../../services/attribution'
-import { CAPACITY_WAIT_CAP_MS, HEAVY_REQUEST_TIMEOUT_MS, LIGHT_REQUEST_TIMEOUT_MS, createCapacityGate, createLimiter, isRetryableError, requestWithCapacityRetry, sleepUnlessCancelled, untilCancelled } from '../../services/capacity'
+import { CAPACITY_LIMIT, RATE_LIMIT, CAPACITY_WAIT_CAP_MS, HEAVY_REQUEST_TIMEOUT_MS, LIGHT_REQUEST_TIMEOUT_MS, createCapacityGate, createLimiter, isRetryableError, requestWithCapacityRetry, sleepUnlessCancelled, untilCancelled } from '../../services/capacity'
 import { highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, hasCapability, getMapperPreview, getNewProjectBlockReason, downloadObject, currentUserToken, refreshCurrentUserCapabilitiesCache } from '../../common/utils';
 import { WHITE, SURFACE_COLORS, TEXT_GRAY } from '../../common/colors';
 
@@ -116,7 +116,7 @@ import { normalizeAlgorithmInvocation, hasSuccessfulAlgorithmResponse, getAlgori
 import { parseConceptKey } from './conceptKey'
 import { getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId } from './projectTargetRepo'
 import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, formatBridgeTargetDownloadEntry, resolveAICandidateID, getScoreDetails, getAIAnalysisCandidateIDs } from './viewBuilders.js'
-import { getCapacityWaitLabel, mergeCapacityWaits } from './rowProgress.js'
+import { formatClockTime, getCapacityWaitLabel, mergeCapacityWaits } from './rowProgress.js'
 
 import './MapProject.scss'
 import '../common/ResizablePanel.scss'
@@ -245,6 +245,7 @@ const MapProject = () => {
   // A run's rows the server stayed too busy for, by algorithm id ('rerank'
   // included), for the end-of-run notice.
   const throttledRunRowsRef = React.useRef({})
+  const rowThrottlesRef = React.useRef({})
   // One logs POST at a time per project URL (see createLatestSender).
   const logsSendersRef = React.useRef(new Map())
   // The row a bridge $match is for, set around the call into the Bridge Match
@@ -1342,6 +1343,7 @@ const MapProject = () => {
     setAlert(false)
     setSelectedCandidatesScoreBucket(false)
     setScoreBucketSortBy('desc')
+    rowThrottlesRef.current = {}
     setRowStage({})
   }
 
@@ -1790,7 +1792,7 @@ const MapProject = () => {
         logged = true
         rowIndexes.forEach(index => log({
           action: 'capacity_wait',
-          description: getCapacityWaitLabel(wait, {t}),
+          description: t(limit === RATE_LIMIT ? 'map_project.rate_limited_short' : 'map_project.waiting_for_capacity'),
           extras: {...logExtras, reason, limit, retry_after_ms: retryAfterMs ?? null, ...(capacity ? {capacity} : {})}
         }, index))
       },
@@ -1820,21 +1822,34 @@ const MapProject = () => {
       scheduleAutoSave('auto_match_stopped')
   }
 
-  const noteThrottledRunRow = (algoId, index) => {
+  // Refusals retain the latest rate limit, even without a wait (ocl_issues#2865).
+  const mergeThrottles = (a, b) => a?.limit === RATE_LIMIT && (b?.limit !== RATE_LIMIT || a.retryAt > b.retryAt) ? a : b
+  const getThrottleExtras = throttle => ({
+    limit: throttle?.limit || CAPACITY_LIMIT,
+    ...(throttle?.limit === RATE_LIMIT ? {retry_at: throttle.retryAt} : {}),
+  })
+  const getThrottledRowDescription = throttle => t(throttle?.limit === RATE_LIMIT ? 'map_project.row_rate_limited_log' : 'map_project.row_throttled')
+  const getThrottledAlgorithmMessage = throttle => throttle?.limit === RATE_LIMIT ?
+    t('map_project.algorithm_rate_limited', {time: formatClockTime(throttle.retryAt)}) : t('map_project.algorithm_throttled')
+
+  const noteThrottledRunRow = (algoId, index, throttle) => {
     throttledRunRowsRef.current = {
       ...throttledRunRowsRef.current,
-      [algoId]: uniq([...(throttledRunRowsRef.current[algoId] || []), index]),
+      [algoId]: {
+        ...mergeThrottles(throttledRunRowsRef.current[algoId], {limit: throttle?.limit, retryAt: throttle?.retryAt}),
+        rows: uniq([...(throttledRunRowsRef.current[algoId]?.rows || []), index]),
+      },
     }
   }
 
   // Once a request for an algorithm (or rerank) stayed refused for the whole
   // cap, the run stops asking for it: the rest of its rows end throttled at
   // once, "not run, retry", instead of each waiting out the cap again.
-  const isRunThrottled = algoId => Boolean(throttledRunRowsRef.current[algoId]?.length)
-  const markRowsThrottled = (indexes, algoId, logExtras = {}) => indexes.forEach(index => {
-    markAlgo(index, algoId, -4)
-    log({action: algoId === 'rerank' ? 'rerank_throttled' : 'algo_throttled', description: t('map_project.row_throttled'), extras: {...logExtras, skipped: true}}, index)
-    noteThrottledRunRow(algoId, index)
+  const isRunThrottled = algoId => Boolean(throttledRunRowsRef.current[algoId]?.rows.length)
+  const markRowsThrottled = (indexes, algoId, logExtras = {}, throttle = throttledRunRowsRef.current[algoId]) => indexes.forEach(index => {
+    markAlgo(index, algoId, -4, throttle)
+    log({action: algoId === 'rerank' ? 'rerank_throttled' : 'algo_throttled', description: getThrottledRowDescription(throttle), extras: {...logExtras, ...getThrottleExtras(throttle), skipped: true}}, index)
+    noteThrottledRunRow(algoId, index, throttle)
   })
 
   // ── ocl_online#105 Phase 5: AutomatchRun attribution ──────────────────────
@@ -2118,7 +2133,7 @@ const MapProject = () => {
         if(result.ok)
           return result.response
         if(result.reason === 'throttled')
-          return {detail: t('map_project.algorithm_throttled'), status: 429, throttled: true}
+          return {detail: getThrottledAlgorithmMessage(result), status: 429, throttled: true, limit: result.limit, retryAt: result.retryAt}
         if(result.reason === 'cancelled')
           return {detail: 'cancelled', cancelled: true}
         const data = result.error?.response?.data
@@ -2329,9 +2344,9 @@ const MapProject = () => {
         retryOptions: {gate: getCapacityGate(service.URL), onCapacity: noteCapacity},
         ...trackCapacityWait(rowIndexes, logExtras),
         // A batch that outlives its run must not touch the next run's stages.
-        setStage: (index, stage) => {
+        setStage: (index, stage, throttle) => {
           if(isCurrentRun())
-            markAlgo(index, algo.id, stage)
+            markAlgo(index, algo.id, stage, throttle)
         },
         onRowFinished: index => log({action: 'algo_finished', extras: logExtras}, index),
         onRowFailed: (index, {error, status, attempts, previewLimit}) => {
@@ -2340,10 +2355,10 @@ const MapProject = () => {
             failedMatchRows[algo.id] = [...(failedMatchRows[algo.id] || []), index]
         },
         // Still refused after the long cap: not run, and not a failure.
-        onRowThrottled: (index, {attempts, waitedMs}) => {
-          log({action: 'algo_throttled', description: t('map_project.row_throttled'), extras: {...logExtras, attempts, waited_ms: waitedMs}}, index)
+        onRowThrottled: (index, result) => {
+          log({action: 'algo_throttled', description: getThrottledRowDescription(result), extras: {...logExtras, ...getThrottleExtras(result), attempts: result.attempts, waited_ms: result.waitedMs}}, index)
           if(isCurrentRun())
-            noteThrottledRunRow(algo.id, index)
+            noteThrottledRunRow(algo.id, index, result)
         },
         // Sets matchQuotaStopRef, which stops the rest of the $match requests
         // but lets the run finish with what it has.
@@ -2504,6 +2519,7 @@ const MapProject = () => {
         // Reset all algo stages to -1 for every row before starting so that
         // stages from a previous run don't make the "all algos done" check
         // pass prematurely when only the first algo has finished.
+        rowsToProcess.forEach(row => { delete rowThrottlesRef.current[row.__index] })
         setRowStage(prev => {
           const next = { ...prev }
           rowsToProcess.forEach(row => {
@@ -2580,11 +2596,17 @@ const MapProject = () => {
         // Rows the server stayed too busy for weren't run: say so apart from
         // the failures (ocl_issues#2849).
         if(!isRunStopped() && keys(throttledRunRowsRef.current).length) {
-          const rowsByAlgo = getRowsByAlgo(throttledRunRowsRef.current)
-          projectLog({action: 'auto_match_rows_throttled', extras: {row_indexes_by_algorithm: rowsByAlgo}})
-          endOfRunNotices.push(t('map_project.auto_match_rows_throttled', {
-            count: uniq(flatten(values(rowsByAlgo))).length,
-            details: describeRows(rowsByAlgo),
+          const rowsByAlgo = getRowsByAlgo(Object.fromEntries(Object.entries(throttledRunRowsRef.current).map(([algoId, info]) => [algoId, info.rows])))
+          const throttle = values(throttledRunRowsRef.current).reduce(mergeThrottles, null)
+          const rateLimited = throttle.limit === RATE_LIMIT
+          const details = {count: uniq(flatten(values(rowsByAlgo))).length, details: describeRows(rowsByAlgo)}
+          projectLog({
+            action: 'auto_match_rows_throttled',
+            description: t(rateLimited ? 'map_project.auto_match_rows_rate_limited_log' : 'map_project.auto_match_rows_throttled', details),
+            extras: {row_indexes_by_algorithm: rowsByAlgo, ...getThrottleExtras(throttle)},
+          })
+          endOfRunNotices.push(t(rateLimited ? 'map_project.auto_match_rows_rate_limited' : 'map_project.auto_match_rows_throttled', {
+            ...details, ...(rateLimited ? {time: formatClockTime(throttle.retryAt)} : {}),
           }))
         }
         if(endOfRunNotices.length)
@@ -2739,7 +2761,7 @@ const MapProject = () => {
       };
 
       if(isRunThrottled(algo.id) || isRunThrottled('ocl-scispacy-loinc')) {
-        markRowsThrottled(map(_rows.slice(index), '__index'), algo.id, getAlgoLogExtras(algo))
+        markRowsThrottled(map(_rows.slice(index), '__index'), algo.id, getAlgoLogExtras(algo), throttledRunRowsRef.current[isRunThrottled(algo.id) ? algo.id : 'ocl-scispacy-loinc'])
         break
       }
       markAlgo(_rows[index].__index, algo.id, 0)
@@ -3714,7 +3736,11 @@ const MapProject = () => {
     return next;
   };
 
-  const markAlgo = (rowId, algoId, value) => {
+  const markAlgo = (rowId, algoId, value, throttle) => {
+    if(value === -4 && throttle)
+      rowThrottlesRef.current[rowId] = mergeThrottles(rowThrottlesRef.current[rowId], {limit: throttle.limit, retryAt: throttle.retryAt})
+    else if(value === 0 && !values(omit(rowStageRef.current[rowId], algoId)).includes(-4))
+      delete rowThrottlesRef.current[rowId]
     setRowStage(prev => {
       const needsRerank = isMultiAlgo || find(algosSelected, { type: "custom" }) || find(algosSelected, { type: "ocl-scispacy" });
       const row = ensureRow(prev, rowId, selectedAlgoIds, needsRerank);
@@ -3844,11 +3870,11 @@ const MapProject = () => {
       gate: getCapacityGate(service.URL),
       onCapacity: noteCapacity,
       ...trackCapacityWait([__row.__index], getAlgoLogExtras(algoDef)),
-    }}).then(({ok, response, errorBody, previewLimit, throttled}) => {
+    }}).then(({ok, response, errorBody, previewLimit, throttled, limit, retryAt}) => {
       if(ok)
         return callback(response, payload)
       if(throttled)
-        return callback({detail: t('map_project.algorithm_throttled'), status: 429, throttled: true}, payload)
+        return callback({detail: getThrottledAlgorithmMessage({limit, retryAt}), status: 429, throttled: true, limit, retryAt}, payload)
       // A preview limit keeps the server's body, which opens the limit dialog.
       callback(previewLimit ? errorBody : {...errorBody, detail: t('map_project.match_request_failed', {error: errorBody.detail})}, payload)
     })
@@ -3871,6 +3897,8 @@ const MapProject = () => {
       if(!algoId)
         return
       let __row = isEmpty(_row) ? row : _row
+      if(!keepAlert)
+        delete rowThrottlesRef.current[__row.__index]
 
       // Reuse when the algo has already produced an AlgorithmResponse for
       // this row, regardless of whether it returned matches. Gating on
@@ -3936,15 +3964,15 @@ const MapProject = () => {
           // The server stayed too busy: the algorithm didn't run, it didn't
           // fail, and no failed response is kept (ocl_issues#2849).
           const isThrottled = Boolean(response.throttled)
-          log({action: isThrottled ? 'algo_throttled' : 'algo_failed', ...(isThrottled ? {description: t('map_project.row_throttled')} : {}), extras: {...logExtras, error: response.detail, status: response.status, ...(offset ? {offset} : {})}}, __row.__index)
+          log({action: isThrottled ? 'algo_throttled' : 'algo_failed', ...(isThrottled ? {description: getThrottledRowDescription(response)} : {}), extras: {...logExtras, ...(isThrottled ? getThrottleExtras(response) : {}), error: isThrottled ? getThrottledRowDescription(response) : response.detail, status: response.status, ...(offset ? {offset} : {})}}, __row.__index)
           setAlert({message: response.detail, severity: isThrottled ? 'warning' : 'error'})
           if(offset) {
             // A failed "load more" keeps the pages already loaded. The
             // algorithm stays done if it loaded a page; "load more" also runs
             // algorithms that never did, and those stay failed.
-            markAlgo(__row.__index, algoId, hasSuccessfulAlgorithmResponse(rowMatchStateRef.current?.[__row.__index], algoId) ? 1 : (isThrottled ? -4 : -2))
+            markAlgo(__row.__index, algoId, hasSuccessfulAlgorithmResponse(rowMatchStateRef.current?.[__row.__index], algoId) ? 1 : (isThrottled ? -4 : -2), response)
           } else if(isThrottled) {
-            markAlgo(__row.__index, algoId, -4)
+            markAlgo(__row.__index, algoId, -4, response)
           } else {
             markAlgo(__row.__index, algoId, -2)
             mergeIntoRowMatchState(__row.__index, normalizeAlgorithmInvocation(null, {
@@ -4146,11 +4174,11 @@ const MapProject = () => {
         if(isSuperseded())
           return
         // Not run, not failed: the row can be run again.
-        markAlgo(__row.__index, SCISPACY_ALGO_ID, -4)
-        log({action: 'algo_throttled', description: t('map_project.row_throttled'), extras: {algo: SCISPACY_ALGO_ID, attempts: result.attempts, waited_ms: result.waitedMs}}, __row.__index)
+        markAlgo(__row.__index, SCISPACY_ALGO_ID, -4, result)
+        log({action: 'algo_throttled', description: getThrottledRowDescription(result), extras: {algo: SCISPACY_ALGO_ID, ...getThrottleExtras(result), attempts: result.attempts, waited_ms: result.waitedMs}}, __row.__index)
         if(isBulk)
-          noteThrottledRunRow(SCISPACY_ALGO_ID, __row.__index)
-        setAlert(prev => (prev?.severity === 'error' ? prev : {message: t('map_project.algorithm_throttled'), severity: 'warning'}))
+          noteThrottledRunRow(SCISPACY_ALGO_ID, __row.__index, result)
+        setAlert(prev => (prev?.severity === 'error' ? prev : {message: getThrottledAlgorithmMessage(result), severity: 'warning'}))
         setIsLoadingInDecisionView(false)
         onFailure?.()
         return
@@ -4394,12 +4422,12 @@ const MapProject = () => {
         return null
       }
       if(result.reason === 'throttled') {
-        log({action: 'rerank_throttled', description: t('map_project.row_throttled'), extras: {attempts: result.attempts, waited_ms: result.waitedMs}}, index)
+        log({action: 'rerank_throttled', description: getThrottledRowDescription(result), extras: {...getThrottleExtras(result), attempts: result.attempts, waited_ms: result.waitedMs}}, index)
         if(isSuperseded())
           return null
-        markAlgo(index, 'rerank', -4)
+        markAlgo(index, 'rerank', -4, result)
         if(isRunTraffic)
-          noteThrottledRunRow('rerank', index)
+          noteThrottledRunRow('rerank', index, result)
         return null
       }
       if(!result.ok) {
@@ -4753,10 +4781,10 @@ const MapProject = () => {
             // The server stayed too busy: not run, not failed.
             if(response?.throttled) {
               clearRefreshRowStageSnapshot(__row.__index)
-              markAlgo(__row.__index, bridgeAlgoId, -4)
-              log({action: 'algo_throttled', description: t('map_project.row_throttled'), extras: getAlgoLogExtras(bridgeAlgo)}, __row.__index)
+              markAlgo(__row.__index, bridgeAlgoId, -4, response)
+              log({action: 'algo_throttled', description: getThrottledRowDescription(response), extras: {...getAlgoLogExtras(bridgeAlgo), ...getThrottleExtras(response)}}, __row.__index)
               if(isBulk)
-                noteThrottledRunRow(bridgeAlgoId, __row.__index)
+                noteThrottledRunRow(bridgeAlgoId, __row.__index, response)
               setAlert(prev => (prev?.severity === 'error' ? prev : {message: response.detail, severity: 'warning'}))
               setIsLoadingInDecisionView(false)
               onFailure?.()
@@ -6475,6 +6503,7 @@ const MapProject = () => {
                       rowIndex={rowIndex}
                       rowStage={rowStageRef.current[rowIndex]}
                       capacityWait={capacityWaits?.rows?.[rowIndex] || false}
+                      throttle={rowThrottlesRef.current[rowIndex]}
                       rowState={rowMatchStateRef.current[rowIndex]}
                       conceptCache={conceptCache}
                       targetCanonical={buildProjectContext()?.target_repo?.canonical_url}

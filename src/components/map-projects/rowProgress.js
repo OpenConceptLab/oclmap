@@ -39,13 +39,15 @@ export const mergeCapacityWaits = (a, b) => {
  * server stayed too busy for (-4) asks for a retry: it wasn't run, it didn't
  * fail.
  */
-export const getRowProgressLabel = (stageMap, algos, { t, capacityWait = false, formatTime } = {}) => {
+export const getRowProgressLabel = (stageMap, algos, { t, capacityWait = false, throttle, formatTime = formatClockTime } = {}) => {
   if(stageMap === undefined)
     return {label: false}
   if(capacityWait)
     return {label: getCapacityWaitLabel(capacityWait, {t, formatTime}), status: 'capacity_wait'}
   if(!stageMap)
     return {label: 'Preparing...', status: 'partial'}
+  const throttledLabel = () => throttle?.limit === RATE_LIMIT ?
+    t('map_project.row_rate_limited', {time: formatTime(throttle.retryAt)}) : t('map_project.row_throttled')
 
   const stages = algos.map(k => stageMap[k.id]);
 
@@ -65,7 +67,7 @@ export const getRowProgressLabel = (stageMap, algos, { t, capacityWait = false, 
   if (stages.every(v => v === 1 || v === -3)) {
     // The candidates are in, but the server stayed too busy to rank them.
     if(stageMap.rerank === -4)
-      return {label: t('map_project.row_throttled'), status: 'throttled'}
+      return {label: throttledLabel(), status: 'throttled'}
     return true
   }
 
@@ -75,7 +77,7 @@ export const getRowProgressLabel = (stageMap, algos, { t, capacityWait = false, 
   }
 
   if(stages.some(v => v === -4))
-    return {label: t('map_project.row_throttled'), status: 'throttled'}
+    return {label: throttledLabel(), status: 'throttled'}
 
   return { label: 'Partially completed', status: 'partial' };
 }

@@ -377,7 +377,7 @@ const CandidateList = ({rowViews, header, rowIndex, sortBy, order, openConceptPa
 //   conceptCache — project-wide ConceptDefinition store, keyed by concept_key.
 //   algosSelected — algorithm definitions (for headers/grouping).
 // (plans/unified-mapper-model.md "How the views map onto this model".)
-const Candidates = ({rowIndex, rowState, conceptCache, targetCanonical, targetRelativeUrl, openConceptPanel, showItem, isSelectedForMap, onMap, onFetchMore, isLoading, candidatesScore, repoVersion, analysis, onFetchRecommendation, appliedFacets, setAppliedFacets, filters, facets, columns, defaultFilters, locales, models, selectedModel, onModelChange, promptTemplates, promptTemplate, onPromptTemplateChange, onRefreshClick, rowStage, inAIAssistantGroup, algosSelected, canSelectAIModel, capacityWait=false}) => {
+const Candidates = ({rowIndex, rowState, conceptCache, targetCanonical, targetRelativeUrl, openConceptPanel, showItem, isSelectedForMap, onMap, onFetchMore, isLoading, candidatesScore, repoVersion, analysis, onFetchRecommendation, appliedFacets, setAppliedFacets, filters, facets, columns, defaultFilters, locales, models, selectedModel, onModelChange, promptTemplates, promptTemplate, onPromptTemplateChange, onRefreshClick, rowStage, inAIAssistantGroup, algosSelected, canSelectAIModel, capacityWait=false, throttle}) => {
   const { t } = useTranslation();
   const [sortBy, setSortBy] = React.useState('rerank_score')
   const [groupBy, setGroupBy] = React.useState('quality')
@@ -436,7 +436,7 @@ const Candidates = ({rowIndex, rowState, conceptCache, targetCanonical, targetRe
   const canFetchMore = hasAnyView
   const algoStagesValue = values(rowStage || {}).filter((_, i) => Object.keys(rowStage || {})[i] !== 'recommend')
   const areAlgoRun = algoStagesValue.length > 0 && algoStagesValue.every(v => v === 1)
-  const { label, status: progressStatus } = getRowProgressLabel(rowStage, algosSelected, {t, capacityWait});
+  const { label, status: progressStatus } = getRowProgressLabel(rowStage, algosSelected, {t, capacityWait, throttle})
   // Waiting out a busy server, or given up on for now: not a spinner (ocl_issues#2849).
   const isCapacityStatus = ['capacity_wait', 'throttled'].includes(progressStatus)
 
