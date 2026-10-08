@@ -181,7 +181,7 @@ export const createCapacityGate = ({ now = Date.now } = {}) => {
  * @param {function} [opts.onWait]      ({reason: 'throttled'|'paused'|'error', delayMs, status, retryAfterMs, capacity, limit}) => void
  * @param {function} [opts.onWaitEnd]   () => void, after each wait, however it ended
  * @param {function} [opts.onCapacity]  capacityHeaders => void, for each response that carries them
- * @returns {Promise<{ok: true, response, attempts, waitedMs}|{ok: false, reason: 'throttled'|'cancelled'|'error', error, attempts, waitedMs}>}
+ * @returns {Promise<{ok: true, response, attempts, waitedMs}|{ok: false, reason: 'throttled', limit: 'capacity'|'rate_limit', retryAt: number, error, attempts, waitedMs}|{ok: false, reason: 'cancelled'|'error', error, attempts, waitedMs}>} retryAt is epoch ms
  */
 export const requestWithCapacityRetry = async (send, {
   gate = null,
@@ -229,7 +229,7 @@ export const requestWithCapacityRetry = async (send, {
       const pauseMs = gate.pausedForMs()
       const budgetMs = maxWaitMs - waitedMs
       if(pauseMs > budgetMs)
-        return end({ ok: false, reason: 'throttled', error: lastError })
+        return end({ ok: false, reason: 'throttled', error: lastError, limit: gate.limit?.() ?? CAPACITY_LIMIT, retryAt: now() + pauseMs })
       onWait?.({ reason: 'paused', delayMs: pauseMs, status: null, retryAfterMs: pauseMs, limit: gate.limit?.() ?? CAPACITY_LIMIT })
       const startedAt = now()
       let outcome = await gate.wait(isCancelled, { sleep, pollMs, maxMs: budgetMs })
@@ -267,7 +267,7 @@ export const requestWithCapacityRetry = async (send, {
         // algorithm, rerank, the row panel) for as long; the caller stops
         // asking for what was refused instead.
         if(waitedMs + delayMs > maxWaitMs)
-          return end({ ok: false, reason: 'throttled', error: err })
+          return end({ ok: false, reason: 'throttled', error: err, limit, retryAt: now() + (retryAfterMs ?? delayMs) })
         gate?.pause(baseMs, limit)
         if(!(await waitFor(delayMs, { reason: 'throttled', status: 429, retryAfterMs, capacity: getCapacityHeaders(err.response), limit })))
           return cancelled()

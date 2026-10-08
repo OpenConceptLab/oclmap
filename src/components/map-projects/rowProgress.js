@@ -1,6 +1,13 @@
 import { RATE_LIMIT } from '../../services/capacity.js'
 
-const formatClockTime = ms => new Date(ms).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit', second: '2-digit'})
+// Day limits can reopen tomorrow (ocl_issues#2865).
+export const formatClockTime = (ms, { now = Date.now, format = (date, options) => date.toLocaleTimeString([], options) } = {}) => {
+  const date = new Date(ms)
+  return format(date, {
+    hour: 'numeric', minute: '2-digit', second: '2-digit',
+    ...(date.toDateString() === new Date(now()).toDateString() ? {} : {weekday: 'short'}),
+  })
+}
 
 // wait is {limit, retryAt}; anything but a rate limit reads as a capacity wait (ocl_issues#2865).
 export const getCapacityWaitLabel = (wait, { t, short = false, formatTime = formatClockTime } = {}) => {
