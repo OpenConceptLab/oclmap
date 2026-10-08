@@ -10,7 +10,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { getRowProgressLabel } from '../rowProgress.js'
+import { formatClockTime, getCapacityWaitLabel, getRowProgressLabel, mergeCapacityWaits } from '../rowProgress.js'
+import { CAPACITY_LIMIT, RATE_LIMIT } from '../../../services/capacity.js'
 
 const ALGOS = [{id: 'ocl-semantic'}, {id: 'ocl-bridge'}]
 const t = key => key
@@ -70,4 +71,71 @@ test('getRowProgressLabel: a throttled rerank asks for a retry once the algorith
 test('getRowProgressLabel: a done or failed rerank leaves the label as before', () => {
   assert.equal(getRowProgressLabel({'ocl-semantic': 1, 'ocl-bridge': 1, rerank: 1}, ALGOS, {t}).label, undefined)
   assert.equal(getRowProgressLabel({'ocl-semantic': 1, 'ocl-bridge': 1, rerank: -2}, ALGOS, {t}).label, undefined)
+})
+
+// ── ocl_issues#2865: capacity limit vs rate limit ───────────────────────────
+
+const tWith = (key, values) => values ? `${key} ${JSON.stringify(values)}` : key
+const formatTime = ms => `t+${ms}`
+const capacityWait = {limit: CAPACITY_LIMIT, retryAt: 20000}
+const rateLimitWait = {limit: RATE_LIMIT, retryAt: 20000}
+
+test('getCapacityWaitLabel: a capacity 429 keeps today\'s wording', () => {
+  assert.equal(getCapacityWaitLabel(capacityWait, {t: tWith, formatTime}), 'map_project.waiting_for_capacity')
+  assert.equal(getCapacityWaitLabel(capacityWait, {t: tWith, formatTime, short: true}), 'map_project.waiting_for_capacity_short')
+  assert.equal(getCapacityWaitLabel(true, {t: tWith, formatTime}), 'map_project.waiting_for_capacity')
+})
+
+test('getCapacityWaitLabel: a rate-limit 429 says the user is sending requests too quickly, and when it retries', () => {
+  assert.equal(getCapacityWaitLabel(rateLimitWait, {t: tWith, formatTime}), 'map_project.rate_limited {"time":"t+20000"}')
+  assert.equal(getCapacityWaitLabel(rateLimitWait, {t: tWith, formatTime, short: true}), 'map_project.rate_limited_short')
+})
+
+test('getRowProgressLabel: a row waiting out a rate-limit 429 says so, not "Waiting for capacity"', () => {
+  assert.deepEqual(
+    getRowProgressLabel({'ocl-semantic': 0, 'ocl-bridge': -1}, ALGOS, {t: tWith, capacityWait: rateLimitWait, formatTime}),
+    {label: 'map_project.rate_limited {"time":"t+20000"}', status: 'capacity_wait'},
+  )
+  assert.deepEqual(
+    getRowProgressLabel({'ocl-semantic': 0, 'ocl-bridge': -1}, ALGOS, {t: tWith, capacityWait, formatTime}),
+    {label: 'map_project.waiting_for_capacity', status: 'capacity_wait'},
+  )
+})
+
+test('mergeCapacityWaits: a capacity wait wins; between rate-limit waits, the later retry', () => {
+  const later = {limit: RATE_LIMIT, retryAt: 50000}
+  assert.equal(mergeCapacityWaits(null, rateLimitWait), rateLimitWait)
+  assert.equal(mergeCapacityWaits(rateLimitWait, undefined), rateLimitWait)
+  assert.equal(mergeCapacityWaits(rateLimitWait, capacityWait), capacityWait)
+  assert.equal(mergeCapacityWaits(capacityWait, later), capacityWait)
+  assert.equal(mergeCapacityWaits(rateLimitWait, later), later)
+  assert.equal(mergeCapacityWaits(later, rateLimitWait), later)
+})
+
+// Refused rows retain the limit even when no wait was announced (ocl_issues#2865).
+test('getRowProgressLabel: a refused rate limit shows when the row or rerank can run again', () => {
+  for(const stages of [
+    {'ocl-semantic': -4, 'ocl-bridge': 1},
+    {'ocl-semantic': 1, 'ocl-bridge': 1, rerank: -4},
+  ]) {
+    assert.deepEqual(getRowProgressLabel(stages, ALGOS, {t: tWith, throttle: rateLimitWait, formatTime}), {
+      label: 'map_project.row_rate_limited {"time":"t+20000"}', status: 'throttled',
+    })
+    assert.deepEqual(getRowProgressLabel(stages, ALGOS, {t: tWith, throttle: capacityWait, formatTime}), {
+      label: 'map_project.row_throttled', status: 'throttled',
+    })
+  }
+})
+
+test('formatClockTime: a retry today is a clock time; another day includes the weekday', () => {
+  const now = () => new Date(2026, 9, 7, 12).getTime()
+  const format = (date, options) => ({day: date.getDate(), ...options})
+  assert.deepEqual(formatClockTime(new Date(2026, 9, 7, 15).getTime(), {now, format}), {
+    day: 7, hour: 'numeric', minute: '2-digit', second: '2-digit',
+  })
+  for(const [date, day] of [[new Date(2026, 9, 8, 15), 8], [new Date(2026, 10, 7, 15), 7]]) {
+    assert.deepEqual(formatClockTime(date.getTime(), {now, format}), {
+      day, hour: 'numeric', minute: '2-digit', second: '2-digit', weekday: 'short',
+    })
+  }
 })

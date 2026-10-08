@@ -1,3 +1,34 @@
+import { RATE_LIMIT } from '../../services/capacity.js'
+
+// Day limits can reopen tomorrow (ocl_issues#2865).
+export const formatClockTime = (ms, { now = Date.now, format = (date, options) => date.toLocaleTimeString([], options) } = {}) => {
+  const date = new Date(ms)
+  return format(date, {
+    hour: 'numeric', minute: '2-digit', second: '2-digit',
+    ...(date.toDateString() === new Date(now()).toDateString() ? {} : {weekday: 'short'}),
+  })
+}
+
+// wait is {limit, retryAt}; anything but a rate limit reads as a capacity wait (ocl_issues#2865).
+export const getCapacityWaitLabel = (wait, { t, short = false, formatTime = formatClockTime } = {}) => {
+  if(wait?.limit === RATE_LIMIT)
+    return short ?
+      t('map_project.rate_limited_short') :
+      t('map_project.rate_limited', {time: formatTime(wait.retryAt)})
+  return t(short ? 'map_project.waiting_for_capacity_short' : 'map_project.waiting_for_capacity')
+}
+
+// A capacity wait wins; between two rate-limit waits, the later retry.
+export const mergeCapacityWaits = (a, b) => {
+  if(!a || !b)
+    return a || b
+  if(a.limit !== RATE_LIMIT)
+    return a
+  if(b.limit !== RATE_LIMIT)
+    return b
+  return b.retryAt > a.retryAt ? b : a
+}
+
 /**
  * The row panel's progress chip: which of the row's algorithms is running or
  * still to run. {label: false} before the row has stages; no label once every
@@ -8,13 +39,15 @@
  * server stayed too busy for (-4) asks for a retry: it wasn't run, it didn't
  * fail.
  */
-export const getRowProgressLabel = (stageMap, algos, { t, capacityWait = false } = {}) => {
+export const getRowProgressLabel = (stageMap, algos, { t, capacityWait = false, throttle, formatTime = formatClockTime } = {}) => {
   if(stageMap === undefined)
     return {label: false}
   if(capacityWait)
-    return {label: t('map_project.waiting_for_capacity'), status: 'capacity_wait'}
+    return {label: getCapacityWaitLabel(capacityWait, {t, formatTime}), status: 'capacity_wait'}
   if(!stageMap)
     return {label: 'Preparing...', status: 'partial'}
+  const throttledLabel = () => throttle?.limit === RATE_LIMIT ?
+    t('map_project.row_rate_limited', {time: formatTime(throttle.retryAt)}) : t('map_project.row_throttled')
 
   const stages = algos.map(k => stageMap[k.id]);
 
@@ -34,7 +67,7 @@ export const getRowProgressLabel = (stageMap, algos, { t, capacityWait = false }
   if (stages.every(v => v === 1 || v === -3)) {
     // The candidates are in, but the server stayed too busy to rank them.
     if(stageMap.rerank === -4)
-      return {label: t('map_project.row_throttled'), status: 'throttled'}
+      return {label: throttledLabel(), status: 'throttled'}
     return true
   }
 
@@ -44,7 +77,7 @@ export const getRowProgressLabel = (stageMap, algos, { t, capacityWait = false }
   }
 
   if(stages.some(v => v === -4))
-    return {label: t('map_project.row_throttled'), status: 'throttled'}
+    return {label: throttledLabel(), status: 'throttled'}
 
   return { label: 'Partially completed', status: 'partial' };
 }
