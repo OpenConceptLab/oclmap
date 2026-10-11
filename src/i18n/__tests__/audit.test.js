@@ -197,6 +197,14 @@ test('auditKeys compares every other locale with English', () => {
   ])
 })
 
+test('auditKeys orders call sites by code unit, whatever the locale', () => {
+  const result = auditKeys({
+    sources: [{ file: 'src/a.js', code: 't(x)' }, { file: 'src/B.js', code: 't(y)' }],
+    catalogs: { en: CATALOG }
+  })
+  assert.deepEqual(result.opaqueSites.map(site => site.file), ['src/B.js', 'src/a.js'])
+})
+
 test('auditKeys and renderReport do not depend on the order files are read in', () => {
   const sources = [
     { file: 'src/A.jsx', code: "t('common.save'); t(labelKey)" },

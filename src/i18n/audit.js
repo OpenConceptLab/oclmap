@@ -150,7 +150,8 @@ export const compareLocale = (english, other) => {
 
 const toRegExp = pattern => new RegExp(`^${pattern.split('*').map(text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*')}$`)
 
-const byFileAndLine = (a, b) => a.file.localeCompare(b.file) || a.line - b.line
+// Code-unit order, as Array#sort uses, so the report doesn't change with the locale.
+const byFileAndLine = (a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line)
 
 /**
  * @param {object} options

@@ -4,7 +4,7 @@
 //
 //   npm run i18n:audit                                       # print the report
 //   npm run i18n:audit -- --out scripts/i18n-audit/report.md # write it
-//   npm run i18n:audit -- --root <checkout>                  # audit another checkout
+//   npm run i18n:audit -- --root <checkout>                  # audit another checkout's src/
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -36,8 +36,9 @@ const catalogs = Object.fromEntries(fs.readdirSync(localesDir).sort().map(locale
   locale, JSON.parse(fs.readFileSync(path.join(localesDir, locale, 'translations.json'), 'utf8'))
 ]))
 
-const familiesFile = path.join(root, 'scripts', 'i18n-audit', 'families.json')
-const families = fs.existsSync(familiesFile) ? JSON.parse(fs.readFileSync(familiesFile, 'utf8')) : []
+// This checkout's declarations, also for --root: an older tree has none, and
+// the report flags any that no longer fit it.
+const families = JSON.parse(fs.readFileSync(path.join(here, 'families.json'), 'utf8'))
 
 const report = renderReport(auditKeys({ sources, catalogs, families }))
 if(out)

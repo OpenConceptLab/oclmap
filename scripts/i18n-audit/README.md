@@ -21,6 +21,11 @@ npm run i18n:audit -- --out scripts/i18n-audit/report.md   # refresh report.md
 npm run i18n:audit -- --root <checkout>                    # audit another tree, e.g. an older commit
 ```
 
+`--root` reads `src/` from the other checkout but keeps this checkout's
+`families.json`; the report flags any declaration that doesn't fit that tree.
+To audit an older commit: `git worktree add <dir> <commit>`, then
+`npm run i18n:audit -- --root <dir>` from here.
+
 The same tree always gives the same report: it has no dates or absolute paths,
 and every list in it is sorted. To check that `report.md` is current, refresh
 it and run `git diff --exit-code scripts/i18n-audit/report.md`.

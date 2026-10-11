@@ -98,10 +98,14 @@ The report's *Needs attention* section lists five:
 752 English keys is the state of the pt-BR branch from b05133c to 25e2f8a,
 2026-10-02 to 2026-10-05. ca4024e then removed three keys, and the merge
 (06d8841) left `main` with 771. At 25e2f8a, the audit counts 211 of the 752 as
-unreferenced (460 literal, 62 dynamic, 19 string literal only).
+unreferenced (460 literal, 62 dynamic, 19 string literal only). To repeat it:
+`git worktree add <dir> 25e2f8a`, then `npm run i18n:audit -- --root <dir>`.
 
 228 can't be reproduced exactly, since the claim doesn't state its rules, and
-the count depends on them. At 25e2f8a:
+the count depends on them. The table applies simpler rules to the same tree:
+the first two rows are plain regexes over the source text, the next four use
+the audit's scan with fewer rules, and only the last row is the audit's own
+output. At 25e2f8a:
 
 | Rules | Unused of 752 |
 |---|---:|
