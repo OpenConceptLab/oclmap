@@ -26,6 +26,9 @@ docker exec -it <container_name> bash -c "eslint src --ext .jsx,.js"
 docker exec -it oclmap-web-1 bash -c "npm test"
 ```
 
+### i18n key audit
+`npm run i18n:audit` lists the English keys in `src/i18n/locales/en/translations.json` that the source doesn't use, and compares each locale with English. See [scripts/i18n-audit/README.md](scripts/i18n-audit/README.md).
+
 #### Major/minor version increase
 
 In order to increase major/minor version you need to set the new version in [package.json](package.json).
