@@ -1,0 +1,32 @@
+[
+  {
+    "file": "src/components/concepts/ConceptProperties.jsx",
+    "expression": "`concept.${prop}`",
+    "keys": ["concept.concept_class", "concept.datatype"],
+    "evidence": "prop is a property code. The first call translates only concept_class and datatype; the second runs when the concept has no properties, and sortedProperties is then those same two."
+  },
+  {
+    "file": "src/components/map-projects/MapProject.jsx",
+    "expression": "'map_project.' + qualityBucket",
+    "keys": ["map_project.recommended", "map_project.available", "map_project.low_ranked"],
+    "evidence": "getScoreDetails() in viewBuilders.js sets qualityBucket to recommended, available or low_ranked, or leaves it unset, and the call then uses map_project.unranked."
+  },
+  {
+    "file": "src/components/map-projects/MapProject.jsx",
+    "expression": "'map_project.' + quality.bucket",
+    "keys": ["map_project.recommended", "map_project.available", "map_project.low_ranked"],
+    "evidence": "getRowQuality() in rowQuality.js: getBucket() returns recommended, available or low_ranked, and a proposed match without a score is low_ranked."
+  },
+  {
+    "file": "src/components/map-projects/ScoreBucketButton.jsx",
+    "expression": "'map_project.' + id",
+    "keys": ["map_project.recommended", "map_project.available", "map_project.low_ranked"],
+    "evidence": "ScoreBucketButton renders BucketButton with id recommended, available and low_ranked."
+  },
+  {
+    "file": "src/components/search/SearchResults.jsx",
+    "expression": "`search.${resource}`",
+    "keys": ["search.concepts"],
+    "evidence": "map-projects/Search.jsx and Candidates.jsx render SearchResults, both with resource='concepts'."
+  }
+]
