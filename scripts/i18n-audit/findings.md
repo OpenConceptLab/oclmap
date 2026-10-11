@@ -22,13 +22,14 @@ whole namespace: two calls of `` `concept.${prop}` ``, one of
 `` `search.${resource}` `` and four of `'map_project.' + <bucket>`. For those,
 `families.json` declares the keys, citing the code that produces them.
 
-The 4 call sites the audit can't read get their keys from string literals:
+Of the 4 call sites the audit can't read, three get their keys from string
+literals, and the fourth gets none today:
 
 - `AnnouncementBanner.jsx` `t(labelKey)`: `ANNOUNCEMENT_LINKS`, in the same file.
 - `MapperQuotaChip.jsx` `t(labelKey)`: the three `meterLine('map_project.preview_quota_…')` calls below it.
 - `TableResults.jsx` `t(headCell.labelKey)`: column configs in `ResultConstants.js`, `Candidates.jsx` and `Search.jsx`.
-- `MultiAlgoSelector.jsx` `t(algo.name?.props?.i18nKey)`: an algorithm whose name is a `<Trans>` element.
-  No algorithm defines its name that way today, so no key reaches it.
+- `MultiAlgoSelector.jsx` `t(algo.name?.props?.i18nKey)`: the `i18nKey` of an algorithm whose name is a
+  `<Trans>` element. No algorithm defines its name that way today.
 
 Apart from `src/i18n/audit.js` itself, every file the audit scans is imported,
 directly or through others, from `src/index.jsx`, so no reference comes from a
@@ -118,9 +119,9 @@ output. At 25e2f8a:
 | The audit: as above, with namespace-wide families declared | 211 |
 
 Of the first 35 keys in the claim's list, `common.a` to `common.read_more`,
-the audit at 25e2f8a has 33 unreferenced. The other two are in use: column configs pass `common.action` (`Candidates.jsx`,
-`Search.jsx`) and `common.created_on` (`ResultConstants.js`) to `t()` as
-`labelKey`. Rules that miss keys passed that way would add the 19
+the audit at 25e2f8a has 33 unreferenced. The other two are in use: column
+configs pass `common.action` (`Candidates.jsx`, `Search.jsx`) and
+`common.created_on` (`ResultConstants.js`) to `t()` as `labelKey`. Rules that miss keys passed that way would add the 19
 string-literal-only keys to the audit's 211, giving 230, close to 228.
 
 The ticket's "301 unmatched by a basic static regex" fits the plain regex for

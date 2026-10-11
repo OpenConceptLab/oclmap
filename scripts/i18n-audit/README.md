@@ -10,8 +10,9 @@ other locale compares with English (OpenConceptLab/ocl_issues#2880).
   assess.
 - [`families.json`](families.json) declares the keys some dynamic call sites
   can produce (see [Namespace-wide families](#namespace-wide-families)).
-- The logic is in `src/i18n/audit.js`, tested by `src/i18n/__tests__/audit.test.js`;
-  [`audit.mjs`](audit.mjs) reads the files and prints the report.
+- The logic is in `src/i18n/audit.js`, tested by `src/i18n/__tests__/audit.test.js`
+  and `auditCli.test.js`; [`audit.mjs`](audit.mjs) reads the files and prints
+  the report.
 
 ## Run it
 
@@ -27,7 +28,7 @@ To audit an older commit: `git worktree add <dir> <commit>`, then
 `npm run i18n:audit -- --root <dir>` from here.
 
 The same tree always gives the same report: it has no dates or absolute paths,
-and every list in it is sorted. To check that `report.md` is current, refresh
+and no list in it depends on the order files are read in or on the locale. To check that `report.md` is current, refresh
 it and run `git diff --exit-code scripts/i18n-audit/report.md`.
 
 ## What counts as a reference
@@ -35,7 +36,8 @@ it and run `git diff --exit-code scripts/i18n-audit/report.md`.
 The audit parses every `.js` and `.jsx` file under `src/`, except those in
 `__tests__/` and `__integration__/`, with Babel. It reads the key argument of
 every call to `t` or `<anything>.t` (`t()`, `i18n.t()`, `this.props.t()`,
-optional ones like `i18n?.t()` too), and every `i18nKey` attribute. For each it works out the keys it can produce:
+optional ones like `i18n?.t()` too), and every `i18nKey` attribute. For each
+it works out the keys it can produce:
 
 | Key expression | Counts as |
 |---|---|
