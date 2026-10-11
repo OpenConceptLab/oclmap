@@ -43,6 +43,11 @@ test('scanSource reads literal keys from t(), i18n.t(), this.props.t() and i18nK
   assert.deepEqual(patternsOf(scan), [])
 })
 
+test('scanSource reads optional calls: i18n?.t(), t?.() and this.props?.t()', () => {
+  const scan = scanSource("i18n?.t('a.b'); t?.('c.d'); this.props?.t('e.f')", 'H.js')
+  assert.deepEqual(keysOf(scan), ['a.b', 'c.d', 'e.f'])
+})
+
 test('scanSource takes every branch of a conditional, a logical fallback and a fallback-key array', () => {
   const scan = scanSource(`
     t(isCap ? 'quota.cap' : 'quota.quota')
@@ -87,7 +92,7 @@ test('scanSource records a Trans without i18nKey as a site it cannot read', () =
   const scan = scanSource('const A = () => <Trans>Hello <b>world</b></Trans>', 'E.jsx')
   assert.equal(scan.sites.length, 1)
   assert.equal(scan.sites[0].opaque, true)
-  assert.equal(scan.sites[0].via, 'Trans')
+  assert.equal(scan.sites[0].expression, '<Trans> without i18nKey')
 })
 
 test('scanSource collects string literals so keys stored in config objects count', () => {

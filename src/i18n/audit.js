@@ -89,13 +89,12 @@ export const scanSource = (code, file) => {
   })
   const sites = []
   const literals = []
-  const addSite = (path, via) => {
+  const addSite = path => {
     const patterns = patternsOf(path)
     const unique = values => [...new Set(values)]
     sites.push({
       file,
       line: path.node.loc.start.line,
-      via,
       expression: code.slice(path.node.start, path.node.end).replace(/\s+/g, ' '),
       keys: unique(patterns.filter(pattern => !pattern.includes(ANY)).map(pattern => pattern.join(''))),
       patterns: unique(patterns
@@ -105,20 +104,21 @@ export const scanSource = (code, file) => {
     })
   }
   babel.traverse(ast, {
-    CallExpression(path) {
+    // i18n?.t('key') and t?.('key') are OptionalCallExpressions
+    'CallExpression|OptionalCallExpression'(path) {
       if(isTranslate(path.node.callee) && path.node.arguments.length)
-        addSite(path.get('arguments.0'), 't()')
+        addSite(path.get('arguments.0'))
     },
     JSXAttribute(path) {
       if(path.node.name.name !== 'i18nKey' || !path.node.value)
         return
       const value = path.get('value')
-      addSite(value.isJSXExpressionContainer() ? value.get('expression') : value, 'i18nKey')
+      addSite(value.isJSXExpressionContainer() ? value.get('expression') : value)
     },
     JSXOpeningElement(path) {
       const { name, attributes } = path.node
       if(name.name === 'Trans' && !attributes.some(attribute => attribute.name?.name === 'i18nKey'))
-        sites.push({ file, line: path.node.loc.start.line, via: 'Trans', expression: '<Trans> without i18nKey', keys: [], patterns: [], opaque: true })
+        sites.push({ file, line: path.node.loc.start.line, expression: '<Trans> without i18nKey', keys: [], patterns: [], opaque: true })
     },
     StringLiteral(path) {
       literals.push({ value: path.node.value, line: path.node.loc.start.line })
@@ -150,9 +150,6 @@ export const compareLocale = (english, other) => {
 
 const toRegExp = pattern => new RegExp(`^${pattern.split('*').map(text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*')}$`)
 
-// Code-unit order, as Array#sort uses, so the report doesn't change with the locale.
-const byFileAndLine = (a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line)
-
 /**
  * @param {object} options
  * @param {{file: string, code: string}[]} options.sources  the files to scan
@@ -165,12 +162,15 @@ const byFileAndLine = (a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.
 export const auditKeys = ({ sources, catalogs, families: declarations = [] }) => {
   const english = flattenCatalog(catalogs.en)
   const keys = Object.keys(english).sort()
-  const scanned = sources.map(({ file, code }) => ({ file, ...scanSource(code, file) }))
-  const sites = scanned.flatMap(scan => scan.sites).sort(byFileAndLine)
-  const where = site => `${site.file}:${site.line}`
+  // Files in code-unit order, as Array#sort uses, so the report doesn't change
+  // with the locale; each file's sites and literals are in source order.
+  const scanned = [...sources]
+    .sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : 0))
+    .map(({ file, code }) => ({ file, ...scanSource(code, file) }))
+  const sites = scanned.flatMap(scan => scan.sites)
 
   const staticSites = {}
-  sites.forEach(site => site.keys.forEach(key => (staticSites[key] = staticSites[key] || []).push(where(site))))
+  sites.forEach(site => site.keys.forEach(key => (staticSites[key] = staticSites[key] || []).push(`${site.file}:${site.line}`)))
 
   const used = new Set()
   const declaredOutsidePattern = new Set()
@@ -189,7 +189,7 @@ export const auditKeys = ({ sources, catalogs, families: declarations = [] }) =>
       familyKeys.forEach(key => used.add(key))
       return {
         file: site.file, line: site.line, expression: site.expression, pattern, keys: familyKeys,
-        broad: NAMESPACE_WIDE.test(pattern), declared: Boolean(declaration), evidence: declaration?.evidence
+        broad: NAMESPACE_WIDE.test(pattern), declared: Boolean(declaration)
       }
     })
   })
@@ -199,7 +199,6 @@ export const auditKeys = ({ sources, catalogs, families: declarations = [] }) =>
     if(value in english && !(value in staticSites) && !used.has(value))
       (literalSites[value] = literalSites[value] || []).push(`${scan.file}:${line}`)
   }))
-  Object.values(literalSites).forEach(places => places.sort())
 
   return {
     files: sources.length,
@@ -212,7 +211,7 @@ export const auditKeys = ({ sources, catalogs, families: declarations = [] }) =>
     },
     staticSiteCount: sites.filter(site => site.keys.length).length,
     families,
-    opaqueSites: sites.filter(site => site.opaque).map(({ file, line, via, expression }) => ({ file, line, via, expression })),
+    opaqueSites: sites.filter(site => site.opaque),
     literalSites,
     problems: {
       missingFromCatalog: Object.keys(staticSites).filter(key => !(key in english)).sort()
@@ -239,10 +238,14 @@ const keyList = keys => keys.length ? keys.map(code).join(', ') : 'none'
 
 export const renderReport = result => {
   const { keys, english, families, opaqueSites, literalSites, problems, locales } = result
-  const lines = []
-  const add = (...more) => lines.push(...more)
-
-  add(
+  const problemLines = [
+    ...problems.missingFromCatalog.map(({ key, sites }) => `- ${code(key)} is referenced (${sites.join(', ')}) but isn't in the English catalog.`),
+    ...problems.undeclaredBroad.map(family => `- ${family.file}:${family.line} ${code(family.expression)} spans the whole namespace; declare its keys in \`scripts/i18n-audit/families.json\`. Until then all ${family.keys.length} keys it matches count as used.`),
+    ...problems.declaredOutsidePattern.map(key => `- ${code(key)} is declared in \`families.json\` but its call site's expression can't produce it.`),
+    ...problems.declaredMissingFromCatalog.map(key => `- ${code(key)} is declared in \`families.json\` but isn't in the English catalog.`),
+    ...problems.staleDeclarations.map(family => `- \`families.json\` declares ${family.file} ${code(family.expression)}, which no longer exists.`)
+  ]
+  return [
     '# i18n key audit',
     '',
     'Generated by `npm run i18n:audit` from the source under `src/` (tests excluded) and the',
@@ -261,37 +264,26 @@ export const renderReport = result => {
     '',
     `Scanned ${result.files} source files: ${result.staticSiteCount} call sites with a literal key, ` +
       `${families.length} dynamic key families, ${opaqueSites.length} call sites whose key the audit can't read.`,
-    ''
-  )
-
-  const problemLines = [
-    ...problems.missingFromCatalog.map(({ key, sites }) => `- ${code(key)} is referenced (${sites.join(', ')}) but isn't in the English catalog.`),
-    ...problems.undeclaredBroad.map(family => `- ${family.file}:${family.line} ${code(family.expression)} spans the whole namespace; declare its keys in \`scripts/i18n-audit/families.json\`. Until then all ${family.keys.length} keys it matches count as used.`),
-    ...problems.declaredOutsidePattern.map(key => `- ${code(key)} is declared in \`families.json\` but its call site's expression can't produce it.`),
-    ...problems.declaredMissingFromCatalog.map(key => `- ${code(key)} is declared in \`families.json\` but isn't in the English catalog.`),
-    ...problems.staleDeclarations.map(family => `- \`families.json\` declares ${family.file} ${code(family.expression)}, which no longer exists.`)
-  ]
-  add('## Needs attention', '', ...(problemLines.length ? problemLines : ['Nothing.']), '')
-
-  add(
+    '',
+    '## Needs attention',
+    '',
+    ...(problemLines.length ? problemLines : ['Nothing.']),
+    '',
     '## Locales compared with English',
     '',
     '| Locale | Keys | Missing | Blank | Same as English | Not in English |',
     '|---|---:|---:|---:|---:|---:|',
     ...locales.map(l => `| ${l.locale} | ${l.total} | ${l.missing.length} | ${l.blank.length} | ${l.sameAsEnglish.length} | ${l.extra.length} |`),
-    ''
-  )
-  locales.forEach(l => add(
-    `### ${l.locale}`,
     '',
-    `- Missing: ${keyList(l.missing)}`,
-    `- Blank: ${keyList(l.blank)}`,
-    `- Same as English: ${l.sameAsEnglish.length ? l.sameAsEnglish.map(key => `${code(key)} (${code(english[key])})`).join(', ') : 'none'}`,
-    `- Not in English: ${keyList(l.extra)}`,
-    ''
-  ))
-
-  add(
+    ...locales.flatMap(l => [
+      `### ${l.locale}`,
+      '',
+      `- Missing: ${keyList(l.missing)}`,
+      `- Blank: ${keyList(l.blank)}`,
+      `- Same as English: ${l.sameAsEnglish.length ? l.sameAsEnglish.map(key => `${code(key)} (${code(english[key])})`).join(', ') : 'none'}`,
+      `- Not in English: ${keyList(l.extra)}`,
+      ''
+    ]),
     '## Dynamic key families',
     '',
     'A key built at run time, as a pattern. A declared family counts only the keys',
@@ -301,10 +293,7 @@ export const renderReport = result => {
     '|---|---|---|---|',
     ...families.map(family => `| ${family.file}:${family.line} | ${code(family.expression)} | ${code(family.pattern)} | ` +
       `${family.declared ? 'declared: ' : ''}${family.keys.length > 12 ? `${family.keys.length} keys` : keyList(family.keys)} |`),
-    ''
-  )
-
-  add(
+    '',
     '## Call sites whose key the audit can\'t read',
     '',
     'The key comes from a parameter or a property. Such keys are usually string literals',
@@ -313,19 +302,13 @@ export const renderReport = result => {
     '| Call site | Key expression |',
     '|---|---|',
     ...opaqueSites.map(site => `| ${site.file}:${site.line} | ${code(site.expression)} |`),
-    ''
-  )
-
-  add(
+    '',
     '## Mentioned only as a string literal',
     '',
     '| Key | Where |',
     '|---|---|',
     ...keys.literal.map(key => `| ${code(key)} | ${literalSites[key].join(', ')} |`),
-    ''
-  )
-
-  add(
+    '',
     `## Unreferenced keys (${keys.unreferenced.length})`,
     '',
     'No call site, dynamic family or string literal in the source can produce these. Check',
@@ -335,6 +318,5 @@ export const renderReport = result => {
     '|---|---|',
     ...keys.unreferenced.map(key => `| ${code(key)} | ${code(english[key])} |`),
     ''
-  )
-  return lines.join('\n')
+  ].join('\n')
 }

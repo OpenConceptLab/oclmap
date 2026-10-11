@@ -34,8 +34,8 @@ it and run `git diff --exit-code scripts/i18n-audit/report.md`.
 
 The audit parses every `.js` and `.jsx` file under `src/`, except those in
 `__tests__/` and `__integration__/`, with Babel. It reads the key argument of
-every call to `t` or `<anything>.t` (`t()`, `i18n.t()`, `this.props.t()`), and
-every `i18nKey` attribute. For each it works out the keys it can produce:
+every call to `t` or `<anything>.t` (`t()`, `i18n.t()`, `this.props.t()`,
+optional ones like `i18n?.t()` too), and every `i18nKey` attribute. For each it works out the keys it can produce:
 
 | Key expression | Counts as |
 |---|---|
