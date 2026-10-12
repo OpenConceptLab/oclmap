@@ -5542,7 +5542,7 @@ const MapProject = () => {
       canSelect: canSelectAIModel, selectedKey: template?.key, configuredKey: projectPromptTemplateKey, fallbackKey: PROMPTS_KEY_DEFAULT
     })
     if(!key || !AI_ASSISTANT_API_URL)
-      throw new Error('AI Assistant prompt template is not available')
+      throw new Error('OCL AI Assistant prompt template is not available')
 
     const service = APIService.new()
     service.URL = AI_ASSISTANT_API_URL
@@ -5764,7 +5764,7 @@ const MapProject = () => {
       try {
         activePromptTemplate = resolvedPromptTemplate || await resolvePromptTemplateForInvocation()
         if(!activePromptTemplate?.key) {
-          setAlert({message: 'AI Assistant prompt template is not available', severity: 'error'})
+          setAlert({message: 'OCL AI Assistant prompt template is not available', severity: 'error'})
           markRecommend(-3)
           return -3
         }
