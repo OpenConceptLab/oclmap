@@ -1715,6 +1715,9 @@ const MapProject = () => {
   // event would arrive where the options object is expected.
   const onManualSave = () => onSave({source: 'manual'})
 
+  // index is the row the entry is about. Without it the entry goes on the row
+  // open in the side panel, so work on another row (a run's, a grid button's)
+  // must pass it (OpenConceptLab/ocl_issues#2887).
   const log = (data, index) => {
     let idx = index === undefined ? rowIndex : index
     const nextLogs = {...logsRef.current, [idx]: [{created_at: moment().toDate(), user: user.username || user.id, ...data}, ...(logsRef.current[idx] || [])]}
@@ -5721,7 +5724,9 @@ const MapProject = () => {
     // Returns the row's AI outcome as a stage (1 analysed, -2 failed, -3 not
     // run), or null when the row was skipped or the run stopped. A run's call
     // that ends after a newer run started leaves that run's stages and failure
-    // count alone (ocl_issues#2872).
+    // count alone (ocl_issues#2872), but still logs on its own row, like every
+    // AI entry here: the row's history records each call made for it
+    // (OpenConceptLab/ocl_issues#2887).
     const runTicket = autoMatchRunTicketRef.current
     const isSuperseded = () => isBulk && runTicket !== autoMatchRunTicketRef.current
     const markRecommend = stage => {
@@ -5842,14 +5847,14 @@ const MapProject = () => {
         let timestamp = moment().toDate()
         if(handlePreviewLimitError(response, isSuperseded() ? null : __index, 'recommend', {isRun: isBulk, stopPhase: 'ai'})) {
           markRecommend(-3)
-          log({created_at: timestamp, action: 'AIRecommendationLimitReached', extras: {model: requestedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}})
+          log({created_at: timestamp, action: 'AIRecommendationLimitReached', extras: {model: requestedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}}, __index)
           return -3
         }
         if(response?.detail) {
           markRecommend(-2)
           if(!isSuperseded())
             aiFailuresInARowRef.current += 1
-          log({created_at: timestamp, action: 'AIRecommendation', description: response.detail, extras: {error: response.detail, model: requestedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}})
+          log({created_at: timestamp, action: 'AIRecommendation', description: response.detail, extras: {error: response.detail, model: requestedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}}, __index)
           setAlert({message: response.detail, severity: 'error'})
           return -2
         }
@@ -5882,7 +5887,7 @@ const MapProject = () => {
       } catch (err) {
         if(handlePreviewLimitError(err, isSuperseded() ? null : __index, 'recommend', {isRun: isBulk, stopPhase: 'ai'})) {
           markRecommend(-3)
-          log({created_at: moment().toDate(), action: 'AIRecommendationLimitReached', extras: {model: requestedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}})
+          log({created_at: moment().toDate(), action: 'AIRecommendationLimitReached', extras: {model: requestedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}}, __index)
           return -3
         }
         markRecommend(-2)
