@@ -1715,9 +1715,8 @@ const MapProject = () => {
   // event would arrive where the options object is expected.
   const onManualSave = () => onSave({source: 'manual'})
 
-  // index is the row the entry is about. Without it the entry goes on the row
-  // open in the side panel, so work on another row (a run's, a grid button's)
-  // must pass it (OpenConceptLab/ocl_issues#2887).
+  // Work on a row other than the one open in the side panel (a run's, a grid
+  // button's) must pass its index (OpenConceptLab/ocl_issues#2887).
   const log = (data, index) => {
     let idx = index === undefined ? rowIndex : index
     const nextLogs = {...logsRef.current, [idx]: [{created_at: moment().toDate(), user: user.username || user.id, ...data}, ...(logsRef.current[idx] || [])]}
