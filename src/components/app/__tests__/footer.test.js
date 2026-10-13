@@ -49,29 +49,22 @@ babel.traverse(parse('../Footer.jsx'), {
   }
 })
 
-const catalogs = {}
-const translate = (locale, key) => {
-  catalogs[locale] ||= JSON.parse(readFileSync(new URL(`../../../i18n/locales/${locale}/translations.json`, import.meta.url), 'utf8'))
-  return key.split('.').reduce((node, part) => node?.[part], catalogs[locale])
-}
+const load = locale =>
+  JSON.parse(readFileSync(new URL(`../../../i18n/locales/${locale}/translations.json`, import.meta.url), 'utf8'))
+const translate = (locale, key) => key.split('.').reduce((node, part) => node?.[part], load(locale))
 
 for(const [href, english] of Object.entries(LINKS)) {
-  test(`footer links ${english}, opening it in a new tab`, () => {
+  test(`footer links ${english} in a new tab, labelled in every locale`, () => {
     const link = links.find(link => link.href === href)
     assert.ok(link, `Footer.jsx has no link to ${href}`)
     assert.equal(link.target, '_blank')
     assert.equal(link.rel, 'noopener noreferrer')
     assert.ok(link.label, `the ${english} link has no t() label`)
     assert.equal(translate('en', link.label), english)
-  })
-
-  test(`every locale translates the ${english} label`, () => {
-    const label = links.find(link => link.href === href)?.label
-    assert.ok(label, `no labelled link to ${href}`)
     for(const locale of OTHER_LOCALES) {
-      const value = translate(locale, label)
-      assert.equal(typeof value, 'string', `${locale} has no ${label}`)
-      assert.ok(value.trim() && value !== english, `${locale} leaves ${label} untranslated: "${value}"`)
+      const value = translate(locale, link.label)
+      assert.equal(typeof value, 'string', `${locale} has no ${link.label}`)
+      assert.ok(value.trim() && value !== english, `${locale} leaves ${link.label} untranslated: "${value}"`)
     }
   })
 }
