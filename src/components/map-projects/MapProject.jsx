@@ -672,6 +672,10 @@ const MapProject = () => {
 
   const baseAlgos = useAlgos(t)
   const [apiAlgos, setApiAlgos] = React.useState([]);
+  // canBridge comes from the BridgeMatch component, which only mounts once it has a
+  // bridge repo. Before any bridge algo is selected (new project) fall back to the
+  // one the API offers, otherwise the option can never be enabled to select it.
+  const bridgeProbeAlgo = bridgeAlgo || find(apiAlgos, a => ['ocl-bridge', 'ocl-ciel-bridge'].includes(a.type))
   React.useEffect(() => {
     if (!OCL_ONLINE_API_URL) return;
 
@@ -759,15 +763,15 @@ const MapProject = () => {
   }, [repoVersion, project])
 
   React.useEffect(() => {
-    if(!bridgeEnabled || !bridgeAlgo?.id)
+    if(!bridgeProbeAlgo?.id)
       return
 
-    const bridgeUrl = bridgeAlgo?.target_repo_url
+    const bridgeUrl = bridgeProbeAlgo?.target_repo_url
     if(!bridgeUrl)
       return
 
-    if(bridgeAlgo.target_repo_version) {
-      fetchMappedSources(bridgeUrl + bridgeAlgo.target_repo_version + '/', sources =>
+    if(bridgeProbeAlgo.target_repo_version) {
+      fetchMappedSources(bridgeUrl + bridgeProbeAlgo.target_repo_version + '/', sources =>
         setBridgeMappedSources(prev => ({...prev, [bridgeUrl]: sources})))
       return
     }
@@ -781,14 +785,15 @@ const MapProject = () => {
         if(!resolvedVersion)
           return
 
-        setAlgosSelected(prev => prev.map(algo =>
-          algo?.id === bridgeAlgo.id ? {...algo, target_repo_version: resolvedVersion} : algo
-        ))
+        if(bridgeEnabled)
+          setAlgosSelected(prev => prev.map(algo =>
+            algo?.id === bridgeProbeAlgo.id ? {...algo, target_repo_version: resolvedVersion} : algo
+          ))
         fetchMappedSources(bridgeUrl + resolvedVersion + '/', sources =>
           setBridgeMappedSources(prev => ({...prev, [bridgeUrl]: sources})))
       })
       .catch(() => {})
-  }, [bridgeEnabled, bridgeAlgo?.id, bridgeAlgo?.target_repo_url, bridgeAlgo?.target_repo_version, namespace, project, owner])
+  }, [bridgeProbeAlgo?.id, bridgeProbeAlgo?.target_repo_url, bridgeProbeAlgo?.target_repo_version, bridgeEnabled, namespace, project, owner])
 
 
   const createProjectFromTemplate = () => {
@@ -6018,14 +6023,14 @@ const MapProject = () => {
     <div className='col-xs-12 padding-0' style={{borderRadius: '10px', width: 'calc(100vw - 32px)'}}>
       {
         (() => {
-          const bridgeUrl = bridgeAlgo?.target_repo_url
+          const bridgeUrl = bridgeProbeAlgo?.target_repo_url
           const mappedSrcs = bridgeMappedSources[bridgeUrl] || []
           return Boolean(repoVersion?.url) && Boolean(bridgeUrl) && mappedSrcs.length > 0 &&
             <BridgeMatch
               service={getBridgeMatchService()}
               repo={repoVersion}
               bridgeRepoURL={bridgeUrl}
-              bridgeRepoVersion={bridgeAlgo?.target_repo_version}
+              bridgeRepoVersion={bridgeProbeAlgo?.target_repo_version}
               limit={CANDIDATES_LIMIT}
               user={user}
               ref={bridgeRef}
