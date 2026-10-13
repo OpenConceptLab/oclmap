@@ -5544,7 +5544,7 @@ const MapProject = () => {
       canSelect: canSelectAIModel, selectedKey: template?.key, configuredKey: projectPromptTemplateKey, fallbackKey: PROMPTS_KEY_DEFAULT
     })
     if(!key || !AI_ASSISTANT_API_URL)
-      throw new Error('AI Assistant prompt template is not available')
+      throw new Error(t('map_project.ai_prompt_template_unavailable'))
 
     const service = APIService.new()
     service.URL = AI_ASSISTANT_API_URL
@@ -5560,7 +5560,7 @@ const MapProject = () => {
       uri: getResolvedPromptTemplateURI(resolvedTemplate, key),
       version: resolvedTemplate?.version || getPromptTemplateVersionFromURL(getResolvedPromptTemplateURI(resolvedTemplate, key)) || null
     }
-  }, [AI_ASSISTANT_API_URL, canSelectAIModel, getPromptTemplateVersionFromURL, getResolvedPromptTemplateURI, projectPromptTemplateKey, promptTemplate])
+  }, [AI_ASSISTANT_API_URL, canSelectAIModel, getPromptTemplateVersionFromURL, getResolvedPromptTemplateURI, projectPromptTemplateKey, promptTemplate, t])
 
 
   const getProjectMetadata = () => {
@@ -5768,7 +5768,7 @@ const MapProject = () => {
       try {
         activePromptTemplate = resolvedPromptTemplate || await resolvePromptTemplateForInvocation()
         if(!activePromptTemplate?.key) {
-          setAlert({message: 'AI Assistant prompt template is not available', severity: 'error'})
+          setAlert({message: t('map_project.ai_prompt_template_unavailable'), severity: 'error'})
           markRecommend(-3)
           return -3
         }
