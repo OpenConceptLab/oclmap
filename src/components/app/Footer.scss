@@ -18,4 +18,27 @@ footer.footer-container {
         background: $black;
         width: 1px;
     }
+    // Full row height, so the divider between the links matches the others
+    .footer-legal {
+        align-self: stretch;
+    }
+    // Below MUI's md breakpoint (theme.breakpoints.down('md')) the row doesn't
+    // fit in every language: the links take a row of their own, the rest wraps
+    // under them, and spacing replaces the dividers. Footer.jsx publishes the
+    // extra height.
+    @media (max-width: 899.95px) {
+        height: auto;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 2px 16px;
+        padding: 6px 16px;
+        .footer-legal {
+            flex-basis: 100%;
+            justify-content: center;
+            gap: 16px;
+        }
+        .footer-divider-vertical {
+            display: none;
+        }
+    }
 }
