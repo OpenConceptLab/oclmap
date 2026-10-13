@@ -968,14 +968,18 @@ const MapProject = () => {
 
   // PR3-H: fetch the canonical locale catalog from /orgs/OCL/sources/Locales/.
   // ~486 concepts, each mapping a 3-letter ISO 639-3 id to a 2-letter BCP-47
-  // `locale` and human-readable `display_name`. Concepts missing a `locale`
+  // `locale` and human-readable `display_name`. Like fetchMapTypes, this reads
+  // the lookup endpoint, which returns only those fields and which the API
+  // caches for 24 hours, instead of listing full concepts on every project
+  // open (OpenConceptLab/ocl_issues#2902). The lookup has no `retired` field;
+  // the source has no retired concepts. Concepts missing a `locale`
   // (e.g. macro-language groupings like "Creoles and pidgins") are filtered
   // out so the dropdown only offers usable filter values. The list is
   // sorted alphabetically by display name (English collation) to match the
   // convention used by browser/OS language pickers. On fetch failure the
   // state keeps the initial fallback list.
-  const fetchOclLocales = () => APIService.orgs('OCL').sources('Locales').appendToUrl('concepts/').get(null, null, {limit: 500}).then(response => {
-    const valid = (response?.data || []).filter(c => c?.locale && !c?.retired)
+  const fetchOclLocales = () => APIService.orgs('OCL').sources('Locales').appendToUrl('concepts/lookup/').get(null, null, {verbose: true}).then(response => {
+    const valid = (response?.data || []).filter(c => c?.locale)
     if (valid.length === 0) return
     const sorted = valid.map(c => ({id: c.locale, name: c.display_name}))
       .sort((a, b) => a.name.localeCompare(b.name, 'en'))
