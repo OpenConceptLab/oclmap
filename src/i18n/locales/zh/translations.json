@@ -490,6 +490,7 @@
     "ai_recommended": "AI 推荐",
     "ai_alternate": "AI 备选候选建议",
     "ai_assistant": "OCL AI 助手",
+    "ai_prompt_template_unavailable": "OCL AI 助手提示模板不可用",
     "view_raw_json": "查看原始 JSON",
     "comment": "评论",
     "rejected": "已拒绝",

@@ -496,6 +496,7 @@
     "ai_recommended": "Recomendado por IA",
     "ai_alternate": "Sugestão de Candidato Alternativo por IA",
     "ai_assistant": "Assistente de IA do OCL",
+    "ai_prompt_template_unavailable": "O modelo de prompt do Assistente de IA do OCL não está disponível",
     "view_raw_json": "Ver JSON Bruto",
     "comment": "Comentário",
     "rejected": "Rejeitado",
