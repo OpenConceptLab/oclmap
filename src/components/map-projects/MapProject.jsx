@@ -1133,7 +1133,7 @@ const MapProject = () => {
                 null
               }
               <span style={{minWidth: 0, flex: 1}}>
-                <Concept key={`${params.row.__index}-${targetConcept.id}`} sx={{padding: 0}} repoVersion={repoVersion} notClickable firstChild concept={targetConcept} noScore onCardClick={false} noMatchedName inputLocale={inputLocale} asTarget />
+                <Concept key={`${params.row.__index}-${targetConcept.id}`} sx={{padding: 0}} repoVersion={repoVersion} notClickable firstChild concept={targetConcept} noScore onCardClick={false} inputLocale={inputLocale} locales={filters.locale || ''} asTarget />
               </span>
             </span>
           )
@@ -6504,6 +6504,7 @@ const MapProject = () => {
                   targetConcept={targetConcept}
                   repoVersion={repoVersion}
                   inputLocale={inputLocale}
+                  locales={filters.locale || ''}
                   row={row}
                   rowIndex={rowIndex}
                   repo={repo}

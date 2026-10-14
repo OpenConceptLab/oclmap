@@ -20,7 +20,7 @@ import { highlightTexts } from '../../common/utils';
 import SearchResults from '../search/SearchResults';
 import SearchFilters from '../search/SearchFilters'
 import Mappings from './Mappings'
-import Concept from './Concept'
+import Concept, { localizedNameColumn } from './Concept'
 import MapButton from './MapButton'
 import GAService from '../../services/GAService'
 
@@ -61,6 +61,7 @@ const Search = ({searchStr, setSearchStr, onSearch, repo, repoVersion, concepts,
 
   const getExtraColumns = () => {
     let cols = [
+      localizedNameColumn(inputLocale),
       {
         sortable: false,
         id: 'mappings',

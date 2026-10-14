@@ -43,9 +43,40 @@ export const MAP_TYPE_CHIP_SX = {
   }
 }
 
+// The name the match was made on, with its locale, as a line under the name
+// a concept leads with (getMatchedName). Exported for the row panel's
+// Target Code header (MappingDecisionResult), whose box has a fixed height:
+// `noWrap` keeps it to one line there, with the whole of it on hover.
+export const MatchedName = ({ matchedName, noWrap }) => {
+  const { t } = useTranslation()
+  if(!matchedName) return null
+  const label = `${t('map_project.matched_name')}${matchedName.locale ? ` (${matchedName.locale})` : ''}:`
+  return (
+    <span
+      className='col-xs-12 padding-0'
+      style={{display: 'block', fontSize: '12px', ...(noWrap ? {whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'} : {})}}
+      title={noWrap ? `${label} ${matchedName.html.replace(/<[^>]*>/g, '')}` : undefined}
+    >
+      {label}&nbsp;
+      <span className='searchable' dangerouslySetInnerHTML={{__html: matchedName.html}}/>
+    </span>
+  )
+}
+
+// Table view's name column, naming each concept in the project's input
+// language as the cards do. It changes only how the column renders: rows,
+// which Map and the concept panel read, keep the concept's display_name.
+export const localizedNameColumn = inputLocale => ({
+  id: 'name',
+  renderer: item => (
+    <span>
+      {item.retired && <Retired style={{marginRight: '8px'}}/>} {localizedDisplayName(item, inputLocale)}
+    </span>
+  )
+})
+
 
 const Item = ({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition, bridgeContributors, contributingAlgorithms, contributingAlgorithmIds, openConceptPanel, AIRecommendedCandidateId, AIAlternateCandidateIds, onMap, isSelectedForMap, noScore, repoVersion, inputLocale, matchedName, isAIRecommended, isAIAlternate, showAlgo, candidatesScore, algoScoreFirst, placeholderMap, bridgeChild}) => {
-  const { t } = useTranslation()
   const conceptToMap = conceptForMapping({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition})
   const idLabel = conceptDefinition?.id || conceptDefinition?.reference?.code
   const sourceLabel = conceptDefinition?.source
@@ -141,13 +172,7 @@ const Item = ({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition
         }
         secondary={
           <div className='col-xs-12 padding-0'>
-            {
-              !bridgeConceptDefinition && matchedName &&
-                <div className='col-xs-12 padding-0'>
-                  {t('map_project.matched_name')}{matchedName.locale ? ` (${matchedName.locale})` : ''}:&nbsp;
-                  <span className='searchable' dangerouslySetInnerHTML={{__html: matchedName.html}}/>
-                </div>
-            }
+            {!bridgeConceptDefinition && <MatchedName matchedName={matchedName} />}
             <div className='col-xs-12 padding-0'>
               <ConceptSummaryProperties concept={conceptDefinition} repoVersion={repoVersion} />
             </div>
@@ -300,8 +325,8 @@ const legacyToRowView = (legacy) => {
 //
 // `inputLocale` is the project's input language: each concept leads with its
 // name in it. `locales` is the project's name-locale filter, which hides a
-// matched name in any other language; `noMatchedName` hides it everywhere.
-const Concept = ({_id, firstChild, lastChild, concept, openConceptPanel, isShown, onCardClick, onMap, isSelectedForMap, noScore, repoVersion, isAIRecommended, sx, notClickable, noMatchedName, inputLocale, locales, showAlgo, candidatesScore, algoScoreFirst, asTarget, AIRecommendedCandidateId, AIAlternateCandidateIds, targetCanonical, targetRelativeUrl}) => {
+// matched name in any other language.
+const Concept = ({_id, firstChild, lastChild, concept, openConceptPanel, isShown, onCardClick, onMap, isSelectedForMap, noScore, repoVersion, isAIRecommended, sx, notClickable, inputLocale, locales, showAlgo, candidatesScore, algoScoreFirst, asTarget, AIRecommendedCandidateId, AIAlternateCandidateIds, targetCanonical, targetRelativeUrl}) => {
   const rowView = concept?.conceptDefinition ? concept : legacyToRowView(concept)
   if(!rowView?.conceptDefinition) return null
   const { type, candidate, conceptDefinition, conceptRow, bridgeConceptDefinition, bridgeChildren, bridgeContributors, contributingAlgorithmIds, contributingAlgorithms } = rowView
@@ -317,7 +342,7 @@ const Concept = ({_id, firstChild, lastChild, concept, openConceptPanel, isShown
   const isSelectedToShow = isShown ? isShown(idForUI) : false
   const aiAlternateIds = Array.isArray(AIAlternateCandidateIds) ? AIAlternateCandidateIds : []
 
-  const matchedName = noMatchedName ? null : getMatchedName({
+  const matchedName = getMatchedName({
     highlights: candidate?.highlights,
     concept: conceptDefinition,
     displayName: localizedDisplayName(conceptDefinition, inputLocale),

@@ -17,10 +17,20 @@ import Retired from '../common/Retired'
 import ConceptSummaryProperties from '../concepts/ConceptSummaryProperties'
 import MapButton from './MapButton'
 import Score from './Score'
-import { localizedDisplayName } from './conceptNames.js'
+import { localizedDisplayName, getMatchedName } from './conceptNames.js'
+import { MatchedName } from './Concept'
 
-const MappingDecisionResult = ({targetConcept, row, rowIndex, mapTypes, allMapTypes, onMap, proposed, columns, repoVersion, inputLocale, openConceptPanel, candidatesScore}) => {
+const MappingDecisionResult = ({targetConcept, row, rowIndex, mapTypes, allMapTypes, onMap, proposed, columns, repoVersion, inputLocale, locales, openConceptPanel, candidatesScore}) => {
   const { t } = useTranslation();
+  // The target leads with its name in the input language, and the name its
+  // match was made on follows, as on a candidate (OpenConceptLab/ocl_issues#2909).
+  const targetName = localizedDisplayName(targetConcept, inputLocale)
+  const matchedName = getMatchedName({
+    highlights: targetConcept?.search_meta?.search_highlight,
+    concept: targetConcept,
+    displayName: targetName,
+    filterLocales: locales
+  })
   const parentParams = targetConcept?.url ? URIToParentParams(targetConcept.url) : {}
   const contributingAlgorithms = targetConcept?.contributingAlgorithms
     || targetConcept?.search_meta?.contributing_algorithms
@@ -163,7 +173,7 @@ const MappingDecisionResult = ({targetConcept, row, rowIndex, mapTypes, allMapTy
                   primary={
                     <span className='searchable'>
                       <span>
-                        {`${parentParams.repo || targetConcept.repo?.short_code || targetConcept?.repo?.id}:${targetConcept.id} ${localizedDisplayName(targetConcept, inputLocale) || ''}`}
+                        {`${parentParams.repo || targetConcept.repo?.short_code || targetConcept?.repo?.id}:${targetConcept.id} ${targetName || ''}`}
                       </span>
                       {
                         targetConcept.retired &&
@@ -173,6 +183,7 @@ const MappingDecisionResult = ({targetConcept, row, rowIndex, mapTypes, allMapTy
                   }
                   secondary={
                     <>
+                      <MatchedName matchedName={matchedName} noWrap />
                       <div className='searchable'>
                         <span className='searchable' style={{fontSize: '12px'}}>
                           <ConceptSummaryProperties concept={targetConcept} repoVersion={repoVersion}  />

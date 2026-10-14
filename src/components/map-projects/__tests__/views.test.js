@@ -648,6 +648,15 @@ test('sortRowViews: display_name asc', () => {
   assert.deepEqual(out.map(v => v.conceptDefinition.display_name), ['Alpha', 'Beta', 'Gamma'])
 })
 
+test('sortRowViews: display_name sorts on the name shown in the input language (OpenConceptLab/ocl_issues#2909)', () => {
+  const views = [
+    { conceptDefinition: {id: 'glucose', display_name: 'Blood glucose', names: [{name: 'Glucosa en sangre', locale: 'es', locale_preferred: true}]} },
+    { conceptDefinition: {id: 'diabetes', display_name: 'Diabetes mellitus', names: [{name: 'Diabetes mellitus', locale: 'es'}]} }
+  ]
+  assert.deepEqual(sortRowViews(views, 'display_name', 'asc', 'es').map(v => v.conceptDefinition.id), ['diabetes', 'glucose'])
+  assert.deepEqual(sortRowViews(views, 'display_name', 'asc').map(v => v.conceptDefinition.id), ['glucose', 'diabetes'])
+})
+
 test('sortRowViews: undefined scores sort to the bottom in desc order', () => {
   const views = [
     { candidate: {}, conceptDefinition: {display_name: 'x'}, conceptRow: {} },

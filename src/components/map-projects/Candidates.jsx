@@ -40,7 +40,7 @@ import SearchResults from '../search/SearchResults';
 import SearchFilters from '../search/SearchFilters'
 import NoResults from '../search/NoResults';
 import Mappings from './Mappings'
-import Concept from './Concept'
+import Concept, { localizedNameColumn } from './Concept'
 import ConceptIcon from '../concepts/ConceptIcon'
 import MapButton from './MapButton'
 import AICandidatesAnalysis from './AICandidatesAnalysis'
@@ -55,7 +55,6 @@ import {
   getAIAnalysisCandidateIDs
 } from './viewBuilders.js'
 import { getRowProgressLabel } from './rowProgress.js'
-import { localizedDisplayName } from './conceptNames.js'
 
 const Sort = ({ selected, onSort }) => {
   const { t } = useTranslation();
@@ -174,9 +173,6 @@ const CandidateList = ({rowViews, header, rowIndex, sortBy, order, openConceptPa
   //   - Click lookup: SearchResults.handleRowClick uses
   //     `row.version_url || row.url || row.id`. Set those explicitly at the
   //     end so neither earlier spread can clobber them.
-  //   - Table view's name column reads `display_name`: give it the name in
-  //     the project's input language, as the card view shows. Mapping and
-  //     the concept panel read the tuple, so they keep the concept's own.
   const rowsForTable = (rowViews || []).map(view => {
     const legacy = conceptForMapping(view) || {}
     const def = view?.conceptDefinition
@@ -186,8 +182,7 @@ const CandidateList = ({rowViews, header, rowIndex, sortBy, order, openConceptPa
       ...view,
       id: idForLookup,
       url: legacy.url || def?.ocl_url,
-      version_url: legacy.url || def?.ocl_url,
-      display_name: localizedDisplayName(def, inputLocale)
+      version_url: legacy.url || def?.ocl_url
     }
   })
   // Helper: a rowView is mappable only when its concept belongs to the
@@ -207,6 +202,7 @@ const CandidateList = ({rowViews, header, rowIndex, sortBy, order, openConceptPa
 
   const getExtraColumns = () => {
     let cols = [
+      localizedNameColumn(inputLocale),
       {
         sortable: false,
         id: 'mappings',
@@ -534,9 +530,9 @@ const Candidates = ({rowIndex, rowState, conceptCache, targetCanonical, targetRe
           // key/order so the children's order tracks the parent rule. Bridge
           // children don't have their own raw score; sorting by algo_score
           // leaves them in insertion order via sortRowViews' -1 sentinel.
-          candidates: sortRowViews(views, sortBy, order).map(view => (
+          candidates: sortRowViews(views, sortBy, order, inputLocale).map(view => (
             view.type === 'bridge' && view.bridgeChildren?.length
-              ? { ...view, bridgeChildren: sortRowViews(view.bridgeChildren, sortBy, order) }
+              ? { ...view, bridgeChildren: sortRowViews(view.bridgeChildren, sortBy, order, inputLocale) }
               : view
           ))
         }))
@@ -565,7 +561,7 @@ const Candidates = ({rowIndex, rowState, conceptCache, targetCanonical, targetRe
     let available = []
     let lowRanked = []
     let pendingRerank = []
-    sortRowViews(qualityRowViews, sortBy, order).forEach(view => {
+    sortRowViews(qualityRowViews, sortBy, order, inputLocale).forEach(view => {
       const score = view.conceptRow?.rerank_score
       if(byScore) {
         // Bucket on score presence first: unscored rows belong in their

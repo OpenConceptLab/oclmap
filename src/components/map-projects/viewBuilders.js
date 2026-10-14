@@ -15,6 +15,8 @@
 // imports, so the module is loadable by Node's native ESM resolver under
 // node:test.
 
+import { localizedDisplayName } from './conceptNames.js'
+
 const compact = arr => (arr || []).filter(x => x != null && x !== false)
 const values = obj => Object.values(obj || {})
 const isNumber = v => typeof v === 'number' && !Number.isNaN(v)
@@ -336,16 +338,17 @@ export const buildQualityRowViews = (rowState, conceptCache) => {
 
 /**
  * Sort RowViews by the chosen key. `rerank_score` and `algo_score` are
- * numeric; `id` and `display_name` are alphabetical. Missing scores sort
- * to the bottom in `desc` order via a -1 sentinel.
+ * numeric; `id` and `display_name` are alphabetical, `display_name` on the
+ * name shown in `inputLocale` (the project's input language). Missing scores
+ * sort to the bottom in `desc` order via a -1 sentinel.
  */
-export const sortRowViews = (views, sortBy, order) => {
+export const sortRowViews = (views, sortBy, order, inputLocale) => {
   const valueFor = view => {
     switch(sortBy) {
       case 'rerank_score': return view.conceptRow?.rerank_score ?? -1
       case 'algo_score':   return view.candidate?.score ?? -1
       case 'id':           return view.conceptDefinition?.id || view.conceptDefinition?.reference?.code || ''
-      case 'display_name': return view.conceptDefinition?.display_name || ''
+      case 'display_name': return localizedDisplayName(view.conceptDefinition, inputLocale) || ''
       default:             return 0
     }
   }
