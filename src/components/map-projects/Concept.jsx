@@ -63,16 +63,27 @@ export const MatchedName = ({ matchedName, noWrap }) => {
   )
 }
 
-// Table view's name column, naming each concept in the project's input
-// language as the cards do. It changes only how the column renders: rows,
-// which Map and the concept panel read, keep the concept's display_name.
-export const localizedNameColumn = inputLocale => ({
+// Table view's name column, naming each concept as the cards do: in the
+// project's input language, with the name it matched on below. It changes
+// only how the column renders: rows, which Map and the concept panel read,
+// keep the concept's display_name.
+export const localizedNameColumn = (inputLocale, locales) => ({
   id: 'name',
-  renderer: item => (
-    <span>
-      {item.retired && <Retired style={{marginRight: '8px'}}/>} {localizedDisplayName(item, inputLocale)}
-    </span>
-  )
+  renderer: item => {
+    const displayName = localizedDisplayName(item, inputLocale)
+    const matchedName = getMatchedName({
+      highlights: item.search_meta?.search_highlight,
+      concept: item,
+      displayName,
+      filterLocales: locales
+    })
+    return (
+      <span>
+        {item.retired && <Retired style={{marginRight: '8px'}}/>} {displayName}
+        <MatchedName matchedName={matchedName} />
+      </span>
+    )
+  }
 })
 
 

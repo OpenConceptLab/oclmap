@@ -23,7 +23,9 @@ import {
   buildQualityRowViews,
   candidateToRowView,
   conceptForMapping,
-  sortRowViews
+  sortRowViews,
+  findTargetRowView,
+  withCandidateNames
 } from '../viewBuilders.js'
 
 // ---------- Helpers ----------
@@ -673,4 +675,63 @@ test('sortRowViews: id falls back to reference.code when id is absent', () => {
   ]
   const out = sortRowViews(views, 'id', 'asc')
   assert.equal(out[0].conceptDefinition.reference.code, 'a-1')
+})
+
+// ---------- findTargetRowView / withCandidateNames (OpenConceptLab/ocl_issues#2909) ----------
+
+const glucoseNames = [
+  { name: 'Glucose [Mass/volume] in Blood', locale: 'en', locale_preferred: true },
+  { name: 'Glucosa en sangre', locale: 'es', locale_preferred: true }
+]
+const namedCache = {
+  [KEY_LOINC_GLUCOSE]: { ...defLOINCGlucose, names: glucoseNames },
+  [KEY_LOINC_CHOL]: defLOINCChol
+}
+const namedRowState = {
+  candidates: {
+    c1: { id: 'c1', algorithm_id: 'ocl-search', concept_key: KEY_LOINC_GLUCOSE, type: 'standard', score: 0.85, highlights: { synonyms: ['<em>Glucosa</em> en sangre'] } },
+    c2: { id: 'c2', algorithm_id: 'ocl-search', concept_key: KEY_LOINC_CHOL, type: 'standard', score: 0.6 }
+  },
+  concept_rows: {
+    [KEY_LOINC_GLUCOSE]: { concept_key: KEY_LOINC_GLUCOSE, rerank_score: 87 },
+    [KEY_LOINC_CHOL]: { concept_key: KEY_LOINC_CHOL, rerank_score: 55 }
+  }
+}
+// A mapped target as a reopened project restores it from its CSV: id, name,
+// URL and scores, without names or highlights.
+const restoredTarget = {
+  id: '49494-3',
+  display_name: 'Glucose [Mass/volume] in Blood',
+  url: '/orgs/Regenstrief/sources/LOINC/concepts/49494-3/',
+  search_meta: { search_normalized_score: '87', algorithm: 'ocl-search' },
+  repo: { id: 'LOINC' }
+}
+
+test('findTargetRowView: matches a target on its OCL URL, or on its id when either lacks one', () => {
+  const views = buildQualityRowViews(namedRowState, namedCache)
+  assert.equal(findTargetRowView(views, restoredTarget)?.conceptDefinition.id, '49494-3')
+  assert.equal(findTargetRowView(views, { id: '2093-3' })?.conceptDefinition.id, '2093-3')
+  assert.equal(findTargetRowView(views, { id: '49494-3', url: '/orgs/Other/sources/X/concepts/49494-3/' }), undefined)
+  assert.equal(findTargetRowView(views, null), undefined)
+})
+
+test('withCandidateNames: a restored target gets the names and highlights its row\'s candidates hold for it', () => {
+  const out = withCandidateNames(restoredTarget, namedRowState, namedCache)
+  assert.deepEqual(out.names, glucoseNames)
+  assert.deepEqual(out.search_meta, {
+    search_normalized_score: '87',
+    algorithm: 'ocl-search',
+    search_highlight: { synonyms: ['<em>Glucosa</em> en sangre'] }
+  })
+  assert.equal(out.display_name, restoredTarget.display_name)
+  assert.equal(out.repo, restoredTarget.repo)
+})
+
+test('withCandidateNames: keeps a target\'s own names and highlights, and a target no candidate holds', () => {
+  const own = { ...restoredTarget, names: [{ name: 'own', locale: 'es' }], search_meta: { search_highlight: { name: ['own'] } } }
+  assert.equal(withCandidateNames(own, namedRowState, namedCache).names, own.names)
+  assert.deepEqual(withCandidateNames(own, namedRowState, namedCache).search_meta.search_highlight, { name: ['own'] })
+  const searched = { id: '718-7', url: '/orgs/Regenstrief/sources/LOINC/concepts/718-7/' }
+  assert.equal(withCandidateNames(searched, namedRowState, namedCache), searched)
+  assert.equal(withCandidateNames(restoredTarget, undefined, namedCache), restoredTarget)
 })

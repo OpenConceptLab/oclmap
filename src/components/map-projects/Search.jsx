@@ -61,7 +61,7 @@ const Search = ({searchStr, setSearchStr, onSearch, repo, repoVersion, concepts,
 
   const getExtraColumns = () => {
     let cols = [
-      localizedNameColumn(inputLocale),
+      localizedNameColumn(inputLocale, locales),
       {
         sortable: false,
         id: 'mappings',

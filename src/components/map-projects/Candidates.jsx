@@ -202,7 +202,7 @@ const CandidateList = ({rowViews, header, rowIndex, sortBy, order, openConceptPa
 
   const getExtraColumns = () => {
     let cols = [
-      localizedNameColumn(inputLocale),
+      localizedNameColumn(inputLocale, locales),
       {
         sortable: false,
         id: 'mappings',

@@ -415,6 +415,42 @@ export const conceptForMapping = (rowView) => {
 }
 
 /**
+ * The row view of a mapped target: the one whose concept has the target's
+ * OCL URL or, when either lacks one, its id.
+ */
+export const findTargetRowView = (views, target) => {
+  if(!target) return undefined
+  return (views || []).find(view => {
+    const mapped = conceptForMapping(view)
+    if(!mapped) return false
+    if(target.url && mapped.url)
+      return mapped.url === target.url
+    return mapped.id === target.id
+  })
+}
+
+/**
+ * A mapped target with the `names` and the match highlights its row's
+ * candidates hold for it, so it can be named in the project's input language
+ * with the name it matched on (OpenConceptLab/ocl_issues#2909). A target
+ * restored from a saved project has only its id, name and URL. What the
+ * target has of its own is kept; a target no candidate holds is returned as
+ * it is.
+ */
+export const withCandidateNames = (target, rowState, conceptCache) => {
+  const view = rowState ? findTargetRowView(buildQualityRowViews(rowState, conceptCache), target) : undefined
+  if(!view) return target
+  return {
+    ...target,
+    names: target.names || view.conceptDefinition.names,
+    search_meta: {
+      ...target.search_meta,
+      search_highlight: target.search_meta?.search_highlight || view.candidate?.highlights
+    }
+  }
+}
+
+/**
  * Compute the unified score (0-100 percentile) and the raw algorithm score
  * for a candidate+row. Unified score = per-(row, concept) rerank score
  * from the ConceptRow. Raw score = per-algorithm score on the Candidate.
