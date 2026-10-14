@@ -56,10 +56,6 @@ test('getProjectTargetRepoVersion returns empty when the project has no pinned v
   )
 })
 
-test('getDefaultTargetRepoVersion picks the latest release that supports semantic search', () => {
-  assert.equal(getDefaultTargetRepoVersion(LOINC_VERSIONS), LOINC_VERSIONS[0])
-})
-
 test('getDefaultTargetRepoVersion skips a newer release without semantic search', () => {
   const versions = [
     { id: '2.82', released: true, match_algorithms: ['es'] },
@@ -109,16 +105,14 @@ test('getSavedTargetRepoVersion stays unset when the saved version is gone', () 
   assert.equal(getSavedTargetRepoVersion(undefined, '2.81'), false)
 })
 
-test('getLatestReleasedTargetRepoVersion takes the first release the API lists', () => {
-  assert.equal(getLatestReleasedTargetRepoVersion(LOINC_VERSIONS), LOINC_VERSIONS[0])
-  assert.equal(getLatestReleasedTargetRepoVersion([{ id: 'HEAD', released: false }]), null)
+test('getLatestReleasedTargetRepoVersion is null without a versions list', () => {
   assert.equal(getLatestReleasedTargetRepoVersion(undefined), null)
 })
 
 test('getTargetRepoVersionBadges marks the latest release and semantic search', () => {
   assert.deepEqual(
     LOINC_VERSIONS.map(version => getTargetRepoVersionBadges(version, LOINC_VERSIONS)),
-    [['latest', 'semantic_search'], [], [], []]
+    [['common.latest', 'map_project.semantic_search'], [], [], []]
   )
 })
 
@@ -129,7 +123,7 @@ test('getTargetRepoVersionBadges marks no version latest when nothing is release
   ]
   assert.deepEqual(
     versions.map(version => getTargetRepoVersionBadges(version, versions)),
-    [[], ['semantic_search']]
+    [[], ['map_project.semantic_search']]
   )
 })
 

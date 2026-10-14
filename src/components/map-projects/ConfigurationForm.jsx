@@ -61,11 +61,6 @@ const VisuallyHiddenInput = styled('input')({
 
 const deriveCanonicalUrl = relativeUrl => relativeUrl ? `https://ns.openconceptlab.org${relativeUrl}` : ''
 
-const VERSION_BADGE_LABELS = {
-  latest: 'common.latest',
-  semantic_search: 'map_project.semantic_search',
-}
-
 const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, name, setName, description, setDescription, repo, onRepoChange, repoVersion, setRepoVersion, showTargetRepoVersionError, versions, mappedSources, targetSourcesFromRows, algosSelected, setAlgosSelected, sx, algos, validColumns, columns, isValidColumnValue, updateColumn, configure, setConfigure, columnVisibilityModel, setColumnVisibilityModel, onSave, isSaving, candidatesScore, onScoreChange, includeDefaultFilter, setIncludeDefaultFilter, filters, setFilters, locales, isLoadingLocales, setAIAssistantColumns, AIAssistantColumns, inAIAssistantGroup, lookupConfig, setLookupConfig, encoderModel, setEncoderModel, isCoreUser, requestLimits, canSelectAIModel, canSetAIOutputLocale, canBridge, canScispacy, canUseOrgProjects=true, canUseCustomAlgorithms=true, promptTemplates, promptTemplate, onPromptTemplateChange, AIModels, AIModel, setAIModel, namespace, setNamespace, promptOutputLocale, setPromptOutputLocale, inputLocale, setInputLocale, oclLocales, useLexicalVariants, setUseLexicalVariants }) => {
   const { t } = useTranslation();
   const user = getCurrentUser()
@@ -253,7 +248,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
           'map_project.target_repo_version_required',
           'Select a target repository version before saving.'
         ) : ''}
-        getOptionBadges={option => getTargetRepoVersionBadges(option, versions).map(badge => t(VERSION_BADGE_LABELS[badge]))}
+        getOptionBadges={option => getTargetRepoVersionBadges(option, versions).map(key => t(key))}
         getOptionRightText={option => {
           const releaseDate = getTargetRepoVersionReleaseDate(option)
           return releaseDate ? t('map_project.version_released_on', {date: formatDate(releaseDate)}) : ''

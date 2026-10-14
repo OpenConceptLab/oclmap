@@ -4,10 +4,8 @@ export const getTargetRepoVersionFromUrl = url => {
   return parts[4] || ''
 }
 
-export const isLLMBridgeRepoVersion = version => version?.match_algorithms?.includes('llm')
-
 // The OCL Semantic Algorithm runs only on versions vectorized for it.
-export const supportsSemanticSearch = version => Boolean(version?.match_algorithms?.includes('llm'))
+export const isLLMBridgeRepoVersion = version => version?.match_algorithms?.includes('llm')
 
 // The API lists versions newest first.
 export const getLatestReleasedTargetRepoVersion = versions =>
@@ -19,7 +17,7 @@ export const getDefaultTargetRepoVersion = versions => {
   if(!Array.isArray(versions))
     return false
 
-  return versions.find(version => version?.released && supportsSemanticSearch(version)) ||
+  return versions.find(version => version?.released && isLLMBridgeRepoVersion(version)) ||
     getLatestReleasedTargetRepoVersion(versions) ||
     versions.find(version => version?.id === 'HEAD') ||
     false
@@ -34,9 +32,9 @@ export const getTargetRepoVersionBadges = (version, versions) => {
   const latestReleasedVersion = getLatestReleasedTargetRepoVersion(versions)
   const badges = []
   if(latestReleasedVersion && version?.id === latestReleasedVersion.id)
-    badges.push('latest')
-  if(supportsSemanticSearch(version))
-    badges.push('semantic_search')
+    badges.push('common.latest')
+  if(isLLMBridgeRepoVersion(version))
+    badges.push('map_project.semantic_search')
   return badges
 }
 
