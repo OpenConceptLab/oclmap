@@ -398,7 +398,7 @@
     "loading_name_locales": "Cargando Locales de Nombre...",
     "filter_name_locales_helper": "Nota: Restringir candidatos a idiomas específicos limita las capacidades de coincidencia entre idiomas, pero puede mejorar la precisión de los resultados para ciertos conjuntos de datos, especialmente si los datos de entrada están en el mismo idioma que el idioma predeterminado del repositorio objetivo.",
     "input_language": "Idioma de entrada",
-    "input_language_helper": "Idioma de los datos de entrada. Determina qué configuraciones regionales de los nombres del repositorio objetivo se envían al asistente de IA de OCL.",
+    "input_language_helper": "Idioma de los datos de entrada. Los candidatos muestran primero su nombre en este idioma, y determina qué configuraciones regionales de los nombres del repositorio objetivo se envían al asistente de IA de OCL.",
     "ai_effective_locales": "La IA recibirá los nombres en: {{locales}}",
     "ai_all_locales": "La IA recibirá los nombres en: todas las configuraciones regionales (sin filtro)",
     "default_filter": "Filtro Predeterminado",

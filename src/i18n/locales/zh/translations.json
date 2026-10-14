@@ -423,7 +423,7 @@
     "loading_name_locales": "正在加载名称语言环境...",
     "filter_name_locales_helper": "注意：将候选对象限制为特定语言会限制跨语言匹配功能，但可能会提高某些数据集的准确性，特别是如果输入数据与目标存储库的默认语言相同。",
     "input_language": "输入语言",
-    "input_language_helper": "输入数据的语言。决定将目标存储库名称的哪些区域设置发送给 OCL AI 助手。",
+    "input_language_helper": "输入数据的语言。候选项优先显示该语言的名称，并决定将目标存储库名称的哪些区域设置发送给 OCL AI 助手。",
     "ai_effective_locales": "AI 将收到以下区域设置的名称：{{locales}}",
     "ai_all_locales": "AI 将收到所有区域设置的名称（不筛选）",
     "default_filter": "默认筛选器",

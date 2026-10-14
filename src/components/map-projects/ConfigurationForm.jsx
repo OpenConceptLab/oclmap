@@ -216,7 +216,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
             {...params}
             size='small'
             label={t('map_project.input_language', 'Input Language')}
-            helperText={t('map_project.input_language_helper', 'Language of the input data. Determines which target-repo name locales are sent to the OCL AI Assistant.')}
+            helperText={t('map_project.input_language_helper', 'Language of the input data. Candidates lead with their name in this language, and it determines which target-repo name locales are sent to the OCL AI Assistant.')}
           />
         )}
       />
