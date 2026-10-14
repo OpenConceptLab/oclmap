@@ -27,7 +27,7 @@ import isEmpty from 'lodash/isEmpty'
 import omit from 'lodash/omit'
 import filter from 'lodash/filter'
 
-import { getCurrentUser, toV3URL } from '../../common/utils'
+import { formatDate, getCurrentUser, toV3URL } from '../../common/utils'
 import { MATCHING_ALGORITHMS_DOC_LINK } from '../../common/constants'
 import { getProjectConfigErrors } from './algorithms'
 import NamespaceDropdown from '../common/NamespaceDropdown'
@@ -43,7 +43,7 @@ import LookupConfig from './LookupConfig'
 import AdvancedSettings from './AdvancedSettings'
 import RerankerConfig from './RerankerConfig'
 import AIAssistantSelectorPanel from './AIAssistantSelectorPanel'
-import { hasSelectedTargetRepoVersion } from './projectTargetRepo'
+import { getTargetRepoVersionBadges, getTargetRepoVersionReleaseDate, hasSelectedTargetRepoVersion } from './projectTargetRepo'
 import { getPreviewAlgorithmOptions, getPreviewConfigAccessErrors } from './previewConfig'
 
 const VisuallyHiddenInput = styled('input')({
@@ -61,7 +61,12 @@ const VisuallyHiddenInput = styled('input')({
 
 const deriveCanonicalUrl = relativeUrl => relativeUrl ? `https://ns.openconceptlab.org${relativeUrl}` : ''
 
-const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, name, setName, description, setDescription, repo, onRepoChange, repoVersion, setRepoVersion, versions, mappedSources, targetSourcesFromRows, algosSelected, setAlgosSelected, sx, algos, validColumns, columns, isValidColumnValue, updateColumn, configure, setConfigure, columnVisibilityModel, setColumnVisibilityModel, onSave, isSaving, candidatesScore, onScoreChange, includeDefaultFilter, setIncludeDefaultFilter, filters, setFilters, locales, isLoadingLocales, setAIAssistantColumns, AIAssistantColumns, inAIAssistantGroup, lookupConfig, setLookupConfig, encoderModel, setEncoderModel, isCoreUser, requestLimits, canSelectAIModel, canSetAIOutputLocale, canBridge, canScispacy, canUseOrgProjects=true, canUseCustomAlgorithms=true, promptTemplates, promptTemplate, onPromptTemplateChange, AIModels, AIModel, setAIModel, namespace, setNamespace, promptOutputLocale, setPromptOutputLocale, inputLocale, setInputLocale, oclLocales, useLexicalVariants, setUseLexicalVariants }) => {
+const VERSION_BADGE_LABELS = {
+  latest: 'common.latest',
+  semantic_search: 'map_project.semantic_search',
+}
+
+const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, name, setName, description, setDescription, repo, onRepoChange, repoVersion, setRepoVersion, showTargetRepoVersionError, versions, mappedSources, targetSourcesFromRows, algosSelected, setAlgosSelected, sx, algos, validColumns, columns, isValidColumnValue, updateColumn, configure, setConfigure, columnVisibilityModel, setColumnVisibilityModel, onSave, isSaving, candidatesScore, onScoreChange, includeDefaultFilter, setIncludeDefaultFilter, filters, setFilters, locales, isLoadingLocales, setAIAssistantColumns, AIAssistantColumns, inAIAssistantGroup, lookupConfig, setLookupConfig, encoderModel, setEncoderModel, isCoreUser, requestLimits, canSelectAIModel, canSetAIOutputLocale, canBridge, canScispacy, canUseOrgProjects=true, canUseCustomAlgorithms=true, promptTemplates, promptTemplate, onPromptTemplateChange, AIModels, AIModel, setAIModel, namespace, setNamespace, promptOutputLocale, setPromptOutputLocale, inputLocale, setInputLocale, oclLocales, useLexicalVariants, setUseLexicalVariants }) => {
   const { t } = useTranslation();
   const user = getCurrentUser()
   const isLLMAlgoNotAllowed = !repoVersion?.match_algorithms?.includes('llm')
@@ -112,6 +117,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
   const configErrors = getProjectConfigErrors(algosSelected)
   const hasConfigErrors = configErrors.length > 0
   const hasTargetRepoVersion = hasSelectedTargetRepoVersion(repoVersion)
+  const isTargetRepoVersionInError = Boolean(showTargetRepoVersionError && !hasTargetRepoVersion)
   const getAlgos = () => getPreviewAlgorithmOptions({
     algos,
     algosSelected,
@@ -242,11 +248,16 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
         onChange={(id, item) => setRepoVersion(item)}
         value={repoVersion}
         sx={{marginTop: '12px'}}
-        error={Boolean(repo?.url && !hasTargetRepoVersion)}
-        helperText={repo?.url && !hasTargetRepoVersion ? t(
+        error={isTargetRepoVersionInError}
+        helperText={isTargetRepoVersionInError ? t(
           'map_project.target_repo_version_required',
           'Select a target repository version before saving.'
         ) : ''}
+        getOptionBadges={option => getTargetRepoVersionBadges(option, versions).map(badge => t(VERSION_BADGE_LABELS[badge]))}
+        getOptionRightText={option => {
+          const releaseDate = getTargetRepoVersionReleaseDate(option)
+          return releaseDate ? t('map_project.version_released_on', {date: formatDate(releaseDate)}) : ''
+        }}
       />
       {
         effectiveTargetCanonical &&
@@ -537,7 +548,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
         sx={{textTransform: 'none', margin: '20px 5px 5px 0px'}}
         startIcon={<SaveIcon />}
         onClick={onSave}
-        disabled={!name || !file?.name || !owner || hasConfigErrors || hasAccessErrors || !hasTargetRepoVersion}
+        disabled={!name || !file?.name || !owner || hasConfigErrors || hasAccessErrors}
         loading={isSaving}
         loadingPosition="start"
       >

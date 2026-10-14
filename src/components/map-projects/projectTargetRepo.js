@@ -6,18 +6,45 @@ export const getTargetRepoVersionFromUrl = url => {
 
 export const isLLMBridgeRepoVersion = version => version?.match_algorithms?.includes('llm')
 
+// The OCL Semantic Algorithm runs only on versions vectorized for it.
+export const supportsSemanticSearch = version => Boolean(version?.match_algorithms?.includes('llm'))
+
+// The API lists versions newest first.
+export const getLatestReleasedTargetRepoVersion = versions =>
+  (Array.isArray(versions) && versions.find(version => version?.released)) || null
+
+// A newly chosen repository starts on its latest release that supports
+// semantic search, else its latest release, else HEAD.
 export const getDefaultTargetRepoVersion = versions => {
-  if(!Array.isArray(versions) || versions.length === 0)
+  if(!Array.isArray(versions))
     return false
-  if(versions.length === 1)
-    return versions[0]
 
-  const releasedVersions = versions.filter(version => version?.released)
-  if(releasedVersions.length === 1)
-    return releasedVersions[0]
-
-  return false
+  return versions.find(version => version?.released && supportsSemanticSearch(version)) ||
+    getLatestReleasedTargetRepoVersion(versions) ||
+    versions.find(version => version?.id === 'HEAD') ||
+    false
 }
+
+// A saved project keeps its version, never the default. HEAD's version_url
+// carries no version, so a project saved on HEAD has none in its URL.
+export const getSavedTargetRepoVersion = (versions, savedVersion) =>
+  (Array.isArray(versions) && versions.find(version => version?.id === (savedVersion || 'HEAD'))) || false
+
+export const getTargetRepoVersionBadges = (version, versions) => {
+  const latestReleasedVersion = getLatestReleasedTargetRepoVersion(versions)
+  const badges = []
+  if(latestReleasedVersion && version?.id === latestReleasedVersion.id)
+    badges.push('latest')
+  if(supportsSemanticSearch(version))
+    badges.push('semantic_search')
+  return badges
+}
+
+// OCL keeps no release timestamp: revision_date is copied from HEAD when a
+// version is created, and updated_on moves with later edits. created_on is
+// what OCL orders versions by, so the latest release shows the newest date.
+export const getTargetRepoVersionReleaseDate = version =>
+  (version?.released && version.created_on) || null
 
 export const getDefaultBridgeRepoVersion = versions => {
   if(!Array.isArray(versions) || versions.length === 0)
