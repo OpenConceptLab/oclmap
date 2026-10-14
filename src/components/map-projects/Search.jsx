@@ -24,7 +24,7 @@ import Concept from './Concept'
 import MapButton from './MapButton'
 import GAService from '../../services/GAService'
 
-const Search = ({searchStr, setSearchStr, onSearch, repo, repoVersion, concepts, openConceptPanel, showItem, isSelectedForMap, onMap, response, facets, appliedFacets, setAppliedFacets, isLoading, filters, columns, defaultFilters, locales}) => {
+const Search = ({searchStr, setSearchStr, onSearch, repo, repoVersion, concepts, openConceptPanel, showItem, isSelectedForMap, onMap, response, facets, appliedFacets, setAppliedFacets, isLoading, filters, columns, defaultFilters, inputLocale, locales}) => {
   const { t } = useTranslation();
   const [openFilters, setOpenFilters] = React.useState(false)
   const [display, setDisplay] = React.useState('card')
@@ -209,6 +209,7 @@ const Search = ({searchStr, setSearchStr, onSearch, repo, repoVersion, concepts,
                   isSelectedForMap={isSelectedForMap}
                   repoVersion={repoVersion}
                   noScore
+                  inputLocale={inputLocale}
                   locales={locales}
                 />
               )

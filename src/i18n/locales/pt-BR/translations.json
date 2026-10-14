@@ -576,6 +576,7 @@
     "view_existing_analysis": "Ver Existente",
     "run_new_analysis": "Executar Nova Análise",
     "matched": "Correspondido",
+    "matched_name": "Nome correspondente",
     "dates": "Datas",
     "none": "Nenhum",
     "decision_changed_to_none": "Decisão Alterada para Nenhum",

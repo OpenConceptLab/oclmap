@@ -547,6 +547,7 @@
     "view_existing_analysis": "Ver existente",
     "run_new_analysis": "Ejecutar nuevo análisis",
     "matched": "Coincidencias",
+    "matched_name": "Nombre coincidente",
     "dates": "Fechas",
     "none": "Ninguno",
     "decision_changed_to_none": "Decisión cambiada a Ninguno",

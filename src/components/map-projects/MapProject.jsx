@@ -1133,7 +1133,7 @@ const MapProject = () => {
                 null
               }
               <span style={{minWidth: 0, flex: 1}}>
-                <Concept key={`${params.row.__index}-${targetConcept.id}`} sx={{padding: 0}} repoVersion={repoVersion} notClickable firstChild concept={targetConcept} noScore onCardClick={false} noSynonymPrefix asTarget />
+                <Concept key={`${params.row.__index}-${targetConcept.id}`} sx={{padding: 0}} repoVersion={repoVersion} notClickable firstChild concept={targetConcept} noScore onCardClick={false} noMatchedName inputLocale={inputLocale} asTarget />
               </span>
             </span>
           )
@@ -6503,6 +6503,7 @@ const MapProject = () => {
                   candidatesScore={candidatesScore}
                   targetConcept={targetConcept}
                   repoVersion={repoVersion}
+                  inputLocale={inputLocale}
                   row={row}
                   rowIndex={rowIndex}
                   repo={repo}
@@ -6602,6 +6603,7 @@ const MapProject = () => {
                         setAppliedFacets(() => ({...appliedFacets, [rowIndex]: filters}))
                         fetchAllCandidatesForRow(null, 0, false, false, filters, true)
                       }}
+                      inputLocale={inputLocale}
                       locales={filters.locale || ''}
                       models={AIModels}
                       selectedModel={AIModel}
@@ -6641,6 +6643,7 @@ const MapProject = () => {
                         setAppliedFacets({...appliedFacets, [rowIndex]: filters})
                         search(null, null, null, null, filters)
                       }}
+                      inputLocale={inputLocale}
                       locales={filters.locale || ''}
                     />
                 }

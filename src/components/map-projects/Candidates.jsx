@@ -55,6 +55,7 @@ import {
   getAIAnalysisCandidateIDs
 } from './viewBuilders.js'
 import { getRowProgressLabel } from './rowProgress.js'
+import { localizedDisplayName } from './conceptNames.js'
 
 const Sort = ({ selected, onSort }) => {
   const { t } = useTranslation();
@@ -162,7 +163,7 @@ const SubHeader = ({count, onClick, isCollapsed, header, indicatorColor, indicat
 }
 
 
-const CandidateList = ({rowViews, header, rowIndex, sortBy, order, openConceptPanel, showItem, isSelectedForMap, onMap, onFetchMore, bgColor, headerIndicatorIcon, bucketId, display, onDisplayChange, noToolbar, toolbarControl, repoVersion, alignToolbarLeft, rightControl, analysis, showAnalysis, openAnalysis, onCloseAnalysis, isInProgress, AIRecommendedCandidateId, AIAlternateCandidateIds, locales, scispacy, showAlgo, collapsed, onCollapse, candidatesScore, algoScoreFirst, byAlgorithm, showEmptyHeader, isFirst, targetCanonical, targetRelativeUrl, analysisPage, setAnalysisPage}) => {
+const CandidateList = ({rowViews, header, rowIndex, sortBy, order, openConceptPanel, showItem, isSelectedForMap, onMap, onFetchMore, bgColor, headerIndicatorIcon, bucketId, display, onDisplayChange, noToolbar, toolbarControl, repoVersion, alignToolbarLeft, rightControl, analysis, showAnalysis, openAnalysis, onCloseAnalysis, isInProgress, AIRecommendedCandidateId, AIAlternateCandidateIds, inputLocale, locales, scispacy, showAlgo, collapsed, onCollapse, candidatesScore, algoScoreFirst, byAlgorithm, showEmptyHeader, isFirst, targetCanonical, targetRelativeUrl, analysisPage, setAnalysisPage}) => {
   // Decorate rowViews so they work for BOTH renderers:
   //   - Table view: SearchResults/TableResults reads legacy concept fields
   //     (id, url, names, descriptions, source, search_meta, ...) via the
@@ -173,6 +174,9 @@ const CandidateList = ({rowViews, header, rowIndex, sortBy, order, openConceptPa
   //   - Click lookup: SearchResults.handleRowClick uses
   //     `row.version_url || row.url || row.id`. Set those explicitly at the
   //     end so neither earlier spread can clobber them.
+  //   - Table view's name column reads `display_name`: give it the name in
+  //     the project's input language, as the card view shows. Mapping and
+  //     the concept panel read the tuple, so they keep the concept's own.
   const rowsForTable = (rowViews || []).map(view => {
     const legacy = conceptForMapping(view) || {}
     const def = view?.conceptDefinition
@@ -182,7 +186,8 @@ const CandidateList = ({rowViews, header, rowIndex, sortBy, order, openConceptPa
       ...view,
       id: idForLookup,
       url: legacy.url || def?.ocl_url,
-      version_url: legacy.url || def?.ocl_url
+      version_url: legacy.url || def?.ocl_url,
+      display_name: localizedDisplayName(def, inputLocale)
     }
   })
   // Helper: a rowView is mappable only when its concept belongs to the
@@ -327,6 +332,7 @@ const CandidateList = ({rowViews, header, rowIndex, sortBy, order, openConceptPa
             repoVersion={repoVersion}
             AIRecommendedCandidateId={AIRecommendedCandidateId}
             AIAlternateCandidateIds={AIAlternateCandidateIds}
+            inputLocale={inputLocale}
             locales={locales}
             notClickable={Boolean(scispacy)}
             showAlgo={showAlgo}
@@ -377,7 +383,7 @@ const CandidateList = ({rowViews, header, rowIndex, sortBy, order, openConceptPa
 //   conceptCache — project-wide ConceptDefinition store, keyed by concept_key.
 //   algosSelected — algorithm definitions (for headers/grouping).
 // (plans/unified-mapper-model.md "How the views map onto this model".)
-const Candidates = ({rowIndex, rowState, conceptCache, targetCanonical, targetRelativeUrl, openConceptPanel, showItem, isSelectedForMap, onMap, onFetchMore, isLoading, candidatesScore, repoVersion, analysis, onFetchRecommendation, appliedFacets, setAppliedFacets, filters, facets, columns, defaultFilters, locales, models, selectedModel, onModelChange, promptTemplates, promptTemplate, onPromptTemplateChange, onRefreshClick, rowStage, inAIAssistantGroup, algosSelected, canSelectAIModel, capacityWait=false, throttle}) => {
+const Candidates = ({rowIndex, rowState, conceptCache, targetCanonical, targetRelativeUrl, openConceptPanel, showItem, isSelectedForMap, onMap, onFetchMore, isLoading, candidatesScore, repoVersion, analysis, onFetchRecommendation, appliedFacets, setAppliedFacets, filters, facets, columns, defaultFilters, inputLocale, locales, models, selectedModel, onModelChange, promptTemplates, promptTemplate, onPromptTemplateChange, onRefreshClick, rowStage, inAIAssistantGroup, algosSelected, canSelectAIModel, capacityWait=false, throttle}) => {
   const { t } = useTranslation();
   const [sortBy, setSortBy] = React.useState('rerank_score')
   const [groupBy, setGroupBy] = React.useState('quality')
@@ -460,6 +466,7 @@ const Candidates = ({rowIndex, rowState, conceptCache, targetCanonical, targetRe
     repoVersion: repoVersion,
     AIRecommendedCandidateId: AIRecommendedCandidateId,
     AIAlternateCandidateIds: AIAlternateCandidateIds,
+    inputLocale: inputLocale,
     locales: locales,
     candidatesScore: candidatesScore,
     algoScoreFirst: algoScoreFirst,

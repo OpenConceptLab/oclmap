@@ -17,8 +17,9 @@ import Retired from '../common/Retired'
 import ConceptSummaryProperties from '../concepts/ConceptSummaryProperties'
 import MapButton from './MapButton'
 import Score from './Score'
+import { localizedDisplayName } from './conceptNames.js'
 
-const MappingDecisionResult = ({targetConcept, row, rowIndex, mapTypes, allMapTypes, onMap, proposed, columns, repoVersion, openConceptPanel, candidatesScore}) => {
+const MappingDecisionResult = ({targetConcept, row, rowIndex, mapTypes, allMapTypes, onMap, proposed, columns, repoVersion, inputLocale, openConceptPanel, candidatesScore}) => {
   const { t } = useTranslation();
   const parentParams = targetConcept?.url ? URIToParentParams(targetConcept.url) : {}
   const contributingAlgorithms = targetConcept?.contributingAlgorithms
@@ -162,7 +163,7 @@ const MappingDecisionResult = ({targetConcept, row, rowIndex, mapTypes, allMapTy
                   primary={
                     <span className='searchable'>
                       <span>
-                        {`${parentParams.repo || targetConcept.repo?.short_code || targetConcept?.repo?.id}:${targetConcept.id} ${targetConcept.display_name || ''}`}
+                        {`${parentParams.repo || targetConcept.repo?.short_code || targetConcept?.repo?.id}:${targetConcept.id} ${localizedDisplayName(targetConcept, inputLocale) || ''}`}
                       </span>
                       {
                         targetConcept.retired &&
