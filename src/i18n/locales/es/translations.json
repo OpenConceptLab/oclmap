@@ -397,6 +397,8 @@
     "filter_name_locales": "Filtrar Locales de Nombre",
     "loading_name_locales": "Cargando Locales de Nombre...",
     "filter_name_locales_helper": "Nota: Restringir candidatos a idiomas específicos limita las capacidades de coincidencia entre idiomas, pero puede mejorar la precisión de los resultados para ciertos conjuntos de datos, especialmente si los datos de entrada están en el mismo idioma que el idioma predeterminado del repositorio objetivo.",
+    "filter_name_locales_default_only": "Este destino solo declara su locale predeterminado, así que no hay otros locales por los que filtrar.",
+    "filter_name_locales_open_settings": "Declara más locales en la configuración del repositorio en TBv3.",
     "input_language": "Idioma de entrada",
     "input_language_helper": "Idioma de los datos de entrada. Determina qué configuraciones regionales de los nombres del repositorio objetivo se envían al asistente de IA de OCL.",
     "ai_effective_locales": "La IA recibirá los nombres en: {{locales}}",

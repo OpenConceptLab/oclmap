@@ -114,7 +114,7 @@ import { getAIAssistantChoices, getModelUsed, getPromptTemplateKey, createLatest
 import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
 import { normalizeAlgorithmInvocation, hasSuccessfulAlgorithmResponse, getAlgorithmStagesFromResponses, lookupStatusRank, buildRecommendableConceptEntry, stripConstantClassAndDatatype, buildLookupConceptUrl, serializeCandidates, toStoredRowMatchState } from './normalizers'
 import { parseConceptKey } from './conceptKey'
-import { getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getSavedTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId } from './projectTargetRepo'
+import { getDeclaredLocales, getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getSavedTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId } from './projectTargetRepo'
 import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, formatBridgeTargetDownloadEntry, resolveAICandidateID, getScoreDetails, getAIAnalysisCandidateIDs } from './viewBuilders.js'
 import { formatClockTime, getCapacityWaitLabel, mergeCapacityWaits } from './rowProgress.js'
 
@@ -393,7 +393,6 @@ const MapProject = () => {
   const [mappedSources, setMappedSources] = React.useState([])
   const [bridgeMappedSources, setBridgeMappedSources] = React.useState({})
   const [locales, setLocales] = React.useState([])
-  const [isLoadingLocales, setIsLoadingLocales] = React.useState(false)
   const [versions, setVersions] = React.useState([])
   const [conceptCache, setConceptCache] = React.useState({})
   const [allMapTypes, setAllMapTypes] = React.useState([])
@@ -2014,16 +2013,6 @@ const MapProject = () => {
     recurse(0, 1, 0, [])
   }
 
-  const fetchLocaleDistribution = url => {
-    if(!url)
-      return
-    setIsLoadingLocales(true)
-    APIService.new().overrideURL(url).appendToUrl('summary/').get(null, null, {verbose: true, distribution: 'name_locale_list'}).then(response => {
-      setLocales(response?.data?.distribution?.name_locale_list || [])
-      setIsLoadingLocales(false)
-    })
-  }
-
   const _fetchMappedSources = (
     url, limit, offset, page, callback
   ) => {
@@ -2034,7 +2023,7 @@ const MapProject = () => {
     setRepoVersion(version || false)
     setShowTargetRepoVersionError(false)
     if(version?.version_url) {
-      fetchLocaleDistribution(version.version_url)
+      setLocales(getDeclaredLocales(version))
       fetchMappedSources(version.version_url, setMappedSources)
       updateAlgosByRepoVersion(version)
     } else {
@@ -5973,7 +5962,6 @@ const MapProject = () => {
       filters={filters}
       setFilters={setFilters}
       locales={locales}
-      isLoadingLocales={isLoadingLocales}
       bridgeEnabled={bridgeEnabled}
       canBridge={canBridge}
       isCoreUser={isCoreUser}

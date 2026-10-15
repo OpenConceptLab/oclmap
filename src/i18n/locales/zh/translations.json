@@ -422,6 +422,8 @@
     "filter_name_locales": "筛选名称语言环境",
     "loading_name_locales": "正在加载名称语言环境...",
     "filter_name_locales_helper": "注意：将候选对象限制为特定语言会限制跨语言匹配功能，但可能会提高某些数据集的准确性，特别是如果输入数据与目标存储库的默认语言相同。",
+    "filter_name_locales_default_only": "该目标仅声明了其默认语言环境，因此没有其他可用于筛选的语言环境。",
+    "filter_name_locales_open_settings": "请在 TBv3 中的存储库设置里声明更多语言环境。",
     "input_language": "输入语言",
     "input_language_helper": "输入数据的语言。决定将目标存储库名称的哪些区域设置发送给 OCL AI 助手。",
     "ai_effective_locales": "AI 将收到以下区域设置的名称：{{locales}}",

@@ -422,6 +422,8 @@
     "filter_name_locales": "Global Locale Filter",
     "loading_name_locales": "Loading Name Locales...",
     "filter_name_locales_helper": "Note: Restricting candidates to specific languages limits cross-lingual matching capabilities, but may improve the accuracy of results for certain datasets, especially if the input data is in the same language as a target repository's default language.",
+    "filter_name_locales_default_only": "This target declares only its default locale, so there are no other locales to filter by.",
+    "filter_name_locales_open_settings": "Declare more locales in the repository's settings in TBv3.",
     "input_language": "Input Language",
     "input_language_helper": "Language of the input data. Determines which target-repo name locales are sent to the OCL AI Assistant.",
     "ai_effective_locales": "AI will receive names in: {{locales}}",
