@@ -388,6 +388,8 @@
     "project_owner": "Propietario del Proyecto",
     "project_name": "Nombre del Proyecto",
     "no_projects_found": "No se encontraron proyectos.",
+    "no_projects_hint": "Para empezar, suba un archivo .csv o .xlsx con una fila por cada término local que desee mapear.",
+    "download_sample_spreadsheet": "Descargar una hoja de cálculo de ejemplo",
     "input_data": "Datos de Entrada",
     "upload_file_description": "Suba una hoja de cálculo (.csv, .xls, .xlsx) que contenga los datos de entrada a mapear.",
     "upload_file": "Subir archivo",

@@ -13,6 +13,7 @@ import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
+import Link from '@mui/material/Link'
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';
 import TableCell from '@mui/material/TableCell';
@@ -200,8 +201,31 @@ const MapProjects = () => {
                 {
                   loaded && projects.length === 0 &&
                     <TableRow>
-                      <TableCell colSpan={6} align='center'>
-                        <NoResults text={t('map_project.no_projects_found')} height='300px' />
+                      <TableCell colSpan={6} align='center' sx={{padding: '20px 16px 8px 16px'}}>
+                        <NoResults
+                          height='auto'
+                          text={
+                            <div style={{padding: '16px 0'}}>
+                              <Typography sx={{fontSize: '18px', color: 'surface.dark', fontWeight: 600}}>{t('map_project.no_projects_found')}</Typography>
+                              <Typography sx={{color: 'surface.dark', mt: '4px', mb: '16px'}}>{t('map_project.no_projects_hint')}</Typography>
+                              <Button
+                                variant='contained'
+                                color='primary'
+                                startIcon={<AddIcon />}
+                                href='/map-projects/new'
+                                onClick={onNewProjectClick}
+                                sx={{textTransform: 'none', mb: '12px'}}
+                              >
+                                {t('map_project.new_map_project')}
+                              </Button>
+                              <div>
+                                <Link href='/mapper_sample_lab_tests.csv' download sx={{fontSize: '14px'}}>
+                                  {t('map_project.download_sample_spreadsheet')}
+                                </Link>
+                              </div>
+                            </div>
+                          }
+                        />
                       </TableCell>
                     </TableRow>
                 }

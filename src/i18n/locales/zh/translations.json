@@ -413,6 +413,8 @@
     "project_owner": "项目所有者",
     "project_name": "项目名称",
     "no_projects_found": "未找到项目。",
+    "no_projects_hint": "开始之前，请上传一个 .csv 或 .xlsx 文件，每行对应一个要映射的本地术语。",
+    "download_sample_spreadsheet": "下载示例电子表格",
     "input_data": "输入数据",
     "upload_file_description": "上传包含要映射的输入数据的电子表格（.csv、.xls、.xlsx）。",
     "upload_file": "上传文件",
