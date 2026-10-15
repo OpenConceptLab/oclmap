@@ -8,7 +8,6 @@ import Button from '@mui/material/Button'
 import IconButton from '@mui/material/IconButton'
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Checkbox from '@mui/material/Checkbox';
-import CircularProgress from '@mui/material/CircularProgress';
 
 import { styled } from '@mui/material/styles';
 
@@ -29,6 +28,7 @@ import filter from 'lodash/filter'
 
 import { formatDate, getCurrentUser, toV3URL } from '../../common/utils'
 import { MATCHING_ALGORITHMS_DOC_LINK } from '../../common/constants'
+import { COLORS } from '../../common/colors'
 import { getProjectConfigErrors } from './algorithms'
 import NamespaceDropdown from '../common/NamespaceDropdown'
 import RepoSearchAutocomplete from '../repos/RepoSearchAutocomplete'
@@ -61,11 +61,13 @@ const VisuallyHiddenInput = styled('input')({
 
 const deriveCanonicalUrl = relativeUrl => relativeUrl ? `https://ns.openconceptlab.org${relativeUrl}` : ''
 
-const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, name, setName, description, setDescription, repo, onRepoChange, repoVersion, setRepoVersion, showTargetRepoVersionError, versions, mappedSources, targetSourcesFromRows, algosSelected, setAlgosSelected, sx, algos, validColumns, columns, isValidColumnValue, updateColumn, configure, setConfigure, columnVisibilityModel, setColumnVisibilityModel, onSave, isSaving, candidatesScore, onScoreChange, includeDefaultFilter, setIncludeDefaultFilter, filters, setFilters, locales, isLoadingLocales, setAIAssistantColumns, AIAssistantColumns, inAIAssistantGroup, lookupConfig, setLookupConfig, encoderModel, setEncoderModel, isCoreUser, requestLimits, canSelectAIModel, canSetAIOutputLocale, canBridge, canScispacy, canUseOrgProjects=true, canUseCustomAlgorithms=true, promptTemplates, promptTemplate, onPromptTemplateChange, AIModels, AIModel, setAIModel, namespace, setNamespace, promptOutputLocale, setPromptOutputLocale, inputLocale, setInputLocale, oclLocales, useLexicalVariants, setUseLexicalVariants }) => {
+const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, name, setName, description, setDescription, repo, onRepoChange, repoVersion, setRepoVersion, showTargetRepoVersionError, versions, mappedSources, targetSourcesFromRows, algosSelected, setAlgosSelected, sx, algos, validColumns, columns, isValidColumnValue, updateColumn, configure, setConfigure, columnVisibilityModel, setColumnVisibilityModel, onSave, isSaving, candidatesScore, onScoreChange, includeDefaultFilter, setIncludeDefaultFilter, filters, setFilters, locales, setAIAssistantColumns, AIAssistantColumns, inAIAssistantGroup, lookupConfig, setLookupConfig, encoderModel, setEncoderModel, isCoreUser, requestLimits, canSelectAIModel, canSetAIOutputLocale, canBridge, canScispacy, canUseOrgProjects=true, canUseCustomAlgorithms=true, promptTemplates, promptTemplate, onPromptTemplateChange, AIModels, AIModel, setAIModel, namespace, setNamespace, promptOutputLocale, setPromptOutputLocale, inputLocale, setInputLocale, oclLocales, useLexicalVariants, setUseLexicalVariants }) => {
   const { t } = useTranslation();
   const user = getCurrentUser()
   const isLLMAlgoNotAllowed = !repoVersion?.match_algorithms?.includes('llm')
   const appliedLocales = filters?.locale ? filters?.locale?.split(',') : []
+  // A saved selection stays listed even when the target doesn't declare it.
+  const nameLocaleOptions = [...new Set([...locales, ...appliedLocales])]
   // PR3-H: effective set of name locales the AI Assistant will receive.
   // Union of (input_locale, filters.locale) deduped on primary subtag.
   // Empty = no filter (backwards-compatible for old projects with neither set).
@@ -161,9 +163,10 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
       <TextField
         fullWidth
         sx={{marginTop: '12px'}}
-        label={t('common.description')}
+        label={t('map_project.context')}
         value={description}
         onChange={event => setDescription(event.target.value || '')}
+        helperText={t('map_project.context_helper')}
         multiline
         maxRows={3}
       />
@@ -337,8 +340,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
             multiple
             size='small'
             id="locale"
-            disabled={isLoadingLocales}
-            options={locales}
+            options={nameLocaleOptions}
             getOptionLabel={(option) => option}
             value={appliedLocales}
             onChange={(event, values) => {
@@ -349,18 +351,19 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
               <TextField
                 {...params}
                 size='small'
-                label={
-                  isLoadingLocales ?
-                    <span style={{display: 'flex'}}>
-                      {t('map_project.loading_name_locales')}
-                      <CircularProgress sx={{marginLeft: '16px', width: '20px !important', height: '20px !important'}} />
-                    </span> :
-                    t('map_project.filter_name_locales')
-                }
+                label={t('map_project.filter_name_locales')}
                 helperText={t('map_project.filter_name_locales_helper')}
               />
             )}
           />
+      {
+        repoVersion?.version_url && locales.length <= 1 &&
+          <FormHelperText sx={{marginLeft: '14px'}}>
+            {t('map_project.filter_name_locales_default_only')}
+            {' '}
+            <a href={toV3URL(repo?.url || repoVersion.url)} target='_blank' rel='noopener noreferrer' style={{color: COLORS.primary.main}}>{t('map_project.filter_name_locales_open_settings')}</a>
+          </FormHelperText>
+      }
       {
         !isEmpty(repoVersion?.meta?.display?.default_filter) && repoVersion?.meta?.display?.default_filter &&
           <>

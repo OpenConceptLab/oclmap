@@ -72,3 +72,8 @@ export const getProjectTargetRepoVersion = projectData => {
 }
 
 export const hasSelectedTargetRepoVersion = repoVersion => Boolean(getTargetRepoVersionId(repoVersion))
+
+// The name locales a target version declares: its default first, then the rest.
+// Read from the version itself, so choosing a version makes no request.
+export const getDeclaredLocales = version =>
+  [...new Set([version?.default_locale, ...(version?.supported_locales || [])])].filter(Boolean)

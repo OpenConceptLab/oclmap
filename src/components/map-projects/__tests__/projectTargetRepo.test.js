@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  getDeclaredLocales,
   getDefaultBridgeRepoVersion,
   getDefaultTargetRepoVersion,
   getLatestReleasedBridgeVersion,
@@ -211,4 +212,15 @@ test('getLatestReleasedBridgeVersion stays null when every option is HEAD-like',
     ]),
     null
   )
+})
+
+test('getDeclaredLocales reads the version default and supported locales', () => {
+  assert.deepEqual(
+    getDeclaredLocales({ default_locale: 'en', supported_locales: ['en', 'es', 'fr'] }),
+    ['en', 'es', 'fr']
+  )
+  assert.deepEqual(getDeclaredLocales({ default_locale: 'en', supported_locales: ['en'] }), ['en'])
+  assert.deepEqual(getDeclaredLocales({ default_locale: 'en' }), ['en'])
+  assert.deepEqual(getDeclaredLocales({}), [])
+  assert.deepEqual(getDeclaredLocales(null), [])
 })
