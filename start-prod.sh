@@ -32,6 +32,12 @@ fi
 if [[ ! -z "${OIDC_RP_CLIENT_ID}" ]]; then
     echo "var OIDC_RP_CLIENT_ID = \"${OIDC_RP_CLIENT_ID}\";" >> ${ENV_FILE}
 fi
+if [[ ! -z "${OIDC_SERVER_URL}" ]]; then
+    echo "var OIDC_SERVER_URL = \"${OIDC_SERVER_URL}\";" >> ${ENV_FILE}
+fi
+if [[ ! -z "${OIDC_REALM}" ]]; then
+    echo "var OIDC_REALM = \"${OIDC_REALM}\";" >> ${ENV_FILE}
+fi
 if [[ ! -z "${OCL_ONLINE}" ]]; then
     echo "var OCL_ONLINE = \"${OCL_ONLINE}\";" >> ${ENV_FILE}
 fi

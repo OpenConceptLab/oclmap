@@ -18,3 +18,5 @@ services:
     environment:
       - LOGIN_REDIRECT_URL=${LOGIN_REDIRECT_URL-http://localhost:4004}
       - OIDC_RP_CLIENT_ID=${OIDC_RP_CLIENT_ID-oclmaplocal}
+      - OIDC_SERVER_URL=${OIDC_SERVER_URL:-http://localhost:8080}
+      - OIDC_REALM=${OIDC_REALM:-ocl}
