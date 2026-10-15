@@ -414,6 +414,8 @@
     "project_name": "Project Name",
     "no_projects_found": "No projects found.",
     "input_data": "Input Data",
+    "context": "Context",
+    "context_helper": "Describe your data and setting (for example, lab orders from a district hospital in Kenya). The OCL AI Assistant uses this to tailor its recommendations.",
     "upload_file_description": "Upload a spreadsheet (.csv, .xls, .xlsx) that contains the input data to be mapped.",
     "upload_file": "Upload file",
     "target_repository": "Target Repository",

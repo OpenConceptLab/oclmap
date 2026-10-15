@@ -414,6 +414,8 @@
     "project_name": "Nome do Projeto",
     "no_projects_found": "Nenhum projeto encontrado.",
     "input_data": "Dados de Entrada",
+    "context": "Contexto",
+    "context_helper": "Descreva seus dados e o contexto (por exemplo, pedidos de laboratório de um hospital distrital no Quênia). O Assistente de IA do OCL usa isso para adaptar suas recomendações.",
     "upload_file_description": "Carregue uma planilha (.csv, .xls, .xlsx) que contenha os dados de entrada a serem mapeados.",
     "upload_file": "Carregar arquivo",
     "target_repository": "Repositório de Destino",

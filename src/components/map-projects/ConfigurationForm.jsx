@@ -163,9 +163,10 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
       <TextField
         fullWidth
         sx={{marginTop: '12px'}}
-        label={t('common.description')}
+        label={t('map_project.context')}
         value={description}
         onChange={event => setDescription(event.target.value || '')}
+        helperText={t('map_project.context_helper')}
         multiline
         maxRows={3}
       />

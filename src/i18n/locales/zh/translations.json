@@ -414,6 +414,8 @@
     "project_name": "项目名称",
     "no_projects_found": "未找到项目。",
     "input_data": "输入数据",
+    "context": "上下文",
+    "context_helper": "描述您的数据及其使用场景（例如，肯尼亚某区级医院的实验室检验申请）。OCL AI 助手会据此调整其推荐结果。",
     "upload_file_description": "上传包含要映射的输入数据的电子表格（.csv、.xls、.xlsx）。",
     "upload_file": "上传文件",
     "target_repository": "目标存储库",
