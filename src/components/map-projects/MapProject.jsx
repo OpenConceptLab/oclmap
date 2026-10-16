@@ -84,6 +84,7 @@ import { buildPanelPayload } from './openConceptPanel'
 import LoaderDialog from '../common/LoaderDialog'
 import Error403 from '../errors/Error403'
 import { HEADERS, SEMANTIC_SEARCH_HEADERS, ROW_STATES, VIEWS, DECISION_TABS, ROW_STAGES, PROMPTS_KEY_DEFAULT, PROMPTS_ACTION_TYPE_DEFAULT, SCORES_COLOR } from './constants'
+import { suggestColumnLabels } from './columnSuggestions'
 import MapProjectDeleteConfirmDialog from './MapProjectDeleteConfirmDialog';
 import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
@@ -719,6 +720,18 @@ const MapProject = () => {
         return {id: `property__${_filter.code}`, label: `Property: ${_filter.code}`, description: _filter.description || ''}
     }))]
 
+  // The target repo can load after the file (and so its properties), so
+  // re-suggest columns the user has not edited yet (ocl_issues#2907).
+  const headersKey = map(headers, 'label').join('|')
+  React.useEffect(() => {
+    setColumns(prev => {
+      if(!prev.some(col => col.auto))
+        return prev
+      const suggestedLabels = suggestColumnLabels(map(prev, 'original'), headers)
+      return map(prev, (col, idx) => col.auto ? {...col, label: suggestedLabels[idx] || col.original, suggested: Boolean(suggestedLabels[idx])} : col)
+    })
+  }, [headersKey])
+
   React.useEffect(() => {
     if(!isEmpty(decisions)) {
       window.addEventListener("beforeunload", alertUser);
@@ -857,7 +870,8 @@ const MapProject = () => {
           setProjectFromData(data, response.data)
           setAlgosSelected(response?.data?.algorithms || [])
           if (response?.data.columns?.length > 0) {
-            const _columns = response.data.columns.map(col => ({...omit(col, ['hidden'])}))
+            // Saved mappings are the user's, so they are never re-suggested.
+            const _columns = response.data.columns.map(col => ({...omit(col, ['hidden', 'auto'])}))
             setColumns(_columns)
             setTargetSourcesFromRows(getTargetSourcesFromRows(_columns, data))
             let AIAssistantColVisibility = {}
@@ -1313,6 +1327,12 @@ const MapProject = () => {
   const updateColumn = (position, newValue, key) => {
     let cols = {...columns}
     cols[position][key || 'label'] = newValue || ''
+    if(!key) {
+      // Clearing a mapping on purpose leaves the column unmapped without an error.
+      cols[position].suggested = false
+      cols[position].unmapped = !newValue
+      cols[position].auto = false
+    }
     setColumns(cols)
     if(key !== 'targetSource')
       setTargetSourcesFromRows(getTargetSourcesFromRows(cols))
@@ -1494,6 +1514,8 @@ const MapProject = () => {
       })
 
     let cols = getColumns(omit(_data[0], ['__index']))
+    const suggestedLabels = suggestColumnLabels(map(cols, 'original'), headers)
+    cols = map(cols, (col, idx) => ({...col, label: suggestedLabels[idx] || col.label, suggested: Boolean(suggestedLabels[idx]), auto: true}))
     setColumns(cols)
   }
 

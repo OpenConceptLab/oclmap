@@ -27,7 +27,7 @@ import omit from 'lodash/omit'
 import filter from 'lodash/filter'
 
 import { formatDate, getCurrentUser, toV3URL } from '../../common/utils'
-import { MATCHING_ALGORITHMS_DOC_LINK } from '../../common/constants'
+import { MATCHING_ALGORITHMS_DOC_LINK, MAPPER_DOCS_LINK } from '../../common/constants'
 import { COLORS } from '../../common/colors'
 import { getProjectConfigErrors } from './algorithms'
 import NamespaceDropdown from '../common/NamespaceDropdown'
@@ -490,7 +490,12 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
               {t('map_project.field_configuration')}
             </Typography>
             <FormHelperText sx={{marginTop: 0}}>
-              {t('map_project.field_configuration_description')}
+              <Trans
+                i18nKey='map_project.field_configuration_description'
+                components={[
+                  <a key='learn-more' className='link' href={MAPPER_DOCS_LINK} target='_blank' rel='noopener noreferrer' />
+                ]}
+              />
             </FormHelperText>
             <ColumnMapTable
               sx={{marginTop: '12px'}}
