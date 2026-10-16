@@ -13,6 +13,16 @@ import { primarySubtag } from './normalizers.js'
 
 const FULLY_SPECIFIED = /^fully[\s_-]?specified$/i
 
+const escapeHtml = text => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;')
+
+/**
+ * A search highlight as HTML: each <em> becomes `open` and each </em> a </b>.
+ * A highlight can come from a saved project, so the rest is escaped: only
+ * <em> is markup.
+ */
+export const highlightHtml = (fragment, open = '<b>') =>
+  escapeHtml(fragment).replaceAll('&lt;em&gt;', open).replaceAll('&lt;/em&gt;', '</b>')
+
 const sameName = (a, b) => {
   const normalize = text => (text || '').replace(/\s+/g, ' ').trim().toLowerCase()
   return normalize(a) === normalize(b)
@@ -69,7 +79,7 @@ export const localizedDisplayName = (concept, inputLocale) => {
 
 /**
  * The name the match was made on, to show after `displayName` (the name the
- * candidate leads with): `{html, locale}`, with the highlighted words in bold,
+ * candidate leads with): `{html, text, locale}`, with the highlighted words in bold,
  * or null when nothing matched or the match is `displayName` itself. A
  * display-name (`name`) highlight means the concept's `display_name` matched;
  * otherwise it is the best `synonyms` highlight. `filterLocales` (the
@@ -88,7 +98,8 @@ export const getMatchedName = ({highlights, concept, displayName, filterLocales}
   if(allowed.length && !allowed.includes(primarySubtag(entry?.locale)))
     return null
   return {
-    html: fragment.replaceAll('<em>', "<b className='searchable'>").replaceAll('</em>', '</b>'),
+    html: highlightHtml(fragment, "<b className='searchable'>"),
+    text,
     locale: entry?.locale
   }
 }

@@ -12,7 +12,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { localizedDisplayName, getMatchedName } from '../conceptNames.js'
+import { localizedDisplayName, getMatchedName, highlightHtml } from '../conceptNames.js'
 
 // LOINC 89497-2 as the ticket found it: an English display name, and an
 // it-IT related name that ES matched for the input "Pregnancy test".
@@ -92,6 +92,7 @@ test('getMatchedName: the translated name that matched comes second, with its lo
     }),
     {
       html: "Anamnesi Punto nel tempo (episodio) <b className='searchable'>Test</b> prenatale",
+      text: 'Anamnesi Punto nel tempo (episodio) Test prenatale',
       locale: 'it-IT'
     }
   )
@@ -136,6 +137,7 @@ test('getMatchedName: the default-locale display name that matched comes second 
     }),
     {
       html: "<b className='searchable'>Pregnancy</b> <b className='searchable'>test</b>",
+      text: 'Pregnancy test',
       locale: 'en'
     }
   )
@@ -148,7 +150,7 @@ test('getMatchedName: takes the synonym with the longest highlighted match', () 
       concept: PREGNANCY_TEST,
       displayName: 'Pregnancy test'
     }),
-    { html: "<b className='searchable'>Prueba de embarazo</b>", locale: 'es' }
+    { html: "<b className='searchable'>Prueba de embarazo</b>", text: 'Prueba de embarazo', locale: 'es' }
   )
 })
 
@@ -169,11 +171,23 @@ test('getMatchedName: a matched name no concept name carries shows without a loc
     concept: PREGNANCY_TEST,
     displayName: 'Pregnancy test'
   }
-  assert.deepEqual(getMatchedName(args), { html: "<b className='searchable'>Gravindex</b>", locale: undefined })
+  assert.deepEqual(getMatchedName(args), { html: "<b className='searchable'>Gravindex</b>", text: 'Gravindex', locale: undefined })
   assert.equal(getMatchedName({ ...args, filterLocales: 'en' }), null)
 })
 
 test('getMatchedName: nothing without highlights', () => {
   assert.equal(getMatchedName({ concept: PREGNANCY_TEST, displayName: 'Pregnancy test' }), null)
   assert.equal(getMatchedName({ highlights: { synonyms: [] }, concept: PREGNANCY_TEST, displayName: 'Pregnancy test' }), null)
+})
+
+test('getMatchedName: only the highlight tags are markup', () => {
+  assert.deepEqual(
+    getMatchedName({
+      highlights: { synonyms: ["<i>Mother's</i> & <em>Prenatal</em>"] },
+      concept: { names: [] },
+      displayName: 'Prenatal tests'
+    }),
+    { html: "&lt;i&gt;Mother&#39;s&lt;/i&gt; &amp; <b className='searchable'>Prenatal</b>", text: "<i>Mother's</i> & Prenatal", locale: undefined }
+  )
+  assert.equal(highlightHtml('<i>Hb</i> <em>Hemoglobin</em>'), '&lt;i&gt;Hb&lt;/i&gt; <b>Hemoglobin</b>')
 })

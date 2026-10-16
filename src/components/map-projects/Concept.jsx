@@ -55,7 +55,7 @@ export const MatchedName = ({ matchedName, noWrap }) => {
     <span
       className='col-xs-12 padding-0'
       style={{display: 'block', fontSize: '12px', ...(noWrap ? {whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'} : {})}}
-      title={noWrap ? `${label} ${matchedName.html.replace(/<[^>]*>/g, '')}` : undefined}
+      title={noWrap ? `${label} ${matchedName.text}` : undefined}
     >
       {label}&nbsp;
       <span className='searchable' dangerouslySetInnerHTML={{__html: matchedName.html}}/>

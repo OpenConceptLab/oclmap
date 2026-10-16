@@ -53,6 +53,7 @@ import omitBy from 'lodash/omitBy'
 import reject from 'lodash/reject'
 import uniq from 'lodash/uniq'
 import compact from 'lodash/compact'
+import keyBy from 'lodash/keyBy'
 import flatten from 'lodash/flatten'
 import keys from 'lodash/keys'
 import pickBy from 'lodash/pickBy'
@@ -115,7 +116,7 @@ import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
 import { normalizeAlgorithmInvocation, hasSuccessfulAlgorithmResponse, getAlgorithmStagesFromResponses, lookupStatusRank, buildRecommendableConceptEntry, stripConstantClassAndDatatype, buildLookupConceptUrl, serializeCandidates, toStoredRowMatchState } from './normalizers'
 import { parseConceptKey } from './conceptKey'
 import { getDeclaredLocales, getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getSavedTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId } from './projectTargetRepo'
-import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, findTargetRowView, formatBridgeTargetDownloadEntry, resolveAICandidateID, getScoreDetails, getAIAnalysisCandidateIDs, withCandidateNames } from './viewBuilders.js'
+import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, findTargetRowView, formatBridgeTargetDownloadEntry, resolveAICandidateID, getScoreDetails, getAIAnalysisCandidateIDs, withCachedConcept, withCandidateNames, withOwnNames, withSavedMatch } from './viewBuilders.js'
 import { formatClockTime, getCapacityWaitLabel, mergeCapacityWaits } from './rowProgress.js'
 
 import './MapProject.scss'
@@ -1415,6 +1416,7 @@ const MapProject = () => {
     let _proposed = {}
     let _repo = null
     let _states = {...rowStatuses}
+    const savedMatches = keyBy(compact(projectData?.matches), 'rowIndex')
     const repoVersionURL = data['__Repo URL__'] || data['__map_repo_url__']
     const repoURL = dropVersion(repoVersionURL)
     const repoVersion = data['__Repo Version__'] || getTargetRepoVersionFromUrl(repoVersionURL)
@@ -1439,7 +1441,7 @@ const MapProject = () => {
           repo: repo
         }
         if(concept?.id) {
-          _mapSelected[index] = concept
+          _mapSelected[index] = withSavedMatch(concept, savedMatches[index])
           _repo = repo
         }
         let rowStateLabel = data['__State__'] || data['__row_status__'] || data['__row_map_status__']
@@ -5320,15 +5322,7 @@ const MapProject = () => {
   }
 
   const getConcept = (concept, returnSelf=true) => {
-    let cached = (concept?.url || concept?.id) ? findConceptByIdOrURLFromCache(concept?.url || concept?.id) : false
-    if(cached && concept?.search_meta)
-      cached.search_meta = concept.search_meta
-    if(cached && concept?.source)
-      cached.source = concept.source
-    if(cached && concept?.contributingAlgorithms)
-      cached.contributingAlgorithms = concept.contributingAlgorithms
-    if(cached && concept?.contributingAlgorithmIds)
-      cached.contributingAlgorithmIds = concept.contributingAlgorithmIds
+    const cached = withCachedConcept(concept, (concept?.url || concept?.id) ? findConceptByIdOrURLFromCache(concept?.url || concept?.id) : false)
     return returnSelf ? (cached || concept) : cached
   }
 
@@ -5338,7 +5332,8 @@ const MapProject = () => {
 
   const isConfigureInSplitView = configure && file?.name
   const columnsForTable = getColumnsForTable()
-  let targetConcept = mapSelected[rowIndex] ? getConcept(mapSelected[rowIndex], true) : false
+  // A copy: the code below changes it, and mapSelected holds the mapped target.
+  let targetConcept = mapSelected[rowIndex] ? {...getConcept(mapSelected[rowIndex], true)} : false
   const targetRowViews = rowMatchStateRef.current?.[rowIndex]
     ? buildQualityRowViews(rowMatchStateRef.current[rowIndex], conceptCacheRef.current)
     : []
@@ -5364,6 +5359,8 @@ const MapProject = () => {
     if(meta?.search_normalized_score)
       targetConcept.search_meta = meta
   }
+  if(targetConcept)
+    targetConcept = withOwnNames(targetConcept, mapSelected[rowIndex])
 
   const labelDisplayedRows = ({ from, to, count }) => {
     return `${from.toLocaleString()}–${to.toLocaleString()} of ${count?.toLocaleString()}`;

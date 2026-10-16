@@ -25,7 +25,10 @@ import {
   conceptForMapping,
   sortRowViews,
   findTargetRowView,
-  withCandidateNames
+  withCachedConcept,
+  withCandidateNames,
+  withOwnNames,
+  withSavedMatch
 } from '../viewBuilders.js'
 
 // ---------- Helpers ----------
@@ -733,4 +736,98 @@ test('withCandidateNames: keeps a target\'s own names and highlights, and a targ
   const searched = { id: '718-7', url: '/orgs/Regenstrief/sources/LOINC/concepts/718-7/' }
   assert.equal(withCandidateNames(searched, namedRowState, namedCache), searched)
   assert.equal(withCandidateNames(restoredTarget, undefined, namedCache), restoredTarget)
+})
+
+// ---------- withSavedMatch (OpenConceptLab/ocl_issues#2916) ----------
+
+// A target mapped from the Search tab: none of the row's candidates holds it.
+const searchedNames = [
+  { name: 'Hemoglobin [Mass/volume] in Blood', locale: 'en', locale_preferred: true },
+  { name: 'Hemoglobina en sangre', locale: 'es', locale_preferred: true }
+]
+const searchedHighlight = { synonyms: ['<em>Hemoglobina</em> en sangre'] }
+const searchedTarget = {
+  id: '718-7',
+  display_name: 'Hemoglobin [Mass/volume] in Blood',
+  url: '/orgs/Regenstrief/sources/LOINC/concepts/718-7/',
+  search_meta: { search_normalized_score: '', search_score: '', algorithm: '' },
+  repo: { id: 'LOINC' }
+}
+// Its `matches` entry, as a save sends it: the concept the project held.
+const savedEntry = {
+  url: searchedTarget.url,
+  rowIndex: '3',
+  concept: { ...searchedTarget, names: searchedNames, search_meta: { search_score: 12.5, search_highlight: searchedHighlight } }
+}
+
+test('withSavedMatch: a restored target gets the names and highlight its saved entry holds', () => {
+  const out = withSavedMatch(searchedTarget, savedEntry)
+  assert.deepEqual(out.names, searchedNames)
+  assert.deepEqual(out.search_meta, { ...searchedTarget.search_meta, search_highlight: searchedHighlight })
+  assert.equal(out.display_name, searchedTarget.display_name)
+  assert.equal(out.repo, searchedTarget.repo)
+})
+
+test('withSavedMatch: keeps only well-formed names and highlights from a saved entry', () => {
+  const malformed = { ...savedEntry, concept: {
+    names: [{ name: 'Hemoglobina en sangre', locale: 'es' }, { name: { es: 'x' }, locale: 'es' }, { name: 'Hb', locale: 7 }, 'Hb', null],
+    search_meta: { search_highlight: { synonyms: ['<em>Hemoglobina</em> en sangre', 42, null], name: 'Hemoglobin', descriptions: [{}] } }
+  } }
+  const out = withSavedMatch(searchedTarget, malformed)
+  assert.deepEqual(out.names, [{ name: 'Hemoglobina en sangre', locale: 'es' }])
+  assert.deepEqual(out.search_meta.search_highlight, { synonyms: ['<em>Hemoglobina</em> en sangre'], descriptions: [] })
+  const unusable = { ...savedEntry, concept: { names: [{ name: 3 }], search_meta: { search_highlight: ['<em>x</em>'] } } }
+  assert.deepEqual(withSavedMatch(searchedTarget, unusable), searchedTarget)
+})
+
+test('withSavedMatch: an entry for another concept, or none, leaves the target as its CSV restored it', () => {
+  const other = { ...savedEntry, url: '/orgs/Regenstrief/sources/LOINC/concepts/2093-3/' }
+  assert.deepEqual(withSavedMatch(searchedTarget, other), searchedTarget)
+  assert.deepEqual(withSavedMatch(searchedTarget, undefined), searchedTarget)
+  assert.deepEqual(withSavedMatch(searchedTarget, { url: searchedTarget.url, rowIndex: '3' }), searchedTarget)
+})
+
+// Two rows mapped to the same concept, each with its own match. The save sends
+// each row's concept as getConcept gives it: withCachedConcept over the
+// concept a row panel cached, or the target itself.
+const otherHighlight = { synonyms: ['<em>Hemoglobin</em> [Mass/volume] in Blood'] }
+const otherEntry = { ...savedEntry, rowIndex: '4', concept: { ...savedEntry.concept, search_meta: { search_highlight: otherHighlight } } }
+const saveEntries = (targets, cached) => targets.map(([rowIndex, target]) =>
+  ({ url: target.url, rowIndex, concept: withCachedConcept(target, cached) || target }))
+
+test('withSavedMatch: what the next save sends restores each row again, cached or not', () => {
+  const rows = [['3', withSavedMatch(searchedTarget, savedEntry)], ['4', withSavedMatch(searchedTarget, otherEntry)]]
+  const cached = { ...searchedTarget, names: searchedNames, search_meta: { search_score: 1 } }
+  for(const cache of [undefined, cached]) {
+    const [first, second] = JSON.parse(JSON.stringify(saveEntries(rows, cache)))
+    assert.deepEqual(withSavedMatch(searchedTarget, first).names, searchedNames)
+    assert.deepEqual(withSavedMatch(searchedTarget, first).search_meta.search_highlight, searchedHighlight)
+    assert.deepEqual(withSavedMatch(searchedTarget, second).search_meta.search_highlight, otherHighlight)
+  }
+  assert.deepEqual(cached.search_meta, { search_score: 1 })
+})
+
+test('withCachedConcept: each row gets its own copy of the cached concept, with its own match', () => {
+  const cached = { id: '718-7', url: searchedTarget.url, names: searchedNames, search_meta: { search_score: 1 } }
+  const first = withCachedConcept({ search_meta: { search_highlight: searchedHighlight }, source: 'LOINC' }, cached)
+  const second = withCachedConcept({ search_meta: { search_highlight: otherHighlight } }, cached)
+  assert.deepEqual(first.search_meta.search_highlight, searchedHighlight)
+  assert.equal(first.source, 'LOINC')
+  assert.deepEqual(second.search_meta.search_highlight, otherHighlight)
+  assert.equal(second.names, searchedNames)
+  assert.equal(withCachedConcept({ names: glucoseNames }, cached).names, glucoseNames)
+  assert.deepEqual(cached, { id: '718-7', url: searchedTarget.url, names: searchedNames, search_meta: { search_score: 1 } })
+  assert.equal(withCachedConcept(searchedTarget, false), false)
+})
+
+test('withOwnNames: a mapped target keeps its own names and highlight over a candidate\'s, and takes the candidate\'s when it has none', () => {
+  const own = withSavedMatch(searchedTarget, savedEntry)
+  // A semantic candidate for the same concept: no names in its definition, no highlight.
+  const fromCandidate = { ...searchedTarget, names: undefined, search_meta: { algorithm: 'ocl-semantic', search_normalized_score: 91 } }
+  const out = withOwnNames(fromCandidate, own)
+  assert.deepEqual(out.names, searchedNames)
+  assert.deepEqual(out.search_meta, { algorithm: 'ocl-semantic', search_normalized_score: 91, search_highlight: searchedHighlight })
+  const withNames = { ...fromCandidate, names: glucoseNames, search_meta: { search_highlight: { name: ['x'] } } }
+  assert.equal(withOwnNames(withNames, searchedTarget).names, glucoseNames)
+  assert.deepEqual(withOwnNames(withNames, searchedTarget).search_meta.search_highlight, { name: ['x'] })
 })
