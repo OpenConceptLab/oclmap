@@ -15,6 +15,7 @@ import {
 import APIService from '../services/APIService';
 import GAService from '../services/GAService';
 import { ensureIdToken } from './ssoSession';
+export { hasAuthGroup } from './authGroups';
 import { SERVER_CONFIGS } from './serverConfigs';
 import { legacyHashRoute, isSameSitePath } from './history';
 
