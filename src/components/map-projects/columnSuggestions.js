@@ -53,3 +53,30 @@ export const suggestColumnLabels = (headers, validColumns) => {
     return target.label
   })
 }
+
+/**
+ * Returns a new columns array with one column's mapping changed. A change
+ * without a key is a mapping choice: it ends any suggestion, and clearing it
+ * marks the column as unmapped on purpose.
+ */
+export const updateColumnState = (columns, position, newValue, key) => {
+  const cols = [...columns]
+  cols[position] = {...cols[position], [key || 'label']: newValue || ''}
+  if(!key) {
+    cols[position].suggested = false
+    cols[position].unmapped = !newValue
+    cols[position].auto = false
+  }
+  return cols
+}
+
+/**
+ * Re-runs suggestions for columns still driven by suggestions (`auto`) after
+ * the target's mapped fields change. Columns the user has edited are kept.
+ */
+export const resuggestColumns = (columns, validColumns) => {
+  if(!columns.some(col => col.auto))
+    return columns
+  const suggestedLabels = suggestColumnLabels(columns.map(col => col.original), validColumns)
+  return columns.map((col, idx) => col.auto ? {...col, label: suggestedLabels[idx] || col.original, suggested: Boolean(suggestedLabels[idx])} : col)
+}

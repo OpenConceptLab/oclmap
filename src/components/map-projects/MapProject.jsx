@@ -84,7 +84,7 @@ import { buildPanelPayload } from './openConceptPanel'
 import LoaderDialog from '../common/LoaderDialog'
 import Error403 from '../errors/Error403'
 import { HEADERS, SEMANTIC_SEARCH_HEADERS, ROW_STATES, VIEWS, DECISION_TABS, ROW_STAGES, PROMPTS_KEY_DEFAULT, PROMPTS_ACTION_TYPE_DEFAULT, SCORES_COLOR } from './constants'
-import { suggestColumnLabels } from './columnSuggestions'
+import { suggestColumnLabels, updateColumnState, resuggestColumns } from './columnSuggestions'
 import MapProjectDeleteConfirmDialog from './MapProjectDeleteConfirmDialog';
 import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
@@ -724,12 +724,7 @@ const MapProject = () => {
   // re-suggest columns the user has not edited yet (ocl_issues#2907).
   const headersKey = map(headers, 'label').join('|')
   React.useEffect(() => {
-    setColumns(prev => {
-      if(!prev.some(col => col.auto))
-        return prev
-      const suggestedLabels = suggestColumnLabels(map(prev, 'original'), headers)
-      return map(prev, (col, idx) => col.auto ? {...col, label: suggestedLabels[idx] || col.original, suggested: Boolean(suggestedLabels[idx])} : col)
-    })
+    setColumns(prev => resuggestColumns(prev, headers))
   }, [headersKey])
 
   React.useEffect(() => {
@@ -1325,14 +1320,7 @@ const MapProject = () => {
   }
 
   const updateColumn = (position, newValue, key) => {
-    let cols = {...columns}
-    cols[position][key || 'label'] = newValue || ''
-    if(!key) {
-      // Clearing a mapping on purpose leaves the column unmapped without an error.
-      cols[position].suggested = false
-      cols[position].unmapped = !newValue
-      cols[position].auto = false
-    }
+    const cols = updateColumnState(columns, position, newValue, key)
     setColumns(cols)
     if(key !== 'targetSource')
       setTargetSourcesFromRows(getTargetSourcesFromRows(cols))

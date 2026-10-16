@@ -7,7 +7,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { suggestColumnLabels, isCodeLikeHeader } from '../columnSuggestions.js'
+import { suggestColumnLabels, isCodeLikeHeader, updateColumnState, resuggestColumns } from '../columnSuggestions.js'
 
 const BASE = [
   {label: 'ID'},
@@ -67,4 +67,40 @@ test('isCodeLikeHeader: matches code-like words as whole tokens', () => {
   assert.equal(isCodeLikeHeader('ID'), true)
   assert.equal(isCodeLikeHeader('Identity'), false)
   assert.equal(isCodeLikeHeader('Test Name'), false)
+})
+
+const upload = headers => headers.map(original => {
+  const [suggested] = suggestColumnLabels([original], BASE)
+  return {label: suggested || original, original, dataKey: original, suggested: Boolean(suggested), auto: true}
+})
+
+test('updateColumnState: keeps columns an array after a user edit', () => {
+  const cols = updateColumnState(upload(['Code', 'Name']), 0, 'Name')
+  assert.ok(Array.isArray(cols))
+  assert.equal(cols[0].label, 'Name')
+  assert.equal(cols[0].auto, false)
+})
+
+test('regression: editing a column, then the target loads, does not throw and keeps the edit', () => {
+  let cols = upload(['Specimen', 'Code'])
+  cols = updateColumnState(cols, 1, '')
+  assert.equal(cols[1].unmapped, true)
+  const afterLoad = resuggestColumns(cols, LOINC)
+  assert.ok(Array.isArray(afterLoad))
+  assert.equal(afterLoad[0].label, 'Property: SYSTEM')
+  assert.equal(afterLoad[0].suggested, true)
+  assert.equal(afterLoad[1].label, '')
+  assert.equal(afterLoad[1].unmapped, true)
+})
+
+test('resuggestColumns: a manual choice is not overwritten when the target changes', () => {
+  let cols = upload(['Specimen'])
+  cols = updateColumnState(cols, 0, 'Name')
+  assert.equal(resuggestColumns(cols, LOINC)[0].label, 'Name')
+})
+
+test('resuggestColumns: suggests Property: SYSTEM once the target loads it', () => {
+  const cols = upload(['Specimen'])
+  assert.equal(resuggestColumns(cols, BASE)[0].label, 'Specimen')
+  assert.equal(resuggestColumns(cols, LOINC)[0].label, 'Property: SYSTEM')
 })
