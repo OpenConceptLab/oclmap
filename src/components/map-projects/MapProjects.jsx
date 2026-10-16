@@ -13,6 +13,7 @@ import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
+import Link from '@mui/material/Link'
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';
 import TableCell from '@mui/material/TableCell';
@@ -39,6 +40,26 @@ import PreviewLimitDialog from './PreviewLimitDialog'
 import QuotaDialog from '../common/QuotaDialog'
 
 const NEW_PROJECT_BLOCK_ERROR_CODES = {access: 'mapper_access_denied', projects_not_entitled: 'mapper_projects_not_entitled'}
+
+// The sample lives in ocl-docs so it can change without a Mapper release
+// (OpenConceptLab/ocl_issues#2903). The bundled copy covers networks that
+// block raw.githubusercontent.com.
+const SAMPLE_SPREADSHEET_URL = 'https://raw.githubusercontent.com/OpenConceptLab/ocl-docs/main/docs/source/oclmap/samples/mapper_sample_lab_tests.csv'
+const SAMPLE_SPREADSHEET_FALLBACK_URL = '/mapper_sample_lab_tests.csv'
+
+const getCSV = url => fetch(url).then(response => response.ok ? response.blob() : Promise.reject(response.status))
+
+const onSampleSpreadsheetClick = event => {
+  event.preventDefault()
+  getCSV(SAMPLE_SPREADSHEET_URL).catch(() => getCSV(SAMPLE_SPREADSHEET_FALLBACK_URL)).then(blob => {
+    const url = URL.createObjectURL(blob)
+    const link = Object.assign(document.createElement('a'), {href: url, download: 'mapper_sample_lab_tests.csv'})
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  })
+}
 
 const MapProjects = () => {
   const { t } = useTranslation();
@@ -200,8 +221,32 @@ const MapProjects = () => {
                 {
                   loaded && projects.length === 0 &&
                     <TableRow>
-                      <TableCell colSpan={6} align='center'>
-                        <NoResults text={t('map_project.no_projects_found')} height='300px' />
+                      <TableCell colSpan={6} align='center' sx={{padding: '0 16px', borderBottom: 'none'}}>
+                        <NoResults
+                          height='max(380px, calc(var(--app-height) - 260px))'
+                          graphicWidth='clamp(160px, min(22vw, 28vh), 360px)'
+                          text={
+                            <div style={{padding: '16px 0'}}>
+                              <Typography sx={{fontSize: '18px', color: 'surface.dark', fontWeight: 600}}>{t('map_project.no_projects_found')}</Typography>
+                              <Typography sx={{color: 'surface.dark', mt: '4px', mb: '16px'}}>{t('map_project.no_projects_hint')}</Typography>
+                              <Button
+                                variant='contained'
+                                color='primary'
+                                startIcon={<AddIcon />}
+                                href='/map-projects/new'
+                                onClick={onNewProjectClick}
+                                sx={{textTransform: 'none', mb: '12px'}}
+                              >
+                                {t('map_project.new_map_project')}
+                              </Button>
+                              <div>
+                                <Link href={SAMPLE_SPREADSHEET_FALLBACK_URL} download onClick={onSampleSpreadsheetClick} sx={{fontSize: '14px'}}>
+                                  {t('map_project.download_sample_spreadsheet')}
+                                </Link>
+                              </div>
+                            </div>
+                          }
+                        />
                       </TableCell>
                     </TableRow>
                 }

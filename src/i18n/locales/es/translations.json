@@ -388,6 +388,8 @@
     "project_owner": "Propietario del Proyecto",
     "project_name": "Nombre del Proyecto",
     "no_projects_found": "No se encontraron proyectos.",
+    "no_projects_hint": "Para empezar, suba un archivo .csv o .xlsx con una fila por cada término local que desee mapear.",
+    "download_sample_spreadsheet": "Descargar una hoja de cálculo de ejemplo",
     "input_data": "Datos de Entrada",
     "context": "Contexto",
     "context_helper": "Describa sus datos y su entorno (por ejemplo, órdenes de laboratorio de un hospital distrital en Kenia). El Asistente de IA de OCL usa esto para adaptar sus recomendaciones.",

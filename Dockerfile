@@ -51,6 +51,7 @@ RUN cp public/light-favicon.svg dist/
 RUN cp public/fhir.svg dist/
 RUN cp public/openmrs_logo_white.gif dist/
 RUN cp public/mapper_landing_placeholder.png dist/
+RUN cp public/mapper_sample_lab_tests.csv dist/
 RUN cp public/FullLogo-BlackText.png dist/
 RUN cp -rf public/fontello dist/
 

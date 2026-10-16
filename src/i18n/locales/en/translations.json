@@ -413,6 +413,8 @@
     "project_owner": "Project Owner",
     "project_name": "Project Name",
     "no_projects_found": "No projects found.",
+    "no_projects_hint": "To start, upload a .csv or .xlsx file with one row per local term you want to map.",
+    "download_sample_spreadsheet": "Download a sample spreadsheet",
     "input_data": "Input Data",
     "context": "Context",
     "context_helper": "Describe your data and setting (for example, lab orders from a district hospital in Kenya). The OCL AI Assistant uses this to tailor its recommendations.",
