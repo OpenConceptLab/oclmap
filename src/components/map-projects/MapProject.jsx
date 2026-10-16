@@ -1416,8 +1416,6 @@ const MapProject = () => {
     let _proposed = {}
     let _repo = null
     let _states = {...rowStatuses}
-    // Each mapped target's saved concept, by row: its names and match
-    // highlight aren't in the CSV (OpenConceptLab/ocl_issues#2916).
     const savedMatches = keyBy(compact(projectData?.matches), 'rowIndex')
     const repoVersionURL = data['__Repo URL__'] || data['__map_repo_url__']
     const repoURL = dropVersion(repoVersionURL)

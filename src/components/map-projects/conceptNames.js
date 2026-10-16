@@ -16,12 +16,12 @@ const FULLY_SPECIFIED = /^fully[\s_-]?specified$/i
 const escapeHtml = text => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;')
 
 /**
- * A search highlight as HTML, with its <em> tags as `open` and `close`. A
+ * A search highlight as HTML, with its <em> tags as `open` and </b>. A
  * highlight can come from a saved project, so the rest is escaped: only <em>
  * is markup.
  */
-export const highlightHtml = (fragment, open = '<b>', close = '</b>') =>
-  escapeHtml(fragment).replaceAll('&lt;em&gt;', open).replaceAll('&lt;/em&gt;', close)
+export const highlightHtml = (fragment, open = '<b>') =>
+  escapeHtml(fragment).replaceAll('&lt;em&gt;', open).replaceAll('&lt;/em&gt;', '</b>')
 
 const sameName = (a, b) => {
   const normalize = text => (text || '').replace(/\s+/g, ' ').trim().toLowerCase()

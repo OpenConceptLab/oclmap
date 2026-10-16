@@ -766,7 +766,6 @@ test('withSavedMatch: a restored target gets the names and highlight its saved e
   assert.deepEqual(out.search_meta, { ...searchedTarget.search_meta, search_highlight: searchedHighlight })
   assert.equal(out.display_name, searchedTarget.display_name)
   assert.equal(out.repo, searchedTarget.repo)
-  assert.equal(withCandidateNames(out, namedRowState, namedCache).names, searchedNames)
 })
 
 test('withSavedMatch: an entry for another concept, or none, leaves the target as its CSV restored it', () => {

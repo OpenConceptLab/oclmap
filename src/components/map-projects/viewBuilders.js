@@ -484,12 +484,11 @@ const ROW_OWN_FIELDS = ['names', 'search_meta', 'source', 'contributingAlgorithm
  * The cached concept a mapped target names, with the target's own names,
  * `search_meta`, source and contributing algorithms, as `withOwnNames` keeps
  * them. A copy: every row mapped to the concept shares the cache entry.
- * Returns `cached` as it is when there is none.
  */
-export const withCachedConcept = (target, cached) => cached ? {
+export const withCachedConcept = (target, cached) => cached && {
   ...cached,
   ...Object.fromEntries(ROW_OWN_FIELDS.filter(field => target?.[field]).map(field => [field, target[field]]))
-} : cached
+}
 
 /**
  * Compute the unified score (0-100 percentile) and the raw algorithm score
