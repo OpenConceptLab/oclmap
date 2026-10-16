@@ -20,3 +20,4 @@ services:
       - OIDC_RP_CLIENT_ID=${OIDC_RP_CLIENT_ID-oclmaplocal}
       - OIDC_SERVER_URL=${OIDC_SERVER_URL:-http://localhost:8080}
       - OIDC_REALM=${OIDC_REALM:-ocl}
+      - REPO_SUGGESTIONS=${REPO_SUGGESTIONS}

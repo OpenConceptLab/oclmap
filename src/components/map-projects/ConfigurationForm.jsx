@@ -61,6 +61,16 @@ const VisuallyHiddenInput = styled('input')({
 
 const deriveCanonicalUrl = relativeUrl => relativeUrl ? `https://ns.openconceptlab.org${relativeUrl}` : ''
 
+// REPO_SUGGESTIONS is a comma-separated list of owner/source pairs from env config,
+// e.g. "CIEL/CIEL,MSF/MSF". Each becomes a brief repo object for the target-repository picker.
+/*eslint no-process-env: 0*/
+/*eslint no-undef: 0*/
+const getSuggestedRepos = () => (window.REPO_SUGGESTIONS || process.env.REPO_SUGGESTIONS || '')
+  .split(',')
+  .map(pair => pair.trim().split('/'))
+  .filter(([owner, id]) => owner && id)
+  .map(([owner, id]) => ({id, short_code: id, name: id, owner, ownerType: 'Organization', type: 'Source', url: `/orgs/${owner}/sources/${id}/`}))
+
 const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, name, setName, description, setDescription, repo, onRepoChange, repoVersion, setRepoVersion, showTargetRepoVersionError, versions, mappedSources, targetSourcesFromRows, algosSelected, setAlgosSelected, sx, algos, validColumns, columns, isValidColumnValue, updateColumn, configure, setConfigure, columnVisibilityModel, setColumnVisibilityModel, onSave, isSaving, candidatesScore, onScoreChange, includeDefaultFilter, setIncludeDefaultFilter, filters, setFilters, locales, setAIAssistantColumns, AIAssistantColumns, inAIAssistantGroup, lookupConfig, setLookupConfig, encoderModel, setEncoderModel, isCoreUser, requestLimits, canSelectAIModel, canSetAIOutputLocale, canBridge, canScispacy, canUseOrgProjects=true, canUseCustomAlgorithms=true, promptTemplates, promptTemplate, onPromptTemplateChange, AIModels, AIModel, setAIModel, namespace, setNamespace, promptOutputLocale, setPromptOutputLocale, inputLocale, setInputLocale, oclLocales, useLexicalVariants, setUseLexicalVariants }) => {
   const { t } = useTranslation();
   const user = getCurrentUser()
@@ -238,7 +248,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
         {t('map_project.target_repository_description')}
       </FormHelperText>
 
-      <RepoSearchAutocomplete label={t('map_project.repository')} size='small' onChange={(id, item) => onRepoChange(item)} value={repo}  sx={{marginTop: '12px'}}/>
+      <RepoSearchAutocomplete label={t('map_project.repository')} size='small' onChange={(id, item) => onRepoChange(item)} value={repo} suggested={getSuggestedRepos()} sx={{marginTop: '12px'}}/>
       <RepoVersionSearchAutocomplete
         versions={versions}
         label={t('common.version')}

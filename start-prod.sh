@@ -53,6 +53,9 @@ fi
 if [[ ! -z "${OCL_ONLINE_API_URL}" ]]; then
     echo "var OCL_ONLINE_API_URL = \"${OCL_ONLINE_API_URL}\";" >> ${ENV_FILE}
 fi
+if [[ ! -z "${REPO_SUGGESTIONS}" ]]; then
+    echo "var REPO_SUGGESTIONS = \"${REPO_SUGGESTIONS}\";" >> ${ENV_FILE}
+fi
 
 echo "Adjusting nginx configuration"
 envsubst '$WEB_PORT' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf

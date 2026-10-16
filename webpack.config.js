@@ -136,7 +136,8 @@ module.exports = (env) => {
         'process.env.BRIDGE_MATCH_URL': JSON.stringify(env.BRIDGE_MATCH_URL || '') || '',
         'process.env.AI_ASSISTANT_API_URL': JSON.stringify(env.AI_ASSISTANT_API_URL || '') || '',
         'process.env.SCISPACY_LOINC_API_URL': JSON.stringify(env.SCISPACY_LOINC_API_URL || '') || '',
-        'process.env.OCL_ONLINE_API_URL': JSON.stringify(env.OCL_ONLINE_API_URL || '') || ''
+        'process.env.OCL_ONLINE_API_URL': JSON.stringify(env.OCL_ONLINE_API_URL || '') || '',
+        'process.env.REPO_SUGGESTIONS': JSON.stringify(env.REPO_SUGGESTIONS || '')
       }),
       new IgnorePlugin({ resourceRegExp: /moment\/locale\// })
     ],

@@ -2,7 +2,7 @@ import React from 'react';
 import { TextField, CircularProgress, Divider } from '@mui/material';
 import Autocomplete from '@mui/material/Autocomplete';
 import { useTranslation } from 'react-i18next';
-import { get, debounce, map, find, forEach } from 'lodash'
+import { get, debounce, map, find, forEach, filter } from 'lodash'
 import APIService from '../../services/APIService';
 import AutocompleteLoading from '../common/AutocompleteLoading';
 import RepoListItem from './RepoListItem';
@@ -15,7 +15,14 @@ const RepoSearchAutocomplete = ({onChange, label, id, required, minCharactersFor
   const minLength = minCharactersForSearch || 2;
   const [input, setInput] = React.useState('')
   const [open, setOpen] = React.useState(false)
-  const [repos, setRepos] = React.useState(map(suggested || [], instance => ({...instance, resultType: t('repo.suggested_sources')})))
+  // Suggested repositories that match the text (all of them when the text is empty).
+  // They sit in their own group above search results.
+  const suggestedFor = text => {
+    const needle = (text || '').trim().toLowerCase()
+    const matches = filter(suggested || [], repo => !needle || [repo.name, repo.id, repo.short_code, repo.owner, repo.url].some(field => field?.toLowerCase().includes(needle)))
+    return map(matches, instance => ({...instance, resultType: t('repo.suggested_sources')}))
+  }
+  const [repos, setRepos] = React.useState(() => suggestedFor(''))
   const [selected, setSelected] = React.useState(undefined)
   const [loading, setLoading] = React.useState(false)
 
@@ -32,8 +39,10 @@ const RepoSearchAutocomplete = ({onChange, label, id, required, minCharactersFor
     setInput(value || '')
     if(reason !== 'reset' && value && value.length >= minLength)
       fetchRepos(value)
-    else
+    else {
       setLoading(false)
+      setRepos(suggestedFor(reason === 'reset' ? '' : value))
+    }
   }, 300)
 
   const handleChange = (event, id, item) => {
@@ -45,7 +54,9 @@ const RepoSearchAutocomplete = ({onChange, label, id, required, minCharactersFor
 
   const fetchRepos = searchStr => {
     setLoading(true)
-    setRepos([])
+    const suggestions = suggestedFor(searchStr)
+    const suggestedURLs = map(suggestions, 'url')
+    setRepos(suggestions)
     const query = {limit: 25, q: searchStr, includeSummary: true}
     const services = getRepoServices()
     let count = services.length
@@ -53,7 +64,8 @@ const RepoSearchAutocomplete = ({onChange, label, id, required, minCharactersFor
       service.get(null, null, query).then(response => {
         count -= 1
         setRepos(prev => {
-          return [...prev, ...map(response.data, repo => ({...repo, resultType: t('search.search_results')}))]
+          const results = filter(response.data, repo => !suggestedURLs.includes(repo.url))
+          return [...prev, ...map(results, repo => ({...repo, resultType: t('search.search_results')}))]
         })
         if(count === 0)
           setLoading(false)
