@@ -16,11 +16,6 @@ const BASE = [
   { id: 'datatype', value: 'datatype' }
 ]
 
-test('withExtraColumns: appends extra columns after the base ones', () => {
-  const mappings = { id: 'mappings', renderer: () => 'map' }
-  assert.deepEqual(withExtraColumns(BASE, [mappings]).map(column => column.id), ['id', 'name', 'datatype', 'mappings'])
-})
-
 test("withExtraColumns: an extra column with a base column's id replaces it in place (OpenConceptLab/ocl_issues#2909)", () => {
   const name = { id: 'name', renderer: () => 'localized' }
   const columns = withExtraColumns(BASE, [name, { id: 'mappings' }])

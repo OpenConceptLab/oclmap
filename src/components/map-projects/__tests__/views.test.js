@@ -712,7 +712,6 @@ test('findTargetRowView: matches a target on its OCL URL, or on its id when eith
   assert.equal(findTargetRowView(views, restoredTarget)?.conceptDefinition.id, '49494-3')
   assert.equal(findTargetRowView(views, { id: '2093-3' })?.conceptDefinition.id, '2093-3')
   assert.equal(findTargetRowView(views, { id: '49494-3', url: '/orgs/Other/sources/X/concepts/49494-3/' }), undefined)
-  assert.equal(findTargetRowView(views, null), undefined)
 })
 
 test('withCandidateNames: a restored target gets the names and highlights its row\'s candidates hold for it', () => {

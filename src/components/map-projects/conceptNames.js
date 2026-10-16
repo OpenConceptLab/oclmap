@@ -13,16 +13,10 @@ import { primarySubtag } from './normalizers.js'
 
 const FULLY_SPECIFIED = /^fully[\s_-]?specified$/i
 
-const plainText = html => (html || '').replaceAll('<em>', '').replaceAll('</em>', '')
-
 const sameName = (a, b) => {
   const normalize = text => (text || '').replace(/\s+/g, ' ').trim().toLowerCase()
   return normalize(a) === normalize(b)
 }
-
-const toLocaleList = locales => (typeof locales === 'string' ? locales.split(',') : (locales || []))
-  .map(locale => primarySubtag(locale?.trim()))
-  .filter(Boolean)
 
 // The highlighted synonym with the best match: an exact match first, then the
 // longest highlighted run, then one that starts with it.
@@ -79,18 +73,18 @@ export const localizedDisplayName = (concept, inputLocale) => {
  * or null when nothing matched or the match is `displayName` itself. A
  * display-name (`name`) highlight means the concept's `display_name` matched;
  * otherwise it is the best `synonyms` highlight. `filterLocales` (the
- * project's name-locale filter, a list or a comma-separated string) hides a
+ * project's name-locale filter, a comma-separated string) hides a
  * matched name in any other language.
  */
 export const getMatchedName = ({highlights, concept, displayName, filterLocales}) => {
   const fragment = highlights?.name?.[0] || getBestSynonym(highlights?.synonyms)
   if(!fragment) return null
-  const text = plainText(fragment)
+  const text = fragment.replace(/<\/?em>/g, '')
   const names = Array.isArray(concept?.names) ? concept.names : []
   const entry = names.find(name => name?.name === text) || names.find(name => name?.name?.startsWith(text))
   if(sameName(text, displayName) || (entry && sameName(entry.name, displayName)))
     return null
-  const allowed = toLocaleList(filterLocales)
+  const allowed = (filterLocales || '').split(',').map(locale => primarySubtag(locale.trim())).filter(Boolean)
   if(allowed.length && !allowed.includes(primarySubtag(entry?.locale)))
     return null
   return {

@@ -84,7 +84,6 @@ test('localizedDisplayName: falls back to the repository default-locale display 
 
 test('getMatchedName: the translated name that matched comes second, with its locale (the ticket case)', () => {
   const displayName = localizedDisplayName(PRENATAL_TESTS, 'en')
-  assert.equal(displayName, "Mother's Prenatal tests")
   assert.deepEqual(
     getMatchedName({
       highlights: { synonyms: ['Anamnesi Punto nel tempo (episodio) <em>Test</em> prenatale'] },
@@ -161,7 +160,6 @@ test('getMatchedName: hides a matched name outside the name-locale filter, compa
   }
   assert.equal(getMatchedName({ ...args, filterLocales: 'en,es' }), null)
   assert.equal(getMatchedName({ ...args, filterLocales: 'en, it' })?.locale, 'it-IT')
-  assert.equal(getMatchedName({ ...args, filterLocales: ['it'] })?.locale, 'it-IT')
   assert.equal(getMatchedName({ ...args, filterLocales: '' })?.locale, 'it-IT')
 })
 

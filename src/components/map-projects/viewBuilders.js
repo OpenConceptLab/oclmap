@@ -419,8 +419,7 @@ export const conceptForMapping = (rowView) => {
  * OCL URL or, when either lacks one, its id.
  */
 export const findTargetRowView = (views, target) => {
-  if(!target) return undefined
-  return (views || []).find(view => {
+  return views.find(view => {
     const mapped = conceptForMapping(view)
     if(!mapped) return false
     if(target.url && mapped.url)
@@ -438,7 +437,7 @@ export const findTargetRowView = (views, target) => {
  * it is.
  */
 export const withCandidateNames = (target, rowState, conceptCache) => {
-  const view = rowState ? findTargetRowView(buildQualityRowViews(rowState, conceptCache), target) : undefined
+  const view = findTargetRowView(buildQualityRowViews(rowState, conceptCache), target)
   if(!view) return target
   return {
     ...target,

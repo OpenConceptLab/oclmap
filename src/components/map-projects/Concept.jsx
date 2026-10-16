@@ -474,7 +474,6 @@ const Concept = ({_id, firstChild, lastChild, concept, openConceptPanel, isShown
                   conceptRow={child.conceptRow}
                   bridgeConceptDefinition={conceptDefinition}
                   repoVersion={repoVersion}
-                  matchedName={matchedName}
                   openConceptPanel={openConceptPanel}
                   AIRecommendedCandidateId={AIRecommendedCandidateId}
                   AIAlternateCandidateIds={AIAlternateCandidateIds}
