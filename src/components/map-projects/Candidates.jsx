@@ -40,7 +40,7 @@ import SearchResults from '../search/SearchResults';
 import SearchFilters from '../search/SearchFilters'
 import NoResults from '../search/NoResults';
 import Mappings from './Mappings'
-import Concept from './Concept'
+import Concept, { localizedNameColumn } from './Concept'
 import ConceptIcon from '../concepts/ConceptIcon'
 import MapButton from './MapButton'
 import AICandidatesAnalysis from './AICandidatesAnalysis'
@@ -162,7 +162,7 @@ const SubHeader = ({count, onClick, isCollapsed, header, indicatorColor, indicat
 }
 
 
-const CandidateList = ({rowViews, header, rowIndex, sortBy, order, openConceptPanel, showItem, isSelectedForMap, onMap, onFetchMore, bgColor, headerIndicatorIcon, bucketId, display, onDisplayChange, noToolbar, toolbarControl, repoVersion, alignToolbarLeft, rightControl, analysis, showAnalysis, openAnalysis, onCloseAnalysis, isInProgress, AIRecommendedCandidateId, AIAlternateCandidateIds, locales, scispacy, showAlgo, collapsed, onCollapse, candidatesScore, algoScoreFirst, byAlgorithm, showEmptyHeader, isFirst, targetCanonical, targetRelativeUrl, analysisPage, setAnalysisPage}) => {
+const CandidateList = ({rowViews, header, rowIndex, sortBy, order, openConceptPanel, showItem, isSelectedForMap, onMap, onFetchMore, bgColor, headerIndicatorIcon, bucketId, display, onDisplayChange, noToolbar, toolbarControl, repoVersion, alignToolbarLeft, rightControl, analysis, showAnalysis, openAnalysis, onCloseAnalysis, isInProgress, AIRecommendedCandidateId, AIAlternateCandidateIds, inputLocale, locales, scispacy, showAlgo, collapsed, onCollapse, candidatesScore, algoScoreFirst, byAlgorithm, showEmptyHeader, isFirst, targetCanonical, targetRelativeUrl, analysisPage, setAnalysisPage}) => {
   // Decorate rowViews so they work for BOTH renderers:
   //   - Table view: SearchResults/TableResults reads legacy concept fields
   //     (id, url, names, descriptions, source, search_meta, ...) via the
@@ -202,6 +202,7 @@ const CandidateList = ({rowViews, header, rowIndex, sortBy, order, openConceptPa
 
   const getExtraColumns = () => {
     let cols = [
+      localizedNameColumn(inputLocale, locales),
       {
         sortable: false,
         id: 'mappings',
@@ -327,6 +328,7 @@ const CandidateList = ({rowViews, header, rowIndex, sortBy, order, openConceptPa
             repoVersion={repoVersion}
             AIRecommendedCandidateId={AIRecommendedCandidateId}
             AIAlternateCandidateIds={AIAlternateCandidateIds}
+            inputLocale={inputLocale}
             locales={locales}
             notClickable={Boolean(scispacy)}
             showAlgo={showAlgo}
@@ -377,7 +379,7 @@ const CandidateList = ({rowViews, header, rowIndex, sortBy, order, openConceptPa
 //   conceptCache — project-wide ConceptDefinition store, keyed by concept_key.
 //   algosSelected — algorithm definitions (for headers/grouping).
 // (plans/unified-mapper-model.md "How the views map onto this model".)
-const Candidates = ({rowIndex, rowState, conceptCache, targetCanonical, targetRelativeUrl, openConceptPanel, showItem, isSelectedForMap, onMap, onFetchMore, isLoading, candidatesScore, repoVersion, analysis, onFetchRecommendation, appliedFacets, setAppliedFacets, filters, facets, columns, defaultFilters, locales, models, selectedModel, onModelChange, promptTemplates, promptTemplate, onPromptTemplateChange, onRefreshClick, rowStage, inAIAssistantGroup, algosSelected, canSelectAIModel, capacityWait=false, throttle}) => {
+const Candidates = ({rowIndex, rowState, conceptCache, targetCanonical, targetRelativeUrl, openConceptPanel, showItem, isSelectedForMap, onMap, onFetchMore, isLoading, candidatesScore, repoVersion, analysis, onFetchRecommendation, appliedFacets, setAppliedFacets, filters, facets, columns, defaultFilters, inputLocale, locales, models, selectedModel, onModelChange, promptTemplates, promptTemplate, onPromptTemplateChange, onRefreshClick, rowStage, inAIAssistantGroup, algosSelected, canSelectAIModel, capacityWait=false, throttle}) => {
   const { t } = useTranslation();
   const [sortBy, setSortBy] = React.useState('rerank_score')
   const [groupBy, setGroupBy] = React.useState('quality')
@@ -460,6 +462,7 @@ const Candidates = ({rowIndex, rowState, conceptCache, targetCanonical, targetRe
     repoVersion: repoVersion,
     AIRecommendedCandidateId: AIRecommendedCandidateId,
     AIAlternateCandidateIds: AIAlternateCandidateIds,
+    inputLocale: inputLocale,
     locales: locales,
     candidatesScore: candidatesScore,
     algoScoreFirst: algoScoreFirst,
@@ -527,9 +530,9 @@ const Candidates = ({rowIndex, rowState, conceptCache, targetCanonical, targetRe
           // key/order so the children's order tracks the parent rule. Bridge
           // children don't have their own raw score; sorting by algo_score
           // leaves them in insertion order via sortRowViews' -1 sentinel.
-          candidates: sortRowViews(views, sortBy, order).map(view => (
+          candidates: sortRowViews(views, sortBy, order, inputLocale).map(view => (
             view.type === 'bridge' && view.bridgeChildren?.length
-              ? { ...view, bridgeChildren: sortRowViews(view.bridgeChildren, sortBy, order) }
+              ? { ...view, bridgeChildren: sortRowViews(view.bridgeChildren, sortBy, order, inputLocale) }
               : view
           ))
         }))
@@ -558,7 +561,7 @@ const Candidates = ({rowIndex, rowState, conceptCache, targetCanonical, targetRe
     let available = []
     let lowRanked = []
     let pendingRerank = []
-    sortRowViews(qualityRowViews, sortBy, order).forEach(view => {
+    sortRowViews(qualityRowViews, sortBy, order, inputLocale).forEach(view => {
       const score = view.conceptRow?.rerank_score
       if(byScore) {
         // Bucket on score presence first: unscored rows belong in their

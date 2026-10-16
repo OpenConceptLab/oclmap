@@ -1,4 +1,5 @@
 import React from 'react'
+import { useTranslation } from 'react-i18next'
 import ListItemButton from '@mui/material/ListItemButton'
 import ListItem from '@mui/material/ListItem'
 import ListItemText from '@mui/material/ListItemText'
@@ -6,7 +7,6 @@ import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import Tooltip from '@mui/material/Tooltip'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
-import isString from 'lodash/isString'
 import map from 'lodash/map'
 
 import Retired from '../common/Retired'
@@ -14,6 +14,7 @@ import Score from './Score'
 import MapButton from './MapButton'
 import ConceptSummaryProperties from '../concepts/ConceptSummaryProperties'
 import { conceptBelongsToTargetRepo, conceptForMapping } from './viewBuilders.js'
+import { localizedDisplayName, getMatchedName } from './conceptNames.js'
 
 // Format a contributor descriptor for the convergence tooltip:
 //   "via CIEL:1234 Activated partial thromboplastin time — SAME-AS"
@@ -42,40 +43,60 @@ export const MAP_TYPE_CHIP_SX = {
   }
 }
 
+// The name the match was made on, with its locale, as a line under the name
+// a concept leads with (getMatchedName). Exported for the row panel's
+// Target Code header (MappingDecisionResult), whose box has a fixed height:
+// `noWrap` keeps it to one line there, with the whole of it on hover.
+export const MatchedName = ({ matchedName, noWrap }) => {
+  const { t } = useTranslation()
+  if(!matchedName) return null
+  const label = `${t('map_project.matched_name')}${matchedName.locale ? ` (${matchedName.locale})` : ''}:`
+  return (
+    <span
+      className='col-xs-12 padding-0'
+      style={{display: 'block', fontSize: '12px', ...(noWrap ? {whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'} : {})}}
+      title={noWrap ? `${label} ${matchedName.html.replace(/<[^>]*>/g, '')}` : undefined}
+    >
+      {label}&nbsp;
+      <span className='searchable' dangerouslySetInnerHTML={{__html: matchedName.html}}/>
+    </span>
+  )
+}
 
-const getBestSynonym = (synonyms = []) => {
-  return synonyms
-    .map(text => {
-      const matches = [...text.matchAll(/<em>(.*?)<\/em>/g)];
-      const longestMatch = matches.reduce(
-        (a, b) => (b[1].length > a.length ? b[1] : a),
-        ""
-      );
-
-      const emTag = `<em>${longestMatch}</em>`;
-      return {
-        text,
-        length: longestMatch.length,
-        isExact: text.trim() === emTag,
-        startsWith: text.startsWith(emTag)
-      };
+// Table view's name column, naming each concept as the cards do: in the
+// project's input language, with the name it matched on below. It changes
+// only how the column renders: rows, which Map and the concept panel read,
+// keep the concept's display_name.
+export const localizedNameColumn = (inputLocale, locales) => ({
+  id: 'name',
+  renderer: item => {
+    const displayName = localizedDisplayName(item, inputLocale)
+    const matchedName = getMatchedName({
+      highlights: item.search_meta?.search_highlight,
+      concept: item,
+      displayName,
+      filterLocales: locales
     })
-    .sort((a, b) => {
-      if (b.isExact !== a.isExact) return b.isExact ? 1 : -1;   // ✅ exact ALWAYS first
-      if (b.length !== a.length) return b.length - a.length;   // longer match
-      if (b.startsWith !== a.startsWith) return b.startsWith ? 1 : -1;
-      return 0;
-    })[0]?.text;
-};
+    return (
+      <span>
+        {item.retired && <Retired style={{marginRight: '8px'}}/>} {displayName}
+        <MatchedName matchedName={matchedName} />
+      </span>
+    )
+  }
+})
 
 
-const Item = ({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition, bridgeContributors, contributingAlgorithms, contributingAlgorithmIds, openConceptPanel, AIRecommendedCandidateId, AIAlternateCandidateIds, onMap, isSelectedForMap, noScore, repoVersion, synonymPrefix, isAIRecommended, isAIAlternate, showAlgo, candidatesScore, algoScoreFirst, placeholderMap, bridgeChild}) => {
+const Item = ({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition, bridgeContributors, contributingAlgorithms, contributingAlgorithmIds, openConceptPanel, AIRecommendedCandidateId, AIAlternateCandidateIds, onMap, isSelectedForMap, noScore, repoVersion, inputLocale, matchedName, isAIRecommended, isAIAlternate, showAlgo, candidatesScore, algoScoreFirst, placeholderMap, bridgeChild}) => {
   const conceptToMap = conceptForMapping({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition})
   const idLabel = conceptDefinition?.id || conceptDefinition?.reference?.code
   const sourceLabel = conceptDefinition?.source
+  // Each concept leads with its name in the project's input language
+  // (OpenConceptLab/ocl_issues#2909); the name that matched comes second.
+  const displayName = localizedDisplayName(conceptDefinition, inputLocale)
   const mapTypeToApply = candidate?.map_type
   const bridgePrefixLabel = bridgeConceptDefinition
-    ? `${bridgeConceptDefinition.source || ''}:${bridgeConceptDefinition.id || bridgeConceptDefinition.reference?.code} ${bridgeConceptDefinition.display_name || ''}`.trim()
+    ? `${bridgeConceptDefinition.source || ''}:${bridgeConceptDefinition.id || bridgeConceptDefinition.reference?.code} ${localizedDisplayName(bridgeConceptDefinition, inputLocale) || ''}`.trim()
     : ''
   // Score chip click opens the unified ConceptDetailsPanel with the Match
   // Details tab focused. openConceptPanel resolves the per-concept enrichment
@@ -124,21 +145,14 @@ const Item = ({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition
                       <Chip size='small' label={candidate.map_type} sx={MAP_TYPE_CHIP_SX} />
                     )}
                     <span className='searchable'>
-                      {`${sourceLabel || ''}:${idLabel} ${conceptDefinition?.display_name || ''}`.trim()}
+                      {`${sourceLabel || ''}:${idLabel} ${displayName || ''}`.trim()}
                     </span>
                   </>
                 ) : (
                   <>
                     <span className='searchable'>{`${sourceLabel || ''}:${idLabel}`}</span>
                     <span style={{marginLeft: '4px'}} className='searchable'>
-                      {
-                        !bridgeConceptDefinition && synonymPrefix &&
-                          <span className='searchable'>
-                            <span dangerouslySetInnerHTML={{__html: synonymPrefix}}/>
-                            <span style={{margin: '0 5px'}}>&rarr;</span>
-                          </span>
-                      }
-                      {conceptDefinition?.display_name}
+                      {displayName}
                     </span>
                     {
                       // Legacy algo-view path: a target row with bridge
@@ -151,8 +165,8 @@ const Item = ({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition
                           {candidate?.map_type ? `[${candidate.map_type}]` : ''}
                           <span style={{margin: '0 5px'}}>&rarr;</span>
                           <span className='searchable'>
-                            {conceptDefinition?.display_name
-                              ? `${sourceLabel || ''}:${idLabel} ${conceptDefinition.display_name}`
+                            {displayName
+                              ? `${sourceLabel || ''}:${idLabel} ${displayName}`
                               : ''}
                           </span>
                         </span>
@@ -169,6 +183,7 @@ const Item = ({candidate, conceptDefinition, conceptRow, bridgeConceptDefinition
         }
         secondary={
           <div className='col-xs-12 padding-0'>
+            {!bridgeConceptDefinition && <MatchedName matchedName={matchedName} />}
             <div className='col-xs-12 padding-0'>
               <ConceptSummaryProperties concept={conceptDefinition} repoVersion={repoVersion} />
             </div>
@@ -318,7 +333,11 @@ const legacyToRowView = (legacy) => {
 // Legacy callers (Target Code column, decision tables, search results)
 // pass a flat concept-shape object instead — legacyToRowView wraps those
 // so a single render path covers both worlds while PR3 cleanup is pending.
-const Concept = ({_id, firstChild, lastChild, concept, openConceptPanel, isShown, onCardClick, onMap, isSelectedForMap, noScore, repoVersion, isAIRecommended, sx, notClickable, noSynonymPrefix, locales, showAlgo, candidatesScore, algoScoreFirst, asTarget, AIRecommendedCandidateId, AIAlternateCandidateIds, targetCanonical, targetRelativeUrl}) => {
+//
+// `inputLocale` is the project's input language: each concept leads with its
+// name in it. `locales` is the project's name-locale filter, which hides a
+// matched name in any other language.
+const Concept = ({_id, firstChild, lastChild, concept, openConceptPanel, isShown, onCardClick, onMap, isSelectedForMap, noScore, repoVersion, isAIRecommended, sx, notClickable, inputLocale, locales, showAlgo, candidatesScore, algoScoreFirst, asTarget, AIRecommendedCandidateId, AIAlternateCandidateIds, targetCanonical, targetRelativeUrl}) => {
   const rowView = concept?.conceptDefinition ? concept : legacyToRowView(concept)
   if(!rowView?.conceptDefinition) return null
   const { type, candidate, conceptDefinition, conceptRow, bridgeConceptDefinition, bridgeChildren, bridgeContributors, contributingAlgorithmIds, contributingAlgorithms } = rowView
@@ -334,20 +353,12 @@ const Concept = ({_id, firstChild, lastChild, concept, openConceptPanel, isShown
   const isSelectedToShow = isShown ? isShown(idForUI) : false
   const aiAlternateIds = Array.isArray(AIAlternateCandidateIds) ? AIAlternateCandidateIds : []
 
-  let synonymPrefix = ''
-  const highlights = candidate?.highlights
-  const synonymHighlight = highlights?.synonyms
-  const nameHighlight = highlights?.name
-  if(!nameHighlight?.length && synonymHighlight?.length && !noSynonymPrefix) {
-    let bestMatch = getBestSynonym(synonymHighlight) || synonymHighlight[0]
-    if(locales && bestMatch && conceptDefinition?.names) {
-      let raw = bestMatch.replaceAll("<em>", "").replaceAll("</em>", "")
-      let _locales = isString(locales) ? locales.split(',') : locales
-      if(_locales?.length > 0 && !_locales.includes(conceptDefinition.names.find(name => name.name.startsWith(raw))?.locale))
-        bestMatch = ''
-    }
-    synonymPrefix = (bestMatch || '').replaceAll('<em>', "<b className='searchable'>").replaceAll('</em>', '</b>')
-  }
+  const matchedName = getMatchedName({
+    highlights: candidate?.highlights,
+    concept: conceptDefinition,
+    displayName: localizedDisplayName(conceptDefinition, inputLocale),
+    filterLocales: locales
+  })
 
   const baseProps = {
     id: idForUI,
@@ -357,7 +368,8 @@ const Concept = ({_id, firstChild, lastChild, concept, openConceptPanel, isShown
     lastChild: lastChild,
     isSelectedToShow: isSelectedToShow,
     sx: sx,
-    onCardClick: onCardClick
+    onCardClick: onCardClick,
+    inputLocale: inputLocale
   }
 
   if(type === 'bridge') {
@@ -389,7 +401,7 @@ const Concept = ({_id, firstChild, lastChild, concept, openConceptPanel, isShown
               conceptDefinition={conceptDefinition}
               conceptRow={conceptRow}
               repoVersion={repoVersion}
-              synonymPrefix={synonymPrefix}
+              matchedName={matchedName}
               openConceptPanel={openConceptPanel}
               AIRecommendedCandidateId={AIRecommendedCandidateId}
               AIAlternateCandidateIds={AIAlternateCandidateIds}
@@ -462,7 +474,6 @@ const Concept = ({_id, firstChild, lastChild, concept, openConceptPanel, isShown
                   conceptRow={child.conceptRow}
                   bridgeConceptDefinition={conceptDefinition}
                   repoVersion={repoVersion}
-                  synonymPrefix={synonymPrefix}
                   openConceptPanel={openConceptPanel}
                   AIRecommendedCandidateId={AIRecommendedCandidateId}
                   AIAlternateCandidateIds={AIAlternateCandidateIds}
@@ -498,7 +509,7 @@ const Concept = ({_id, firstChild, lastChild, concept, openConceptPanel, isShown
     contributingAlgorithms={contributingAlgorithms}
     contributingAlgorithmIds={contributingAlgorithmIds}
     repoVersion={repoVersion}
-    synonymPrefix={synonymPrefix}
+    matchedName={matchedName}
     openConceptPanel={openConceptPanel}
     AIRecommendedCandidateId={AIRecommendedCandidateId}
     AIAlternateCandidateIds={AIAlternateCandidateIds}

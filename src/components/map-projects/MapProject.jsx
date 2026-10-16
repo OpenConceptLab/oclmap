@@ -115,7 +115,7 @@ import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
 import { normalizeAlgorithmInvocation, hasSuccessfulAlgorithmResponse, getAlgorithmStagesFromResponses, lookupStatusRank, buildRecommendableConceptEntry, stripConstantClassAndDatatype, buildLookupConceptUrl, serializeCandidates, toStoredRowMatchState } from './normalizers'
 import { parseConceptKey } from './conceptKey'
 import { getDeclaredLocales, getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getSavedTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId } from './projectTargetRepo'
-import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, formatBridgeTargetDownloadEntry, resolveAICandidateID, getScoreDetails, getAIAnalysisCandidateIDs } from './viewBuilders.js'
+import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, findTargetRowView, formatBridgeTargetDownloadEntry, resolveAICandidateID, getScoreDetails, getAIAnalysisCandidateIDs, withCandidateNames } from './viewBuilders.js'
 import { formatClockTime, getCapacityWaitLabel, mergeCapacityWaits } from './rowProgress.js'
 
 import './MapProject.scss'
@@ -1134,7 +1134,7 @@ const MapProject = () => {
                 null
               }
               <span style={{minWidth: 0, flex: 1}}>
-                <Concept key={`${params.row.__index}-${targetConcept.id}`} sx={{padding: 0}} repoVersion={repoVersion} notClickable firstChild concept={targetConcept} noScore onCardClick={false} noSynonymPrefix asTarget />
+                <Concept key={`${params.row.__index}-${targetConcept.id}`} sx={{padding: 0}} repoVersion={repoVersion} notClickable firstChild concept={withCandidateNames(targetConcept, rowMatchStateRef.current?.[params.row.__index], conceptCacheRef.current)} noScore onCardClick={false} inputLocale={inputLocale} locales={filters.locale || ''} asTarget />
               </span>
             </span>
           )
@@ -5342,13 +5342,7 @@ const MapProject = () => {
   const targetRowViews = rowMatchStateRef.current?.[rowIndex]
     ? buildQualityRowViews(rowMatchStateRef.current[rowIndex], conceptCacheRef.current)
     : []
-  const selectedTargetRowView = targetConcept ? find(targetRowViews, view => {
-    const mapped = conceptForMapping(view)
-    if(!mapped) return false
-    if(targetConcept?.url && mapped.url)
-      return mapped.url === targetConcept.url
-    return mapped.id === targetConcept?.id
-  }) : false
+  const selectedTargetRowView = targetConcept ? findTargetRowView(targetRowViews, targetConcept) : false
   if(selectedTargetRowView && targetConcept) {
     const mergedConcept = conceptForMapping(selectedTargetRowView)
     targetConcept = {
@@ -6501,6 +6495,8 @@ const MapProject = () => {
                   candidatesScore={candidatesScore}
                   targetConcept={targetConcept}
                   repoVersion={repoVersion}
+                  inputLocale={inputLocale}
+                  locales={filters.locale || ''}
                   row={row}
                   rowIndex={rowIndex}
                   repo={repo}
@@ -6600,6 +6596,7 @@ const MapProject = () => {
                         setAppliedFacets(() => ({...appliedFacets, [rowIndex]: filters}))
                         fetchAllCandidatesForRow(null, 0, false, false, filters, true)
                       }}
+                      inputLocale={inputLocale}
                       locales={filters.locale || ''}
                       models={AIModels}
                       selectedModel={AIModel}
@@ -6639,6 +6636,7 @@ const MapProject = () => {
                         setAppliedFacets({...appliedFacets, [rowIndex]: filters})
                         search(null, null, null, null, filters)
                       }}
+                      inputLocale={inputLocale}
                       locales={filters.locale || ''}
                     />
                 }
