@@ -10,7 +10,7 @@ import {
 } from 'lodash';
 import {
   DATE_FORMAT, TIME_FORMAT, DATETIME_FORMAT, OCL_SERVERS_GROUP, OCL_FHIR_SERVERS_GROUP, HAPI_FHIR_SERVERS_GROUP,
-  OPENMRS_URL, DEFAULT_FHIR_SERVER_FOR_LOCAL_ID, OPERATIONS_PANEL_GROUP
+  OPENMRS_URL, DEFAULT_FHIR_SERVER_FOR_LOCAL_ID
 } from './constants';
 import APIService from '../services/APIService';
 import GAService from '../services/GAService';
@@ -451,27 +451,6 @@ export const getFHIRServerConfigFromCurrentContext = () => {
     return find(SERVER_CONFIGS, {type: 'fhir', id: server.fhirServerId});
   if(server.local)
     return getLocalFHIRServerConfig() || getDefaultFHIRServerConfig();
-}
-
-export const canSwitchServer = () => {
-  const user = getCurrentUser();
-
-  return Boolean(
-    getSelectedServerConfig() ||
-    get(user, 'is_superuser') ||
-      hasAuthGroup(user, 'server')
-  );
-}
-
-export const hasAuthGroup = (user, groupName) => Boolean(find(user?.auth_groups, group => group.includes(groupName)))
-
-export const canViewOperationsPanel = () => {
-  const user = getCurrentUser()
-
-  return Boolean(
-    get(user, 'is_staff') ||
-    hasAuthGroup(user, OPERATIONS_PANEL_GROUP)
-  )
 }
 
 export const isFHIRServer = () => get(getAppliedServerConfig(), 'type') === 'fhir';

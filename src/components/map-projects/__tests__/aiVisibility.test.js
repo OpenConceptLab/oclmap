@@ -30,6 +30,8 @@ test('getAIAssistantChoices: non-staff core, early-access and unlimited-AI users
   const localeOnly = { canSelectAIModel: false, canSetAIOutputLocale: true }
   assert.deepEqual(getAIAssistantChoices({ is_staff: false, auth_groups: ['core_user'] }), localeOnly)
   assert.deepEqual(getAIAssistantChoices({ auth_groups: ['early_access'] }), localeOnly)
+  assert.deepEqual(getAIAssistantChoices({ auth_groups: ['pro'] }), localeOnly)
+  assert.deepEqual(getAIAssistantChoices({ auth_groups: ['mapper-approved'] }), { canSelectAIModel: false, canSetAIOutputLocale: false })
   assert.deepEqual(getAIAssistantChoices({ auth_groups: ['preview'] }, { unlimitedAICalls: true }), localeOnly)
 })
 

@@ -43,6 +43,15 @@ test('getRequestLimits: early access, 10 rows × 5 requests', () => {
   assert.deepEqual(EARLY_ACCESS, { batchSize: 10, concurrentRequests: 5, capped: true })
 })
 
+test('getRequestLimits: pro gets early access limits (ocl_online#517)', () => {
+  assert.deepEqual(getRequestLimits({ auth_groups: ['pro'] }), EARLY_ACCESS)
+  assert.equal(hasFullRequestLimits({ auth_groups: ['pro'] }), false)
+})
+
+test('getRequestLimits: group names match exactly, so mapper-approved is not pro', () => {
+  assert.deepEqual(getRequestLimits({ auth_groups: ['mapper-approved'] }), PREVIEW)
+})
+
 test('getRequestLimits: preview, 10 rows × 2 requests', () => {
   assert.deepEqual(PREVIEW, { batchSize: 10, concurrentRequests: 2, capped: true })
 })
