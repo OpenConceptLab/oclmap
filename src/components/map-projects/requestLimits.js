@@ -1,3 +1,5 @@
+import { hasAuthGroup } from '../../common/authGroups.js'
+
 /**
  * How many rows go in one matching request, and how many requests an
  * algorithm keeps in flight, during Auto Match (ocl_online#274).
@@ -19,9 +21,10 @@ const FULL_LIMITS = { batchSize: 1000, concurrentRequests: 50, capped: false }
 const EARLY_ACCESS_LIMITS = { batchSize: 10, concurrentRequests: 5, capped: true }
 const PREVIEW_LIMITS = { batchSize: 10, concurrentRequests: 2, capped: true }
 
-const inAuthGroup = (user, group) => Boolean(user?.auth_groups?.some(name => name.includes(group)))
+// Pro gets early access's limits and choices (ocl_online#517).
+export const isEarlyAccessUser = user => hasAuthGroup(user, 'early_access') || hasAuthGroup(user, 'pro')
 
-export const hasFullRequestLimits = user => Boolean(user?.is_staff || user?.is_superuser || inAuthGroup(user, 'core_user'))
+export const hasFullRequestLimits = user => Boolean(user?.is_staff || user?.is_superuser || hasAuthGroup(user, 'core_user'))
 
 // The most rows per request, and requests in flight, a user may type in the
 // form, by their highest tier. capped: false for core users and staff, whose
@@ -29,7 +32,7 @@ export const hasFullRequestLimits = user => Boolean(user?.is_staff || user?.is_s
 export const getRequestLimits = user => {
   if(hasFullRequestLimits(user))
     return FULL_LIMITS
-  if(inAuthGroup(user, 'early_access'))
+  if(isEarlyAccessUser(user))
     return EARLY_ACCESS_LIMITS
   return PREVIEW_LIMITS
 }
