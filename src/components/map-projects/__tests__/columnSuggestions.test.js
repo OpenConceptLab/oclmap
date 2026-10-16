@@ -69,9 +69,43 @@ test('isCodeLikeHeader: matches code-like words as whole tokens', () => {
   assert.equal(isCodeLikeHeader('Test Name'), false)
 })
 
-const upload = headers => headers.map(original => {
-  const [suggested] = suggestColumnLabels([original], BASE)
-  return {label: suggested || original, original, dataKey: original, suggested: Boolean(suggested), auto: true}
+// Mirrors the upload path: every column starts as an auto suggestion.
+const upload = (headers, validColumns = BASE) => resuggestColumns(
+  headers.map(original => ({label: original, original, dataKey: original, auto: true})),
+  validColumns
+)
+
+test('suggestColumnLabels: an exact match keeps its field, even when a pattern column comes first', () => {
+  assert.deepEqual(suggestColumnLabels(['Test Name', 'Name'], BASE), [null, null])
+})
+
+test('suggestColumnLabels: exact matches reserve their fields in mixed headers', () => {
+  assert.deepEqual(
+    suggestColumnLabels(['Name', 'Test Name', 'Synonyms', 'Alternate synonym'], BASE),
+    [null, null, null, null]
+  )
+})
+
+test('suggestColumnLabels: labels the user already chose are reserved', () => {
+  assert.deepEqual(suggestColumnLabels(['Test Name'], BASE, ['Name']), [null])
+})
+
+test('upload: an exact Name column and a Test Name column do not both map to Name', () => {
+  const labels = upload(['Test Name', 'Name', 'Specimen'], LOINC).map(col => col.label)
+  assert.deepEqual(labels, ['Test Name', 'Name', 'Property: SYSTEM'])
+})
+
+test('upload: a suggestion still applies when nothing collides', () => {
+  const labels = upload(['Test Name', 'Synonym'], BASE).map(col => col.label)
+  assert.deepEqual(labels, ['Name', 'Synonyms'])
+})
+
+test('regression: a manual Name choice is not duplicated when the target reloads', () => {
+  let cols = upload(['Notes', 'Test Name'], LOINC)
+  cols = updateColumnState(cols, 0, 'Name')
+  const afterLoad = resuggestColumns(cols, LOINC)
+  assert.deepEqual(afterLoad.map(col => col.label), ['Name', 'Test Name'])
+  assert.equal(afterLoad[1].suggested, false)
 })
 
 test('updateColumnState: keeps columns an array after a user edit', () => {

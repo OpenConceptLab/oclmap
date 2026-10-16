@@ -84,7 +84,7 @@ import { buildPanelPayload } from './openConceptPanel'
 import LoaderDialog from '../common/LoaderDialog'
 import Error403 from '../errors/Error403'
 import { HEADERS, SEMANTIC_SEARCH_HEADERS, ROW_STATES, VIEWS, DECISION_TABS, ROW_STAGES, PROMPTS_KEY_DEFAULT, PROMPTS_ACTION_TYPE_DEFAULT, SCORES_COLOR } from './constants'
-import { suggestColumnLabels, updateColumnState, resuggestColumns } from './columnSuggestions'
+import { updateColumnState, resuggestColumns } from './columnSuggestions'
 import MapProjectDeleteConfirmDialog from './MapProjectDeleteConfirmDialog';
 import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
@@ -1501,10 +1501,9 @@ const MapProject = () => {
         return prev
       })
 
-    let cols = getColumns(omit(_data[0], ['__index']))
-    const suggestedLabels = suggestColumnLabels(map(cols, 'original'), headers)
-    cols = map(cols, (col, idx) => ({...col, label: suggestedLabels[idx] || col.label, suggested: Boolean(suggestedLabels[idx]), auto: true}))
-    setColumns(cols)
+    // Uploaded columns start as suggestions (`auto`) until the user edits them.
+    const cols = map(getColumns(omit(_data[0], ['__index'])), col => ({...col, auto: true}))
+    setColumns(resuggestColumns(cols, headers))
   }
 
   const getReferencesForImport = (collection, scope, cascadeMethod, transformReferences) => {

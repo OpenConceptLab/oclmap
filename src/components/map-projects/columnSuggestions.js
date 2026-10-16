@@ -33,23 +33,31 @@ export const isCodeLikeHeader = header => tokenize(header).some(token => CODE_TO
  * only suggests a field the target has, and each field is suggested at most
  * once, for the first matching column.
  */
-export const suggestColumnLabels = (headers, validColumns) => {
+export const suggestColumnLabels = (headers, validColumns, reserved = []) => {
   const findValid = label => validColumns.find(column => column.label.toLowerCase() === label.toLowerCase())
-  const suggested = new Set()
+  const isExact = header => Boolean(findValid(String(header || '')))
+
+  // Exact matches and labels the user already chose hold their field first, so
+  // no suggestion can duplicate it, wherever the column sits in the file.
+  const taken = new Set(reserved)
+  headers.forEach(header => {
+    const exactMatch = findValid(String(header || ''))
+    if(exactMatch)
+      taken.add(exactMatch.label)
+  })
 
   return headers.map(header => {
-    const exactMatch = findValid(String(header || ''))
     const alreadyRecognised = String(header || '').toLowerCase().includes('class')
-    if(exactMatch || alreadyRecognised || isCodeLikeHeader(header))
+    if(isExact(header) || alreadyRecognised || isCodeLikeHeader(header))
       return null
 
     const tokens = tokenize(header)
     const rule = SUGGESTION_RULES.find(rule => tokens.some(token => rule.tokens.includes(token)))
     const target = rule && findValid(rule.label)
-    if(!target || suggested.has(target.label))
+    if(!target || taken.has(target.label))
       return null
 
-    suggested.add(target.label)
+    taken.add(target.label)
     return target.label
   })
 }
@@ -77,6 +85,7 @@ export const updateColumnState = (columns, position, newValue, key) => {
 export const resuggestColumns = (columns, validColumns) => {
   if(!columns.some(col => col.auto))
     return columns
-  const suggestedLabels = suggestColumnLabels(columns.map(col => col.original), validColumns)
+  const reserved = columns.filter(col => !col.auto && col.label).map(col => col.label)
+  const suggestedLabels = suggestColumnLabels(columns.map(col => col.original), validColumns, reserved)
   return columns.map((col, idx) => col.auto ? {...col, label: suggestedLabels[idx] || col.original, suggested: Boolean(suggestedLabels[idx])} : col)
 }
