@@ -16,6 +16,7 @@
 // node:test.
 
 import { localizedDisplayName } from './conceptNames.js'
+import { hasCurrentAnalysis } from './autoMatchRows.js'
 
 const compact = arr => (arr || []).filter(x => x != null && x !== false)
 const values = obj => Object.values(obj || {})
@@ -337,6 +338,16 @@ export const buildQualityRowViews = (rowState, conceptCache) => {
 }
 
 /**
+ * The quality views of the row's target-repo concepts, the only ones that can
+ * be mapped. With no target repo known, every view.
+ */
+export const getTargetRepoQualityViews = (rowState, conceptCache, targetCanonical, targetRelativeUrl) => {
+  const views = buildQualityRowViews(rowState, conceptCache)
+  if(!targetCanonical && !targetRelativeUrl) return views
+  return views.filter(view => conceptBelongsToTargetRepo(view.conceptDefinition, targetCanonical, targetRelativeUrl))
+}
+
+/**
  * Sort RowViews by the chosen key. `rerank_score` and `algo_score` are
  * numeric; `id` and `display_name` are alphabetical, `display_name` on the
  * name shown in `inputLocale` (the project's input language). Missing scores
@@ -597,5 +608,121 @@ export const getAIAnalysisCandidateIDs = (analysisProp, conceptCache) => {
     latestAnalysis,
     primaryCandidateId,
     alternateCandidateIds
+  }
+}
+
+// The OCL AI Assistant's verdicts. primary_candidate is null for REJECT and
+// INSUFFICIENT.
+export const AI_VERDICTS = ['RECOMMEND', 'CONDITIONAL', 'REJECT', 'INSUFFICIENT']
+
+const rerankScoreOf = view => view?.conceptRow?.rerank_score
+const viewHasConceptKey = (view, key) =>
+  view?.candidate?.concept_key === key || (view?.contributingCandidates || []).some(candidate => candidate?.concept_key === key)
+const viewCode = view => view?.conceptDefinition?.reference?.code || view?.conceptDefinition?.id
+
+// The view of a candidate the AI named: by its concept_key, else by the code
+// resolveAICandidateID gives it.
+const findAICandidateView = (views, aiCandidate, conceptCache) => {
+  if(!aiCandidate) return null
+  const byKey = aiCandidate.concept_key ? views.find(view => viewHasConceptKey(view, aiCandidate.concept_key)) : null
+  if(byKey) return byKey
+  const code = resolveAICandidateID(aiCandidate, conceptCache)
+  return (code && views.find(view => viewCode(view) === code)) || null
+}
+
+// Today's Match Quality buckets, each by score.
+const toScoreSections = (views, candidatesScore) => {
+  const sections = { pick: [], alternates: [], recommended: [], available: [], lowRanked: [], unranked: [] }
+  sortRowViews(views, 'rerank_score', 'desc').forEach(view => {
+    const score = rerankScoreOf(view)
+    if(!isNumber(score)) sections.unranked.push(view)
+    else if(score >= candidatesScore?.recommended) sections.recommended.push(view)
+    else if(score >= candidatesScore?.available) sections.available.push(view)
+    else sections.lowRanked.push(view)
+  })
+  return sections
+}
+
+/**
+ * The Mapper's recommendation rule (OpenConceptLab/ocl_issues#2908). If the
+ * OCL AI Assistant has analysed the row's current candidates, it decides what
+ * is proposed, and the score orders everything else. If it hasn't, the score
+ * decides, as before.
+ *
+ * - RECOMMEND or CONDITIONAL: the AI's pick is proposed, whatever its score.
+ *   A pick that isn't one of `views` falls back to the score rule
+ *   (agreement 'pick_not_candidate', for the log).
+ * - REJECT or INSUFFICIENT: nothing is proposed, even over a Recommended
+ *   score. The score reads names only.
+ * - No analysis, one without a known verdict, or one of an older candidate
+ *   pool (the same fingerprint check Auto Match uses to re-run the AI): the
+ *   top score is proposed if it's Recommended.
+ *
+ * Confidence is reported but changes nothing.
+ *
+ * @param {object} args
+ * @param {Array}  args.views           the row's target-repo quality views (getTargetRepoQualityViews)
+ * @param {Array|object} [args.analyses] the row's analysis history, or one entry; the latest decides
+ * @param {string} [args.fingerprint]   the current candidate pool's fingerprint (getCandidatePoolFingerprint)
+ * @param {object} args.candidatesScore {recommended, available} thresholds
+ * @param {object} [args.conceptCache]  resolves the AI's concept_keys to codes
+ * @returns {{
+ *   sections: {pick: Array, alternates: Array, recommended: Array, available: Array, lowRanked: Array, unranked: Array},
+ *   proposal: object|null,
+ *   chosenBy: 'ai_assistant'|'score',
+ *   agreement: 'none'|'out_of_date'|'agrees'|'different_pick'|'pick_not_candidate'|'no_match'|'not_enough',
+ *   verdict: string|null, conditional: boolean, confidence: string|null,
+ *   analysis: object|null, isCurrent: boolean,
+ *   pick: object|null, alternates: Array, top: object|null, pickRank: number|null
+ * }}
+ *   `sections` is the candidate order: the AI's pick, its alternates by score,
+ *   then the rest in today's buckets by score. `pick` and `alternates` are
+ *   resolved even when the analysis is out of date, for display; `top` is the
+ *   highest-scored candidate and `pickRank` the pick's rank by score.
+ */
+export const getRowRecommendation = ({ views = [], analyses, fingerprint, candidatesScore, conceptCache } = {}) => {
+  const history = Array.isArray(analyses) ? analyses : (analyses ? [analyses] : [])
+  const analysis = getLatestAnalysisEntry(history) || null
+  const output = analysis?.output || analysis
+  const verdict = AI_VERDICTS.includes(output?.recommendation) ? output.recommendation : null
+  const isCurrent = hasCurrentAnalysis(history, fingerprint)
+  const byScore = sortRowViews(views, 'rerank_score', 'desc')
+  const top = byScore.find(view => isNumber(rerankScoreOf(view))) || null
+  const choosesPick = ['RECOMMEND', 'CONDITIONAL'].includes(verdict)
+  const pick = choosesPick ? findAICandidateView(views, output.primary_candidate, conceptCache) : null
+  const alternates = uniq(compact((output?.alternative_candidates || []).map(candidate => findAICandidateView(views, candidate, conceptCache))))
+    .filter(view => view !== pick)
+  const pickScore = rerankScoreOf(pick)
+  const result = {
+    verdict,
+    conditional: verdict === 'CONDITIONAL',
+    confidence: (choosesPick && output?.primary_candidate?.confidence_level) || null,
+    analysis,
+    isCurrent,
+    pick,
+    alternates: sortRowViews(alternates, 'rerank_score', 'desc'),
+    top,
+    pickRank: isNumber(pickScore) ? 1 + views.filter(view => isNumber(rerankScoreOf(view)) && rerankScoreOf(view) > pickScore).length : null,
+  }
+  const byScoreRule = agreement => ({
+    ...result,
+    sections: toScoreSections(views, candidatesScore),
+    proposal: top && rerankScoreOf(top) >= candidatesScore?.recommended ? top : null,
+    chosenBy: 'score',
+    agreement,
+  })
+  if(!verdict) return byScoreRule('none')
+  if(!isCurrent) return byScoreRule('out_of_date')
+  if(choosesPick && !pick) return byScoreRule('pick_not_candidate')
+  const sections = toScoreSections(views.filter(view => view !== pick && !alternates.includes(view)), candidatesScore)
+  sections.pick = pick ? [pick] : []
+  sections.alternates = result.alternates
+  const tiedWithTop = !top || pick === top || pickScore === rerankScoreOf(top)
+  return {
+    ...result,
+    sections,
+    proposal: pick,
+    chosenBy: 'ai_assistant',
+    agreement: { REJECT: 'no_match', INSUFFICIENT: 'not_enough' }[verdict] || (tiedWithTop ? 'agrees' : 'different_pick'),
   }
 }
