@@ -25,7 +25,8 @@ import {
   conceptForMapping,
   sortRowViews,
   findTargetRowView,
-  withCandidateNames
+  withCandidateNames,
+  withSavedMatch
 } from '../viewBuilders.js'
 
 // ---------- Helpers ----------
@@ -733,4 +734,50 @@ test('withCandidateNames: keeps a target\'s own names and highlights, and a targ
   const searched = { id: '718-7', url: '/orgs/Regenstrief/sources/LOINC/concepts/718-7/' }
   assert.equal(withCandidateNames(searched, namedRowState, namedCache), searched)
   assert.equal(withCandidateNames(restoredTarget, undefined, namedCache), restoredTarget)
+})
+
+// ---------- withSavedMatch (OpenConceptLab/ocl_issues#2916) ----------
+
+// A target mapped from the Search tab: none of the row's candidates holds it.
+const searchedNames = [
+  { name: 'Hemoglobin [Mass/volume] in Blood', locale: 'en', locale_preferred: true },
+  { name: 'Hemoglobina en sangre', locale: 'es', locale_preferred: true }
+]
+const searchedHighlight = { synonyms: ['<em>Hemoglobina</em> en sangre'] }
+const searchedTarget = {
+  id: '718-7',
+  display_name: 'Hemoglobin [Mass/volume] in Blood',
+  url: '/orgs/Regenstrief/sources/LOINC/concepts/718-7/',
+  search_meta: { search_normalized_score: '', search_score: '', algorithm: '' },
+  repo: { id: 'LOINC' }
+}
+// Its `matches` entry, as a save sends it: the concept the project held.
+const savedEntry = {
+  url: searchedTarget.url,
+  rowIndex: '3',
+  concept: { ...searchedTarget, names: searchedNames, search_meta: { search_score: 12.5, search_highlight: searchedHighlight } }
+}
+
+test('withSavedMatch: a restored target gets the names and highlight its saved entry holds', () => {
+  const out = withSavedMatch(searchedTarget, savedEntry)
+  assert.deepEqual(out.names, searchedNames)
+  assert.deepEqual(out.search_meta, { ...searchedTarget.search_meta, search_highlight: searchedHighlight })
+  assert.equal(out.display_name, searchedTarget.display_name)
+  assert.equal(out.repo, searchedTarget.repo)
+  assert.equal(withCandidateNames(out, namedRowState, namedCache).names, searchedNames)
+})
+
+test('withSavedMatch: an entry for another concept, or none, leaves the target as its CSV restored it', () => {
+  const other = { ...savedEntry, url: '/orgs/Regenstrief/sources/LOINC/concepts/2093-3/' }
+  assert.deepEqual(withSavedMatch(searchedTarget, other), searchedTarget)
+  assert.deepEqual(withSavedMatch(searchedTarget, undefined), searchedTarget)
+  assert.deepEqual(withSavedMatch(searchedTarget, { url: searchedTarget.url, rowIndex: '3' }), searchedTarget)
+})
+
+test('withSavedMatch: what the next save sends for a restored target restores it again', () => {
+  const restored = withSavedMatch(searchedTarget, savedEntry)
+  const resaved = JSON.parse(JSON.stringify({ url: restored.url, rowIndex: '3', concept: restored }))
+  const reopened = withSavedMatch(searchedTarget, resaved)
+  assert.deepEqual(reopened.names, searchedNames)
+  assert.deepEqual(reopened.search_meta.search_highlight, searchedHighlight)
 })

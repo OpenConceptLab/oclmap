@@ -450,6 +450,24 @@ export const withCandidateNames = (target, rowState, conceptCache) => {
 }
 
 /**
+ * A mapped target restored from a saved project's CSV, with the `names` and
+ * the match highlight its row's `matches` entry saved for it
+ * (OpenConceptLab/ocl_issues#2916). The CSV keeps only the target's id, name
+ * and URL, but every save also sends each mapped target's concept in
+ * `matches`. A target mapped from the Search tab has no candidate to take them
+ * from. An entry for another concept is ignored.
+ */
+export const withSavedMatch = (target, savedMatch) => {
+  const saved = savedMatch?.url && savedMatch.url === target?.url ? savedMatch.concept : undefined
+  const highlight = saved?.search_meta?.search_highlight
+  return {
+    ...target,
+    ...(Array.isArray(saved?.names) ? {names: saved.names} : {}),
+    ...(highlight ? {search_meta: {...target?.search_meta, search_highlight: highlight}} : {})
+  }
+}
+
+/**
  * Compute the unified score (0-100 percentile) and the raw algorithm score
  * for a candidate+row. Unified score = per-(row, concept) rerank score
  * from the ConceptRow. Raw score = per-algorithm score on the Candidate.

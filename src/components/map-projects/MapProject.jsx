@@ -53,6 +53,7 @@ import omitBy from 'lodash/omitBy'
 import reject from 'lodash/reject'
 import uniq from 'lodash/uniq'
 import compact from 'lodash/compact'
+import keyBy from 'lodash/keyBy'
 import flatten from 'lodash/flatten'
 import keys from 'lodash/keys'
 import pickBy from 'lodash/pickBy'
@@ -115,7 +116,7 @@ import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
 import { normalizeAlgorithmInvocation, hasSuccessfulAlgorithmResponse, getAlgorithmStagesFromResponses, lookupStatusRank, buildRecommendableConceptEntry, stripConstantClassAndDatatype, buildLookupConceptUrl, serializeCandidates, toStoredRowMatchState } from './normalizers'
 import { parseConceptKey } from './conceptKey'
 import { getDeclaredLocales, getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getSavedTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId } from './projectTargetRepo'
-import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, findTargetRowView, formatBridgeTargetDownloadEntry, resolveAICandidateID, getScoreDetails, getAIAnalysisCandidateIDs, withCandidateNames } from './viewBuilders.js'
+import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, findTargetRowView, formatBridgeTargetDownloadEntry, resolveAICandidateID, getScoreDetails, getAIAnalysisCandidateIDs, withCandidateNames, withSavedMatch } from './viewBuilders.js'
 import { formatClockTime, getCapacityWaitLabel, mergeCapacityWaits } from './rowProgress.js'
 
 import './MapProject.scss'
@@ -1415,6 +1416,9 @@ const MapProject = () => {
     let _proposed = {}
     let _repo = null
     let _states = {...rowStatuses}
+    // Each mapped target's saved concept, by row: its names and match
+    // highlight aren't in the CSV (OpenConceptLab/ocl_issues#2916).
+    const savedMatches = keyBy(compact(projectData?.matches), 'rowIndex')
     const repoVersionURL = data['__Repo URL__'] || data['__map_repo_url__']
     const repoURL = dropVersion(repoVersionURL)
     const repoVersion = data['__Repo Version__'] || getTargetRepoVersionFromUrl(repoVersionURL)
@@ -1439,7 +1443,7 @@ const MapProject = () => {
           repo: repo
         }
         if(concept?.id) {
-          _mapSelected[index] = concept
+          _mapSelected[index] = withSavedMatch(concept, savedMatches[index])
           _repo = repo
         }
         let rowStateLabel = data['__State__'] || data['__row_status__'] || data['__row_map_status__']

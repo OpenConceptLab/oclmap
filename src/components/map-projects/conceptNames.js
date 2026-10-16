@@ -13,6 +13,9 @@ import { primarySubtag } from './normalizers.js'
 
 const FULLY_SPECIFIED = /^fully[\s_-]?specified$/i
 
+// A highlight can come from a saved project, so only its <em> tags are markup.
+const escapeHtml = text => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;')
+
 const sameName = (a, b) => {
   const normalize = text => (text || '').replace(/\s+/g, ' ').trim().toLowerCase()
   return normalize(a) === normalize(b)
@@ -88,7 +91,7 @@ export const getMatchedName = ({highlights, concept, displayName, filterLocales}
   if(allowed.length && !allowed.includes(primarySubtag(entry?.locale)))
     return null
   return {
-    html: fragment.replaceAll('<em>', "<b className='searchable'>").replaceAll('</em>', '</b>'),
+    html: escapeHtml(fragment).replaceAll('&lt;em&gt;', "<b className='searchable'>").replaceAll('&lt;/em&gt;', '</b>'),
     locale: entry?.locale
   }
 }

@@ -177,3 +177,14 @@ test('getMatchedName: nothing without highlights', () => {
   assert.equal(getMatchedName({ concept: PREGNANCY_TEST, displayName: 'Pregnancy test' }), null)
   assert.equal(getMatchedName({ highlights: { synonyms: [] }, concept: PREGNANCY_TEST, displayName: 'Pregnancy test' }), null)
 })
+
+test('getMatchedName: only the highlight tags are markup', () => {
+  assert.deepEqual(
+    getMatchedName({
+      highlights: { synonyms: ["<i>Mother's</i> & <em>Prenatal</em>"] },
+      concept: { names: [] },
+      displayName: 'Prenatal tests'
+    }),
+    { html: "&lt;i&gt;Mother&#39;s&lt;/i&gt; &amp; <b className='searchable'>Prenatal</b>", locale: undefined }
+  )
+})
