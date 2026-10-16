@@ -41,6 +41,26 @@ import QuotaDialog from '../common/QuotaDialog'
 
 const NEW_PROJECT_BLOCK_ERROR_CODES = {access: 'mapper_access_denied', projects_not_entitled: 'mapper_projects_not_entitled'}
 
+// The sample lives in ocl-docs so it can change without a Mapper release
+// (OpenConceptLab/ocl_issues#2903). The bundled copy covers networks that
+// block raw.githubusercontent.com.
+const SAMPLE_SPREADSHEET_URL = 'https://raw.githubusercontent.com/OpenConceptLab/ocl-docs/main/docs/source/oclmap/samples/mapper_sample_lab_tests.csv'
+const SAMPLE_SPREADSHEET_FALLBACK_URL = '/mapper_sample_lab_tests.csv'
+
+const getCSV = url => fetch(url).then(response => response.ok ? response.blob() : Promise.reject(response.status))
+
+const onSampleSpreadsheetClick = event => {
+  event.preventDefault()
+  getCSV(SAMPLE_SPREADSHEET_URL).catch(() => getCSV(SAMPLE_SPREADSHEET_FALLBACK_URL)).then(blob => {
+    const url = URL.createObjectURL(blob)
+    const link = Object.assign(document.createElement('a'), {href: url, download: 'mapper_sample_lab_tests.csv'})
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  })
+}
+
 const MapProjects = () => {
   const { t } = useTranslation();
   const history = useHistory()
@@ -201,9 +221,10 @@ const MapProjects = () => {
                 {
                   loaded && projects.length === 0 &&
                     <TableRow>
-                      <TableCell colSpan={6} align='center' sx={{padding: '20px 16px 8px 16px'}}>
+                      <TableCell colSpan={6} align='center' sx={{padding: '0 16px', borderBottom: 'none'}}>
                         <NoResults
-                          height='auto'
+                          height='max(380px, calc(var(--app-height) - 260px))'
+                          graphicWidth='clamp(160px, min(22vw, 28vh), 360px)'
                           text={
                             <div style={{padding: '16px 0'}}>
                               <Typography sx={{fontSize: '18px', color: 'surface.dark', fontWeight: 600}}>{t('map_project.no_projects_found')}</Typography>
@@ -219,7 +240,7 @@ const MapProjects = () => {
                                 {t('map_project.new_map_project')}
                               </Button>
                               <div>
-                                <Link href='/mapper_sample_lab_tests.csv' download sx={{fontSize: '14px'}}>
+                                <Link href={SAMPLE_SPREADSHEET_FALLBACK_URL} download onClick={onSampleSpreadsheetClick} sx={{fontSize: '14px'}}>
                                   {t('map_project.download_sample_spreadsheet')}
                                 </Link>
                               </div>
