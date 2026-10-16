@@ -114,7 +114,7 @@ import { getAIAssistantChoices, getModelUsed, getPromptTemplateKey, createLatest
 import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
 import { normalizeAlgorithmInvocation, hasSuccessfulAlgorithmResponse, getAlgorithmStagesFromResponses, lookupStatusRank, buildRecommendableConceptEntry, stripConstantClassAndDatatype, buildLookupConceptUrl, serializeCandidates, toStoredRowMatchState } from './normalizers'
 import { parseConceptKey } from './conceptKey'
-import { getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId } from './projectTargetRepo'
+import { getDeclaredLocales, getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getSavedTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId } from './projectTargetRepo'
 import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, findTargetRowView, formatBridgeTargetDownloadEntry, resolveAICandidateID, getScoreDetails, getAIAnalysisCandidateIDs, withCandidateNames } from './viewBuilders.js'
 import { formatClockTime, getCapacityWaitLabel, mergeCapacityWaits } from './rowProgress.js'
 
@@ -388,10 +388,11 @@ const MapProject = () => {
   // repo state
   const [repo, setRepo] = React.useState(false)
   const [repoVersion, setRepoVersion] = React.useState(false)
+  // Version shows its error only after a save without one.
+  const [showTargetRepoVersionError, setShowTargetRepoVersionError] = React.useState(false)
   const [mappedSources, setMappedSources] = React.useState([])
   const [bridgeMappedSources, setBridgeMappedSources] = React.useState({})
   const [locales, setLocales] = React.useState([])
-  const [isLoadingLocales, setIsLoadingLocales] = React.useState(false)
   const [versions, setVersions] = React.useState([])
   const [conceptCache, setConceptCache] = React.useState({})
   const [allMapTypes, setAllMapTypes] = React.useState([])
@@ -1584,6 +1585,7 @@ const MapProject = () => {
       autosaveSchedulerRef.current.cancel()
     if(!repoVersion?.version_url || !selectedTargetRepoVersion) {
       setConfigure(true)
+      setShowTargetRepoVersionError(true)
       setAlert({
         message: t(
           'map_project.target_repo_version_required',
@@ -2011,16 +2013,6 @@ const MapProject = () => {
     recurse(0, 1, 0, [])
   }
 
-  const fetchLocaleDistribution = url => {
-    if(!url)
-      return
-    setIsLoadingLocales(true)
-    APIService.new().overrideURL(url).appendToUrl('summary/').get(null, null, {verbose: true, distribution: 'name_locale_list'}).then(response => {
-      setLocales(response?.data?.distribution?.name_locale_list || [])
-      setIsLoadingLocales(false)
-    })
-  }
-
   const _fetchMappedSources = (
     url, limit, offset, page, callback
   ) => {
@@ -2029,8 +2021,9 @@ const MapProject = () => {
 
   const onRepoVersionChange = version => {
     setRepoVersion(version || false)
+    setShowTargetRepoVersionError(false)
     if(version?.version_url) {
-      fetchLocaleDistribution(version.version_url)
+      setLocales(getDeclaredLocales(version))
       fetchMappedSources(version.version_url, setMappedSources)
       updateAlgosByRepoVersion(version)
     } else {
@@ -2826,16 +2819,20 @@ const MapProject = () => {
   const isRunningBulkBridgeCandidates = bridgeCandidatesEndedAt ? moment().isBetween(bridgeCandidatesStartedAt, bridgeCandidatesEndedAt) : Boolean(bridgeCandidatesStartedAt)
   const isRunningBulkScispacyCandidates = scispacyCandidatesStartedAt ? moment().isBetween(scispacyCandidatesStartedAt, scispacyCandidatesEndedAt) : Boolean(scispacyCandidatesStartedAt)
 
-  const fetchVersions = (url, _selectedVersion) => {
+  // Only the latest request may set the version: a slower response is for a
+  // repository no longer chosen.
+  const versionsRequestRef = React.useRef(0)
+
+  // A newly chosen repository gets the default version. A saved project
+  // passes its own version and keeps it (OpenConceptLab/ocl_issues#2906).
+  const fetchVersions = (url, savedVersion) => {
+    const request = ++versionsRequestRef.current
     APIService.new().overrideURL(dropVersion(url)).appendToUrl('versions/?verbose=true').get().then(response => {
+      if(request !== versionsRequestRef.current)
+        return
       let _versions = response.data
       setVersions(_versions)
-      if(_selectedVersion) {
-        const _version = find(_versions, {id: _selectedVersion})
-        onRepoVersionChange(_version || false)
-      } else {
-        onRepoVersionChange(getDefaultTargetRepoVersion(_versions))
-      }
+      onRepoVersionChange(savedVersion === undefined ? getDefaultTargetRepoVersion(_versions) : getSavedTargetRepoVersion(_versions, savedVersion))
     })
   }
 
@@ -2845,6 +2842,7 @@ const MapProject = () => {
     if(newRepo?.url) {
       fetchVersions(newRepo.url)
     } else {
+      versionsRequestRef.current += 1
       setVersions([])
     }
   }
@@ -5934,6 +5932,7 @@ const MapProject = () => {
       onRepoChange={onRepoChange}
       repoVersion={repoVersion}
       setRepoVersion={onRepoVersionChange}
+      showTargetRepoVersionError={showTargetRepoVersionError}
       mappedSources={mappedSources}
       targetSourcesFromRows={targetSourcesFromRows}
       versions={versions}
@@ -5957,7 +5956,6 @@ const MapProject = () => {
       filters={filters}
       setFilters={setFilters}
       locales={locales}
-      isLoadingLocales={isLoadingLocales}
       bridgeEnabled={bridgeEnabled}
       canBridge={canBridge}
       isCoreUser={isCoreUser}

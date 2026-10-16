@@ -13,6 +13,8 @@ ENV ERRBIT_KEY=${ERRBIT_KEY}
 ENV HOTJAR_ID=${HOTJAR_ID}
 ENV LOGIN_REDIRECT_URL=${LOGIN_REDIRECT_URL}
 ENV OIDC_RP_CLIENT_ID=${OIDC_RP_CLIENT_ID}
+ENV OIDC_SERVER_URL=${OIDC_SERVER_URL}
+ENV OIDC_REALM=${OIDC_REALM}
 ENV OCL_ONLINE_API_URL=${OCL_ONLINE_API_URL}
 ENV SCISPACY_LOINC_API_URL=${SCISPACY_LOINC_API_URL}
 RUN mkdir /app
@@ -42,12 +44,14 @@ RUN ["bash", "-c", "./set_build_version.sh"]
 RUN npm run build
 RUN cp public/bootstrap.min.css dist/
 RUN cp public/favicon.ico dist/
+RUN cp public/silent-sso.html dist/
 RUN cp public/favicon.svg dist/
 RUN cp public/dark-favicon.svg dist/
 RUN cp public/light-favicon.svg dist/
 RUN cp public/fhir.svg dist/
 RUN cp public/openmrs_logo_white.gif dist/
 RUN cp public/mapper_landing_placeholder.png dist/
+RUN cp public/mapper_sample_lab_tests.csv dist/
 RUN cp public/FullLogo-BlackText.png dist/
 RUN cp -rf public/fontello dist/
 
