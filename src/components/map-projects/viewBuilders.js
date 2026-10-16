@@ -468,6 +468,30 @@ export const withSavedMatch = (target, savedMatch) => {
 }
 
 /**
+ * A mapped target with its own names and match highlight put back over a
+ * candidate's: the ones it was mapped with, or that a reopened project
+ * restored (OpenConceptLab/ocl_issues#2916).
+ */
+export const withOwnNames = (target, own) => ({
+  ...target,
+  names: own?.names || target.names,
+  search_meta: {...target.search_meta, search_highlight: own?.search_meta?.search_highlight || target.search_meta?.search_highlight}
+})
+
+const ROW_OWN_FIELDS = ['names', 'search_meta', 'source', 'contributingAlgorithms', 'contributingAlgorithmIds']
+
+/**
+ * The cached concept a mapped target names, with the target's own names,
+ * `search_meta`, source and contributing algorithms, as `withOwnNames` keeps
+ * them. A copy: every row mapped to the concept shares the cache entry.
+ * Returns `cached` as it is when there is none.
+ */
+export const withCachedConcept = (target, cached) => cached ? {
+  ...cached,
+  ...Object.fromEntries(ROW_OWN_FIELDS.filter(field => target?.[field]).map(field => [field, target[field]]))
+} : cached
+
+/**
  * Compute the unified score (0-100 percentile) and the raw algorithm score
  * for a candidate+row. Unified score = per-(row, concept) rerank score
  * from the ConceptRow. Raw score = per-algorithm score on the Candidate.

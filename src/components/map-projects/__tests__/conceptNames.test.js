@@ -12,7 +12,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { localizedDisplayName, getMatchedName } from '../conceptNames.js'
+import { localizedDisplayName, getMatchedName, highlightHtml } from '../conceptNames.js'
 
 // LOINC 89497-2 as the ticket found it: an English display name, and an
 // it-IT related name that ES matched for the input "Pregnancy test".
@@ -187,4 +187,5 @@ test('getMatchedName: only the highlight tags are markup', () => {
     }),
     { html: "&lt;i&gt;Mother&#39;s&lt;/i&gt; &amp; <b className='searchable'>Prenatal</b>", locale: undefined }
   )
+  assert.equal(highlightHtml('<i>Hb</i> <em>Hemoglobin</em>'), '&lt;i&gt;Hb&lt;/i&gt; <b>Hemoglobin</b>')
 })

@@ -11,6 +11,7 @@ import map from 'lodash/map'
 import startCase from 'lodash/startCase'
 
 import { getScoreDetails, ScoreValueChip } from './Score'
+import { highlightHtml } from './conceptNames.js'
 
 // Per-algorithm score chip rendered inline. Used both for the legacy single-
 // algorithm case (raw_score = candidate.score) and the multi-algo aggregated
@@ -163,7 +164,7 @@ const MatchDetailsPanel = ({concept, contributingAlgorithms, candidatesScore}) =
                     >
                       {
                         map(values, value => {
-                          const highlightedValue = value.replaceAll('<em>', '<b>').replaceAll('</em>', '</b>')
+                          const highlightedValue = highlightHtml(value)
                           return (
                             // Match the Concept Details Names/Descriptions typography
                             // (Locales.jsx LocalePrimary): 0.875rem, primary text,
