@@ -84,6 +84,7 @@ import { buildPanelPayload } from './openConceptPanel'
 import LoaderDialog from '../common/LoaderDialog'
 import Error403 from '../errors/Error403'
 import { HEADERS, SEMANTIC_SEARCH_HEADERS, ROW_STATES, VIEWS, DECISION_TABS, ROW_STAGES, PROMPTS_KEY_DEFAULT, PROMPTS_ACTION_TYPE_DEFAULT, SCORES_COLOR } from './constants'
+import { updateColumnState, resuggestColumns } from './columnSuggestions'
 import MapProjectDeleteConfirmDialog from './MapProjectDeleteConfirmDialog';
 import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
@@ -719,6 +720,13 @@ const MapProject = () => {
         return {id: `property__${_filter.code}`, label: `Property: ${_filter.code}`, description: _filter.description || ''}
     }))]
 
+  // The target repo can load after the file (and so its properties), so
+  // re-suggest columns the user has not edited yet (ocl_issues#2907).
+  const headersKey = map(headers, 'label').join('|')
+  React.useEffect(() => {
+    setColumns(prev => resuggestColumns(prev, headers))
+  }, [headersKey])
+
   React.useEffect(() => {
     if(!isEmpty(decisions)) {
       window.addEventListener("beforeunload", alertUser);
@@ -857,7 +865,8 @@ const MapProject = () => {
           setProjectFromData(data, response.data)
           setAlgosSelected(response?.data?.algorithms || [])
           if (response?.data.columns?.length > 0) {
-            const _columns = response.data.columns.map(col => ({...omit(col, ['hidden'])}))
+            // Saved mappings are the user's, so they are never re-suggested.
+            const _columns = response.data.columns.map(col => ({...omit(col, ['hidden', 'auto'])}))
             setColumns(_columns)
             setTargetSourcesFromRows(getTargetSourcesFromRows(_columns, data))
             let AIAssistantColVisibility = {}
@@ -1311,8 +1320,7 @@ const MapProject = () => {
   }
 
   const updateColumn = (position, newValue, key) => {
-    let cols = {...columns}
-    cols[position][key || 'label'] = newValue || ''
+    const cols = updateColumnState(columns, position, newValue, key)
     setColumns(cols)
     if(key !== 'targetSource')
       setTargetSourcesFromRows(getTargetSourcesFromRows(cols))
@@ -1493,8 +1501,9 @@ const MapProject = () => {
         return prev
       })
 
-    let cols = getColumns(omit(_data[0], ['__index']))
-    setColumns(cols)
+    // Uploaded columns start as suggestions (`auto`) until the user edits them.
+    const cols = map(getColumns(omit(_data[0], ['__index'])), col => ({...col, auto: true}))
+    setColumns(resuggestColumns(cols, headers))
   }
 
   const getReferencesForImport = (collection, scope, cascadeMethod, transformReferences) => {
