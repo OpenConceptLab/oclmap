@@ -768,6 +768,18 @@ test('withSavedMatch: a restored target gets the names and highlight its saved e
   assert.equal(out.repo, searchedTarget.repo)
 })
 
+test('withSavedMatch: keeps only well-formed names and highlights from a saved entry', () => {
+  const malformed = { ...savedEntry, concept: {
+    names: [{ name: 'Hemoglobina en sangre', locale: 'es' }, { name: { es: 'x' }, locale: 'es' }, { name: 'Hb', locale: 7 }, 'Hb', null],
+    search_meta: { search_highlight: { synonyms: ['<em>Hemoglobina</em> en sangre', 42, null], name: 'Hemoglobin', descriptions: [{}] } }
+  } }
+  const out = withSavedMatch(searchedTarget, malformed)
+  assert.deepEqual(out.names, [{ name: 'Hemoglobina en sangre', locale: 'es' }])
+  assert.deepEqual(out.search_meta.search_highlight, { synonyms: ['<em>Hemoglobina</em> en sangre'], descriptions: [] })
+  const unusable = { ...savedEntry, concept: { names: [{ name: 3 }], search_meta: { search_highlight: ['<em>x</em>'] } } }
+  assert.deepEqual(withSavedMatch(searchedTarget, unusable), searchedTarget)
+})
+
 test('withSavedMatch: an entry for another concept, or none, leaves the target as its CSV restored it', () => {
   const other = { ...savedEntry, url: '/orgs/Regenstrief/sources/LOINC/concepts/2093-3/' }
   assert.deepEqual(withSavedMatch(searchedTarget, other), searchedTarget)
@@ -813,7 +825,7 @@ test('withOwnNames: a mapped target keeps its own names and highlight over a can
   // A semantic candidate for the same concept: no names in its definition, no highlight.
   const fromCandidate = { ...searchedTarget, names: undefined, search_meta: { algorithm: 'ocl-semantic', search_normalized_score: 91 } }
   const out = withOwnNames(fromCandidate, own)
-  assert.equal(out.names, searchedNames)
+  assert.deepEqual(out.names, searchedNames)
   assert.deepEqual(out.search_meta, { algorithm: 'ocl-semantic', search_normalized_score: 91, search_highlight: searchedHighlight })
   const withNames = { ...fromCandidate, names: glucoseNames, search_meta: { search_highlight: { name: ['x'] } } }
   assert.equal(withOwnNames(withNames, searchedTarget).names, glucoseNames)

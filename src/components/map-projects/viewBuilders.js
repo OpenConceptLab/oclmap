@@ -449,6 +449,18 @@ export const withCandidateNames = (target, rowState, conceptCache) => {
   }
 }
 
+// A saved entry is data a client wrote, so only the shapes the names and
+// highlights are rendered from are kept: names with a string name (and a
+// string locale and type, if any), and highlights as lists of strings.
+const isText = value => typeof value === 'string'
+const savedNames = names => (Array.isArray(names) ? names : []).filter(name =>
+  isText(name?.name) && (name.locale == null || isText(name.locale)) && (name.name_type == null || isText(name.name_type)))
+const savedHighlight = highlight => {
+  if(!highlight || typeof highlight !== 'object' || Array.isArray(highlight)) return undefined
+  const kept = Object.entries(highlight).filter(([, values]) => Array.isArray(values)).map(([key, values]) => [key, values.filter(isText)])
+  return kept.length ? Object.fromEntries(kept) : undefined
+}
+
 /**
  * A mapped target restored from a saved project's CSV, with the `names` and
  * the match highlight its row's `matches` entry saved for it
@@ -459,10 +471,11 @@ export const withCandidateNames = (target, rowState, conceptCache) => {
  */
 export const withSavedMatch = (target, savedMatch) => {
   const saved = savedMatch?.url && savedMatch.url === target?.url ? savedMatch.concept : undefined
-  const highlight = saved?.search_meta?.search_highlight
+  const names = savedNames(saved?.names)
+  const highlight = savedHighlight(saved?.search_meta?.search_highlight)
   return {
     ...target,
-    ...(Array.isArray(saved?.names) ? {names: saved.names} : {}),
+    ...(names.length ? {names} : {}),
     ...(highlight ? {search_meta: {...target?.search_meta, search_highlight: highlight}} : {})
   }
 }
