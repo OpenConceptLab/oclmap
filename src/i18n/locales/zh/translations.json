@@ -54,6 +54,7 @@
     "for": "针对",
     "please": "请",
     "save": "保存",
+    "saved": "已保存",
     "delete": "删除",
     "open": "打开",
     "manage": "管理",
@@ -108,7 +109,8 @@
     "group": "分组",
     "action": "操作",
     "remove": "移除",
-    "at": "于"
+    "at": "于",
+    "none": "无"
   },
   "errors": {
     "401": "需要登录",
@@ -343,6 +345,7 @@
   },
   "search": {
     "filters": "筛选项",
+    "save_default_filters": "另存为默认筛选条件",
     "concepts": "概念",
     "mappings": "映射关系",
     "repos": "存储库",
@@ -791,6 +794,7 @@
     "algo_canonical_url_description": "该算法所匹配代码系统的规范 URL（例如 http://loinc.org）。",
     "config_errors_title": "项目配置不完整",
     "config_error_missing_canonical": "自定义算法“{{name}}”缺少有效的规范 URL。",
+    "candidates_legacy_shape": "此项目以旧版候选项格式保存。请联系管理员重新运行 v1->v2 迁移。",
     "target_repo_required_on_load": "此项目缺少目标仓库。请先配置目标仓库，才能查看已保存的候选项。",
     "create_similar": "创建类似项目",
     "create_similar_name": "{{name}} 的副本",

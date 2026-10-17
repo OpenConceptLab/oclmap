@@ -55,6 +55,7 @@
     "for": "for",
     "please": "Please",
     "save": "Save",
+    "saved": "Saved",
     "delete": "Delete",
     "open": "Open",
     "manage": "Manage",
@@ -108,7 +109,8 @@
     "sort": "Sort",
     "group": "Group",
     "remove": "Remove",
-    "at": "at"
+    "at": "at",
+    "none": "None"
   },
   "errors": {
     "401": "Login is required",
@@ -343,6 +345,7 @@
   },
   "search": {
     "filters": "Filters",
+    "save_default_filters": "Save as Default Filters",
     "concepts": "Concepts",
     "mappings": "Mappings",
     "repos": "Repositories",
@@ -787,6 +790,7 @@
     "algo_canonical_url_description": "Canonical URL of the code system this algorithm matches against (e.g. http://loinc.org).",
     "config_errors_title": "Project configuration is incomplete",
     "config_error_missing_canonical": "Custom algorithm \"{{name}}\" is missing a valid canonical URL.",
+    "candidates_legacy_shape": "This project was saved in the legacy candidates format. Contact an admin to re-run the v1->v2 migration.",
     "target_repo_required_on_load": "This project is missing a target repository. Configure the target repository to see saved candidates.",
     "create_similar": "Create similar",
     "create_similar_name": "Copy of {{name}}",

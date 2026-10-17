@@ -55,6 +55,7 @@
     "for": "por",
     "please": "Por favor,",
     "save": "Salvar",
+    "saved": "Salvo",
     "delete": "Excluir",
     "open": "Abrir",
     "manage": "Gerenciar",
@@ -108,7 +109,8 @@
     "sort": "Ordenar",
     "group": "Agrupar",
     "remove": "Remover",
-    "at": "em"
+    "at": "em",
+    "none": "Nenhum"
   },
   "errors": {
     "401": "Login é necessário",
@@ -343,6 +345,7 @@
   },
   "search": {
     "filters": "Filtros",
+    "save_default_filters": "Salvar como filtros padrão",
     "concepts": "Conceitos",
     "mappings": "Mapeamentos",
     "repos": "Repositórios",
@@ -787,6 +790,7 @@
     "algo_canonical_url_description": "URL canônica do code system no qual este algoritmo busca correspondências (ex.: http://loinc.org).",
     "config_errors_title": "Configuração do projeto está incompleta",
     "config_error_missing_canonical": "Algoritmo personalizado \"{{name}}\" está sem uma URL canônica válida.",
+    "candidates_legacy_shape": "Este projeto foi salvo no formato legado de candidatos. Entre em contato com um administrador para executar novamente a migração v1->v2.",
     "target_repo_required_on_load": "Este projeto está sem um repositório de destino. Configure o repositório de destino para ver candidatos salvos.",
     "create_similar": "Criar similar",
     "create_similar_name": "Cópia de {{name}}",

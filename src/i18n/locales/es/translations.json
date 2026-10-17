@@ -15,7 +15,6 @@
     "hide": "Ocultar",
     "more": "Más",
     "refresh": "Actualizar",
-    "or_go_to_your": "o ir a tu ",
     "retired": "Retirado",
     "id": "ID",
     "name": "Nombre",
@@ -34,6 +33,7 @@
     "search": "Buscar",
     "for": "para",
     "save": "Guardar",
+    "saved": "Guardado",
     "delete": "Eliminar",
     "open": "Abrir",
     "cancel": "Cancelar",
@@ -109,7 +109,8 @@
     "reset": "Restablecer",
     "checking_auth": "Verificando autenticación...",
     "remove": "Eliminar",
-    "at": "a las"
+    "at": "a las",
+    "none": "Ninguno"
   },
   "errors": {
     "401": "Se requiere iniciar sesión",
@@ -174,7 +175,6 @@
     "display_name": "Nombre de visualización",
     "concept_class": "Clase",
     "datatype": "Tipo de dato",
-    "history": "Historia y comentarios",
     "name_and_synonyms": "Nombre y sinónimos",
     "descriptions": "Descripciones",
     "copied_name": "Nombre del concepto y URL copiados al portapapeles",
@@ -335,6 +335,7 @@
   },
   "search": {
     "filters": "Filtros",
+    "save_default_filters": "Guardar como Filtros Predeterminados",
     "concepts": "Conceptos",
     "repos": "Repositorios",
     "orgs": "Organizaciones",
@@ -766,6 +767,7 @@
     "algo_canonical_url_description": "URL canónica del sistema de códigos con el que coincide este algoritmo (por ejemplo, http://loinc.org).",
     "config_errors_title": "La configuración del proyecto está incompleta",
     "config_error_missing_canonical": "Al algoritmo personalizado \"{{name}}\" le falta una URL canónica válida.",
+    "candidates_legacy_shape": "Este proyecto se guardó en el formato heredado de candidatos. Contacte a un administrador para volver a ejecutar la migración v1->v2.",
     "target_repo_required_on_load": "A este proyecto le falta un repositorio de destino. Configure el repositorio de destino para ver los candidatos guardados.",
     "create_similar": "Crear similar",
     "create_similar_name": "Copia de {{name}}",
