@@ -32,7 +32,6 @@ const NAMES_THE_ASSISTANT = [
   'preview_estimate_ai_partial',
   'preview_estimate_ai_none',
   'preview_estimate_ai_only_partial',
-  'ai_assistant_limit_reached',
   'preview_limit_title_ai_assistant',
   'preview_limit_body_ai_assistant',
   'preview_limit_body_ai_assistant_no_count',
