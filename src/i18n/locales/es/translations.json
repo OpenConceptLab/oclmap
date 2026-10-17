@@ -16,7 +16,6 @@
     "retired": "Retirado",
     "id": "ID",
     "name": "Nombre",
-    "created_on": "Creado en",
     "version": "Versión",
     "actions": "Acciones",
     "more_actions": "Más acciones",
@@ -143,9 +142,7 @@
     "has_child": "Tiene hijo",
     "has_parent": "Tiene padre",
     "same_as_mappings": "Mapeos (SAME-AS)",
-    "fromConcept": "Concepto de origen",
     "toConcept": "Concepto de destino",
-    "map_type": "Tipo de mapeo",
     "relationship": "Relación",
     "code": "Código",
     "inverse_mappings": "Mapeos inversos",
@@ -154,16 +151,13 @@
     "from_concept_not_defined": "El concepto de origen no está definido en OCL",
     "from_concept_defined": "El concepto de origen está definido en OCL",
     "to_concept_not_defined": "El concepto de destino no está definido en OCL",
-    "to_concept_defined": "El concepto de destino está definido en OCL",
-    "fromAndTargetSource": "Fuente de origen y destino"
+    "to_concept_defined": "El concepto de destino está definido en OCL"
   },
   "repo": {
     "repos": "Repositorios",
     "repo": "Repositorio",
-    "repo_type": "Tipo de Repositorio",
     "suggested_sources": "Fuentes Sugeridas",
     "collection": "Colección",
-    "repo_id": "ID del repositorio",
     "source": "Fuente",
     "properties_filters_subheader": "Propiedades del repositorio",
     "additional_metadata_filters_subheader": "Metadatos adicionales"
@@ -176,12 +170,6 @@
   "user": {
     "my_profile": "Mi perfil",
     "my_repositories": "Mis repositorios",
-    "username": "Nombre de usuario",
-    "joined_on": "Unido en",
-    "email": "Correo electrónico",
-    "company": "Empresa",
-    "location": "Ubicación",
-    "website": "Sitio web",
     "my_mapping_projects": "Mis proyectos de mapeo"
   },
   "search": {
@@ -594,9 +582,7 @@
     "smart": "Suma de verificación inteligente"
   },
   "url_registry": {
-    "global_registry": "Registro global",
-    "canonical_url": "URL canónica",
-    "target_owner": "Propietario de destino"
+    "global_registry": "Registro global"
   },
   "unknown_error": "Error desconocido",
   "announcement": {

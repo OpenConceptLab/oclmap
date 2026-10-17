@@ -24,7 +24,6 @@
     "id": "ID",
     "name": "名称",
     "description": "描述",
-    "created_on": "创建于",
     "created_by": "创建者",
     "version": "版本",
     "all": "全部",
@@ -146,9 +145,7 @@
   "mapping": {
     "mappings": "映射关系",
     "same_as_mappings": "等同型映射关系 (SAME-AS)",
-    "fromConcept": "源头概念",
     "toConcept": "目标概念",
-    "map_type": "映射类型",
     "relationship": "关系",
     "code": "代码",
     "inverse_mappings": "反向映射关系",
@@ -158,7 +155,6 @@
     "from_concept_defined": "OCL 之中已定义源头概念",
     "to_concept_not_defined": "OCL 之中并未定义目标概念",
     "to_concept_defined": "OCL 之中已定义目标概念",
-    "fromAndTargetSource": "源头和目标来源",
     "has_child": "有子项",
     "has_parent": "有父项"
   },
@@ -169,8 +165,6 @@
   "repo": {
     "repos": "存储库",
     "repo": "存储库",
-    "repo_type": "存储库类型",
-    "repo_id": "存储库 ID",
     "source": "来源",
     "suggested_sources": "建议的来源",
     "collection": "集合",
@@ -185,12 +179,6 @@
   "user": {
     "my_profile": "我的个人资料",
     "my_repositories": "我的存储库",
-    "username": "用户名",
-    "joined_on": "注册于",
-    "email": "电子邮件",
-    "location": "位置",
-    "website": "网站",
-    "company": "公司",
     "my_mapping_projects": "我的映射项目"
   },
   "search": {
@@ -210,9 +198,7 @@
     "select_all_rows": "选择全部行"
   },
   "url_registry": {
-    "global_registry": "全球注册库",
-    "canonical_url": "规范型 URL",
-    "target_owner": "目标所有者"
+    "global_registry": "全球注册库"
   },
   "locale": {
     "add_custom_language_codes": "添加自定义语言代码",

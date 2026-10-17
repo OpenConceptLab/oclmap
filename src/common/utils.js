@@ -28,26 +28,6 @@ export const formatDate = date => moment(date).format(DATE_FORMAT);
 export const formatTime = date => moment(date).format(TIME_FORMAT);
 export const formatDateTime = date => moment(date).format(DATETIME_FORMAT);
 
-export const formatWebsiteLink = (value, style, text) => {
-  if(value && value.trim()) {
-    let href = value.trim();
-    if(!href.startsWith('http://') && !href.startsWith('https://'))
-      href = 'https://' + href;
-
-    return (
-      <a
-        target='_blank'
-        rel="noopener noreferrer"
-        href={href}
-        className="ellipsis-text"
-        style={merge({maxWidth: '100px'}, (style || {}))}>
-        {text || value.trim()}
-      </a>
-    );
-  }
-  return '';
-}
-
 export const formatWebsiteLinkTruncated = (value, style, text) => {
   if(value && value.trim()) {
     let href = value.trim();
