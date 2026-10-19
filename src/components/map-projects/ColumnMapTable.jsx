@@ -8,8 +8,11 @@ import Autocomplete from '@mui/material/Autocomplete'
 import TextField from '@mui/material/TextField'
 import Switch from '@mui/material/Switch'
 import ListItemText from '@mui/material/ListItemText'
+import Typography from '@mui/material/Typography'
 import ValidIcon from '@mui/icons-material/CheckCircleOutlined';
 import InvalidIcon from '@mui/icons-material/CancelOutlined';
+import UnmappedIcon from '@mui/icons-material/RemoveCircleOutlineOutlined';
+import { isCodeLikeHeader } from './columnSuggestions'
 import find from 'lodash/find';
 import map from 'lodash/map';
 import omit from 'lodash/omit';
@@ -130,6 +133,8 @@ const ColumnMapTable = ({
         {
           map(columns, (column, position) => {
             const isValidColumn = isValid(column.label)
+            // Left unmapped on purpose (cleared, or a code-like header): no error.
+            const isDeliberatelyUnmapped = !isValidColumn && (column.unmapped || isCodeLikeHeader(column.original))
             const isHidden = columnVisibilityModel[column.dataKey] === false
             const sendToAIAssistant = AIAssistantColumns[column.dataKey] === false
             return (
@@ -139,6 +144,8 @@ const ColumnMapTable = ({
                     {
                       isValidColumn ?
                         <ValidIcon sx={{marginRight: '8px'}} fontSize='small' color='success' /> :
+                      isDeliberatelyUnmapped ?
+                        <UnmappedIcon sx={{marginRight: '8px'}} fontSize='small' color='disabled' /> :
                       <InvalidIcon sx={{marginRight: '8px'}} fontSize='small' color='error' />
                     }
                     {column.original}
@@ -153,6 +160,12 @@ const ColumnMapTable = ({
                       isValid={isValidColumn}
                       onChange={(event, value) => onValChange(position, value?.label || value)}
                     />
+                    {
+                      column.suggested &&
+                        <Typography variant='caption' color='text.secondary' sx={{display: 'block'}}>
+                          {t('map_project.column_suggested')}
+                        </Typography>
+                    }
                     {
                       'Mapping: List' === column.label &&
                         <div>
