@@ -82,6 +82,7 @@ const fetchBridgeVersions = (url) => {
  *     provider?: string,
  *     order?: number,
  *     disabled?: boolean,         // disable picking this algo
+ *     extras?: {badge?: string},  // chip label the API sends, shown as-is
  *     batch_size?: number,
  *     concurrent_requests?: number,
  *   }>
@@ -301,7 +302,7 @@ export default function MultiAlgoSelector({
     let name = algo.name
     if(!isString(name)) {
       if(name?.props?.i18nKey) {
-        name = t(algo.name?.props?.i18nKey).replace('<0>Premium</0>', '')
+        name = t(algo.name?.props?.i18nKey)
       } else
         name = algo.id
     }
@@ -779,7 +780,14 @@ export default function MultiAlgoSelector({
                       <ListItemIcon sx={{minWidth: 'auto', marginRight: '16px'}}>
                         {renderAlgoIcon(a)}
                       </ListItemIcon>
-                      <ListItemText primary={a.name} secondary={a.description} />
+                      <ListItemText
+                        primary={
+                          a.extras?.badge ?
+                            <>{a.name}<Chip size='small' color='primary' label={a.extras.badge} sx={{marginLeft: '8px', height: '20px'}} /></> :
+                            a.name
+                        }
+                        secondary={a.description}
+                      />
                       {
                         a.provider === 'ocl' &&
                           <Tooltip title="OCL's own match algorithm">
