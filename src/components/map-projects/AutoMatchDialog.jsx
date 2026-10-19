@@ -177,7 +177,6 @@ const AutoMatchDialog = ({
       open={open}
       onClose={onClose}
       scroll='paper'
-      disableEnforceFocus
       sx={{
         '& .MuiDialog-paper': {
           borderRadius: '28px',
