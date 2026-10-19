@@ -9,6 +9,8 @@ import './index.scss';
 import { COLORS } from './common/colors';
 import './i18n/config';
 import { setAppHistory, handleLinkClick, keepLinkClickBubbling, legacyHashRoute, redirectLegacyHashRoute } from './common/history';
+import { takeSigninToResume } from './common/ssoSession';
+import { isLoggedIn, getLoginURL } from './common/utils';
 
 const theme = createTheme();
 const v5Theme = createTheme(theme, {
@@ -135,9 +137,7 @@ window.addEventListener('click', keepLinkClickBubbling, true)
 document.addEventListener('click', handleLinkClick)
 window.addEventListener('hashchange', redirectLegacyHashRoute)
 
-const container = document.getElementById('root');
-const root = createRoot(container);
-root.render(
+const renderApp = () => createRoot(document.getElementById('root')).render(
   <BrowserRouter>
     <HistoryBridge />
     <StyledEngineProvider injectFirst>
@@ -147,3 +147,18 @@ root.render(
     </StyledEngineProvider>
   </BrowserRouter>
 );
+
+// Back from Keycloak's logout after a forced sign-out: sign in again, then return to the page the user was on.
+const signinToResume = () => {
+  try {
+    return isLoggedIn() ? null : takeSigninToResume(window.location)
+  } catch {
+    return null
+  }
+}
+
+const returnTo = signinToResume()
+if(returnTo)
+  getLoginURL(returnTo).then(url => { window.location.replace(url) }).catch(renderApp)
+else
+  renderApp()
