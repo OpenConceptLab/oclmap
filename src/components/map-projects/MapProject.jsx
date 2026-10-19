@@ -1320,10 +1320,16 @@ const MapProject = () => {
   }
 
   const updateColumn = (position, newValue, key) => {
-    const cols = updateColumnState(columns, position, newValue, key)
+    if(key === 'targetSource') {
+      // Each source picker sets its value on mount, often several in one render,
+      // so merge into the latest state; this render's copy would keep only the last.
+      setColumns(prev => updateColumnState(prev, position, {...prev[position]?.targetSource, ...newValue}, key))
+      return
+    }
+    // A manual choice takes its field back from any suggestion holding it.
+    const cols = resuggestColumns(updateColumnState(columns, position, newValue, key), headers)
     setColumns(cols)
-    if(key !== 'targetSource')
-      setTargetSourcesFromRows(getTargetSourcesFromRows(cols))
+    setTargetSourcesFromRows(getTargetSourcesFromRows(cols))
   }
 
   const resetState = () => {
