@@ -32,9 +32,9 @@ RUN npm ci --production=false
 ARG PRIVATE_PACKAGES_GIT
 ARG SOURCE_COMMIT
 RUN --mount=type=ssh \
-  mkdir -p /root/.ssh && \
-  ssh-keyscan github.com >> /root/.ssh/known_hosts && \
   if [ -n "$PRIVATE_PACKAGES_GIT" ]; then \
+    mkdir -p /root/.ssh && \
+    ssh-keyscan github.com >> /root/.ssh/known_hosts && \
     echo "Installing private UI packages (oclmap commit $SOURCE_COMMIT)" && \
     npm i $PRIVATE_PACKAGES_GIT --no-save --production=false; \
   fi
