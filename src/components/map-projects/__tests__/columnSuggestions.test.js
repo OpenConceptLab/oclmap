@@ -28,6 +28,13 @@ test('suggestColumnLabels: term, test and description headers suggest Name, once
   )
 })
 
+test('suggestColumnLabels: Name goes to the strongest header, not the first', () => {
+  assert.deepEqual(
+    suggestColumnLabels(['Test Date', 'Test Description', 'Test Name'], BASE),
+    [null, null, 'Name']
+  )
+})
+
 test('suggestColumnLabels: exact matches are left alone', () => {
   assert.deepEqual(suggestColumnLabels(['Name', 'Description'], BASE), [null, null])
 })
@@ -137,4 +144,17 @@ test('resuggestColumns: suggests Property: SYSTEM once the target loads it', () 
   const cols = upload(['Specimen'])
   assert.equal(resuggestColumns(cols, BASE)[0].label, 'Specimen')
   assert.equal(resuggestColumns(cols, LOINC)[0].label, 'Property: SYSTEM')
+})
+
+test('resuggestColumns: a cleared column does not hold the field it would have been suggested', () => {
+  let cols = upload(['Specimen', 'Sample'])
+  cols = updateColumnState(cols, 0, '')
+  assert.deepEqual(resuggestColumns(cols, LOINC).map(col => col.label), ['', 'Property: SYSTEM'])
+})
+
+test('resuggestColumns: a manual choice takes its field back from a suggestion', () => {
+  let cols = upload(['Notes', 'Test Name'])
+  assert.equal(cols[1].label, 'Name')
+  cols = resuggestColumns(updateColumnState(cols, 0, 'Name'), BASE)
+  assert.deepEqual(cols.map(col => col.label), ['Name', 'Test Name'])
 })

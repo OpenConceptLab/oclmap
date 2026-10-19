@@ -866,7 +866,7 @@ const MapProject = () => {
           setAlgosSelected(response?.data?.algorithms || [])
           if (response?.data.columns?.length > 0) {
             // Saved mappings are the user's, so they are never re-suggested.
-            const _columns = response.data.columns.map(col => ({...omit(col, ['hidden', 'auto'])}))
+            const _columns = response.data.columns.map(col => ({...omit(col, ['hidden', 'auto', 'suggested'])}))
             setColumns(_columns)
             setTargetSourcesFromRows(getTargetSourcesFromRows(_columns, data))
             let AIAssistantColVisibility = {}

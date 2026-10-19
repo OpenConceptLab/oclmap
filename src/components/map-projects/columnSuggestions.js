@@ -14,7 +14,7 @@
  * MapProject's isValidColumnValue, so they get no suggestion here.
  */
 
-const CODE_TOKENS = ['code', 'codes', 'id', 'ids', 'uuid', 'identifier', 'external']
+const CODE_TOKENS = ['code', 'codes', 'id', 'ids', 'uuid', 'identifier']
 
 const SUGGESTION_RULES = [
   {label: 'Name', tokens: ['name', 'term', 'test', 'description']},
@@ -46,20 +46,27 @@ export const suggestColumnLabels = (headers, validColumns, reserved = []) => {
       taken.add(exactMatch.label)
   })
 
-  return headers.map(header => {
+  const matches = headers.map((header, idx) => {
     const alreadyRecognised = String(header || '').toLowerCase().includes('class')
     if(isExact(header) || alreadyRecognised || isCodeLikeHeader(header))
       return null
 
     const tokens = tokenize(header)
     const rule = SUGGESTION_RULES.find(rule => tokens.some(token => rule.tokens.includes(token)))
-    const target = rule && findValid(rule.label)
-    if(!target || taken.has(target.label))
-      return null
-
-    taken.add(target.label)
-    return target.label
+    return rule ? {idx, rule, rank: rule.tokens.findIndex(token => tokens.includes(token))} : null
   })
+
+  // A field goes to the column with its strongest word ("name" before "test"),
+  // then the first such column, so "Test Name" wins over an earlier "Test Date".
+  const suggestions = headers.map(() => null)
+  matches.filter(Boolean).sort((a, b) => a.rank - b.rank || a.idx - b.idx).forEach(({idx, rule}) => {
+    const target = findValid(rule.label)
+    if(target && !taken.has(target.label)) {
+      taken.add(target.label)
+      suggestions[idx] = target.label
+    }
+  })
+  return suggestions
 }
 
 /**
@@ -86,6 +93,6 @@ export const resuggestColumns = (columns, validColumns) => {
   if(!columns.some(col => col.auto))
     return columns
   const reserved = columns.filter(col => !col.auto && col.label).map(col => col.label)
-  const suggestedLabels = suggestColumnLabels(columns.map(col => col.original), validColumns, reserved)
+  const suggestedLabels = suggestColumnLabels(columns.map(col => col.auto ? col.original : null), validColumns, reserved)
   return columns.map((col, idx) => col.auto ? {...col, label: suggestedLabels[idx] || col.original, suggested: Boolean(suggestedLabels[idx])} : col)
 }
