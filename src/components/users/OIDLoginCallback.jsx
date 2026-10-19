@@ -7,6 +7,7 @@ import {
   isSignupOAuthState, isLoggedIn, getLoginURL
 } from '../../common/utils';
 import { navigate } from '../../common/history';
+import { settleForcedSignOut } from '../../common/ssoSession';
 import APIService from '../../services/APIService'
 import GAService from '../../services/GAService'
 import { OperationsContext } from '../app/LayoutContext';
@@ -51,7 +52,7 @@ class OIDLoginCallback extends React.Component {
             localStorage.removeItem('server_configs')
             localStorage.setItem('token', res.data.access_token)
             localStorage.setItem('id_token', res.data.id_token)
-            sessionStorage.removeItem('session_expired')
+            settleForcedSignOut()
             setAlert({
               duration: 2000,
               severity: 'success',

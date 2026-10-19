@@ -139,3 +139,72 @@ export const ensureIdToken = async exchangeCode => {
   if(tokens?.id_token)
     localStorage.setItem('id_token', tokens.id_token)
 }
+
+export const buildSSOLogoutURL = (apiURL, idToken, redirectURL) => {
+  if(idToken && redirectURL)
+    return `${apiURL}/users/logout/?id_token_hint=${encodeURIComponent(idToken)}&post_logout_redirect_uri=${encodeURIComponent(redirectURL)}`
+}
+
+// Keycloak's logout only returns to an address registered for the client (LOGIN_REDIRECT_URL), so after a
+// forced sign-out the page to sign back in to waits here, in this tab, until the app loads again. The record
+// outlives the sign-in for a while, so a token the API keeps turning down stops after one retry, not a loop.
+const FORCED_SIGN_OUT_KEY = 'forced_sign_out'
+const SILENT_RENEWAL_KEY = 'silent_renewal_at'
+export const FORCED_SIGN_OUT_WINDOW_MS = 10 * 60 * 1000
+
+const readSession = key => {
+  try {
+    return JSON.parse(sessionStorage.getItem(key))
+  } catch {
+    return null
+  }
+}
+
+const writeSession = (key, value) => {
+  try {
+    if(value === null)
+      sessionStorage.removeItem(key)
+    else
+      sessionStorage.setItem(key, JSON.stringify(value))
+    return true
+  } catch {
+    return false
+  }
+}
+
+const isRecent = (at, now) => Number.isFinite(at) && now - at < FORCED_SIGN_OUT_WINDOW_MS
+
+export const prepareSignOut = ({ forced, apiURL, idToken, loginRedirectURL, returnTo, now = Date.now() }) => {
+  const logoutURL = buildSSOLogoutURL(apiURL, idToken, loginRedirectURL)
+  if(!forced) {
+    writeSession(FORCED_SIGN_OUT_KEY, null)
+    return { logoutURL, signInAgain: false }
+  }
+  const signInAgain = !isRecent(readSession(FORCED_SIGN_OUT_KEY)?.at, now)
+  writeSession(FORCED_SIGN_OUT_KEY, { returnTo, at: now, resume: Boolean(logoutURL) && signInAgain })
+  return { logoutURL, signInAgain }
+}
+
+const isSignInCallback = ({ pathname, search }) => /^\/oidc\/login(\/|$)/i.test(pathname) || /[?&]code=/.test(search)
+
+export const takeSigninToResume = (location, now = Date.now()) => {
+  const record = readSession(FORCED_SIGN_OUT_KEY)
+  if(!record?.resume || isSignInCallback(location))
+    return null
+  writeSession(FORCED_SIGN_OUT_KEY, { ...record, resume: false })
+  return isRecent(record.at, now) && record.returnTo ? record.returnTo : null
+}
+
+export const settleForcedSignOut = () => {
+  const record = readSession(FORCED_SIGN_OUT_KEY)
+  if(record?.resume)
+    writeSession(FORCED_SIGN_OUT_KEY, { ...record, resume: false })
+}
+
+// A token the API turns down may only have expired while the Keycloak session lives on: renew it without a
+// prompt, at most once a window, so a token the API keeps rejecting can't reload the page forever.
+export const renewSessionSilently = async (exchangeCode, now = Date.now()) => {
+  if(isRecent(readSession(SILENT_RENEWAL_KEY), now) || !writeSession(SILENT_RENEWAL_KEY, now))
+    return null
+  return silentSignIn(exchangeCode)
+}

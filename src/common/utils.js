@@ -14,7 +14,7 @@ import {
 } from './constants';
 import APIService from '../services/APIService';
 import GAService from '../services/GAService';
-import { ensureIdToken } from './ssoSession';
+import { ensureIdToken, prepareSignOut, settleForcedSignOut, renewSessionSilently } from './ssoSession';
 import { SERVER_CONFIGS } from './serverConfigs';
 import { legacyHashRoute, isSameSitePath } from './history';
 
@@ -243,12 +243,13 @@ export const arrayToCSV = objArray => {
   }, str);
 }
 
-export const refreshCurrentUserCache = callback => {
+export const refreshCurrentUserCache = (callback, onFailure) => {
   APIService.user().get(null, null, {includeAuthGroups: true, includeSubscribedOrgs: true, includeCapabilities: true}).then(response => {
-    if(response.status === 200) {
+    if(response?.status === 200) {
       localStorage.setItem('user', JSON.stringify(response.data));
       if(callback) callback(response);
-    }
+    } else if(onFailure)
+      onFailure(response);
   });
 }
 
@@ -631,7 +632,32 @@ export const getRandomColor = () => `#${Math.floor(Math.random()*16777215).toStr
 
 const exchangeSilentCode = body => APIService.users().appendToUrl('oidc/code-exchange/').post(body, false).then(res => res.data);
 
-export const logoutUser = (...args) => ensureIdToken(exchangeSilentCode).then(() => signOutUser(...args));
+// Several requests can be turned down at once; the first one decides, so later ones can't undo its sign-out.
+let signingOut = null
+export const logoutUser = (...args) => {
+  signingOut = signingOut || ensureIdToken(exchangeSilentCode).then(() => signOutUser(...args)).catch(error => {
+    signingOut = null
+    throw error
+  })
+  return signingOut
+}
+
+// The API turned the token down: renew it silently while the Keycloak session lives on, and sign out only if
+// that fails. The reload sends every request again with the new token.
+let renewing = null
+export const renewOrSignOut = () => {
+  renewing = renewing || renewSessionSilently(exchangeSilentCode).then(tokens => {
+    if(!tokens?.id_token)
+      return logoutUser(true, true)
+    localStorage.removeItem('server_configs')
+    localStorage.setItem('token', tokens.access_token)
+    localStorage.setItem('id_token', tokens.id_token)
+    settleForcedSignOut()
+    const reload = () => window.location.reload()
+    refreshCurrentUserCache(reload, reload)
+  })
+  return renewing
+}
 
 const signOutUser = (redirectToLogin, forced) => {
   const clearTokens = () => {
@@ -642,17 +668,19 @@ const signOutUser = (redirectToLogin, forced) => {
   }
 
   const returnTo = window.location.origin + window.location.pathname + window.location.search
-  if(forced)
-    sessionStorage.setItem('session_expired', 'true')
-
-  const redirectURL = forced ?
-    window.location.origin + '/#/signin?returnTo=' + encodeURIComponent(returnTo) :
-    undefined
-  const logoutURL = getSSOLogoutURL(redirectURL)
+  const { logoutURL, signInAgain } = prepareSignOut({
+    forced,
+    returnTo,
+    apiURL: getAPIURL(),
+    idToken: localStorage.id_token,
+    loginRedirectURL: window.LOGIN_REDIRECT_URL || process.env.LOGIN_REDIRECT_URL,
+  })
 
   clearTokens()
   if(logoutURL)
     window.location = logoutURL
+  else if(forced && !signInAgain)
+    return // turned down again right after signing back in: stay signed out here rather than reload in a loop
   else if(redirectToLogin)
     getLoginURL(forced ? returnTo : undefined).then(url => { window.location.href = url })
   else
@@ -928,14 +956,6 @@ export const getRegisterURL = async returnTo => {
   GAService.recordSignupStart()
 
   return `${getAPIURL()}/users/signup/?client_id=${oidClientID}&state=${state}&nonce=${nonce}&redirect_uri=${redirectURL}&code_challenge=${codeChallenge}&code_challenge_method=S256`
-}
-
-
-export const getSSOLogoutURL = returnTo => {
-  const redirectURL = returnTo || window.LOGIN_REDIRECT_URL || process.env.LOGIN_REDIRECT_URL
-  const idToken = localStorage.id_token
-  if(redirectURL && idToken)
-    return `${getAPIURL()}/users/logout/?id_token_hint=${idToken}&post_logout_redirect_uri=${redirectURL}`
 }
 
 

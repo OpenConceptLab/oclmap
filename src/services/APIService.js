@@ -1,7 +1,7 @@
 /*eslint no-process-env: 0*/
 import axios from 'axios';
 import {get, omit, isPlainObject, isString, defaults } from 'lodash';
-import { currentUserToken, getAPIURL, logoutUser } from '../common/utils';
+import { currentUserToken, getAPIURL, renewOrSignOut } from '../common/utils';
 import { OCL_CLIENT } from '../common/constants';
 
 
@@ -64,7 +64,7 @@ const createPendingRequest = () => new Promise(() => {})
 
 const handleAPIError = (error, raw=false) => {
   if(error?.response?.status === 401 && error?.response?.config?.url?.startsWith(getAPIURL())) {
-    logoutUser(true, true)
+    renewOrSignOut()
     return { handled: true, result: undefined };
   }
 
