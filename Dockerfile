@@ -27,23 +27,16 @@ ADD package-lock.json /app/
 
 RUN npm ci --production=false
 
-# OPTIONAL: install the private Mapper package during the image build
-# (OpenConceptLab/ocl_online#465). webpack.config.js uses it when it's in
-# node_modules, and the open stubs otherwise. --install-links copies it in, so
-# its imports resolve to this app's packages. SOURCE_COMMIT refreshes the layer
-# on every commit, so a cached build doesn't keep an old copy.
+# OPTIONAL: install a private UI package during image build
+# PRIVATE_PACKAGES_GIT is an npm install spec, e.g. a git+ssh URL
 ARG PRIVATE_PACKAGES_GIT
-ARG PRIVATE_PACKAGES_REF=main
-ARG PRIVATE_PACKAGES_PATH=oclmap-plugin
 ARG SOURCE_COMMIT
 RUN --mount=type=ssh \
+  mkdir -p /root/.ssh && \
+  ssh-keyscan github.com >> /root/.ssh/known_hosts && \
   if [ -n "$PRIVATE_PACKAGES_GIT" ]; then \
-    mkdir -p /root/.ssh && \
-    ssh-keyscan github.com >> /root/.ssh/known_hosts && \
-    echo "Installing private packages (oclmap commit $SOURCE_COMMIT):" $PRIVATE_PACKAGES_GIT $PRIVATE_PACKAGES_REF $PRIVATE_PACKAGES_PATH && \
-    git clone --depth 1 --branch "$PRIVATE_PACKAGES_REF" "$PRIVATE_PACKAGES_GIT" /tmp/private-packages && \
-    npm i --no-save --install-links --production=false "/tmp/private-packages/$PRIVATE_PACKAGES_PATH" && \
-    rm -rf /tmp/private-packages; \
+    echo "Installing private UI packages (oclmap commit $SOURCE_COMMIT)" && \
+    npm i $PRIVATE_PACKAGES_GIT --no-save --production=false; \
   fi
 
 ADD webpack.config.js /app/
