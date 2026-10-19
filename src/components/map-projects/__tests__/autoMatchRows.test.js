@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import {
   getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep,
   getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, RERANK_LOOKUP_WAIT_MS, AI_LOOKUP_WAIT_MS, isScispacyWarmingUp, RERANK_MAX_IN_FLIGHT,
-  countAIOnlyRows, getAutoMatchBlocker, canRunAlgorithm
+  countAIOnlyRows, getAutoMatchBlocker, getAutoMatchAIDefault, canRunAlgorithm
 } from '../autoMatchRows.js'
 import { createLimiter } from '../../../services/capacity.js'
 
@@ -356,15 +356,28 @@ test('getAutoMatchBlocker: no algorithm and no AI step', () => {
   assert.equal(getAutoMatchBlocker({ rowsInScope: 3, hasAlgorithms: true }), 'no_step')
 })
 
-test('getAutoMatchBlocker: an AI-only run needs a row to analyse and AI calls left', () => {
+test('getAutoMatchBlocker: an AI-only run needs a row to analyse', () => {
   assert.equal(getAutoMatchBlocker({ rowsInScope: 3, runAI: true, aiRowsToAnalyse: 2 }), null)
-  assert.equal(getAutoMatchBlocker({ rowsInScope: 3, runAI: true, aiRowsToAnalyse: 2, aiCallsRemaining: 5 }), null)
   assert.equal(getAutoMatchBlocker({ rowsInScope: 3, runAI: true, aiRowsToAnalyse: 0 }), 'no_ai_rows')
-  assert.equal(getAutoMatchBlocker({ rowsInScope: 3, runAI: true, aiRowsToAnalyse: 2, aiCallsRemaining: 0 }), 'no_ai_calls')
 })
 
-test('getAutoMatchBlocker: AI rows and calls don\'t matter to a run that retrieves candidates', () => {
-  assert.equal(getAutoMatchBlocker({ rowsInScope: 3, hasAlgorithms: true, retrieveCandidates: true, runAI: true, aiRowsToAnalyse: 0, aiCallsRemaining: 0 }), null)
+test('getAutoMatchBlocker: AI rows don\'t matter to a run that retrieves candidates', () => {
+  assert.equal(getAutoMatchBlocker({ rowsInScope: 3, hasAlgorithms: true, retrieveCandidates: true, runAI: true, aiRowsToAnalyse: 0 }), null)
+})
+
+test('getAutoMatchAIDefault: a project that was never auto-matched takes the first-run default', () => {
+  assert.equal(getAutoMatchAIDefault([], true), true)
+  assert.equal(getAutoMatchAIDefault(undefined, true), true)
+  assert.equal(getAutoMatchAIDefault([{ action: 'Opened' }], false), false)
+})
+
+test('getAutoMatchAIDefault: later runs keep the choice of the last run', () => {
+  const withAI = { action: 'auto_match_started', extras: { sub_actions: ['ocl-semantic', 'with_ai_analysis'] } }
+  const withoutAI = { action: 'auto_match_started', extras: { sub_actions: ['ocl-semantic'] } }
+  assert.equal(getAutoMatchAIDefault([withAI], false), true)
+  assert.equal(getAutoMatchAIDefault([withoutAI], true), false)
+  assert.equal(getAutoMatchAIDefault([{ action: 'Opened' }, { action: 'auto_match_finished' }, withoutAI, withAI], true), false)
+  assert.equal(getAutoMatchAIDefault([{ action: 'auto_match_started' }], true), false)
 })
 
 test('canRunAlgorithm: search, semantic and custom algorithms always run', () => {

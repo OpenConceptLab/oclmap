@@ -77,19 +77,25 @@ export const getAutoMatchBlocker = ({
   retrieveCandidates = false,
   runAI = false,
   aiRowsToAnalyse = 0,
-  aiCallsRemaining = null,
 } = {}) => {
   if(!rowsInScope)
     return 'no_rows'
   if(!retrieveCandidates && !runAI)
     return hasAlgorithms ? 'no_step' : 'no_algorithms'
-  if(!retrieveCandidates) {
-    if(!aiRowsToAnalyse)
-      return 'no_ai_rows'
-    if(aiCallsRemaining !== null && aiCallsRemaining <= 0)
-      return 'no_ai_calls'
-  }
+  if(!retrieveCandidates && !aiRowsToAnalyse)
+    return 'no_ai_rows'
   return null
+}
+
+// Whether the OCL AI Assistant starts ticked when the AutoMatch dialog opens
+// (OpenConceptLab/ocl_online#465): as on the project's last run, or
+// firstRunDefault when it has never been auto-matched. projectLogs is newest
+// first.
+export const getAutoMatchAIDefault = (projectLogs, firstRunDefault) => {
+  const lastRun = (projectLogs || []).find(log => log?.action === 'auto_match_started')
+  if(!lastRun)
+    return Boolean(firstRunDefault)
+  return (lastRun.extras?.sub_actions || []).includes('with_ai_analysis')
 }
 
 // How many consecutive rows may fail, for a reason other than AI quota, before

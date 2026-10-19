@@ -1,8 +1,18 @@
+const fs = require('fs');
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
 const { ProvidePlugin, DefinePlugin, IgnorePlugin } = require('webpack');
+
+// Checkpoints a private package can fill in at build time
+// (OpenConceptLab/ocl_online#465). The Dockerfile installs the package when
+// PRIVATE_PACKAGES_GIT is set; without it, the open stub is used.
+const PRIVATE_PACKAGE = 'ocl-online-mapper';
+const privatePackagePath = path.resolve(__dirname, 'node_modules', PRIVATE_PACKAGE);
+const privatePackageAlias = fs.existsSync(privatePackagePath) ?
+  privatePackagePath :
+  path.resolve(__dirname, 'src/components/map-projects/autoMatchCheck.js');
 
 module.exports = (env) => {
   const isProduction = env.NODE_ENV === 'production';
@@ -25,6 +35,13 @@ module.exports = (env) => {
           test: /\.(js|jsx)$/,
           use: ['babel-loader'],
           exclude: /node_modules/,
+        },
+        {
+          // The private package ships JSX source. A .babelrc doesn't reach
+          // files in another package, so this rule extends ours.
+          test: /\.(js|jsx)$/,
+          include: new RegExp(`node_modules[\\\\/]${PRIVATE_PACKAGE}[\\\\/]`),
+          use: [{loader: 'babel-loader', options: {extends: path.resolve(__dirname, '.babelrc')}}],
         },
         {
           test: /\.(png|jpg|woff|woff2|eot|ttf|svg)$/,
@@ -143,6 +160,9 @@ module.exports = (env) => {
     ],
     resolve: {
       extensions: ['.js', '.jsx'],
+      alias: {
+        [`${PRIVATE_PACKAGE}$`]: privatePackageAlias,
+      },
     },
   };
 };

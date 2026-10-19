@@ -89,7 +89,8 @@ import MapProjectDeleteConfirmDialog from './MapProjectDeleteConfirmDialog';
 import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
 import DataGridControls from './DataGridControls'
-import { getPreviewEligibleRowIndexes, getRowsToProcess, countAIOnlyRows, canRunAlgorithm, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, AI_LOOKUP_WAIT_MS, RERANK_LOOKUP_WAIT_MS, RERANK_MAX_IN_FLIGHT, isScispacyWarmingUp } from './autoMatchRows'
+import { getPreviewEligibleRowIndexes, getRowsToProcess, countAIOnlyRows, getAutoMatchAIDefault, canRunAlgorithm, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, AI_LOOKUP_WAIT_MS, RERANK_LOOKUP_WAIT_MS, RERANK_MAX_IN_FLIGHT, isScispacyWarmingUp } from './autoMatchRows'
+import { aiOnByDefault } from 'ocl-online-mapper'
 import { createAutosaveScheduler, createLatestSender, saveOnLeave, trackSave, whenSaved, installUnloadGuard } from './autosave'
 import MatchSummaryCard from './MatchSummaryCard'
 import MappingDecisionResult from './MappingDecisionResult'
@@ -2959,6 +2960,8 @@ const MapProject = () => {
     event.stopPropagation()
     event.preventDefault()
     setAutoMatchScope(getSelectedRowIndexes().length ? 'selected' : (rowStatuses.unmapped.length ? 'unmapped' : 'all'))
+    if(inAIAssistantGroup)
+      setAutoRunAIAnalysis(getAutoMatchAIDefault(projectLogsRef.current, aiOnByDefault()))
     setMatchDialog(true)
   }
 
@@ -6461,7 +6464,7 @@ const MapProject = () => {
               retrieveCandidates: autoRetrieveCandidates,
               setRetrieveCandidates: setAutoRetrieveCandidates,
               canSelectAIModel,
-              previewEligibleRowIndexes,
+              eligibleRowIndexes: previewEligibleRowIndexes,
               matchAlgorithmIds,
               aiOnlyRowCounts,
               onConfigure: onAutoMatchConfigure
