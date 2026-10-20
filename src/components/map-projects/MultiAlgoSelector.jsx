@@ -124,16 +124,12 @@ export default function MultiAlgoSelector({
   const [bridgeVersionsByUrl, setBridgeVersionsByUrl] = React.useState({})
   const [bridgeVersionsLoadedByUrl, setBridgeVersionsLoadedByUrl] = React.useState({})
 
-  const normalizedValue = useMemo(() => {
-    let changed = false;
-    const next = value.map(v => {
-      if (v.__key) return v;
-      changed = true;
-      return { ...v, __key: Math.random(100).toString() };
-    });
-    if (changed) onChange(next);
-    return next;
-  }, [value]);
+  const normalizedValue = useMemo(() => value.map(v => v.__key ? v : { ...v, __key: Math.random(100).toString() }), [value]);
+
+  // Persist generated keys after render; calling the parent's setter during render triggers a React warning.
+  React.useEffect(() => {
+    if (normalizedValue.some((v, i) => v !== value[i])) onChange(normalizedValue);
+  }, [normalizedValue]);
 
   const algosById = useMemo(() => {
     const m = new Map();
@@ -623,7 +619,7 @@ export default function MultiAlgoSelector({
                             />
                           </Stack>
 
-                          <Stack direction="row" spacing={1} justifyContent="flex-end">
+                          <Stack direction="row" spacing={1} sx={{justifyContent: 'flex-end'}}>
                             <Button size='small' color='error' variant="outlined" onClick={() => toggleExpanded(sel.__key)} sx={{textTransform: 'none'}}>
                               {t('common.close')}
                             </Button>
@@ -761,7 +757,7 @@ export default function MultiAlgoSelector({
             opacity: canAddMore ? 1 : 0.6,
           }}
         >
-          <Stack direction="row" spacing={1} alignItems="center">
+          <Stack direction="row" spacing={1} sx={{alignItems: 'center'}}>
             <Box sx={{ display: "grid", placeItems: "center", width: 34, height: 34 }}>
               <AddRoundedIcon />
             </Box>
@@ -771,7 +767,7 @@ export default function MultiAlgoSelector({
                 displayEmpty
                 value=""
                 renderValue={(v) => (v ? v : t('map_project.select_an_algo'))}
-                MenuProps={{PaperProps: {style: {maxWidth: '350px'}}}}
+                MenuProps={{slotProps: {paper: {style: {maxWidth: '350px'}}}}}
               >
                 {
                   addableOptions.map((a, index) => {

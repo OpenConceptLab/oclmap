@@ -17,7 +17,7 @@ const ReviewNote = ({value, onChange}) => {
           maxRows={4}
           value={value || ''}
           onChange={onChange}
-          inputProps={{ inputMode: 'text', autoComplete: 'off', spellCheck: 'false' }}
+          slotProps={{ htmlInput: { inputMode: 'text', autoComplete: 'off', spellCheck: 'false' } }}
           sx={{
             '.MuiInputBase-root': {
               fontSize: '14px',

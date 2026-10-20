@@ -55,13 +55,13 @@ const CustomLocaleDialog = ({ open, onClose, onSave, isMultiple }) => {
             label={config.label}
             fullWidth
             variant="outlined"
-            InputLabelProps={{
-              shrink: true,
+            slotProps={{
+              inputLabel: {shrink: true},
+              htmlInput: {pattern: pattern},
             }}
             value={input}
             onChange={onChange}
             helperText={config.helperText}
-            inputProps={{ pattern: pattern }}
             error={error}
           />
         </div>

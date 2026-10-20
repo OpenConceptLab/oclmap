@@ -34,8 +34,8 @@ const EnhancedTableHead = props => {
                 indeterminate={numSelected > 0 && numSelected < rowCount}
                 checked={rowCount > 0 && numSelected === rowCount}
                 onChange={onSelectAllClick}
-                inputProps={{
-                  'aria-label': t('search.select_all_rows'),
+                slotProps={{
+                  input: {'aria-label': t('search.select_all_rows')},
                 }}
               />
             </TableCell>
@@ -218,8 +218,8 @@ const TableResults = ({selected, bgColor, handleClick, handleRowClick, handleSel
                               size={size || 'medium'}
                               color="primary"
                               checked={isItemSelected}
-                              inputProps={{
-                                'aria-labelledby': labelId,
+                              slotProps={{
+                                input: {'aria-labelledby': labelId},
                               }}
                             />
                           </TableCell>

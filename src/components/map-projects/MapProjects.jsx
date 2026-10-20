@@ -211,7 +211,7 @@ const MapProjects = () => {
                         {
                           times(6, ri => (
                             <TableCell key={ri}>
-                              <Skeleton height={70} sx={{'-webkit-transform': 'none', 'transform': 'none'}} />
+                              <Skeleton height={70} sx={{WebkitTransform: 'none', transform: 'none'}} />
                             </TableCell>
                           ))
                         }

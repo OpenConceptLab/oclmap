@@ -210,6 +210,7 @@ const MappingDecisionResult = ({targetConcept, row, rowIndex, mapTypes, allMapTy
                     </div>
                     </>
                   }
+                  slotProps={{secondary: {component: 'div'}}}
                   sx={{height: '100px', overflow: 'auto', marginTop: 0, '.MuiListItemText-secondary': {marginTop: '-4px'}}}
                 />
               </div>

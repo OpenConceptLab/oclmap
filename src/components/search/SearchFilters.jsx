@@ -240,7 +240,7 @@ const SearchFilters = ({filters, resource, onChange, kwargs, bgColor, appliedFil
                       checked={isApplied(field, value)}
                       tabIndex={-1}
                       disableRipple
-                      inputProps={{ 'aria-labelledby': labelId }}
+                      slotProps={{ input: { 'aria-labelledby': labelId } }}
                       sx={{padding: '0px 8px', '.MuiSvgIcon-root': {fontSize: '1.1rem'}}}
                       disabled={(disabledZero && value[1] === 0)}
                     />
@@ -258,7 +258,7 @@ const SearchFilters = ({filters, resource, onChange, kwargs, bgColor, appliedFil
                         }
                       </span>
                     }
-                    primaryTypographyProps={{style: {fontSize: '0.875rem'}}} style={{margin: 0}} />
+                    slotProps={{primary: {style: {fontSize: '0.875rem'}}}} style={{margin: 0}} />
                   <span style={{fontSize: '0.7rem'}}>{value[1].toLocaleString()}</span>
                 </ListItemButton>
               );
@@ -267,7 +267,7 @@ const SearchFilters = ({filters, resource, onChange, kwargs, bgColor, appliedFil
         </List>
         {
           shouldShowExpand &&
-            <ListItem sx={{padding: '4px 4px 0px 0px'}}>
+            <ListItem component='div' sx={{padding: '4px 4px 0px 0px'}}>
               <Button size='small' onClick={() => toggleExpanded(field)} sx={{textTransform: 'none', fontSize: '11px', padding: '0px 5px 2px 5px'}} color='secondary' startIcon={isExpanded ? <UpIcon fontSize='inherit'/> : <DownIcon fontSize='inherit'/>}>
                 {isExpanded ? t('common.hide') : `${t('common.show')} ${fieldFilters.length - 5} ${t('common.more').toLowerCase()}`}
               </Button>

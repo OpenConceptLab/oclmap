@@ -269,7 +269,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
       />
       {
         effectiveTargetCanonical &&
-          <Stack direction='row' spacing={0.75} alignItems='center' sx={{marginTop: '6px', marginLeft: '8px', minWidth: 0}}>
+          <Stack direction='row' spacing={0.75} sx={{alignItems: 'center', marginTop: '6px', marginLeft: '8px', minWidth: 0}}>
             <InfoOutlinedIcon sx={{fontSize: '14px', color: 'text.secondary', flexShrink: 0}} />
             <Typography component='span' sx={{fontSize: '12px', color: 'text.secondary', flexShrink: 0}}>
               {t('map_project.target_canonical_url', 'Canonical:')}
@@ -307,7 +307,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
                 const isDerived = !b?.bridge_repo?.canonical_url
                 const tooltipText = `${b.target_repo_url || ''} → ${bridgeCanonical || ''}`
                 return (
-                  <Stack key={b.__key || b.id} direction='row' spacing={0.75} alignItems='center' sx={{minWidth: 0}}>
+                  <Stack key={b.__key || b.id} direction='row' spacing={0.75} sx={{alignItems: 'center', minWidth: 0}}>
                     <InfoOutlinedIcon sx={{fontSize: '14px', color: 'text.secondary', flexShrink: 0}} />
                     <Typography component='span' sx={{fontSize: '12px', color: 'text.secondary', flexShrink: 0}}>
                       {t('map_project.bridge_canonical_short', 'Bridge:')}

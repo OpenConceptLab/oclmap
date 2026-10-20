@@ -211,7 +211,7 @@ const DataGridControls = ({
                         </ListItemIcon>
                         <ListItemText
                           primary={meta.label}
-                          primaryTypographyProps={{sx: {fontSize: '1rem', fontWeight: 400, lineHeight: 1.5}}}
+                          slotProps={{primary: {sx: {fontSize: '1rem', fontWeight: 400, lineHeight: 1.5}}}}
                         />
                       </MenuItem>
                     )
