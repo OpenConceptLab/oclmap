@@ -4903,6 +4903,9 @@ const MapProject = () => {
     return find(keys(conceptCache), url => url === id || url.endsWith(`/concepts/${id}/`) || url.endsWith(`/concepts/${encodeURIComponent(id)}/`)) || false
   }
 
+  // Until the target version loads there's no URL to look up against
+  const hasLookupURL = () => Boolean(lookupConfig?.url || repoVersion?.version_url)
+
   const getLookupService = () => {
     let service = APIService.new()
     if(lookupConfig?.url) {
@@ -5183,7 +5186,7 @@ const MapProject = () => {
   }
 
   const search = (event, page, pageSize, includeRetired, appliedFilters) => {
-    if(!searchStr)
+    if(!searchStr || !hasLookupURL())
       return
     GAService.recordActionEvent('MapProject Search', 'search_concepts', undefined, {
       term: searchStr,
@@ -5238,7 +5241,7 @@ const MapProject = () => {
 
   const getFacets = (firstLoad, rowIndex) => {
     const targetRowIndex = isNumber(rowIndex) ? rowIndex : row?.__index
-    if(!isNumber(targetRowIndex))
+    if(!isNumber(targetRowIndex) || !hasLookupURL())
       return Promise.resolve()
 
     const query = {
