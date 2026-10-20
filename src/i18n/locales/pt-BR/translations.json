@@ -503,6 +503,7 @@
     "lookup_configuration": "Configuração de Busca",
     "lookup_configuration_url": "URL do Repositório",
     "lookup_configuration_token": "Token",
+    "lookup_configuration_token_has_spaces": "Tokens não contêm espaços. Cole apenas o token, sem o prefixo \"Token\" ou \"Bearer\".",
     "lookup_configuration_description": "Configure um Source/CodeSystem para operação de busca para buscar definições de candidatos.",
     "lookup_concept_404": "Busca de Conceito:{{code}} falhou com 404 (tentativa {{attempt}})",
     "ai_prompt_template": "Template de Prompt de IA",

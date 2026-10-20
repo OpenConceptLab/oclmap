@@ -116,6 +116,7 @@ import { getAIAssistantChoices, getModelUsed, getPromptTemplateKey, createLatest
 import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
 import { normalizeAlgorithmInvocation, hasSuccessfulAlgorithmResponse, getAlgorithmStagesFromResponses, lookupStatusRank, buildRecommendableConceptEntry, stripConstantClassAndDatatype, buildLookupConceptUrl, serializeCandidates, toStoredRowMatchState } from './normalizers'
 import { parseConceptKey } from './conceptKey'
+import { normalizeLookupConfig } from './lookupConfigFields'
 import { getDeclaredLocales, getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getSavedTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId } from './projectTargetRepo'
 import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, findTargetRowView, formatBridgeTargetDownloadEntry, resolveAICandidateID, getScoreDetails, getAIAnalysisCandidateIDs, withCachedConcept, withCandidateNames, withOwnNames, withSavedMatch } from './viewBuilders.js'
 import { formatClockTime, getCapacityWaitLabel, mergeCapacityWaits } from './rowProgress.js'
@@ -814,7 +815,7 @@ const MapProject = () => {
       setProjectPromptTemplateKey(copiedProject.prompt_template_key || '')
       setName(copiedProject.name ? t('map_project.create_similar_name', {name: copiedProject.name}) : '')
       setFilters(copiedProject.filters || {})
-      setLookupConfig(copiedProject.lookup_config || {})
+      setLookupConfig(normalizeLookupConfig(copiedProject.lookup_config || {}))
       setNamespace(copiedProject.namespace || '')
       setCandidatesScore(copiedProject.score_configuration || {recommended: 99, available: 70})
       setRetired(Boolean(copiedProject.include_retired || false))
@@ -952,7 +953,7 @@ const MapProject = () => {
       setOwner(response.data?.owner_url)
       setRetired(Boolean(response.data?.include_retired))
       setCandidatesScore(response.data?.score_configuration)
-      setLookupConfig(response.data?.lookup_config)
+      setLookupConfig(normalizeLookupConfig(response.data?.lookup_config))
       setNamespace(response.data?.namespace || '')
       setEncoderModel(response.data?.encoder_model || DEFAULT_ENCODER_MODEL)
       setProjectPromptTemplateKey(response.data?.prompt_template_key || '')

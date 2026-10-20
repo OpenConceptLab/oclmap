@@ -507,6 +507,7 @@
     "lookup_configuration": "查找配置",
     "lookup_configuration_url": "仓库 URL",
     "lookup_configuration_token": "令牌",
+    "lookup_configuration_token_has_spaces": "令牌不包含空格。请只粘贴令牌本身，不要带 \"Token\" 或 \"Bearer\" 前缀。",
     "lookup_configuration_description": "配置用于查找操作的源/代码系统，以获取候选项定义。",
     "lookup_concept_404": "查找概念:{{code}} 失败，返回 404（第 {{attempt}} 次尝试）",
     "ai_prompt_template": "AI 提示模板",
