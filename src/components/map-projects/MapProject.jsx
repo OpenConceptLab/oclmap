@@ -5390,6 +5390,8 @@ const MapProject = () => {
   const doubleClickCallback = useDoubleClick(onCSVRowSelect, () => {});
 
   const isConfigureInSplitView = configure && file?.name
+  // until a file is uploaded the form sits in the header panel instead of the side panel
+  const isConfigFormInline = configure && !file?.name
   const columnsForTable = getColumnsForTable()
   // A copy: the code below changes it, and mapSelected holds the mapped target.
   let targetConcept = mapSelected[rowIndex] ? {...getConcept(mapSelected[rowIndex], true)} : false
@@ -6110,16 +6112,16 @@ const MapProject = () => {
       }}
       >
         <Paper component="div" className={isSplitView ? 'col-xs-6 split padding-0' : 'col-xs-12 split padding-0'} sx={{boxShadow: 'none', p: 0, backgroundColor: 'white', borderRadius: '10px', border: 'solid 0.3px', borderColor: 'surface.nv80', minHeight: 'calc(var(--app-height) - 100px) !important', overflow: 'auto'}}>
-          <Paper component="div" className='col-xs-12' sx={{backgroundColor: 'surface.main', boxShadow: 'none', padding: '4px 16px 8px 16px', borderRadius: '10px 10px 0 0', minWidth: '665px', ...((isConfigureInSplitView || !configure) ? {} : {height: 'calc(var(--app-height) - 125px) !important', overflow: 'auto'})}}>
+          <Paper component="div" className='col-xs-12' sx={{backgroundColor: isConfigFormInline ? WHITE : 'surface.main', boxShadow: 'none', padding: '4px 16px 8px 16px', borderRadius: '10px 10px 0 0', minWidth: '665px', ...((isConfigureInSplitView || !configure) ? {} : {height: 'calc(var(--app-height) - 125px) !important', overflow: 'auto'})}}>
             {
-              configure && !file?.name &&
+              isConfigFormInline &&
                 <div className='col-xs-8 padding-0'>
                   {getConfigurationForm()}
                 </div>
           }
-            <div className='col-xs-12 padding-0' style={{backgroundColor: SURFACE_COLORS.main, marginLeft: '-5px', paddingBottom: '0px', paddingLeft: '0px', paddingTop: '0px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start'}}>
+            <div className='col-xs-12 padding-0' style={{backgroundColor: isConfigFormInline ? WHITE : SURFACE_COLORS.main, marginLeft: '-5px', paddingBottom: '0px', paddingLeft: '0px', paddingTop: '0px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start'}}>
             {
-              !(configure && !file?.name) &&
+              !isConfigFormInline &&
                 <span style={{display: 'flex', alignItems: 'center'}}>
                   {
                     name &&
@@ -6540,7 +6542,7 @@ const MapProject = () => {
       </Paper>
       <Paper component="div" className={isSplitView ? 'col-xs-6 split padding-0 split-appear' : 'col-xs-6 padding-0'} sx={{boxShadow: 'none', p: 0, backgroundColor: WHITE, borderRadius: '10px', border: 'solid 0.3px', borderColor: 'surface.nv80', opacity: isSplitView ? 1 : 0, height: 'calc(var(--app-height) - 100px) !important', overflow: 'auto'}}>
         {
-          configure && file?.name ?
+          isConfigureInSplitView ?
             <div className='col-xs-12'>
               {getConfigurationForm()}
             </div> :
