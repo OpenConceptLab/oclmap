@@ -89,7 +89,7 @@ import MapProjectDeleteConfirmDialog from './MapProjectDeleteConfirmDialog';
 import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
 import DataGridControls from './DataGridControls'
-import { getPreviewEligibleRowIndexes, getRowsToProcess, countAIOnlyRows, canRunAlgorithm, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, AI_LOOKUP_WAIT_MS, RERANK_LOOKUP_WAIT_MS, RERANK_MAX_IN_FLIGHT, isScispacyWarmingUp } from './autoMatchRows'
+import { getPreviewEligibleRowIndexes, getRowsToProcess, countAIOnlyRows, canRunAlgorithm, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, AI_LOOKUP_WAIT_MS, RERANK_LOOKUP_WAIT_MS, RERANK_MAX_IN_FLIGHT, isScispacyWarmingUp, getAutoMatchLogExtras, getAutoMatchNoProposalReason, getRowMapping, isSameRowMapping } from './autoMatchRows'
 import { createAutosaveScheduler, createLatestSender, saveOnLeave, trackSave, whenSaved, installUnloadGuard } from './autosave'
 import MatchSummaryCard from './MatchSummaryCard'
 import MappingDecisionResult from './MappingDecisionResult'
@@ -131,7 +131,7 @@ import '../common/ResizablePanel.scss'
  * once: (a) the write-side parallel state was wired up in PR1, (b) PR2a
  * routed all algorithm types (bridge, scispacy, AI payload v2) through the
  * normalizer, (c) PR2b flipped reads (Candidates / Concept / Score /
- * setAutoMatched / setStateViews) to consume rowMatchState + conceptCache
+ * setAutoMatched) to consume rowMatchState + conceptCache
  * via structured tuples, and (d) PR3-C dropped the legacy allCandidates
  * state + v1 save/load format. The wire format is now v2 only
  * (mapper_schema_version: 2); prod data was migrated under
@@ -538,7 +538,7 @@ const MapProject = () => {
     // Merge ConceptDefinitions into the project-wide conceptCache, keyed by
     // the opaque concept_key. Prefer richer (lookup_status='full') over
     // stubs ('pending'/'partial'). Update conceptCacheRef synchronously so
-    // same-tick consumers (setStateViews / setAutoMatched) read the just-
+    // same-tick consumers (setAutoMatched) read the just-
     // merged entries before React commits the setState.
     const nextCache = { ...conceptCacheRef.current }
     let cacheChanged = false
@@ -2337,33 +2337,6 @@ const MapProject = () => {
     })
   }
 
-  // Pick the highest-scoring target-repo ConceptRow for a given rowIndex
-  // from the unified-model state. Returns a RowView ({candidate,
-  // conceptDefinition, conceptRow, bridgeConceptDefinition?}) or null.
-  // The target canonical comes from buildProjectContext — the SAME source
-  // the normalizer used to stamp ConceptDefinition.reference.url, so the
-  // filter is guaranteed to agree with the data. Reading canonical from
-  // the caller's `_repo` would risk the derived-vs-explicit mismatch the
-  // unified-model spec exists to avoid.
-  // (plans/unified-mapper-model.md — score-grouped view's bucketing rule.)
-  const pickTopRowView = (rowIndex) => {
-    const rowState = rowMatchStateRef.current[rowIndex]
-    if(!rowState) return null
-    const targetRepo = buildProjectContext()?.target_repo
-    const targetCanonical = targetRepo?.canonical_url
-    const targetRelativeUrl = targetRepo?.relative_url
-    if(!targetCanonical && !targetRelativeUrl) return null
-    const views = buildQualityRowViews(rowState, conceptCacheRef.current)
-    // Auto-match must land on a target-repo concept. Bridge intermediaries
-    // are excluded — even if their rerank_score is high, they're not
-    // mappable. Score view already places bridge_child rows under the
-    // target concept's ConceptRow, so filtering by canonical_url here is
-    // the right invariant.
-    const eligible = views.filter(v => conceptBelongsToTargetRepo(v.conceptDefinition, targetCanonical, targetRelativeUrl))
-    if(!eligible.length) return null
-    return orderBy(eligible, [v => v.conceptRow?.rerank_score ?? -1], ['desc'])[0]
-  }
-
   // Each row's recommendation, for the grid: its match quality
   // (ocl_issues#2837), its OCL AI Assistant column, Target Code icon and
   // filter. A row is recomputed only when its candidates, a concept they use,
@@ -2387,62 +2360,64 @@ const MapProject = () => {
     })
   }
 
-  const setStateViews = (data, _repo) => {
-    setRowStatuses(prev => {
-      forEach(data, concept => {
-        const rowIdx = concept?.row?.__index
-        if(!isNumber(rowIdx)) return
-        const top = pickTopRowView(rowIdx)
-        const topScore = top?.conceptRow?.rerank_score
-        if(isNumber(topScore) && topScore >= candidatesScore.recommended) {
-          const _concept = {...conceptForMapping(top), repo: {..._repo, version: repoVersion?.id || _repo.version, version_url: repoVersion?.version_url || _repo.version_url}}
-          setMapSelected(_prev => {
-            _prev[rowIdx] = _concept
-            return _prev
-          })
-          const mapType = top.candidate?.map_type || 'SAME-AS'
-          prev.readyForReview = uniq([...prev.readyForReview, rowIdx])
-          setDecisions(p => ({...p, [rowIdx]: 'map'}))
-          setMapTypes(p => ({...p, [rowIdx]: mapType}))
-          log({action: 'auto-matched', extras: {repoVersion: repoVersion?.version_url || _repo.version_url, name: getConceptLabel(_concept), map_type: mapType}}, rowIdx)
-        } else {
-          setMapSelected(prev => omit(prev, rowIdx))
-          setDecisions(prev => omit(prev, rowIdx))
-          setMapTypes(prev => omit(prev, rowIdx))
-          prev.unmapped = uniq([...prev.unmapped, rowIdx])
-        }
+  // Each row's mapping as the user sees it, and what the current run left
+  // each of its rows with, so that the run's AI step deciding a row again
+  // leaves alone a row the user changed meanwhile (OpenConceptLab/ocl_issues#2908).
+  const rowMappingStateRef = React.useRef({})
+  rowMappingStateRef.current = {mapSelected, decisions, mapTypes, reviewed: rowStatuses.reviewed}
+  const runRowMappingsRef = React.useRef({})
+
+  // AutoMatch's proposal for a row of the run: the row's recommendation
+  // (getRowRecommendationFor) mapped, or the row left Unmapped, with who chose
+  // it in the row's log.
+  const proposeRowMapping = (index, recommendation, _repo = repo) => {
+    const proposal = recommendation?.proposal
+    const reviewed = rowMappingStateRef.current.reviewed?.includes(index) || false
+    const logExtras = getAutoMatchLogExtras(recommendation)
+    if(proposal) {
+      const _concept = {...conceptForMapping(proposal), repo: {..._repo, version: repoVersion?.id || _repo.version, version_url: repoVersion?.version_url || _repo.version_url}}
+      const mapType = proposal.candidate?.map_type || 'SAME-AS'
+      setMapSelected(_prev => {
+        _prev[index] = _concept
+        return _prev
       })
-      return prev
-    })
+      setDecisions(_prev => ({..._prev, [index]: 'map'}))
+      setMapTypes(_prev => ({..._prev, [index]: mapType}))
+      setRowStatuses(prev => ({...prev, readyForReview: uniq([...prev.readyForReview, index]), unmapped: without(prev.unmapped, index)}))
+      log({action: 'auto-matched', extras: {repoVersion: repoVersion?.version_url || _repo.version_url, name: getConceptLabel(_concept), map_type: mapType, algorithm: proposal.candidate?.algorithm_id, ...logExtras}}, index)
+      runRowMappingsRef.current[index] = {url: _concept.url || null, decision: 'map', mapType, reviewed, chosenBy: logExtras.chosen_by}
+    } else {
+      setMapSelected(prev => omit(prev, index))
+      setDecisions(prev => omit(prev, index))
+      setMapTypes(prev => omit(prev, index))
+      // A proposal the rule withdraws (the AI found no match over a Recommended
+      // score) is no longer Proposed.
+      setRowStatuses(prev => ({...prev, unmapped: uniq([...prev.unmapped, index]), readyForReview: without(prev.readyForReview, index)}))
+      const reason = getAutoMatchNoProposalReason(recommendation)
+      if(reason)
+        log({action: 'auto_match_no_proposal', description: t(`map_project.auto_match_no_proposal_${reason}`), extras: logExtras}, index)
+      runRowMappingsRef.current[index] = {url: null, decision: null, mapType: null, reviewed, chosenBy: logExtras.chosen_by}
+    }
   }
 
-  const setAutoMatched = (indexes) => {
-    forEach(indexes, index => {
-      const top = pickTopRowView(index)
-      const topScore = top?.conceptRow?.rerank_score
-      if(isNumber(topScore) && topScore >= candidatesScore.recommended) {
-        setRowStatuses(prev => {
-          let newStatuses = {...prev}
-          const _concept = {...conceptForMapping(top), repo: {...repo, version: repoVersion?.id || repo.version, version_url: repoVersion?.version_url || repo.version_url}}
-          setMapSelected(_prev => {
-            _prev[index] = _concept
-            return _prev
-          })
-          const mapType = top.candidate?.map_type || 'SAME-AS'
-          newStatuses.readyForReview = uniq([...newStatuses.readyForReview, index])
-          setDecisions(_prev => ({..._prev, [index]: 'map'}))
-          setMapTypes(_prev => ({..._prev, [index]: mapType}))
-          log({action: 'auto-matched', extras: {repoVersion: repoVersion?.version_url || repo.version_url, name: getConceptLabel(_concept), map_type: mapType, algorithm: top.candidate?.algorithm_id}}, index)
-          newStatuses.unmapped = without(newStatuses.unmapped, index)
-          return newStatuses
-        })
-      } else {
-        setMapSelected(prev => omit(prev, index))
-        setDecisions(prev => omit(prev, index))
-        setMapTypes(prev => omit(prev, index))
-        setRowStatuses(prev => ({...prev, unmapped: uniq([...prev.unmapped, index])}))
-      }
-    })
+  // The rows' proposals, by the recommendation rule with any current analysis
+  // each row has (OpenConceptLab/ocl_issues#2908).
+  const setAutoMatched = (indexes, _repo = repo) => {
+    forEach(indexes, index => proposeRowMapping(index, getRowRecommendationFor(index), _repo))
+  }
+
+  // The run's AI step returned for a row: decide it again with the new
+  // analysis, unless the user changed the row after the run set it. Nothing
+  // changes, and nothing is logged, when the outcome and who chose are the same.
+  const proposeRowMappingAfterAI = (index, analyses) => {
+    const runMapping = runRowMappingsRef.current[index]
+    if(!isSameRowMapping(runMapping, getRowMapping(rowMappingStateRef.current, index)))
+      return
+    const recommendation = getRowRecommendationFor(index, analyses)
+    const url = recommendation.proposal ? (conceptForMapping(recommendation.proposal)?.url || null) : null
+    if(url === runMapping.url && recommendation.chosenBy === runMapping.chosenBy)
+      return
+    proposeRowMapping(index, recommendation)
   }
 
   const getAlgoLogExtras = algo => {
@@ -2594,8 +2569,8 @@ const MapProject = () => {
           // A batch that answers after a newer run started belongs to no run.
           if(!isCurrentRun())
             return
-          // Populate rowMatchState before any consumer (setStateViews /
-          // setAutoMatched) tries to read it. The per-row fetch flow
+          // Populate rowMatchState before any consumer (setAutoMatched)
+          // tries to read it. The per-row fetch flow
           // routes through `onResponse` which already calls
           // mergeIntoRowMatchState; bulk processBatch doesn't, so we
           // run the normalizer here.
@@ -2623,7 +2598,7 @@ const MapProject = () => {
             }
           }
           if(!isMultiAlgo)
-            setStateViews(data, _repo)
+            setAutoMatched(filter(map(data, entry => entry?.row?.__index), isNumber), _repo)
           setMatchedConcepts(prev => [...prev, ...data]);
           if(Array.isArray(data) && data.length)
             saveLateRunResult()
@@ -2715,6 +2690,8 @@ const MapProject = () => {
       // began: it changed nothing to save.
       const runStarted = !isRunStopped()
       const aiOutcomes = {}
+      // What each row starts the run with; the run's proposals update it.
+      runRowMappingsRef.current = Object.fromEntries(rowsToProcess.map(row => [row.__index, getRowMapping(rowMappingStateRef.current, row.__index)]))
       try {
         bulkMatchAlgoIdsRef.current = map(_selectedAlgos, 'id')
         // Reset all algo stages to -1 for every row before starting so that
@@ -5969,6 +5946,11 @@ const MapProject = () => {
         }
         const newEntry = {...response.data, model: modelUsed, model_name: modelUsedRef?.name, prompt_template: resolvedPromptRef, prompt_template_uri: resolvedPromptRef.uri, output_locale: promptOutputLocale || null, candidate_pool_fingerprint: candidatePoolFingerprint, timestamp: timestamp, user: user.username || user.id}
         setAnalysis(prev => ({...prev, [__index]: [...(prev[__index] || []), newEntry]}))
+        // A run's analysis decides the row again (OpenConceptLab/ocl_issues#2908);
+        // one the user runs on a row reorders its candidates but changes no
+        // mapping. A stopped run proposes no more mappings.
+        if(isBulk && !isSuperseded() && !abortRef.current)
+          proposeRowMappingAfterAI(__index, [...existingAnalyses, newEntry])
         // Schedule a save, or leaving loses the result
         // (OpenConceptLab/ocl_issues#2833). Auto Match rows (isBulk) are saved
         // when the run completes. A result that lands after the user left

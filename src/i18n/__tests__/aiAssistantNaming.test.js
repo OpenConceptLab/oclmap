@@ -53,6 +53,9 @@ const NAMES_THE_ASSISTANT = [
   'ai_summary_no_pick',
   'ai_summary_reject',
   'ai_summary_insufficient',
+  'auto_match_no_proposal_reject',
+  'auto_match_no_proposal_insufficient',
+  'auto_match_no_proposal_pick_not_candidate',
 ]
 
 const load = locale =>

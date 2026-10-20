@@ -156,6 +156,40 @@ export const hasCurrentAnalysis = (analyses, fingerprint) => {
   return Boolean(fingerprint && latest?.candidate_pool_fingerprint === fingerprint)
 }
 
+// What a run's log records about a row's proposal (OpenConceptLab/ocl_issues#2908):
+// who chose it, and the OCL AI Assistant's verdict when it chose or when its
+// pick wasn't one of the candidates.
+export const getAutoMatchLogExtras = recommendation => {
+  const { chosenBy = 'score', verdict, confidence, agreement } = recommendation || {}
+  if(agreement === 'pick_not_candidate')
+    return { chosen_by: chosenBy, verdict, ai_pick_not_candidate: true }
+  if(chosenBy !== 'ai_assistant')
+    return { chosen_by: chosenBy }
+  return { chosen_by: chosenBy, verdict, ...(confidence ? { confidence } : {}) }
+}
+
+// Why the OCL AI Assistant's analysis left a row with no proposal, for the
+// row's log: 'reject', 'insufficient', or 'pick_not_candidate' when its pick
+// isn't a candidate and no score is Recommended. null when a match is
+// proposed, or when the score alone found none (not logged, as before).
+export const getAutoMatchNoProposalReason = recommendation => {
+  if(!recommendation || recommendation.proposal)
+    return null
+  return { no_match: 'reject', not_enough: 'insufficient', pick_not_candidate: 'pick_not_candidate' }[recommendation.agreement] || null
+}
+
+// A row's mapping: its target, decision, map type and approval. A run keeps
+// what it left each row with, so that when the AI step decides the row again
+// it leaves alone a row the user changed meanwhile.
+export const getRowMapping = ({ mapSelected = {}, decisions = {}, mapTypes = {}, reviewed = [] } = {}, index) => ({
+  url: mapSelected[index]?.url || null,
+  decision: decisions[index] || null,
+  mapType: mapTypes[index] || null,
+  reviewed: reviewed.includes(index),
+})
+
+export const isSameRowMapping = (a, b) => Boolean(a && b) && ['url', 'decision', 'mapType', 'reviewed'].every(key => a[key] === b[key])
+
 // The ScispaCy service keys each row's results by the itemid sent, which is
 // the row's index, not its position in the run (ocl_online#258).
 export const getScispacyRowResults = (responseData, rowIndex) => responseData?.[rowIndex] || []

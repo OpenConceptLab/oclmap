@@ -21,6 +21,12 @@ import {
   isAIPickTarget,
   getRowAIStatus
 } from '../viewBuilders.js'
+import {
+  getAutoMatchLogExtras,
+  getAutoMatchNoProposalReason,
+  getRowMapping,
+  isSameRowMapping
+} from '../autoMatchRows.js'
 
 const LOINC = 'http://loinc.org'
 const keyOf = code => JSON.stringify([LOINC, code, '2.81'])
@@ -395,4 +401,50 @@ test('getRowAIStatus: no analysis, or one never run, is empty', () => {
   assert.equal(getRowAIStatus(decide(HEMOGLOBIN, undefined), -3), null)
   assert.equal(getRowAIStatus(undefined, undefined), null)
   assert.equal(getRowAIStatus(decide(HEMOGLOBIN, [analysisOf({ recommendation: 'REJECT', fingerprint: '6-c4a4ged0' })]), 1), 'out_of_date')
+})
+
+// ---------- AutoMatch: the log, and a row the user changed ----------
+
+test('getAutoMatchLogExtras: records who chose, and the verdict when the AI did', () => {
+  assert.deepEqual(getAutoMatchLogExtras(decide(HEMOGLOBIN, undefined)), { chosen_by: 'score' })
+  assert.deepEqual(getAutoMatchLogExtras(decide(HEMOGLOBIN, [analysisOf({ recommendation: 'RECOMMEND', pick: '718-7' })])),
+    { chosen_by: 'ai_assistant', verdict: 'RECOMMEND', confidence: 'HIGH' })
+  assert.deepEqual(getAutoMatchLogExtras(decide(HEMOGLOBIN, [analysisOf({ recommendation: 'REJECT' })])),
+    { chosen_by: 'ai_assistant', verdict: 'REJECT' })
+  assert.deepEqual(getAutoMatchLogExtras(decide(HEMOGLOBIN, [analysisOf({ recommendation: 'INSUFFICIENT' })])),
+    { chosen_by: 'ai_assistant', verdict: 'INSUFFICIENT' })
+  // an out-of-date analysis changes nothing: the score chose
+  assert.deepEqual(getAutoMatchLogExtras(decide(HEMOGLOBIN, [analysisOf({ recommendation: 'REJECT', fingerprint: '6-c4a4ged0' })])), { chosen_by: 'score' })
+})
+
+test('getAutoMatchLogExtras: a pick that isn\'t a candidate is logged, and the score chose', () => {
+  assert.deepEqual(getAutoMatchLogExtras(decide(HEMOGLOBIN, [analysisOf({ recommendation: 'RECOMMEND', pick: '12345-6' })])),
+    { chosen_by: 'score', verdict: 'RECOMMEND', ai_pick_not_candidate: true })
+})
+
+test('getAutoMatchNoProposalReason: why the AI left a row unmapped, or null when the score found nothing', () => {
+  assert.equal(getAutoMatchNoProposalReason(decide(HEMOGLOBIN, [analysisOf({ recommendation: 'REJECT' })])), 'reject')
+  assert.equal(getAutoMatchNoProposalReason(decide(HEMOGLOBIN, [analysisOf({ recommendation: 'INSUFFICIENT' })])), 'insufficient')
+  assert.equal(getAutoMatchNoProposalReason(decide([['718-7', 97.39]], [analysisOf({ recommendation: 'RECOMMEND', pick: '12345-6' })])), 'pick_not_candidate')
+  assert.equal(getAutoMatchNoProposalReason(decide([['718-7', 97.39]], undefined)), null)
+  assert.equal(getAutoMatchNoProposalReason(decide(HEMOGLOBIN, [analysisOf({ recommendation: 'RECOMMEND', pick: '718-7' })])), null)
+})
+
+test('getRowMapping / isSameRowMapping: a row is unchanged until its target, decision, map type or approval changes', () => {
+  const state = {
+    mapSelected: { 0: { url: '/concepts/718-7/' } },
+    decisions: { 0: 'map' },
+    mapTypes: { 0: 'SAME-AS' },
+    reviewed: [],
+  }
+  const proposed = getRowMapping(state, 0)
+  assert.deepEqual(proposed, { url: '/concepts/718-7/', decision: 'map', mapType: 'SAME-AS', reviewed: false })
+  assert.equal(isSameRowMapping(proposed, getRowMapping({ ...state, mapSelected: { 0: { url: '/concepts/718-7/', display_name: 'renamed' } } }, 0)), true)
+  assert.equal(isSameRowMapping(proposed, getRowMapping({ ...state, mapSelected: { 0: { url: '/concepts/717-9/' } } }, 0)), false)
+  assert.equal(isSameRowMapping(proposed, getRowMapping({ ...state, decisions: { 0: 'rejected' } }, 0)), false)
+  assert.equal(isSameRowMapping(proposed, getRowMapping({ ...state, mapTypes: { 0: 'NARROWER-THAN' } }, 0)), false)
+  assert.equal(isSameRowMapping(proposed, getRowMapping({ ...state, reviewed: [0] }, 0)), false)
+  // an unmapped row
+  assert.equal(isSameRowMapping(getRowMapping({}, 3), getRowMapping({ mapSelected: {}, decisions: {}, mapTypes: {}, reviewed: [] }, 3)), true)
+  assert.equal(isSameRowMapping(undefined, getRowMapping({}, 3)), false)
 })
