@@ -9,6 +9,7 @@ import BridgeMatch from '../../services/LazyLoader'
 import GAService from '../../services/GAService'
 
 import { useParams, useHistory, useLocation, Redirect } from 'react-router-dom'
+import { getAppTitle } from '../app/DocumentTitle'
 
 import Paper from '@mui/material/Paper'
 import Button from '@mui/material/Button';
@@ -342,6 +343,12 @@ const MapProject = () => {
   React.useEffect(() => {
     logsRef.current = logs
   }, [logs])
+
+  React.useEffect(() => {
+    const appTitle = getAppTitle()
+    document.title = name ? `${name} - ${appTitle}` : appTitle
+    return () => document.title = appTitle
+  }, [name, location.pathname])
 
   React.useEffect(() => {
     projectLogsRef.current = projectLogs
@@ -880,7 +887,7 @@ const MapProject = () => {
                 AIAssistantColVisibility[col.dataKey] = false
               if(col.width) {
                 if(isString(col.width)) {
-                  let _width = parseInt(col.width.replace('px'))
+                  let _width = parseInt(col.width.replace('px', ''))
                   if(!isNaN(_width))
                     col.width = _width
                 }
@@ -1048,12 +1055,14 @@ const MapProject = () => {
       let headerClass = 'header-valid'
       if(!isValidColumn)
         headerClass = 'header-invalid'
-      let widthParams = {}
+      const isTextColumn = ['name', 'description', 'synonyms'].some(key => `${column.label} ${column.original}`.toLowerCase().includes(key))
+      // first column also carries the row state icon
+      let widthParams = {minWidth: isTextColumn ? 150 : (parseInt(idx) === 0 ? 100 : 60)}
       if(columns.length < 2)
         widthParams.flex = 1
       if (columnWidth[column.dataKey])
-        widthParams.width = columnWidth[column.dataKey]
-      else if(column.label.toLowerCase().includes('name') || column.label.toLowerCase().includes('description') || column.label.toLowerCase().includes('synonyms'))
+        widthParams.width = Math.max(Number(columnWidth[column.dataKey]) || 0, widthParams.minWidth)
+      else if(isTextColumn)
         widthParams.width = 300
       else if(column.label.toLowerCase().includes('uuid') || column.label.toLowerCase().includes('external'))
         widthParams.width = 300

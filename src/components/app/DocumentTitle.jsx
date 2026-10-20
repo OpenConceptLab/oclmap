@@ -5,6 +5,8 @@ import { getSiteTitle } from '../../common/utils';
 
 const SITE_TITLE = getSiteTitle()
 
+export const getAppTitle = () => `${getSiteTitle()} Mapper`
+
 /*eslint no-useless-escape: 0*/
 const TITLES = {
   "/users/([a-zA-Z0-9\-\.\_\@]+)": `$1 - ${SITE_TITLE}`,
@@ -56,6 +58,7 @@ export default function DocumentTitle() {
     const { pathname } = useLocation();
     const capitalWords = ['concepts', 'mappings', 'versions', 'details', 'history', 'sources', 'collections', 'orgs', 'references', 'about']
     useEffect(() => {
+        document.title = getAppTitle()
         forEach(TITLES, (title, routeName) => {
             if(new RegExp(routeName).test(pathname)) {
                 const keywords = pathname.split("/").filter(ele => ele).reverse()
@@ -69,7 +72,7 @@ export default function DocumentTitle() {
             }
         })
 
-        return () => document.title = SITE_TITLE
+        return () => document.title = getAppTitle()
     }, [pathname]);
 
   return null;
