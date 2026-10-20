@@ -2369,11 +2369,12 @@ const MapProject = () => {
 
   // AutoMatch's proposal for a row of the run: the row's recommendation
   // (getRowRecommendationFor) mapped, or the row left Unmapped, with who chose
-  // it in the row's log.
+  // it in the row's log. A row the run decides is no longer Approved; a full
+  // run already clears approvals when it starts, an AI-only run doesn't.
   const proposeRowMapping = (index, recommendation, _repo = repo) => {
     const proposal = recommendation?.proposal
-    const reviewed = rowMappingStateRef.current.reviewed?.includes(index) || false
     const logExtras = getAutoMatchLogExtras(recommendation)
+    const current = rowMappingStateRef.current
     if(proposal) {
       const _concept = {...conceptForMapping(proposal), repo: {..._repo, version: repoVersion?.id || _repo.version, version_url: repoVersion?.version_url || _repo.version_url}}
       const mapType = proposal.candidate?.map_type || 'SAME-AS'
@@ -2383,39 +2384,55 @@ const MapProject = () => {
       })
       setDecisions(_prev => ({..._prev, [index]: 'map'}))
       setMapTypes(_prev => ({..._prev, [index]: mapType}))
-      setRowStatuses(prev => ({...prev, readyForReview: uniq([...prev.readyForReview, index]), unmapped: without(prev.unmapped, index)}))
+      setRowStatuses(prev => ({...prev, readyForReview: uniq([...prev.readyForReview, index]), unmapped: without(prev.unmapped, index), reviewed: without(prev.reviewed, index)}))
       log({action: 'auto-matched', extras: {repoVersion: repoVersion?.version_url || _repo.version_url, name: getConceptLabel(_concept), map_type: mapType, algorithm: proposal.candidate?.algorithm_id, ...logExtras}}, index)
-      runRowMappingsRef.current[index] = {url: _concept.url || null, decision: 'map', mapType, reviewed, chosenBy: logExtras.chosen_by}
+      // Until the next render, the row as the run just left it.
+      rowMappingStateRef.current = {
+        mapSelected: {...current.mapSelected, [index]: _concept}, decisions: {...current.decisions, [index]: 'map'},
+        mapTypes: {...current.mapTypes, [index]: mapType}, reviewed: without(current.reviewed || [], index)
+      }
+      runRowMappingsRef.current[index] = {...getRowMapping(rowMappingStateRef.current, index), chosenBy: logExtras.chosen_by, proposed: true}
     } else {
       setMapSelected(prev => omit(prev, index))
       setDecisions(prev => omit(prev, index))
       setMapTypes(prev => omit(prev, index))
       // A proposal the rule withdraws (the AI found no match over a Recommended
       // score) is no longer Proposed.
-      setRowStatuses(prev => ({...prev, unmapped: uniq([...prev.unmapped, index]), readyForReview: without(prev.readyForReview, index)}))
+      setRowStatuses(prev => ({...prev, unmapped: uniq([...prev.unmapped, index]), readyForReview: without(prev.readyForReview, index), reviewed: without(prev.reviewed, index)}))
       const reason = getAutoMatchNoProposalReason(recommendation)
       if(reason)
         log({action: 'auto_match_no_proposal', description: t(`map_project.auto_match_no_proposal_${reason}`), extras: logExtras}, index)
-      runRowMappingsRef.current[index] = {url: null, decision: null, mapType: null, reviewed, chosenBy: logExtras.chosen_by}
+      rowMappingStateRef.current = {
+        mapSelected: omit(current.mapSelected, index), decisions: omit(current.decisions, index),
+        mapTypes: omit(current.mapTypes, index), reviewed: without(current.reviewed || [], index)
+      }
+      runRowMappingsRef.current[index] = {...getRowMapping(rowMappingStateRef.current, index), chosenBy: logExtras.chosen_by, proposed: true}
     }
   }
 
   // The rows' proposals, by the recommendation rule with any current analysis
-  // each row has (OpenConceptLab/ocl_issues#2908).
+  // each row has (OpenConceptLab/ocl_issues#2908). A row the run already
+  // proposed, and the user changed since, is left alone.
   const setAutoMatched = (indexes, _repo = repo) => {
-    forEach(indexes, index => proposeRowMapping(index, getRowRecommendationFor(index), _repo))
+    forEach(indexes, index => {
+      const runMapping = runRowMappingsRef.current[index]
+      if(runMapping?.proposed && !isSameRowMapping(runMapping, getRowMapping(rowMappingStateRef.current, index)))
+        return
+      proposeRowMapping(index, getRowRecommendationFor(index), _repo)
+    })
   }
 
   // The run's AI step returned for a row: decide it again with the new
   // analysis, unless the user changed the row after the run set it. Nothing
-  // changes, and nothing is logged, when the outcome and who chose are the same.
+  // changes, and nothing is logged, when the outcome and who chose are the
+  // same, except that a pick that isn't a candidate is always logged.
   const proposeRowMappingAfterAI = (index, analyses) => {
     const runMapping = runRowMappingsRef.current[index]
     if(!isSameRowMapping(runMapping, getRowMapping(rowMappingStateRef.current, index)))
       return
     const recommendation = getRowRecommendationFor(index, analyses)
     const url = recommendation.proposal ? (conceptForMapping(recommendation.proposal)?.url || null) : null
-    if(url === runMapping.url && recommendation.chosenBy === runMapping.chosenBy)
+    if(url === runMapping.url && recommendation.chosenBy === runMapping.chosenBy && recommendation.agreement !== 'pick_not_candidate')
       return
     proposeRowMapping(index, recommendation)
   }

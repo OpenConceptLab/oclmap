@@ -317,6 +317,25 @@ test('getRowRecommendation: resolves the AI\'s pick by its canonical reference w
   assert.equal(code(result.proposal), '718-7')
 })
 
+test('getRowRecommendation: a pick from another repository is not a target candidate with the same code', () => {
+  // The AI names a concept of another source whose code a target candidate shares.
+  const foreign = { concept_key: JSON.stringify(['https://CIELterminology.org', '718-7', null]), canonical_reference: { url: 'https://CIELterminology.org', code: '718-7' }, confidence_level: 'HIGH' }
+  const analysis = { output: { recommendation: 'RECOMMEND', primary_candidate: foreign, alternative_candidates: [] }, candidate_pool_fingerprint: FINGERPRINT }
+  const result = decide(HEMOGLOBIN, [analysis])
+  assert.equal(result.agreement, 'pick_not_candidate')
+  assert.equal(result.chosenBy, 'score')
+  assert.equal(code(result.proposal), '110885-1')
+})
+
+test('getRowRecommendation: a pick of the target repository found by its code when its concept_key differs', () => {
+  // Same source and code, another version in the key.
+  const sameSource = { concept_key: JSON.stringify([LOINC, '718-7', '2.80']), canonical_reference: { url: LOINC, code: '718-7', version: '2.80' }, confidence_level: 'HIGH' }
+  const analysis = { output: { recommendation: 'RECOMMEND', primary_candidate: sameSource, alternative_candidates: [] }, candidate_pool_fingerprint: FINGERPRINT }
+  const result = decide(HEMOGLOBIN, [analysis])
+  assert.equal(code(result.pick), '718-7')
+  assert.equal(result.chosenBy, 'ai_assistant')
+})
+
 test('getRowRecommendation: an analysis without a known verdict counts as none', () => {
   const result = decide(HEMOGLOBIN, [{ user: 'someone', timestamp: '2026-10-13T00:00:00Z', candidate_pool_fingerprint: FINGERPRINT }])
   assert.equal(result.agreement, 'none')

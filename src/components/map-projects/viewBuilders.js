@@ -621,13 +621,16 @@ const viewHasConceptKey = (view, key) =>
 const viewCode = view => view?.conceptDefinition?.reference?.code || view?.conceptDefinition?.id
 
 // The view of a candidate the AI named: by its concept_key, else by the code
-// resolveAICandidateID gives it.
+// resolveAICandidateID gives it, in the same source when the AI's candidate
+// names one, so another source's concept with the same code isn't taken for it.
 const findAICandidateView = (views, aiCandidate, conceptCache) => {
   if(!aiCandidate) return null
   const byKey = aiCandidate.concept_key ? views.find(view => viewHasConceptKey(view, aiCandidate.concept_key)) : null
   if(byKey) return byKey
   const code = resolveAICandidateID(aiCandidate, conceptCache)
-  return (code && views.find(view => viewCode(view) === code)) || null
+  const sourceUrl = conceptCache?.[aiCandidate.concept_key]?.reference?.url || aiCandidate.canonical_reference?.url
+  const sameSource = view => !sourceUrl || canonicalUrlsEqual(view?.conceptDefinition?.reference?.url, sourceUrl)
+  return (code && views.find(view => viewCode(view) === code && sameSource(view))) || null
 }
 
 // Today's Match Quality buckets, each by score.
