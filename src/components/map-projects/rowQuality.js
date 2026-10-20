@@ -79,31 +79,33 @@ export const filterRowsByQualityBucket = (rows, qualities, bucket, sortBy) => {
 }
 
 /**
- * Caches each row's best candidate score across renders. A row is recomputed
- * only when its state object, a concept definition its concept rows use, or
- * the target repo changes; rows state and the concept cache are replaced,
- * never mutated, so identity checks are enough.
+ * Caches each row's recommendation (getRowRecommendation) across renders, for
+ * the grid's Match Quality, OCL AI Assistant and Target Code columns and their
+ * filters. A row is recomputed only when its state object, a concept
+ * definition its concept rows use, or its analyses change; a change of
+ * context (the target repo, the thresholds, what the candidate-pool
+ * fingerprint reads) recomputes every row. Rows state, the concept cache and
+ * the analyses are replaced, never mutated, so identity checks are enough.
  *
- * @returns {{getter: function}} getter({rows, concepts, targetKey, computeScore})
- *   returns rowIndex => score for one render. computeScore (rowIndex => score,
- *   e.g. from pickTopRowView) is the render's own, so it sees that render's
- *   project context.
+ * @returns {{getter: function}} getter({rows, concepts, analyses, contextKey, compute})
+ *   returns rowIndex => value for one render. compute (rowIndex => value) is
+ *   the render's own, so it sees that render's project context.
  */
-export const createBestCandidateScoreCache = () => {
+export const createRowRecommendationCache = () => {
   let byRow = new Map()
-  let current = { rows: null, concepts: null, targetKey: null }
+  let current = { rows: null, concepts: null, analyses: null, contextKey: null }
   let checked = new Set()
   return {
-    getter: ({ rows, concepts, targetKey, computeScore }) => {
-      if(current.targetKey !== targetKey)
+    getter: ({ rows, concepts, analyses, contextKey, compute }) => {
+      if(current.contextKey !== contextKey)
         byRow = new Map()
-      if(current.rows !== rows || current.concepts !== concepts || current.targetKey !== targetKey) {
-        current = { rows, concepts, targetKey }
+      if(current.rows !== rows || current.concepts !== concepts || current.analyses !== analyses || current.contextKey !== contextKey) {
+        current = { rows, concepts, analyses, contextKey }
         checked = new Set()
       }
       return index => {
         if(checked.has(index))
-          return byRow.get(index)?.score
+          return byRow.get(index)?.value
         checked.add(index)
         const rowState = rows?.[index]
         if(!rowState) {
@@ -111,14 +113,15 @@ export const createBestCandidateScoreCache = () => {
           return undefined
         }
         const conceptKeys = Object.keys(rowState.concept_rows || {})
+        const rowAnalyses = analyses?.[index]
         const entry = byRow.get(index)
-        const unchanged = entry && entry.rowState === rowState && entry.defs.length === conceptKeys.length &&
+        const unchanged = entry && entry.rowState === rowState && entry.analyses === rowAnalyses && entry.defs.length === conceptKeys.length &&
           conceptKeys.every((key, i) => entry.defs[i] === concepts?.[key])
         if(unchanged)
-          return entry.score
-        const score = computeScore(index)
-        byRow.set(index, { rowState, defs: conceptKeys.map(key => concepts?.[key]), score })
-        return score
+          return entry.value
+        const value = compute(index)
+        byRow.set(index, { rowState, analyses: rowAnalyses, defs: conceptKeys.map(key => concepts?.[key]), value })
+        return value
       }
     },
   }

@@ -726,3 +726,47 @@ export const getRowRecommendation = ({ views = [], analyses, fingerprint, candid
     agreement: { REJECT: 'no_match', INSUFFICIENT: 'not_enough' }[verdict] || (tiedWithTop ? 'agrees' : 'different_pick'),
   }
 }
+
+// The agreement states the grid's "OCL AI Assistant disagrees" filter shows.
+export const AI_DISAGREEMENTS = ['different_pick', 'pick_not_candidate', 'no_match', 'not_enough']
+
+export const isAIDisagreement = recommendation => AI_DISAGREEMENTS.includes(recommendation?.agreement)
+
+// A concept's URL can hold its code encoded once or twice (%26 or %2526 for
+// "&"), depending on where the concept came from, so URLs compare decoded.
+const decodedURL = url => {
+  let decoded = url
+  for(let i = 0; i < 3; i++) {
+    try {
+      const next = decodeURIComponent(decoded)
+      if(next === decoded) break
+      decoded = next
+    } catch (_) {
+      break
+    }
+  }
+  return decoded
+}
+
+// Whether a mapped target is the OCL AI Assistant's pick, for the grid's
+// Target Code icon: the same URL, or, when either lacks one, the same id.
+export const isAIPickTarget = (recommendation, target) => {
+  const pick = conceptForMapping(recommendation?.pick)
+  if(!target || !pick) return false
+  if(target.url && pick.url)
+    return decodedURL(target.url) === decodedURL(pick.url)
+  return pick.id === target.id
+}
+
+/**
+ * What the grid's "OCL AI Assistant" column shows for a row: 'running' or
+ * 'failed' while a call is in flight or has just failed (the row's
+ * `recommend` stage, 0 or -2), else the recommendation's agreement state, or
+ * null when the row has no analysis.
+ */
+export const getRowAIStatus = (recommendation, stage) => {
+  if(stage === 0) return 'running'
+  if(stage === -2) return 'failed'
+  const agreement = recommendation?.agreement
+  return agreement && agreement !== 'none' ? agreement : null
+}

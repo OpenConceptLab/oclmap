@@ -45,6 +45,7 @@ import ConceptIcon from '../concepts/ConceptIcon'
 import MapButton from './MapButton'
 import AICandidatesAnalysis from './AICandidatesAnalysis'
 import AIAssistantButton from './AIAssistantButton'
+import { AIAssistantSummary } from './AIAssistantVerdict'
 import {
   buildAlgorithmRowViews,
   getOrphanAlgorithmIds,
@@ -96,7 +97,7 @@ const Sort = ({ selected, onSort }) => {
   )
 }
 
-const Group = ({ selected, onGroup, hasAIAnalysis }) => {
+const Group = ({ selected, onGroup }) => {
   const { t } = useTranslation();
   const [anchorEl, setAnchorEl] = React.useState(false)
   const onGroupClick = event => setAnchorEl(event.currentTarget)
@@ -125,12 +126,6 @@ const Group = ({ selected, onGroup, hasAIAnalysis }) => {
         <ListItemButton id='group_by_algorithm' sx={{padding: '4px 10px', '&:hover': {color: 'inherit'}, '&:focus': {outline: 'none', textDecoration: 'none', color: 'inherit'}}} onClick={() => onClick('algorithm')} selected={selected === 'algorithm'}>
           <ListItemText primary={t('map_project.algorithm')} />
         </ListItemButton>
-        {
-          hasAIAnalysis &&
-            <ListItemButton id='group_by_ai_analysis' sx={{padding: '4px 10px', '&:hover': {color: 'inherit'}, '&:focus': {outline: 'none', textDecoration: 'none', color: 'inherit'}}} onClick={() => onClick('ai_analysis')} selected={selected === 'ai_analysis'}>
-              <ListItemText primary={t('map_project.group_by_ai_analysis')} />
-            </ListItemButton>
-        }
     </Menu>
     </>
   )
@@ -162,7 +157,7 @@ const SubHeader = ({count, onClick, isCollapsed, header, indicatorColor, indicat
 }
 
 
-const CandidateList = ({rowViews, header, rowIndex, sortBy, order, openConceptPanel, showItem, isSelectedForMap, onMap, onFetchMore, bgColor, headerIndicatorIcon, bucketId, display, onDisplayChange, noToolbar, toolbarControl, repoVersion, alignToolbarLeft, rightControl, analysis, showAnalysis, openAnalysis, onCloseAnalysis, isInProgress, AIRecommendedCandidateId, AIAlternateCandidateIds, inputLocale, locales, scispacy, showAlgo, collapsed, onCollapse, candidatesScore, algoScoreFirst, byAlgorithm, showEmptyHeader, isFirst, targetCanonical, targetRelativeUrl, analysisPage, setAnalysisPage}) => {
+const CandidateList = ({rowViews, header, rowIndex, sortBy, order, openConceptPanel, showItem, isSelectedForMap, onMap, onFetchMore, bgColor, headerIndicatorIcon, bucketId, display, onDisplayChange, noToolbar, toolbarControl, repoVersion, alignToolbarLeft, rightControl, analysis, showAnalysis, openAnalysis, onCloseAnalysis, isInProgress, summary, AIRecommendedCandidateId, AIAlternateCandidateIds, inputLocale, locales, scispacy, showAlgo, collapsed, onCollapse, candidatesScore, algoScoreFirst, byAlgorithm, showEmptyHeader, isFirst, targetCanonical, targetRelativeUrl, analysisPage, setAnalysisPage}) => {
   // Decorate rowViews so they work for BOTH renderers:
   //   - Table view: SearchResults/TableResults reads legacy concept fields
   //     (id, url, names, descriptions, source, search_meta, ...) via the
@@ -275,16 +270,20 @@ const CandidateList = ({rowViews, header, rowIndex, sortBy, order, openConceptPa
           }
         }}
         subheader={
-          (showAnalysis && openAnalysis) ? (
+          (showAnalysis && (openAnalysis || summary)) ? (
             <div className='col-xs-12 padding-0' style={{display: 'inline-flex', flexDirection: 'column'}}>
-              <AICandidatesAnalysis
-                analysis={analysis}
-                onClose={onCloseAnalysis}
-                sx={{marginBottom: '4px'}}
-                isInProgress={isInProgress}
-                page={analysisPage}
-                onPageChange={setAnalysisPage}
-              />
+              {summary}
+              {
+                openAnalysis &&
+                  <AICandidatesAnalysis
+                    analysis={analysis}
+                    onClose={onCloseAnalysis}
+                    sx={{marginBottom: '4px'}}
+                    isInProgress={isInProgress}
+                    page={analysisPage}
+                    onPageChange={setAnalysisPage}
+                  />
+              }
               {
                 showHeader &&
                   <SubHeader count={count} onClick={onCollapseToggle} isCollapsed={isCollapsed} header={header} indicatorColor={bgColor} indicatorIcon={headerIndicatorIcon} isFirst={isFirst} />
@@ -379,7 +378,7 @@ const CandidateList = ({rowViews, header, rowIndex, sortBy, order, openConceptPa
 //   conceptCache — project-wide ConceptDefinition store, keyed by concept_key.
 //   algosSelected — algorithm definitions (for headers/grouping).
 // (plans/unified-mapper-model.md "How the views map onto this model".)
-const Candidates = ({rowIndex, rowState, conceptCache, targetCanonical, targetRelativeUrl, openConceptPanel, showItem, isSelectedForMap, onMap, onFetchMore, isLoading, candidatesScore, repoVersion, analysis, onFetchRecommendation, appliedFacets, setAppliedFacets, filters, facets, columns, defaultFilters, inputLocale, locales, models, selectedModel, onModelChange, promptTemplates, promptTemplate, onPromptTemplateChange, onRefreshClick, rowStage, inAIAssistantGroup, algosSelected, canSelectAIModel, capacityWait=false, throttle}) => {
+const Candidates = ({rowIndex, rowState, conceptCache, targetCanonical, targetRelativeUrl, openConceptPanel, showItem, isSelectedForMap, onMap, onFetchMore, isLoading, candidatesScore, repoVersion, analysis, recommendation, onFetchRecommendation, appliedFacets, setAppliedFacets, filters, facets, columns, defaultFilters, inputLocale, locales, models, selectedModel, onModelChange, promptTemplates, promptTemplate, onPromptTemplateChange, onRefreshClick, rowStage, inAIAssistantGroup, algosSelected, canSelectAIModel, capacityWait=false, throttle}) => {
   const { t } = useTranslation();
   const [sortBy, setSortBy] = React.useState('rerank_score')
   const [groupBy, setGroupBy] = React.useState('quality')
@@ -388,8 +387,6 @@ const Candidates = ({rowIndex, rowState, conceptCache, targetCanonical, targetRe
   const [display, setDisplay] = React.useState('card')
   const [openAIAnalysis, setOpenAIAnalysis] = React.useState(undefined)
   const [analysisPage, setAnalysisPage] = React.useState(0)
-  const recommendedScore = candidatesScore?.recommended
-  const availableScore = candidatesScore?.available
   const analysisArray = Array.isArray(analysis) ? analysis : (analysis ? [analysis] : [])
   const analysisCount = analysisArray.length
   // Resolve the AI-recommended candidate against conceptCache: prefer the
@@ -412,16 +409,10 @@ const Candidates = ({rowIndex, rowState, conceptCache, targetCanonical, targetRe
   React.useEffect(() => {
     setAnalysisPage(analysisCount > 0 ? analysisCount - 1 : 0)
   }, [rowIndex, analysisCount])
-  React.useEffect(() => {
-    if(groupBy === 'ai_analysis' && analysisCount === 0)
-      setGroupBy('quality')
-  }, [analysisCount, groupBy])
   const selectedAnalysis = isRecommendInProgress && analysisPage >= analysisCount
     ? undefined
     : analysisArray[analysisPage]
-  const selectedAnalysisForGrouping = selectedAnalysis || analysisArray[analysisCount - 1]
   const { primaryCandidateId: AIRecommendedCandidateId, alternateCandidateIds: AIAlternateCandidateIds } = getAIAnalysisCandidateIDs(selectedAnalysis, conceptCache)
-  const { primaryCandidateId: groupedAnalysisPrimaryId, alternateCandidateIds: groupedAnalysisAlternateIds } = getAIAnalysisCandidateIDs(selectedAnalysisForGrouping, conceptCache)
 
   // Quality (score-grouped) view shows ONLY target-repo concepts. Bridge
   // intermediaries live in algorithm view as metadata-about-the-target;
@@ -490,11 +481,16 @@ const Candidates = ({rowIndex, rowState, conceptCache, targetCanonical, targetRe
     onFetchRecommendation()
   }
 
+  const onReadAnalysis = () => {
+    setAnalysisPage(Math.max(0, analysisCount - 1))
+    setOpenAIAnalysis(true)
+  }
+
   const onGroup = option => {
     setGroupBy(option)
     if(option === 'algorithm')
       setSortBy('algo_score')
-    if(!option || option === 'quality' || option === 'ai_analysis')
+    if(!option || option === 'quality')
       setSortBy('rerank_score')
   }
 
@@ -538,66 +534,30 @@ const Candidates = ({rowIndex, rowState, conceptCache, targetCanonical, targetRe
         }))
       }
     }
-    if(groupBy === 'ai_analysis') {
-      const sorted = sortRowViews(qualityRowViews, 'rerank_score', 'desc')
-      const primaryCandidate = []
-      const alternateCandidates = []
-      const rest = []
-      sorted.forEach(view => {
-        const code = view?.conceptDefinition?.reference?.code
-        if(groupedAnalysisPrimaryId && code === groupedAnalysisPrimaryId) {
-          primaryCandidate.push(view)
-          return
-        }
-        if(groupedAnalysisAlternateIds.includes(code)) {
-          alternateCandidates.push(view)
-          return
-        }
-        rest.push(view)
-      })
-      return { primaryCandidate, alternateCandidates, rest }
+    // Match Quality by score: the OCL AI Assistant's pick and its alternates
+    // when it decides, then today's buckets, as getRowRecommendation orders
+    // them (OpenConceptLab/ocl_issues#2908). By ID or name: one list, with
+    // badges only.
+    if(!byScore)
+      return { qualitySections: [{id: 'available', rowViews: sortRowViews(qualityRowViews, sortBy, order, inputLocale), header: t('map_project.all_candidates')}] }
+    const sections = recommendation?.sections || {}
+    const aiIcon = color => <AssistantIcon color={color} fontSize='small' sx={{marginRight: '6px', fontSize: '0.95rem'}} />
+    return {
+      qualitySections: [
+        {id: 'ai-pick', rowViews: sections.pick, header: t('map_project.ai_pick'), headerIndicatorIcon: aiIcon('primary'), onlyIfAny: true},
+        {id: 'ai-alternates', rowViews: sections.alternates, header: t('map_project.alternates'), headerIndicatorIcon: aiIcon('warning'), onlyIfAny: true},
+        {id: 'recommended', rowViews: sections.recommended, header: t('map_project.recommended_candidates'), bgColor: SCORES_COLOR.recommended},
+        {id: 'available', rowViews: sections.available, header: t('map_project.available_candidates'), bgColor: SCORES_COLOR.available},
+        {id: 'low-ranked', rowViews: sections.lowRanked, header: t('map_project.low_ranked_candidates'), bgColor: SCORES_COLOR.low_ranked},
+        // Candidates whose rerank hasn't landed yet. They move into the score
+        // buckets once a numeric rerank_score arrives on their ConceptRow.
+        // Neutral gray, so it reads as "in progress" rather than "poor match".
+        {id: 'pending-rerank', rowViews: sections.unranked, header: t('map_project.unranked_candidates', 'Unranked Candidates'), bgColor: SCORES_COLOR.pending_rerank, onlyIfAny: true},
+      ].map(section => ({...section, rowViews: section.rowViews || []})).filter(section => !section.onlyIfAny || section.rowViews.length)
     }
-    let recommended = []
-    let available = []
-    let lowRanked = []
-    let pendingRerank = []
-    sortRowViews(qualityRowViews, sortBy, order, inputLocale).forEach(view => {
-      const score = view.conceptRow?.rerank_score
-      if(byScore) {
-        // Bucket on score presence first: unscored rows belong in their
-        // own "pending rerank" group — not in low_ranked. Falling them
-        // into low_ranked (the prior `score || 0` behavior) mis-implied
-        // they were poor matches; they're simply not ranked yet. Rerank
-        // landing will re-bucket them naturally on the next render.
-        if(typeof score !== 'number') pendingRerank.push(view)
-        else if(score >= recommendedScore) recommended.push(view)
-        else if(score >= availableScore) available.push(view)
-        else lowRanked.push(view)
-      } else {
-        available.push(view)
-      }
-    })
-    return { recommended, available, lowRanked, pendingRerank }
   }
 
-  const { byAlgoCandidates, recommended, available, lowRanked, pendingRerank, primaryCandidate, alternateCandidates: aiAlternateCandidates, rest } = getCandidates()
-  const aiPrimaryBucketId = `${rowIndex}-ai-primary`
-  const aiAlternatesBucketId = `${rowIndex}-ai-alternates`
-  const aiRestBucketId = `${rowIndex}-ai-rest`
-  const hasAIPrimaryCandidates = (primaryCandidate || []).length > 0
-  const hasAIAlternateCandidates = (aiAlternateCandidates || []).length > 0
-
-  React.useEffect(() => {
-    if(groupBy !== 'ai_analysis') return
-    setCollapsed(prev => {
-      const withoutAIBuckets = prev.filter(id => ![aiPrimaryBucketId, aiAlternatesBucketId, aiRestBucketId].includes(id))
-      const nextCollapsed = [...withoutAIBuckets]
-      if(hasAIPrimaryCandidates || hasAIAlternateCandidates)
-        nextCollapsed.push(aiRestBucketId)
-      return nextCollapsed
-    })
-  }, [groupBy, rowIndex, hasAIPrimaryCandidates, hasAIAlternateCandidates])
-
+  const { byAlgoCandidates, qualitySections } = getCandidates()
   const getRightControls = () => {
       return (
         <span style={{display: 'flex', alignItems: 'center'}}>
@@ -622,11 +582,8 @@ const Candidates = ({rowIndex, rowState, conceptCache, targetCanonical, targetRe
           {
             !noCandidatesFound &&
               <>
-                <Group onGroup={onGroup} selected={groupBy} hasAIAnalysis={analysisCount > 0} />
-                {
-                  groupBy !== 'ai_analysis' &&
-                    <Sort onSort={onSort} selected={sortBy} />
-                }
+                <Group onGroup={onGroup} selected={groupBy} />
+                <Sort onSort={onSort} selected={sortBy} />
               </>
           }
           {
@@ -652,8 +609,11 @@ const Candidates = ({rowIndex, rowState, conceptCache, targetCanonical, targetRe
       )
   }
 
+  // The summary line stands for the analysis; its full explanation opens on
+  // "Read analysis" or a new run, and stays open across rows once opened. An
+  // analysis with no verdict has no summary line, so it opens.
   React.useEffect(() => {
-    setOpenAIAnalysis(isEmpty(analysis) ? false : (openAIAnalysis !== false))
+    setOpenAIAnalysis(isEmpty(analysis) ? false : (openAIAnalysis === true || !recommendation?.verdict))
   }, [rowIndex])
 
   React.useEffect(() => {
@@ -661,6 +621,27 @@ const Candidates = ({rowIndex, rowState, conceptCache, targetCanonical, targetRe
       setOpenAIAnalysis(true)
   }, [isRecommendInProgress])
 
+
+  const filtersButton = (
+    <Button color={(isEmpty(appliedFacets) && !openFilters) ? undefined : 'primary'} sx={{minWidth: 'auto'}} onClick={() => setOpenFilters(!openFilters)} disabled={isEmpty(facets)}>
+      <Badge badgeContent={flatten(values(appliedFacets).map(v => values(v))).length} color='primary'>
+        <FilterListIcon sx={{color: (isEmpty(appliedFacets) && !openFilters) ? '#000': 'primary'}} />
+      </Badge>
+    </Button>
+  )
+  const toolbarProps = {
+    onDisplayChange: setDisplay,
+    toolbarControl: filtersButton,
+    alignToolbarLeft: true,
+    rightControl: getRightControls(),
+    analysis: analysis,
+    showAnalysis: true,
+    openAnalysis: Boolean(openAIAnalysis),
+    onCloseAnalysis: () => setOpenAIAnalysis(false),
+    isInProgress: isRecommendInProgress,
+    summary: <AIAssistantSummary recommendation={recommendation} candidatesScore={candidatesScore} onReadAnalysis={openAIAnalysis ? undefined : onReadAnalysis} />
+  }
+  const firstQualitySectionWithViews = (qualitySections || []).findIndex(section => section.rowViews.length > 0)
 
   return (
     <div className='col-xs-12 padding-0'>
@@ -702,172 +683,30 @@ const Candidates = ({rowIndex, rowState, conceptCache, targetCanonical, targetRe
         >
           {
             groupBy === 'quality' &&
-              <>
-                <li>
-              <CandidateList
-                {...baseProps}
-                rowViews={recommended}
-                header={t('map_project.recommended_candidates')}
-                onFetchMore={onFetchMore}
-                bgColor={SCORES_COLOR.recommended}
-                bucketId={`${rowIndex}-recommended`}
-                noToolbar={false}
-                onDisplayChange={setDisplay}
-                toolbarControl={
-                  <Button color={(isEmpty(appliedFacets) && !openFilters) ? undefined : 'primary'} sx={{minWidth: 'auto'}} onClick={() => setOpenFilters(!openFilters)} disabled={isEmpty(facets)}>
-                    <Badge badgeContent={flatten(values(appliedFacets).map(v => values(v))).length} color='primary'>
-                      <FilterListIcon sx={{color: (isEmpty(appliedFacets) && !openFilters) ? '#000': 'primary'}} />
-                    </Badge>
-                  </Button>
-                }
-                alignToolbarLeft
-                rightControl={getRightControls()}
-                analysis={analysis}
-                showAnalysis
-                openAnalysis={Boolean(openAIAnalysis)}
-                onCloseAnalysis={() => setOpenAIAnalysis(false)}
-                isInProgress={isRecommendInProgress}
-                showAlgo
-                collapsed={collapsed}
-                onCollapse={setCollapsed}
-                candidatesScore={candidatesScore}
-                isFirst={recommended.length > 0}
-              />
-          </li>
-          <li>
-            {
-              (isLoading && isNoneLoaded) ?
-                <Skeleton height={60} /> :
-              <CandidateList
-                {...baseProps}
-                rowViews={available}
-                header={byScore ? t('map_project.available_candidates') : t('map_project.all_candidates')}
-                onFetchMore={onFetchMore}
-                bgColor={byScore ? SCORES_COLOR.available : undefined}
-                bucketId={`${rowIndex}-available`}
-                noToolbar
-                showAlgo
-                collapsed={collapsed}
-                onCollapse={setCollapsed}
-                candidatesScore={candidatesScore}
-                isFirst={recommended.length === 0 && available.length > 0}
-              />
-            }
-          </li>
-          <li>
-            {
-              (isLoading && isNoneLoaded) ?
-                <Skeleton height={60} /> :
-              <CandidateList
-                {...baseProps}
-                rowViews={lowRanked}
-                header={t('map_project.low_ranked_candidates')}
-                onFetchMore={onFetchMore}
-                bgColor={SCORES_COLOR.low_ranked}
-                bucketId={`${rowIndex}-low-ranked`}
-                noToolbar
-                showAlgo
-                collapsed={collapsed}
-                onCollapse={setCollapsed}
-                candidatesScore={candidatesScore}
-                isFirst={recommended.length === 0 && available.length === 0 && lowRanked.length > 0}
-              />
-            }
-          </li>
-          <li>
-            {
-              // Transient bucket for candidates whose rerank hasn't landed
-              // yet. They reorganize into recommended/available/low_ranked
-              // automatically once a numeric rerank_score arrives on their
-              // ConceptRow. Neutral gray indicator so it visually reads as
-              // "in progress" rather than "poor match".
-              pendingRerank.length > 0 &&
-                <CandidateList
-                  {...baseProps}
-                  rowViews={pendingRerank}
-                  header={t('map_project.unranked_candidates', 'Unranked Candidates')}
-                  onFetchMore={onFetchMore}
-                  bgColor={SCORES_COLOR.pending_rerank}
-                  bucketId={`${rowIndex}-pending-rerank`}
-                  noToolbar
-                  showAlgo
-                  collapsed={collapsed}
-                  onCollapse={setCollapsed}
-                  candidatesScore={candidatesScore}
-                  isFirst={recommended.length === 0 && available.length === 0 && lowRanked.length === 0}
-                />
-            }
-          </li>
-              </>
-          }
-          {
-            groupBy === 'ai_analysis' &&
-              <>
-                <li>
-                  <CandidateList
-                    {...baseProps}
-                    rowViews={primaryCandidate || []}
-                    header={t('map_project.primary_candidate')}
-                    headerIndicatorIcon={<AssistantIcon color='primary' fontSize='small' sx={{marginRight: '6px', fontSize: '0.95rem'}} />}
-                    onFetchMore={onFetchMore}
-                    bgColor={SCORES_COLOR.recommended}
-                    bucketId={aiPrimaryBucketId}
-                    noToolbar={false}
-                    onDisplayChange={setDisplay}
-                    toolbarControl={
-                      <Button color={(isEmpty(appliedFacets) && !openFilters) ? undefined : 'primary'} sx={{minWidth: 'auto'}} onClick={() => setOpenFilters(!openFilters)} disabled={isEmpty(facets)}>
-                        <Badge badgeContent={flatten(values(appliedFacets).map(v => values(v))).length} color='primary'>
-                          <FilterListIcon sx={{color: (isEmpty(appliedFacets) && !openFilters) ? '#000': 'primary'}} />
-                        </Badge>
-                      </Button>
-                    }
-                    alignToolbarLeft
-                    rightControl={getRightControls()}
-                    analysis={analysis}
-                    showAnalysis
-                    openAnalysis={Boolean(openAIAnalysis)}
-                    onCloseAnalysis={() => setOpenAIAnalysis(false)}
-                    isInProgress={isRecommendInProgress}
-                    showAlgo
-                    showEmptyHeader
-                    collapsed={collapsed}
-                    onCollapse={setCollapsed}
-                    candidatesScore={candidatesScore}
-                    isFirst
-                  />
+              qualitySections.map((section, i) => (
+                <li key={section.id}>
+                  {
+                    (i > 0 && isLoading && isNoneLoaded) ?
+                      <Skeleton height={60} /> :
+                      <CandidateList
+                        {...baseProps}
+                        {...(i === 0 ? toolbarProps : {})}
+                        rowViews={section.rowViews}
+                        header={section.header}
+                        headerIndicatorIcon={section.headerIndicatorIcon}
+                        onFetchMore={onFetchMore}
+                        bgColor={section.bgColor}
+                        bucketId={`${rowIndex}-${section.id}`}
+                        noToolbar={i !== 0}
+                        showAlgo
+                        collapsed={collapsed}
+                        onCollapse={setCollapsed}
+                        candidatesScore={candidatesScore}
+                        isFirst={i === firstQualitySectionWithViews}
+                      />
+                  }
                 </li>
-                <li>
-                  <CandidateList
-                    {...baseProps}
-                    rowViews={aiAlternateCandidates || []}
-                    header={t('map_project.alternate_candidates')}
-                    headerIndicatorIcon={<AssistantIcon color='warning' fontSize='small' sx={{marginRight: '6px', fontSize: '0.95rem'}} />}
-                    onFetchMore={onFetchMore}
-                    bgColor={SCORES_COLOR.available}
-                    bucketId={aiAlternatesBucketId}
-                    noToolbar
-                    showAlgo
-                    showEmptyHeader
-                    collapsed={collapsed}
-                    onCollapse={setCollapsed}
-                    candidatesScore={candidatesScore}
-                  />
-                </li>
-                <li>
-                  <CandidateList
-                    {...baseProps}
-                    rowViews={rest || []}
-                    header={t('map_project.rest')}
-                    onFetchMore={onFetchMore}
-                    bucketId={aiRestBucketId}
-                    noToolbar
-                    showAlgo
-                    collapsed={collapsed}
-                    onCollapse={setCollapsed}
-                    candidatesScore={candidatesScore}
-                  />
-                </li>
-              </>
+              ))
           }
           {
             groupBy === 'algorithm' &&
@@ -900,29 +739,7 @@ const Candidates = ({rowIndex, rowState, conceptCache, targetCanonical, targetRe
                 collapsed={collapsed}
                 onCollapse={setCollapsed}
                 candidatesScore={candidatesScore}
-                {
-                  ...(
-                    i === 0 ?
-                      {
-                        onDisplayChange: setDisplay,
-                        toolbarControl: (
-                          <Button color={(isEmpty(appliedFacets) && !openFilters) ? undefined : 'primary'} sx={{minWidth: 'auto'}} onClick={() => setOpenFilters(!openFilters)} disabled={isEmpty(facets)}>
-                            <Badge badgeContent={flatten(values(appliedFacets).map(v => values(v))).length} color='primary'>
-                              <FilterListIcon sx={{color: (isEmpty(appliedFacets) && !openFilters) ? '#000': 'primary'}} />
-                            </Badge>
-                          </Button>
-                        ),
-                        alignToolbarLeft: true,
-                        rightControl: getRightControls(),
-                        analysis: analysis,
-                        showAnalysis: true,
-                        openAnalysis: Boolean(openAIAnalysis),
-                        onCloseAnalysis: () => setOpenAIAnalysis(false),
-                        isInProgress: isRecommendInProgress
-                      } :
-                    {}
-                  )
-                }
+                {...(i === 0 ? toolbarProps : {})}
               />
           </li>
                       )

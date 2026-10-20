@@ -15,8 +15,8 @@ const LOCALES = {
     name: 'Assistente de IA do OCL',
     banned: [/assistente de IA(?! do OCL)/i, /recomendaç(?:ão|ões)(?: de mapeamento)? (?:de|com) IA\b/i],
   },
-  // zh keeps "AI 推荐" as the "AI Recommended" badge, so its recommendation
-  // strings are checked by key, below.
+  // zh's recommendation strings are checked by key, below: 推荐 alone is
+  // "recommended", as in the Recommended score bucket.
   zh: { name: 'OCL AI 助手', banned: [/(?<!OCL )AI 助手/, /智能助手/] },
 }
 
@@ -40,6 +40,19 @@ const NAMES_THE_ASSISTANT = [
   'set_ai_assistant_output_language',
   'ai_recommendation_failed_retry',
   'ai_recommendation_running',
+  // OpenConceptLab/ocl_issues#2908
+  'ai_pick',
+  'ai_alternate',
+  'ai_disagrees',
+  'ai_disagrees_help',
+  'ai_pick_rank',
+  'ai_pick_unscored',
+  'ai_pick_not_candidate_help',
+  'ai_summary_recommend',
+  'ai_summary_conditional',
+  'ai_summary_no_pick',
+  'ai_summary_reject',
+  'ai_summary_insufficient',
 ]
 
 const load = locale =>

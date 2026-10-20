@@ -15,7 +15,11 @@ import assert from 'node:assert/strict'
 import {
   buildQualityRowViews,
   getTargetRepoQualityViews,
-  getRowRecommendation
+  getRowRecommendation,
+  conceptForMapping,
+  isAIDisagreement,
+  isAIPickTarget,
+  getRowAIStatus
 } from '../viewBuilders.js'
 
 const LOINC = 'http://loinc.org'
@@ -331,4 +335,64 @@ test('getTargetRepoQualityViews: keeps only the target repo\'s concepts', () => 
   conceptCache[bridgeKey] = { key: bridgeKey, reference: { url: 'https://CIELterminology.org', code: '21' }, id: '21', ocl_url: '/orgs/CIEL/sources/CIEL/concepts/21/' }
   assert.deepEqual(codes(getTargetRepoQualityViews(rowState, conceptCache, LOINC, '/orgs/Regenstrief/sources/LOINC/')), ['718-7'])
   assert.equal(getTargetRepoQualityViews(rowState, conceptCache).length, 2)
+})
+
+// ---------- The grid: disagreement filter, Target Code icon, AI column ----------
+
+test('isAIDisagreement: a different pick, a pick that isn\'t a candidate, No match and Not enough to decide disagree', () => {
+  const agreementOf = analysis => decide(HEMOGLOBIN, analysis ? [analysis] : undefined)
+  assert.equal(isAIDisagreement(agreementOf(analysisOf({ recommendation: 'RECOMMEND', pick: '718-7' }))), true)
+  assert.equal(isAIDisagreement(agreementOf(analysisOf({ recommendation: 'RECOMMEND', pick: '12345-6' }))), true)
+  assert.equal(isAIDisagreement(agreementOf(analysisOf({ recommendation: 'REJECT' }))), true)
+  assert.equal(isAIDisagreement(agreementOf(analysisOf({ recommendation: 'INSUFFICIENT' }))), true)
+  assert.equal(isAIDisagreement(agreementOf(analysisOf({ recommendation: 'RECOMMEND', pick: '110885-1' }))), false)
+  assert.equal(isAIDisagreement(agreementOf(analysisOf({ recommendation: 'REJECT', fingerprint: '6-c4a4ged0' }))), false)
+  assert.equal(isAIDisagreement(agreementOf(null)), false)
+  assert.equal(isAIDisagreement(undefined), false)
+})
+
+test('isAIPickTarget: the mapped target is the AI\'s pick, by URL', () => {
+  const result = decide(HEMOGLOBIN, [analysisOf({ recommendation: 'RECOMMEND', pick: '718-7' })])
+  const { rowState, conceptCache } = rowOf(HEMOGLOBIN)
+  const mappedAs = code => conceptForMapping(buildQualityRowViews(rowState, conceptCache).find(view => view.conceptDefinition.id === code))
+  assert.equal(isAIPickTarget(result, mappedAs('718-7')), true)
+  assert.equal(isAIPickTarget(result, mappedAs('110885-1')), false)
+  // a target restored from a saved project has only its id, name and URL
+  assert.equal(isAIPickTarget(result, { id: '718-7', url: '/orgs/Regenstrief/sources/LOINC/concepts/718-7/' }), true)
+  assert.equal(isAIPickTarget(result, null), false)
+  assert.equal(isAIPickTarget(decide(HEMOGLOBIN, [analysisOf({ recommendation: 'REJECT' })]), mappedAs('718-7')), false)
+})
+
+test('isAIPickTarget: a URL whose code is encoded once or twice is the same concept', () => {
+  // A code with "&" reaches the grid as %26 from one place and %2526 from another.
+  const { rowState, conceptCache } = rowOf([['1G40&XS65', 98.9], ['1G40', 90]])
+  Object.values(conceptCache).forEach(def => { def.ocl_url = `/orgs/WHO/sources/ICD-11-WHO/concepts/${encodeURIComponent(encodeURIComponent(def.id))}/` })
+  const result = getRowRecommendation({
+    views: buildQualityRowViews(rowState, conceptCache),
+    analyses: [analysisOf({ recommendation: 'RECOMMEND', pick: '1G40&XS65' })],
+    fingerprint: FINGERPRINT, candidatesScore, conceptCache,
+  })
+  assert.equal(isAIPickTarget(result, { id: '1G40&XS65', url: '/orgs/WHO/sources/ICD-11-WHO/concepts/1G40%26XS65/' }), true)
+  assert.equal(isAIPickTarget(result, { id: '1G40', url: '/orgs/WHO/sources/ICD-11-WHO/concepts/1G40/' }), false)
+})
+
+test('isAIPickTarget: an out-of-date analysis\'s pick is still the AI\'s pick', () => {
+  const result = decide(HEMOGLOBIN, [analysisOf({ recommendation: 'RECOMMEND', pick: '718-7', fingerprint: '6-c4a4ged0' })])
+  assert.equal(isAIPickTarget(result, { id: '718-7', url: '/orgs/Regenstrief/sources/LOINC/concepts/718-7/' }), true)
+})
+
+test('getRowAIStatus: a running or failed call shows over the analysis it would replace', () => {
+  const current = decide(HEMOGLOBIN, [analysisOf({ recommendation: 'RECOMMEND', pick: '718-7' })])
+  assert.equal(getRowAIStatus(current, 0), 'running')
+  assert.equal(getRowAIStatus(current, -2), 'failed')
+  assert.equal(getRowAIStatus(undefined, 0), 'running')
+  assert.equal(getRowAIStatus(current, 1), 'different_pick')
+  assert.equal(getRowAIStatus(current, undefined), 'different_pick')
+})
+
+test('getRowAIStatus: no analysis, or one never run, is empty', () => {
+  assert.equal(getRowAIStatus(decide(HEMOGLOBIN, undefined), 1), null)
+  assert.equal(getRowAIStatus(decide(HEMOGLOBIN, undefined), -3), null)
+  assert.equal(getRowAIStatus(undefined, undefined), null)
+  assert.equal(getRowAIStatus(decide(HEMOGLOBIN, [analysisOf({ recommendation: 'REJECT', fingerprint: '6-c4a4ged0' })]), 1), 'out_of_date')
 })

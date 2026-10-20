@@ -13,7 +13,6 @@ import { getAppTitle } from '../app/DocumentTitle'
 
 import Paper from '@mui/material/Paper'
 import Button from '@mui/material/Button';
-import CircularProgress from '@mui/material/CircularProgress';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton'
 import Tabs from '@mui/material/Tabs';
@@ -105,7 +104,7 @@ import ImportToCollection from './ImportToCollection'
 import ProjectLogs from './ProjectLogs';
 import { useAlgos, ensureConceptIdentity } from './algorithms'
 import { applyRequestSettings, getRequestLimits, getRequestSettings } from './requestLimits'
-import { countQualityBuckets, createBestCandidateScoreCache, filterRowsByQualityBucket, getRowQualities } from './rowQuality'
+import { countQualityBuckets, createRowRecommendationCache, filterRowsByQualityBucket, getRowQualities } from './rowQuality'
 import AutoMatchDialog from './AutoMatchDialog'
 import PreviewLimitDialog from './PreviewLimitDialog'
 import QuotaDialog from '../common/QuotaDialog'
@@ -119,7 +118,8 @@ import { normalizeAlgorithmInvocation, hasSuccessfulAlgorithmResponse, getAlgori
 import { parseConceptKey } from './conceptKey'
 import { normalizeLookupConfig } from './lookupConfigFields'
 import { getDeclaredLocales, getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getSavedTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId } from './projectTargetRepo'
-import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, findTargetRowView, formatBridgeTargetDownloadEntry, resolveAICandidateID, getScoreDetails, getAIAnalysisCandidateIDs, withCachedConcept, withCandidateNames, withOwnNames, withSavedMatch } from './viewBuilders.js'
+import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, findTargetRowView, formatBridgeTargetDownloadEntry, resolveAICandidateID, getScoreDetails, getAIAnalysisCandidateIDs, getRowAIStatus, getRowRecommendation, getTargetRepoQualityViews, isAIDisagreement, isAIPickTarget, withCachedConcept, withCandidateNames, withOwnNames, withSavedMatch } from './viewBuilders.js'
+import { AIAssistantStatusCell, getAIStatusLabel } from './AIAssistantVerdict'
 import { formatClockTime, getCapacityWaitLabel, mergeCapacityWaits } from './rowProgress.js'
 
 import './MapProject.scss'
@@ -288,6 +288,7 @@ const MapProject = () => {
   const [decisionTab, setDecisionTab] = React.useState('candidates')
   const [searchText, setSearchText] = React.useState('')  // csv row search
   const [selectedCandidatesScoreBucket, setSelectedCandidatesScoreBucket] = React.useState(false)
+  const [aiDisagreesFilter, setAIDisagreesFilter] = React.useState(false)
   const [scoreBucketSortBy, setScoreBucketSortBy] = React.useState('desc')
 
   const [matchDialog, setMatchDialog] = React.useState(false)
@@ -1036,18 +1037,6 @@ const MapProject = () => {
     return qualityBucket ? t('map_project.' + qualityBucket) : t('map_project.unranked')
   }
 
-  const getRowAIIndicatorMeta = (index, targetConcept) => {
-    const status = rowStageRef.current[index]?.recommend
-    const { latestAnalysis, primaryCandidateId, alternateCandidateIds } = getAIAnalysisCandidateIDs(analysis[index], conceptCacheRef.current)
-    const targetCode = targetConcept?.id || targetConcept?.reference?.code
-    return {
-      status,
-      latestAnalysis,
-      isPrimaryMatch: Boolean(targetCode && primaryCandidateId && targetCode === primaryCandidateId),
-      isAlternateMatch: Boolean(targetCode && alternateCandidateIds.includes(targetCode)),
-    }
-  }
-
   const getColumnsForTable = () => {
     let cols = []
     forEach(columns, (column, idx) => {
@@ -1128,30 +1117,16 @@ const MapProject = () => {
       width: columnWidth['_targetCode_'] || 360,
       renderCell: params => {
         const targetConcept = getConcept(mapSelected[params.row.__index])
-        const aiMeta = AI_ASSISTANT_API_URL ? getRowAIIndicatorMeta(params.row.__index, targetConcept) : null
         if(targetConcept?.id) {
           return (
             <span style={{display: 'flex', alignItems: 'flex-start', gap: '6px', width: '100%'}}>
               {
-                aiMeta?.status === 0 ?
-                  <Tooltip title={t('map_project.ai_recommendation_running')}>
+                AI_ASSISTANT_API_URL && isAIPickTarget(rowRecommendation(params.row.__index), targetConcept) &&
+                  <Tooltip title={t('map_project.ai_pick')}>
                     <span style={{display: 'inline-flex', paddingTop: '7px'}}>
-                      <CircularProgress size={14} />
+                      <AssistantIcon color='primary' fontSize='small' />
                     </span>
-                  </Tooltip> :
-                aiMeta?.status === -2 ?
-                  <Tooltip title={t('map_project.ai_recommendation_failed_retry')}>
-                    <IconButton size='small' sx={{padding: '4px', marginTop: '3px'}} onClick={e => { e.stopPropagation(); fetchRecommendation(params.row) }}>
-                      <AssistantIcon color='error' fontSize='small' />
-                    </IconButton>
-                  </Tooltip> :
-                aiMeta?.latestAnalysis ?
-                  <Tooltip title={aiMeta.isPrimaryMatch ? t('map_project.ai_recommended') : (aiMeta.isAlternateMatch ? t('map_project.ai_alternate') : t('map_project.ai_analysis'))}>
-                    <span style={{display: 'inline-flex', paddingTop: '7px'}}>
-                      <AssistantIcon color={aiMeta.isPrimaryMatch ? 'primary' : 'warning'} fontSize='small' />
-                    </span>
-                  </Tooltip> :
-                null
+                  </Tooltip>
               }
               <span style={{minWidth: 0, flex: 1}}>
                 <Concept key={`${params.row.__index}-${targetConcept.id}`} sx={{padding: 0}} repoVersion={repoVersion} notClickable firstChild concept={withCandidateNames(targetConcept, rowMatchStateRef.current?.[params.row.__index], conceptCacheRef.current)} noScore onCardClick={false} inputLocale={inputLocale} locales={filters.locale || ''} asTarget />
@@ -1219,6 +1194,32 @@ const MapProject = () => {
         )
       }
     })
+    // The OCL AI Assistant's agreement with the top score, or its call running
+    // or failed (OpenConceptLab/ocl_issues#2908): for users who can run it, or
+    // on a project that has analyses.
+    if(showAIAssistantColumn)
+      cols.push({
+        field: '_aiAssistant_',
+        headerName: t('map_project.ocl_ai_assistant'),
+        width: columnWidth['_aiAssistant_'] || 210,
+        align: 'left',
+        headerAlign: 'left',
+        valueGetter: (_, row) => {
+          const recommendation = rowRecommendation(row.__index)
+          return getAIStatusLabel(t, getRowAIStatus(recommendation, rowStageRef.current[row.__index]?.recommend), recommendation)
+        },
+        renderCell: params => {
+          const recommendation = rowRecommendation(params.row.__index)
+          return (
+            <AIAssistantStatusCell
+              status={getRowAIStatus(recommendation, rowStageRef.current[params.row.__index]?.recommend)}
+              recommendation={recommendation}
+              candidatesScore={candidatesScore}
+              onRetry={() => fetchRecommendation(params.row)}
+            />
+          )
+        }
+      })
     cols.push({
       field: '_bestScore_',
       headerName: t('search.search_score'),
@@ -1410,6 +1411,7 @@ const MapProject = () => {
     setSelectedRowIds([])
     setAlert(false)
     setSelectedCandidatesScoreBucket(false)
+    setAIDisagreesFilter(false)
     setScoreBucketSortBy('desc')
     rowThrottlesRef.current = {}
     setRowStage({})
@@ -2216,6 +2218,125 @@ const MapProject = () => {
     return service
   }
 
+  // Build the v2 AI Assistant payload sections (recommendable_concepts +
+  // bridge_context + target_repo) by reading directly from rowMatchState +
+  // conceptCache. See plans/unified-mapper-model.md "AI Assistant payload
+  // (match-recommend)".
+  const buildV2RecommendationPayload = (rowIndex) => {
+    const projectContext = buildProjectContext()
+    if(!projectContext?.target_repo?.canonical_url) return null
+
+    const rowState = rowMatchStateRef.current?.[rowIndex]
+    if(!rowState || !Object.keys(rowState.candidates || {}).length) return null
+
+    const allNormCandidates = Object.values(rowState.candidates)
+    const defsByKey = new Map()
+    allNormCandidates.forEach(cand => {
+      const def = conceptCacheRef.current[cand.concept_key]
+      if(!def) return
+      const existing = defsByKey.get(def.key)
+      if(!existing || lookupStatusRank(def.lookup_status) > lookupStatusRank(existing.lookup_status))
+        defsByKey.set(def.key, def)
+      if(cand.bridge_concept_key) {
+        const bridgeDef = conceptCacheRef.current[cand.bridge_concept_key]
+        if(bridgeDef && !defsByKey.has(bridgeDef.key)) defsByKey.set(bridgeDef.key, bridgeDef)
+      }
+    })
+
+    const targetCanonical = projectContext.target_repo.canonical_url
+    // Project-pinned identifying property codes. When absent (FHIR-passthrough
+    // sources or repos that haven't pinned a summary), filterPropertyBySummary
+    // passes def.property through whole.
+    const summaryPropertyCodes = repoVersion?.meta?.display?.concept_summary_properties
+    // PR3-H: union of (input_locale, filters.locale). Empty set = no locale
+    // filter applied (backwards-compatible for projects with neither set).
+    const filterLocaleString = (filters?.locale || '')
+    const filterLocales = filterLocaleString ? filterLocaleString.split(',').map(s => s.trim()).filter(Boolean) : []
+    const effectiveLocales = [
+      ...(inputLocale ? [inputLocale] : []),
+      ...filterLocales
+    ]
+    const recommendable_concepts = []
+    const bridge_context = []
+
+    defsByKey.forEach((def, key) => {
+      const isBridgeIntermediary = allNormCandidates.some(c => c.concept_key === key && c.type === 'bridge')
+
+      if(isBridgeIntermediary) {
+        // Bridges are CONTEXT only — never recommendable. Their target_concept_keys
+        // tell the AI which recommendable_concepts they justify.
+        const bridgeCandidate = allNormCandidates.find(c => c.concept_key === key && c.type === 'bridge')
+        const target_concept_keys = [...new Set(
+          allNormCandidates
+            .filter(c => c.type === 'bridge_child' && c.bridge_concept_key === key)
+            .map(c => c.concept_key)
+        )]
+        bridge_context.push({
+          concept_key: key,
+          canonical_reference: def.reference,
+          display_name: def.display_name,
+          score: bridgeCandidate?.score,
+          target_concept_keys
+        })
+      } else if(conceptBelongsToTargetRepo(def, targetCanonical, projectContext.target_repo.relative_url)) {
+        // Target-repo concepts only. Evidence shows which algorithms surfaced
+        // this concept (and via which bridge, if applicable).
+        const evidence = allNormCandidates
+          .filter(c => c.concept_key === key)
+          .map(c => {
+            const e = {
+              algorithm_id: c.algorithm_id,
+              candidate_type: c.type,
+              score: c.score,
+              highlights: c.highlights
+            }
+            if(c.type === 'bridge_child' && c.bridge_concept_key)
+              e.via = {bridge_concept_key: c.bridge_concept_key, bridge_map_type: c.map_type}
+            return e
+          })
+        recommendable_concepts.push(buildRecommendableConceptEntry({
+          def, key, evidence, rowState, summaryPropertyCodes, effectiveLocales
+        }))
+      }
+      // Else: concept from a non-target, non-bridge source — skip
+    })
+
+    // PR3-D3-lite (L-3): drop `concept_class` / `datatype` from every entry
+    // when constant across the surfaced set. LOINC always emits both as
+    // constants ("LOINC" / "Nom"); for mixed-class repos the fields stay.
+    stripConstantClassAndDatatype(recommendable_concepts)
+
+    // PR3-D3-lite (L-6): strip `canonical_url_source` from the target_repo
+    // projection. The field is admin metadata (tells UI whether the canonical
+    // was explicit on the repo vs. derived) — the LLM has no use for it.
+    // eslint-disable-next-line no-unused-vars
+    const { canonical_url_source: _src, ...aiTargetRepo } = projectContext.target_repo
+    return {
+      target_repo: aiTargetRepo,
+      recommendable_concepts,
+      bridge_context
+    }
+  }
+
+  // A row's recommendation (OpenConceptLab/ocl_issues#2908): the rule in
+  // getRowRecommendation, given the row's target-repo candidates with their
+  // scores and the row's OCL AI Assistant analyses. The candidate-pool
+  // fingerprint, which says whether the latest analysis saw these candidates,
+  // is only built for a row that has analyses. Until the target repo is known
+  // no candidate can be mapped, so there are none to recommend.
+  const getRowRecommendationFor = (index, analyses = analysis[index]) => {
+    const targetRepo = buildProjectContext()?.target_repo
+    const hasTargetRepo = Boolean(targetRepo?.canonical_url || targetRepo?.relative_url)
+    const history = Array.isArray(analyses) ? analyses : (analyses ? [analyses] : [])
+    return getRowRecommendation({
+      views: hasTargetRepo ? getTargetRepoQualityViews(rowMatchStateRef.current[index], conceptCacheRef.current, targetRepo.canonical_url, targetRepo.relative_url) : [],
+      analyses: history,
+      fingerprint: history.length ? getCandidatePoolFingerprint(buildV2RecommendationPayload(index)?.recommendable_concepts) : null,
+      candidatesScore,
+      conceptCache: conceptCacheRef.current,
+    })
+  }
+
   // Pick the highest-scoring target-repo ConceptRow for a given rowIndex
   // from the unified-model state. Returns a RowView ({candidate,
   // conceptDefinition, conceptRow, bridgeConceptDefinition?}) or null.
@@ -2243,20 +2364,26 @@ const MapProject = () => {
     return orderBy(eligible, [v => v.conceptRow?.rerank_score ?? -1], ['desc'])[0]
   }
 
-  // Each row's best target-repo candidate score, for the grid's match quality
-  // (ocl_issues#2837). A row is recomputed only when its candidates, a concept
-  // they use, or the target repo changes.
-  const bestCandidateScoreCacheRef = React.useRef(null)
-  if(!bestCandidateScoreCacheRef.current)
-    bestCandidateScoreCacheRef.current = createBestCandidateScoreCache()
-  const getBestCandidateScoreGetter = () => {
+  // Each row's recommendation, for the grid: its match quality
+  // (ocl_issues#2837), its OCL AI Assistant column, Target Code icon and
+  // filter. A row is recomputed only when its candidates, a concept they use,
+  // its analyses or the project context change.
+  const rowRecommendationCacheRef = React.useRef(null)
+  if(!rowRecommendationCacheRef.current)
+    rowRecommendationCacheRef.current = createRowRecommendationCache()
+  const getRowRecommendationGetter = () => {
     const targetRepo = buildProjectContext()?.target_repo
-    return bestCandidateScoreCacheRef.current.getter({
+    return rowRecommendationCacheRef.current.getter({
       rows: rowMatchStateRef.current,
       concepts: conceptCacheRef.current,
-      targetKey: `${targetRepo?.canonical_url || ''}|${targetRepo?.relative_url || ''}`,
-      // this render's pickTopRowView, which sees this render's target repo
-      computeScore: index => pickTopRowView(index)?.conceptRow?.rerank_score,
+      analyses: analysis,
+      // what the rule and the candidate-pool fingerprint read besides the row
+      contextKey: JSON.stringify([
+        targetRepo?.canonical_url, targetRepo?.relative_url, candidatesScore?.recommended, candidatesScore?.available,
+        repoVersion?.meta?.display?.concept_summary_properties, inputLocale, filters?.locale
+      ]),
+      // this render's rule, which sees this render's project context
+      compute: index => getRowRecommendationFor(index),
     })
   }
 
@@ -3125,18 +3252,26 @@ const MapProject = () => {
       rows = filter(rows, row => indexes.includes(row.__index.toString()))
     }
     rows = filterRowsByQualityBucket(rows, rowQualities, selectedCandidatesScoreBucket, scoreBucketSortBy)
+    if(aiDisagreesFilter && aiDisagreesCount)
+      rows = filter(rows, row => isAIDisagreement(rowRecommendation(row.__index)))
     return rows
   }
 
   // Rows with a proposed match count by its score; rows with candidates and no
   // decision yet, by their best candidate (ocl_issues#2837).
+  const rowRecommendation = getRowRecommendationGetter()
   const rowQualities = getRowQualities({
     rowIndexes: data?.length ? map(data, '__index') : [],
     mapSelected,
     decisions,
-    getBestCandidateScore: getBestCandidateScoreGetter(),
+    // Match Quality stays score-only (OpenConceptLab/ocl_issues#2908)
+    getBestCandidateScore: index => rowRecommendation(index)?.top?.conceptRow?.rerank_score,
   }, candidatesScore)
   const { recommended: recommendedCount, available: availableCount, low_ranked: lowRankedCount } = countQualityBuckets(rowQualities)
+  // Rows where the OCL AI Assistant picked another candidate than the top
+  // score, or found no match or too little to decide.
+  const showAIAssistantColumn = Boolean(AI_ASSISTANT_API_URL) && (inAIAssistantGroup || !isEmpty(analysis))
+  const aiDisagreesCount = showAIAssistantColumn ? filter(data, row => isAIDisagreement(rowRecommendation(row.__index))).length : 0
 
   const getStateFromIndex = index => {
     if(rowStatuses.reviewed.includes(index))
@@ -5656,106 +5791,6 @@ const MapProject = () => {
     }
   }
 
-  // Build the v2 AI Assistant payload sections (recommendable_concepts +
-  // bridge_context + target_repo) by reading directly from rowMatchState +
-  // conceptCache. See plans/unified-mapper-model.md "AI Assistant payload
-  // (match-recommend)".
-  const buildV2RecommendationPayload = (rowIndex) => {
-    const projectContext = buildProjectContext()
-    if(!projectContext?.target_repo?.canonical_url) return null
-
-    const rowState = rowMatchStateRef.current?.[rowIndex]
-    if(!rowState || !Object.keys(rowState.candidates || {}).length) return null
-
-    const allNormCandidates = Object.values(rowState.candidates)
-    const defsByKey = new Map()
-    allNormCandidates.forEach(cand => {
-      const def = conceptCacheRef.current[cand.concept_key]
-      if(!def) return
-      const existing = defsByKey.get(def.key)
-      if(!existing || lookupStatusRank(def.lookup_status) > lookupStatusRank(existing.lookup_status))
-        defsByKey.set(def.key, def)
-      if(cand.bridge_concept_key) {
-        const bridgeDef = conceptCacheRef.current[cand.bridge_concept_key]
-        if(bridgeDef && !defsByKey.has(bridgeDef.key)) defsByKey.set(bridgeDef.key, bridgeDef)
-      }
-    })
-
-    const targetCanonical = projectContext.target_repo.canonical_url
-    // Project-pinned identifying property codes. When absent (FHIR-passthrough
-    // sources or repos that haven't pinned a summary), filterPropertyBySummary
-    // passes def.property through whole.
-    const summaryPropertyCodes = repoVersion?.meta?.display?.concept_summary_properties
-    // PR3-H: union of (input_locale, filters.locale). Empty set = no locale
-    // filter applied (backwards-compatible for projects with neither set).
-    const filterLocaleString = (filters?.locale || '')
-    const filterLocales = filterLocaleString ? filterLocaleString.split(',').map(s => s.trim()).filter(Boolean) : []
-    const effectiveLocales = [
-      ...(inputLocale ? [inputLocale] : []),
-      ...filterLocales
-    ]
-    const recommendable_concepts = []
-    const bridge_context = []
-
-    defsByKey.forEach((def, key) => {
-      const isBridgeIntermediary = allNormCandidates.some(c => c.concept_key === key && c.type === 'bridge')
-
-      if(isBridgeIntermediary) {
-        // Bridges are CONTEXT only — never recommendable. Their target_concept_keys
-        // tell the AI which recommendable_concepts they justify.
-        const bridgeCandidate = allNormCandidates.find(c => c.concept_key === key && c.type === 'bridge')
-        const target_concept_keys = [...new Set(
-          allNormCandidates
-            .filter(c => c.type === 'bridge_child' && c.bridge_concept_key === key)
-            .map(c => c.concept_key)
-        )]
-        bridge_context.push({
-          concept_key: key,
-          canonical_reference: def.reference,
-          display_name: def.display_name,
-          score: bridgeCandidate?.score,
-          target_concept_keys
-        })
-      } else if(conceptBelongsToTargetRepo(def, targetCanonical, projectContext.target_repo.relative_url)) {
-        // Target-repo concepts only. Evidence shows which algorithms surfaced
-        // this concept (and via which bridge, if applicable).
-        const evidence = allNormCandidates
-          .filter(c => c.concept_key === key)
-          .map(c => {
-            const e = {
-              algorithm_id: c.algorithm_id,
-              candidate_type: c.type,
-              score: c.score,
-              highlights: c.highlights
-            }
-            if(c.type === 'bridge_child' && c.bridge_concept_key)
-              e.via = {bridge_concept_key: c.bridge_concept_key, bridge_map_type: c.map_type}
-            return e
-          })
-        recommendable_concepts.push(buildRecommendableConceptEntry({
-          def, key, evidence, rowState, summaryPropertyCodes, effectiveLocales
-        }))
-      }
-      // Else: concept from a non-target, non-bridge source — skip
-    })
-
-    // PR3-D3-lite (L-3): drop `concept_class` / `datatype` from every entry
-    // when constant across the surfaced set. LOINC always emits both as
-    // constants ("LOINC" / "Nom"); for mixed-class repos the fields stay.
-    stripConstantClassAndDatatype(recommendable_concepts)
-
-    // PR3-D3-lite (L-6): strip `canonical_url_source` from the target_repo
-    // projection. The field is admin metadata (tells UI whether the canonical
-    // was explicit on the repo vs. derived) — the LLM has no use for it.
-    // eslint-disable-next-line no-unused-vars
-    const { canonical_url_source: _src, ...aiTargetRepo } = projectContext.target_repo
-    return {
-      target_repo: aiTargetRepo,
-      recommendable_concepts,
-      bridge_context
-    }
-  }
-
   // Rows with candidates and no analysis of them yet; fetchRecommendation skips the rest.
   const getAIAnalysableRows = _rows => filter(_rows, _row => {
     const concepts = isNumber(_row?.__index) ? buildV2RecommendationPayload(_row.__index)?.recommendable_concepts : null
@@ -6295,6 +6330,9 @@ const MapProject = () => {
                 recommendedCount={recommendedCount}
                 availableCount={availableCount}
                 lowRankedCount={lowRankedCount}
+                aiDisagreesCount={aiDisagreesCount}
+                aiDisagreesSelected={aiDisagreesFilter}
+                onAIDisagreesClick={() => setAIDisagreesFilter(!aiDisagreesFilter)}
                 decisions={decisions}
                 decisionFilters={decisionFilters}
                 setDecisionFilters={setDecisionFilters}
@@ -6654,6 +6692,7 @@ const MapProject = () => {
                       repoVersion={repoVersion}
                       onFetchRecommendation={fetchRecommendation}
                       analysis={analysis[rowIndex]}
+                      recommendation={rowRecommendation(rowIndex)}
                       columns={getValidColumns()}
                       facets={getFacetsForRow(rowIndex)}
                       appliedFacets={appliedFacets[rowIndex]}
