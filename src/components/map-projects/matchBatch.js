@@ -154,11 +154,17 @@ export const runWithConcurrency = async (items, {
 }
 
 /**
+ * A row's __index as the 1-based row number a user sees in their file.
+ * The grid and the failed-rows warning both use this, so their numbers match.
+ */
+export const rowNumberOf = rowIndex => rowIndex + 1
+
+/**
  * Row __index values as the 1-based row numbers a user sees in their file,
  * with runs collapsed: [60, 61, 62, 110] → '61–63, 111'.
  */
 export const formatRowNumbers = (rowIndexes, {maxRanges = 10} = {}) => {
-  const numbers = [...new Set(rowIndexes)].sort((a, b) => a - b).map(index => index + 1)
+  const numbers = [...new Set(rowIndexes)].sort((a, b) => a - b).map(rowNumberOf)
   const ranges = []
   numbers.forEach(number => {
     const last = ranges[ranges.length - 1]

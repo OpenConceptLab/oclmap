@@ -27,7 +27,7 @@ import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
 import Snackbar from '@mui/material/Snackbar';
-import { DataGrid } from '@mui/x-data-grid';
+import { DataGrid, GRID_CHECKBOX_SELECTION_COL_DEF } from '@mui/x-data-grid';
 
 
 import DoubleArrowIcon from '@mui/icons-material/DoubleArrow';
@@ -112,7 +112,7 @@ import QuotaDialog from '../common/QuotaDialog'
 import { getQuotaError } from '../common/quotaErrors'
 import MapperQuotaChip from './MapperQuotaChip'
 import { getPreviewLimitError, isAIPreviewLimitError } from './previewLimits'
-import { formatRowNumbers, runMatchBatch, requestSingleMatch, runWithConcurrency, INTERACTIVE_WAIT_CAP_MS } from './matchBatch'
+import { formatRowNumbers, rowNumberOf, runMatchBatch, requestSingleMatch, runWithConcurrency, INTERACTIVE_WAIT_CAP_MS } from './matchBatch'
 import { getAIAssistantChoices, getModelUsed, getPromptTemplateKey, createLatestRequestGate } from './aiVisibility'
 import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
 import { normalizeAlgorithmInvocation, hasSuccessfulAlgorithmResponse, getAlgorithmStagesFromResponses, lookupStatusRank, buildRecommendableConceptEntry, stripConstantClassAndDatatype, buildLookupConceptUrl, serializeCandidates, toStoredRowMatchState } from './normalizers'
@@ -1295,7 +1295,38 @@ const MapProject = () => {
         )
       }
     })
-    return cols
+    // Row number from the uploaded file, as a gutter ahead of the checkboxes.
+    // Tied to __index, so it holds under sorting, filtering and search.
+    const rowNumberDigits = String(rowNumberOf(Math.max((data?.length || 1) - 1, 0))).length
+    const rowNumberWidth = Math.max(35, rowNumberDigits * 7 + 8)
+    return [
+      {
+        field: '__rowNumber__',
+        headerName: '',
+        type: 'number',
+        width: rowNumberWidth,
+        minWidth: rowNumberWidth,
+        resizable: false,
+        hideable: false,
+        filterable: false,
+        disableColumnMenu: true,
+        align: 'center',
+        headerAlign: 'center',
+        headerClassName: 'row-number-header',
+        cellClassName: 'row-number-cell',
+        valueGetter: (_, row) => rowNumberOf(row.__index),
+      },
+      {
+        ...GRID_CHECKBOX_SELECTION_COL_DEF,
+        renderHeader: () => (
+          <DataGridPageSelectionHeaderCheckbox
+            selectedRowIds={selectedRowIds}
+            onSelectionChange={handleRowSelectionModelChange}
+          />
+        ),
+      },
+      ...cols
+    ]
   }
 
   const getTargetSourcesFromRows = (cols, _data) => {
@@ -6313,14 +6344,6 @@ const MapProject = () => {
                   disableRowSelectionExcludeModel
                   disableRowSelectionOnClick
                   indeterminateCheckboxAction="select"
-                  checkboxColDef={{
-                    renderHeader: () => (
-                      <DataGridPageSelectionHeaderCheckbox
-                        selectedRowIds={selectedRowIds}
-                        onSelectionChange={handleRowSelectionModelChange}
-                      />
-                    ),
-                  }}
                   slotProps={{
                     panel: {
                       target: filterPanelAnchorEl,
@@ -6361,11 +6384,28 @@ const MapProject = () => {
                         padding: '4px 0 0 0'
                       }
                     },
+                    '.MuiDataGrid-row .MuiDataGrid-cell.row-number-cell': {
+                      backgroundColor: 'surface.n96',
+                      color: 'surface.nv60',
+                      fontSize: '11px',
+                      fontVariantNumeric: 'tabular-nums',
+                      justifyContent: 'center',
+                      textAlign: 'center',
+                      padding: '8px 2px 4px 6px',
+                      userSelect: 'none'
+                    },
+                    // Matches the rows' 8px match-quality border so header and cells line up
+                    '.MuiDataGrid-columnHeaders [role="row"]': {
+                      borderLeft: '8px solid transparent'
+                    },
+                    '.MuiDataGrid-columnHeader.row-number-header': {
+                      padding: '0 2px 0 6px'
+                    },
                     '.MuiDataGrid-columnHeaderCheckbox .MuiDataGrid-columnHeaderTitleContainer': {
                       justifyContent: 'center'
                     },
                     '.MuiDataGrid-columnHeaderCheckbox .MuiCheckbox-root': {
-                      marginLeft: '8px'
+                      marginLeft: 0
                     },
                     '.MuiDataGrid-columnHeaderCheckbox .MuiCheckbox-root .MuiSvgIcon-root, .MuiDataGrid-cellCheckbox .MuiCheckbox-root .MuiSvgIcon-root': {
                       fontSize: '20px'

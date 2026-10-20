@@ -12,7 +12,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { formatRowNumbers, isRetryableMatchError, runMatchBatch, requestSingleMatch, runWithConcurrency } from '../matchBatch.js'
+import { formatRowNumbers, isRetryableMatchError, rowNumberOf, runMatchBatch, requestSingleMatch, runWithConcurrency } from '../matchBatch.js'
 import { createCapacityGate } from '../../../services/capacity.js'
 import { createLatestRequestGate } from '../aiVisibility.js'
 
@@ -231,6 +231,11 @@ test('isRetryableMatchError: network errors and gateway statuses only', () => {
   assert.equal(isRetryableMatchError(httpError(400)), false)
   assert.equal(isRetryableMatchError(httpError(429)), false)
   assert.equal(isRetryableMatchError(new TypeError('x is undefined')), false)
+})
+
+test('rowNumberOf: the grid row number matches the failed-rows warning', () => {
+  assert.equal(rowNumberOf(0), 1)
+  assert.equal(formatRowNumbers([1041]), `${rowNumberOf(1041)}`)
 })
 
 test('formatRowNumbers: 1-based, sorted, de-duplicated, runs collapsed', () => {
