@@ -1,6 +1,7 @@
 /*eslint no-process-env: 0*/
 import 'core-js/features/url-search-params';
 import React from 'react';
+import Mark from 'mark.js';
 import moment from 'moment';
 import { Tooltip } from '@mui/material';
 import {
