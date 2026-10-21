@@ -81,11 +81,12 @@ export const filterRowsByQualityBucket = (rows, qualities, bucket, sortBy) => {
 /**
  * Caches each row's recommendation (getRowRecommendation) across renders, for
  * the grid's Match Quality, OCL AI Assistant and Target Code columns and their
- * filters. A row is recomputed only when its state object, a concept
- * definition its concept rows use, or its analyses change; a change of
- * context (the target repo, the thresholds, what the candidate-pool
- * fingerprint reads) recomputes every row. Rows state, the concept cache and
- * the analyses are replaced, never mutated, so identity checks are enough.
+ * filters. A row with neither candidates nor analyses has none. A row is
+ * recomputed only when its state object, a concept definition its concept
+ * rows use, or its analyses change; a change of context (the target repo, the
+ * thresholds, what the candidate-pool fingerprint reads) recomputes every
+ * row. Rows state, the concept cache and the analyses are replaced, never
+ * mutated, so identity checks are enough.
  *
  * @returns {{getter: function}} getter({rows, concepts, analyses, contextKey, compute})
  *   returns rowIndex => value for one render. compute (rowIndex => value) is
@@ -108,12 +109,14 @@ export const createRowRecommendationCache = () => {
           return byRow.get(index)?.value
         checked.add(index)
         const rowState = rows?.[index]
-        if(!rowState) {
+        const rowAnalyses = analyses?.[index]
+        // A row with analyses and no candidates (a refresh cleared them) still
+        // has a recommendation: its analysis is out of date.
+        if(!rowState && !rowAnalyses?.length) {
           byRow.delete(index)
           return undefined
         }
-        const conceptKeys = Object.keys(rowState.concept_rows || {})
-        const rowAnalyses = analyses?.[index]
+        const conceptKeys = Object.keys(rowState?.concept_rows || {})
         const entry = byRow.get(index)
         const unchanged = entry && entry.rowState === rowState && entry.analyses === rowAnalyses && entry.defs.length === conceptKeys.length &&
           conceptKeys.every((key, i) => entry.defs[i] === concepts?.[key])

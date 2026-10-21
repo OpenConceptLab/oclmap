@@ -637,7 +637,12 @@ const Candidates = ({rowIndex, rowState, conceptCache, targetCanonical, targetRe
     analysis: analysis,
     showAnalysis: true,
     openAnalysis: Boolean(openAIAnalysis),
-    onCloseAnalysis: () => setOpenAIAnalysis(false),
+    // Closing an older analysis returns the badges to the latest one, which
+    // the order and the summary line follow.
+    onCloseAnalysis: () => {
+      setOpenAIAnalysis(false)
+      setAnalysisPage(Math.max(0, analysisCount - 1))
+    },
     isInProgress: isRecommendInProgress,
     summary: <AIAssistantSummary recommendation={recommendation} candidatesScore={candidatesScore} onReadAnalysis={openAIAnalysis ? undefined : onReadAnalysis} />
   }

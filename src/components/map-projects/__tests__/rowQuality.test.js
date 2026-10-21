@@ -163,6 +163,18 @@ test('createRowRecommendationCache: a row with no candidates has no recommendati
   assert.deepEqual(computed, [])
 })
 
+test('createRowRecommendationCache: a row with analyses but no candidates is still computed', () => {
+  // A refresh cleared the row's candidates and the match hasn't answered yet:
+  // its saved analysis is out of date, not gone.
+  const computed = []
+  const cache = createRowRecommendationCache()
+  const analyses = { 4: [{ output: { recommendation: 'RECOMMEND' } }] }
+  const get = cache.getter({ rows: {}, concepts: {}, analyses, contextKey: 't', compute: index => { computed.push(index); return { agreement: 'out_of_date' } } })
+  assert.deepEqual(get(4), { agreement: 'out_of_date' })
+  assert.equal(get(5), undefined)
+  assert.deepEqual(computed, [4])
+})
+
 test('createRowRecommendationCache: uses each render\'s own compute, not the first one it saw', () => {
   // MapProject's first render has no target repo yet, so its rule sees no
   // candidates; a later render's must be the one used.
