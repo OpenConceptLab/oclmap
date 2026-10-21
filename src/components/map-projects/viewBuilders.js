@@ -731,7 +731,7 @@ export const getRowRecommendation = ({ views = [], analyses, fingerprint, candid
 }
 
 // The agreement states the grid's "OCL AI Assistant disagrees" filter shows.
-export const AI_DISAGREEMENTS = ['different_pick', 'pick_not_candidate', 'no_match', 'not_enough']
+const AI_DISAGREEMENTS = ['different_pick', 'pick_not_candidate', 'no_match', 'not_enough']
 
 export const isAIDisagreement = recommendation => AI_DISAGREEMENTS.includes(recommendation?.agreement)
 
