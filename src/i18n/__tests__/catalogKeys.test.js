@@ -30,6 +30,10 @@ for (const locale of LOCALES)
 // Keys built at run time ('a.' + id, `a.${id}`) aren't read.
 const LITERAL_KEY = /(?:\bt\(\s*|\bi18nKey=\{?\s*)(['"`])([A-Za-z_]+(?:\.[A-Za-z0-9_]+)+)\1(?!\s*\+)/g
 
+// A plural key, t('a.b', {count}), is in the catalog as a.b_one, a.b_other and
+// so on.
+const inEnglish = key => english.has(key) || english.has(`${key}_other`)
+
 // The .js and .jsx files under src/, outside the test folders.
 const SOURCES = readdirSync(SRC_DIR, { recursive: true })
   .filter(file => /\.jsx?$/.test(file) && !/(^|[\\/])__(tests|integration)__[\\/]/.test(file))
@@ -38,7 +42,7 @@ test('every literal key in the source is in the English catalog', () => {
   const missing = SOURCES.flatMap(file =>
     [...readFileSync(path.join(SRC_DIR, file), 'utf8').matchAll(LITERAL_KEY)]
       .map(match => match[2])
-      .filter(key => !english.has(key))
+      .filter(key => !inEnglish(key))
       .map(key => `${file}: ${key}`)
   )
   assert.deepEqual(missing, [])

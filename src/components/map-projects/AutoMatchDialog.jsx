@@ -1,10 +1,9 @@
 import React from 'react'
-import { useTranslation } from 'react-i18next'
+import { useTranslation, Trans } from 'react-i18next'
 
 import Dialog from '@mui/material/Dialog';
 import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
-import DialogActions from '@mui/material/DialogActions';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import FormControl from '@mui/material/FormControl';
 import Checkbox from '@mui/material/Checkbox';
@@ -15,6 +14,8 @@ import Radio from '@mui/material/Radio';
 import FormLabel from '@mui/material/FormLabel';
 import Chip from '@mui/material/Chip'
 import Alert from '@mui/material/Alert';
+import Box from '@mui/material/Box';
+import Tooltip from '@mui/material/Tooltip';
 
 import DoubleArrowIcon from '@mui/icons-material/DoubleArrow';
 
@@ -24,9 +25,12 @@ import CloseIconButton from '../common/CloseIconButton'
 import TagCountLabel from '../common/TagCountLabel'
 import RepoChip from '../repos/RepoVersionChip'
 import AIAssistantSelectorPanel from './AIAssistantSelectorPanel'
-import { getMapperPreview } from '../../common/utils'
-import { getRowCapByMatchOperations, getAutoMatchBlocker } from './autoMatchRows'
+import { getAutoMatchBlocker } from './autoMatchRows'
+// A private package can fill this checkpoint in; see autoMatchCheck.js.
+import useAutoMatchCheck from '@openconceptlab/oclmap-extensions'
 
+// Lines an option's sub-text up with its checkbox label.
+const SUBTEXT_SX = {margin: '-6px 0 0 32px'}
 
 const AutoMatchDialog = ({
   open,
@@ -51,22 +55,22 @@ const AutoMatchDialog = ({
   retrieveCandidates: retrieveCandidatesChecked,
   setRetrieveCandidates,
   canSelectAIModel,
-  previewEligibleRowIndexes,
+  eligibleRowIndexes,
   matchAlgorithmIds,
   aiOnlyRowCounts,
   onConfigure
 }) => {
   const { t } = useTranslation()
-  const [confirmAllIncludingApproved, setConfirmAllIncludingApproved] = React.useState(false)
-  const previewEligibleRowIndexSet = React.useMemo(
-    () => Array.isArray(previewEligibleRowIndexes) ? new Set(previewEligibleRowIndexes.map(id => id?.toString())) : null,
-    [previewEligibleRowIndexes]
+  // Rows a run may include; null means every row.
+  const eligibleRowIndexSet = React.useMemo(
+    () => Array.isArray(eligibleRowIndexes) ? new Set(eligibleRowIndexes.map(id => id?.toString())) : null,
+    [eligibleRowIndexes]
   )
   const countEligible = React.useCallback(
-    rowIndexes => previewEligibleRowIndexSet ?
-      rowIndexes.filter(index => previewEligibleRowIndexSet.has(index?.toString())).length :
+    rowIndexes => eligibleRowIndexSet ?
+      rowIndexes.filter(index => eligibleRowIndexSet.has(index?.toString())).length :
       rowIndexes.length,
-    [previewEligibleRowIndexSet]
+    [eligibleRowIndexSet]
   )
   const unmappedRowsCount = countEligible(rowStatuses.unmapped)
   const readyForReviewRowsCount = countEligible(rowStatuses.readyForReview)
@@ -91,55 +95,13 @@ const AutoMatchDialog = ({
   const isAIOnly = runAI && !retrieveCandidates
   const aiRowsToAnalyse = isAIOnly ? (aiOnlyRowCounts?.analyse || 0) : 0
 
-  // One-time allowance (R2, no reset). Each row costs one match operation per
-  // selected algorithm that calls $match (TQ6); scispacy, custom algorithms
-  // with their own url and a bridge the user can't run don't spend any.
-  const preview = getMapperPreview()
+  // Selected algorithms that call $match.
   const matchAlgorithmIdSet = React.useMemo(() => new Set(matchAlgorithmIds || []), [matchAlgorithmIds])
   const matchAlgorithmCount = retrieveCandidates ? runnableAlgos.filter(algo => matchAlgorithmIdSet.has(algo.id)).length : 0
-  const operationsRemaining = (preview.matchOperations.unlimited || !matchAlgorithmCount) ? null : preview.matchOperations.remaining
-  const rowCap = getRowCapByMatchOperations(preview.matchOperations, matchAlgorithmCount)
-  const willTruncate = rowCap !== null && rowsToMatchCount > rowCap
-  const isPreviewQuotaExhausted = willTruncate && rowCap <= 0
-  const rowsThisRun = willTruncate ? rowCap : rowsToMatchCount
-  const estimatedOperations = rowsThisRun * matchAlgorithmCount
-  // One $invoke per row. The AI quota never caps rows: once it runs out, the
-  // rest of the run is matched without AI recommendations.
-  const aiCallsRemaining = preview.aiAssistantCalls.unlimited ? null : preview.aiAssistantCalls.remaining
-  const aiRows = isAIOnly ? aiRowsToAnalyse : rowsThisRun
-  const aiRowsCovered = (runAI && aiCallsRemaining !== null) ? Math.min(aiCallsRemaining, aiRows) : null
-  const getPreviewEstimate = () => {
-    if(isPreviewQuotaExhausted)
-      return t('map_project.preview_estimate_no_operations_left')
-    const parts = []
-    if(operationsRemaining !== null)
-      parts.push(t('map_project.preview_estimate_match', {
-        rows: rowsThisRun.toLocaleString(),
-        algorithms: matchAlgorithmCount.toLocaleString(),
-        used: estimatedOperations.toLocaleString(),
-        remaining: operationsRemaining.toLocaleString()
-      }))
-    if(willTruncate)
-      parts.push(t('map_project.preview_estimate_will_truncate', {
-        allowed: rowsThisRun.toLocaleString(),
-        requested: rowsToMatchCount.toLocaleString()
-      }))
-    if(aiRowsCovered !== null && aiRows > 0) {
-      if(aiRowsCovered >= aiRows)
-        parts.push(t('map_project.preview_estimate_ai_all', {count: aiRows.toLocaleString()}))
-      else if(aiRowsCovered === 0) {
-        if(!isAIOnly)
-          parts.push(t('map_project.preview_estimate_ai_none'))
-      }
-      else
-        parts.push(t(isAIOnly ? 'map_project.preview_estimate_ai_only_partial' : 'map_project.preview_estimate_ai_partial', {
-          covered: aiRowsCovered.toLocaleString(),
-          rest: (aiRows - aiRowsCovered).toLocaleString()
-        }))
-    }
-    return parts.join(' ')
-  }
-  const previewEstimate = rowsToMatchCount > 0 && (operationsRemaining !== null || aiRowsCovered !== null) ? getPreviewEstimate() : ''
+  const check = useAutoMatchCheck({
+    open, autoMatchScope, rowsToMatchCount, totalRows, retrieveCandidates, matchAlgorithmCount,
+    runAI, isAIOnly, aiRowsToAnalyse, inAIAssistantGroup
+  })
 
   React.useEffect(() => {
     if (autoMatchScope === 'unmapped' && !hasUnmappedRows) {
@@ -150,49 +112,23 @@ const AutoMatchDialog = ({
     }
   }, [autoMatchScope, hasApprovedRows, hasUnmappedRows, setAutoMatchScope])
 
-  React.useEffect(() => {
-    if(!open || !isAllIncludingApproved)
-      setConfirmAllIncludingApproved(false)
-  }, [isAllIncludingApproved, open])
+  // A notice that changes what the run does needs a tick before Submit. Any
+  // change to the selection clears the ticks.
+  const [confirmed, setConfirmed] = React.useState({})
+  const confirmationKey = [open, autoMatchScope, retrieveCandidates, runAI, rowsToMatchCount, ...(check.notices || []).map(notice => notice.text)].join('|')
+  React.useEffect(() => setConfirmed({}), [confirmationKey])
 
   const scopeOptions = [
     {
       value: 'selected',
       disabled: !hasSelectedRows,
-      label: t('map_project.selected_rows'),
+      label: t('map_project.auto_match_scope_selected'),
       count: hasSelectedRows ? selectedRowCount : false,
-      helperText: hasSelectedRows ?
-        t('map_project.auto_match_selected_rows_note', {count: selectedRowCount.toLocaleString()}) :
-        t('map_project.auto_match_selected_rows_note_no_count')
+      disabledTooltip: t('map_project.auto_match_selected_rows_note_no_count')
     },
-    {
-      value: 'unmapped',
-      disabled: !hasUnmappedRows,
-      count: unmappedRowsCount,
-      label: t('map_project.unmapped_only'),
-      helperText: t('map_project.auto_match_unmapped_only_note')
-    },
-    {
-      value: 'all',
-      disabled: false,
-      count: allRowsCount,
-      label: t('map_project.unmapped_and_proposed'),
-      helperText: t('map_project.auto_match_note', {
-        approvedCount: reviewedRowsCount.toLocaleString(),
-        proposedCount: readyForReviewRowsCount.toLocaleString()
-      })
-    },
-    {
-      value: 'allIncludingApproved',
-      disabled: !hasApprovedRows,
-      count: totalRows,
-      label: t('map_project.all_including_approved'),
-      warning: true,
-      helperText: t('map_project.auto_match_all_including_approved_note', {
-        approvedCount: reviewedRowsCount.toLocaleString(),
-        proposedCount: readyForReviewRowsCount.toLocaleString()
-      })
-    }
+    {value: 'unmapped', disabled: !hasUnmappedRows, label: t('map_project.auto_match_scope_unmapped'), count: unmappedRowsCount},
+    {value: 'all', disabled: false, label: t('map_project.auto_match_scope_unmapped_proposed'), count: allRowsCount},
+    {value: 'allIncludingApproved', disabled: !hasApprovedRows, label: t('map_project.auto_match_scope_all'), count: totalRows}
   ]
 
   const blocker = getAutoMatchBlocker({
@@ -200,22 +136,41 @@ const AutoMatchDialog = ({
     hasAlgorithms,
     retrieveCandidates,
     runAI,
-    aiRowsToAnalyse,
-    aiCallsRemaining
+    aiRowsToAnalyse
   })
   const blockerMessages = {
     no_rows: t('map_project.auto_match_blocked_no_rows'),
-    no_algorithms: t(inAIAssistantGroup ? 'map_project.auto_match_blocked_no_algorithms_ai' : 'map_project.auto_match_blocked_no_algorithms'),
-    no_step: t(inAIAssistantGroup ? 'map_project.auto_match_blocked_no_step_ai' : 'map_project.auto_match_blocked_no_step'),
+    no_algorithms: t(inAIAssistantGroup ? 'map_project.auto_match_blocked_no_algorithms_ai_v2' : 'map_project.auto_match_blocked_no_algorithms'),
+    no_step: t(inAIAssistantGroup ? 'map_project.auto_match_blocked_no_step_ai_v2' : 'map_project.auto_match_blocked_no_step'),
     no_ai_rows: t('map_project.auto_match_blocked_no_ai_rows'),
-    no_ai_calls: t('map_project.auto_match_blocked_no_ai_calls'),
   }
+
+  // What the selection will do, shown by Submit rather than next to each option.
+  const notices = []
+  if(blocker)
+    notices.push({key: 'blocker', severity: 'warning', text: blockerMessages[blocker]})
+  if(autoMatchScope === 'all' && readyForReviewRowsCount > 0)
+    notices.push({key: 'replaces_proposed', severity: 'info', text: t('map_project.auto_match_notice_replaces_proposed', {count: readyForReviewRowsCount})})
+  if(isAllIncludingApproved)
+    notices.push({
+      key: 'overwrites_approved',
+      severity: 'warning',
+      text: t('map_project.auto_match_notice_overwrites', {approved: reviewedRowsCount.toLocaleString(), proposed: readyForReviewRowsCount.toLocaleString()}),
+      confirm: t('map_project.auto_match_all_including_approved_confirm', {approvedCount: reviewedRowsCount.toLocaleString()})
+    })
+  if(isAIOnly && rowsToMatchCount > 0 && aiOnlyRowCounts && aiRowsToAnalyse > 0)
+    notices.push({
+      key: 'ai_only_rows',
+      severity: 'info',
+      text: t('map_project.auto_match_ai_only_rows', {analyse: aiOnlyRowCounts.analyse.toLocaleString(), skip: aiOnlyRowCounts.skip.toLocaleString()})
+    })
+
+  notices.push(...(check.notices || []))
 
   const isDisabled =
     !repoVersion?.version_url ||
     Boolean(blocker) ||
-    isPreviewQuotaExhausted ||
-    (isAllIncludingApproved && !confirmAllIncludingApproved)
+    notices.some(notice => notice.blocks || (notice.confirm && !confirmed[notice.key]))
 
   return (
     <Dialog
@@ -227,7 +182,9 @@ const AutoMatchDialog = ({
           borderRadius: '28px',
           minWidth: '312px',
           minHeight: '262px',
-          padding: 0
+          padding: 0,
+          margin: {xs: '16px', sm: '32px'},
+          maxHeight: {xs: 'calc(100% - 32px)', sm: 'calc(100% - 64px)'}
         }
       }}
     >
@@ -235,85 +192,72 @@ const AutoMatchDialog = ({
         <span>{t('map_project.auto_match')}</span>
         <CloseIconButton onClick={onClose} />
       </DialogTitle>
-      <DialogContent>
-        {
-          previewEstimate &&
-            <Alert severity={isPreviewQuotaExhausted ? 'error' : (willTruncate ? 'warning' : 'info')} sx={{marginBottom: '8px'}}>
-              {previewEstimate}
-            </Alert>
-        }
+      <DialogContent sx={{paddingBottom: '12px'}}>
         <div className='col-xs-12 padding-0' style={{display: 'flex', alignItems: 'center', fontSize: '1rem'}}>
-          {t('map_project.target_repository')}
+          {t('map_project.auto_match_target_repository')}
           {
             repoVersion?.id &&
-              <RepoChip repo={repoVersion} hideType sx={{marginLeft: '16px'}} />
+              <RepoChip repo={repoVersion} hideType sx={{marginLeft: '12px'}} />
           }
         </div>
-        <FormControl sx={{marginTop: '10px'}}>
-          <FormLabel id="automatch-rows" sx={{color: 'rgba(0, 0, 0, 0.87)'}}>{`${t('map_project.rows_to_match')}: ${rowsToMatchCount.toLocaleString()} ${t('map_project.out_of')} ${totalRows.toLocaleString()}` }</FormLabel>
+        <FormControl sx={{marginTop: '12px', width: '100%'}}>
+          <FormLabel id="automatch-rows" sx={{color: 'rgba(0, 0, 0, 0.87)', '&.Mui-focused': {color: 'rgba(0, 0, 0, 0.87)'}}}>
+            <Trans
+              i18nKey='map_project.auto_match_input_rows'
+              values={{rows: rowsToMatchCount.toLocaleString(), total: totalRows.toLocaleString()}}
+              components={{b: <b />}}
+            />
+          </FormLabel>
           <RadioGroup
-            sx={{marginLeft: '12px'}}
+            sx={{marginLeft: {xs: '12px', sm: '35px'}, marginTop: '2px'}}
             aria-labelledby="automatch-rows"
             name="automatch-rows"
             value={autoMatchScope}
             onChange={event => setAutoMatchScope(event.target.value)}
           >
             {
-              scopeOptions.map(option => (
-                <div key={option.value}>
+              scopeOptions.map(option => {
+                const control = (
                   <FormControlLabel
+                    key={option.value}
                     value={option.value}
                     disabled={option.disabled}
-                    control={<Radio size='small' />}
+                    control={<Radio size='small' sx={{padding: '5px 8px'}} />}
                     label={<TagCountLabel label={option.label} count={option.count} normal />}
                     sx={{marginRight: 0}}
                   />
-                  <FormHelperText sx={{margin: '-8px 0 0 28px', color: option.warning && autoMatchScope === option.value ? 'warning.main' : undefined}}>
-                      {option.helperText}
-                    </FormHelperText>
-                  {
-                    autoMatchScope === option.value && option.value === 'allIncludingApproved' &&
-                      <FormControlLabel
-                        sx={{marginLeft: '17px', marginTop: '-4px', marginRight: 0}}
-                        control={
-                          <Checkbox
-                            size='small'
-                            checked={confirmAllIncludingApproved}
-                            onChange={event => setConfirmAllIncludingApproved(event.target.checked)}
-                          />
-                        }
-                        label={t('map_project.auto_match_all_including_approved_confirm', {
-                          approvedCount: reviewedRowsCount.toLocaleString()
-                        })}
-                      />
-                  }
-                </div>
-              ))
+                )
+                return option.disabled && option.disabledTooltip ?
+                  <Tooltip key={option.value} title={option.disabledTooltip} placement='top-start'><span style={{width: 'fit-content'}}>{control}</span></Tooltip> :
+                  control
+              })
             }
           </RadioGroup>
         </FormControl>
 
-        <FormControl sx={{marginTop: '8px'}}>
-          <FormControlLabel control={<Checkbox checked={retrieveCandidates} disabled={!hasAlgorithms} onChange={event => setRetrieveCandidates(event.target.checked)} />} label={t('map_project.retrieve_candidates')} />
+        <FormControl sx={{marginTop: '8px', width: '100%'}}>
+          <FormControlLabel
+            sx={{marginRight: 0}}
+            control={<Checkbox checked={retrieveCandidates} disabled={!hasAlgorithms} onChange={event => setRetrieveCandidates(event.target.checked)} />}
+            label={t('map_project.auto_match_retrieve_candidates')}
+          />
           {
             hasAlgorithms ?
               <>
-                <FormLabel id="algorithms" sx={{marginTop: '-4px', marginLeft: '12px'}}>
+                <FormHelperText sx={SUBTEXT_SX}>
                   {t('map_project.retrieve_candidates_helper_text')}
-                </FormLabel>
-                <div className='col-xs-12 padding-0' style={{marginLeft: '8px'}}>
+                </FormHelperText>
+                <Box sx={{display: 'flex', flexWrap: 'wrap', gap: '4px', margin: '4px 0 0 32px'}}>
                   {
-                    runnableAlgos.map(algo => {
-                      return (
-                        <Chip variant='outlined' size='small' color='warning' label={algo.id} key={algo.id} sx={{margin: '4px'}} />
-                      )
-                    })
+                    runnableAlgos.map(algo => (
+                      <Chip variant='outlined' size='small' color='warning' label={algo.id} key={algo.id} />
+                    ))
                   }
-                </div>
+                </Box>
               </> :
               <Alert
                 severity='warning'
-                sx={{marginTop: '4px', marginLeft: '12px'}}
+                sx={{margin: '4px 0 0 32px'}}
                 action={
                   onConfigure &&
                     <Button variant='contained' color='primary' size='small' sx={{textTransform: 'none', whiteSpace: 'nowrap'}} onClick={onConfigure}>
@@ -328,31 +272,20 @@ const AutoMatchDialog = ({
 
         {
           inAIAssistantGroup &&
-            <>
+            <FormControl sx={{marginTop: '8px', width: '100%'}}>
               <FormControlLabel
-                sx={{marginTop: '8px', width: '100%'}}
+                sx={{marginRight: 0}}
                 control={
                   <Checkbox
                     checked={autoRunAIAnalysis}
                     onChange={event => setAutoRunAIAnalysis(event.target.checked)}
                   />
                 }
-                label={
-                  <span>{t('map_project.run_ai_analysis')}</span>
-                }
+                label={t('map_project.auto_match_ai_label')}
               />
-              <FormHelperText sx={{marginTop: '-4px'}}>
-                {t('map_project.run_ai_analysis_note')}
+              <FormHelperText sx={SUBTEXT_SX}>
+                {t('map_project.auto_match_ai_description')}
               </FormHelperText>
-              {
-                isAIOnly && rowsToMatchCount > 0 && aiOnlyRowCounts &&
-                  <Alert severity={aiRowsToAnalyse ? 'info' : 'warning'} sx={{marginTop: '8px'}}>
-                    {t('map_project.auto_match_ai_only_rows', {
-                      analyse: aiOnlyRowCounts.analyse.toLocaleString(),
-                      skip: aiOnlyRowCounts.skip.toLocaleString()
-                    })}
-                  </Alert>
-              }
               {
                 autoRunAIAnalysis && canSelectAIModel &&
                   <AIAssistantSelectorPanel
@@ -362,30 +295,58 @@ const AutoMatchDialog = ({
                     models={AIModels}
                     selectedModel={AIModel}
                     onModelChange={setAIModel}
-                    sx={{marginTop: '12px', marginLeft: '12px'}}
+                    sx={{marginTop: '12px', marginLeft: '32px'}}
                   />
               }
-            </>
+            </FormControl>
         }
       </DialogContent>
-      <DialogActions sx={{padding: '16px'}}>
+      <Box sx={{borderTop: '1px solid', borderColor: 'divider', padding: '12px 16px 16px 24px'}}>
         {
-          blocker &&
-            <FormHelperText sx={{margin: 0, color: 'warning.main'}}>
-              {blockerMessages[blocker]}
-            </FormHelperText>
+          notices.length > 0 &&
+            <Box sx={{display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px'}}>
+              {
+                notices.map(notice => (
+                  <Alert
+                    key={notice.key}
+                    severity={notice.severity}
+                    sx={{padding: '0 12px', fontSize: '13px', '& .MuiAlert-icon': {padding: '6px 0', marginRight: '8px', fontSize: '20px'}, '& .MuiAlert-message': {padding: '7px 0'}}}
+                  >
+                    {notice.text}
+                    {
+                      notice.confirm &&
+                        <FormControlLabel
+                          sx={{display: 'flex', alignItems: 'flex-start', margin: '2px 0 0 -6px', '& .MuiCheckbox-root': {marginTop: '-1px'}}}
+                          control={
+                            <Checkbox
+                              size='small'
+                              sx={{padding: '3px'}}
+                              checked={Boolean(confirmed[notice.key])}
+                              onChange={event => setConfirmed(prev => ({...prev, [notice.key]: event.target.checked}))}
+                            />
+                          }
+                          label={<span style={{fontSize: '13px', fontWeight: 500}}>{notice.confirm}</span>}
+                        />
+                    }
+                  </Alert>
+                ))
+              }
+            </Box>
         }
-        <Button
-          variant='contained'
-          size='small'
-          sx={{textTransform: 'none', marginLeft: '12px'}}
-          endIcon={<DoubleArrowIcon />}
-          disabled={isDisabled}
-          onClick={event => onSubmit(event, retrieveCandidates ? map(runnableAlgos, val => val?.id) : [])}
-        >
-          {t('common.submit')}
-        </Button>
-      </DialogActions>
+        <Box sx={{display: 'flex', alignItems: 'flex-end', flexWrap: 'wrap', gap: '12px'}}>
+          {check.summary && <Box sx={{flex: '1 1 300px', minWidth: 0}}>{check.summary}</Box>}
+          <Button
+            variant='contained'
+            size='small'
+            sx={{textTransform: 'none', marginLeft: 'auto'}}
+            endIcon={<DoubleArrowIcon />}
+            disabled={isDisabled}
+            onClick={event => onSubmit(event, retrieveCandidates ? map(runnableAlgos, val => val?.id) : [])}
+          >
+            {t('common.submit')}
+          </Button>
+        </Box>
+      </Box>
     </Dialog>
   )
 }

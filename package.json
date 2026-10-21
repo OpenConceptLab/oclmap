@@ -1,6 +1,6 @@
 {
   "name": "ocl-map",
-  "version": "1.0.32-beta",
+  "version": "1.0.34-beta",
   "private": true,
   "main": "index.js",
   "homepage": ".",
@@ -17,6 +17,7 @@
     "i18next": "^22.4.9",
     "jquery": "^3.7.1",
     "lodash": "^4.17.23",
+    "mark.js": "8.11.1",
     "moment": "^2.30.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
