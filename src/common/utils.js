@@ -434,17 +434,9 @@ export const getFHIRServerConfigFromCurrentContext = () => {
     return getLocalFHIRServerConfig() || getDefaultFHIRServerConfig();
 }
 
-export const canSwitchServer = () => {
-  const user = getCurrentUser();
-
-  return Boolean(
-    getSelectedServerConfig() ||
-    get(user, 'is_superuser') ||
-      hasAuthGroup(user, 'server')
-  );
-}
-
-export const hasAuthGroup = (user, groupName) => Boolean(find(user?.auth_groups, group => group.includes(groupName)))
+// Matches the group's exact name, never a group whose name contains it
+// (OpenConceptLab/ocl_online#517).
+export const hasAuthGroup = (user, groupName) => Boolean(user?.auth_groups?.includes(groupName))
 
 export const canViewOperationsPanel = () => {
   const user = getCurrentUser()

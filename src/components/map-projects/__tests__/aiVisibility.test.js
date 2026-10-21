@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { canSeeAIInternals, getAIAssistantChoices, getModelUsed, getPromptTemplateKey, createLatestRequestGate } from '../aiVisibility.js'
+import { AI_OUTPUT_LOCALE_PERMISSION, canSeeAIInternals, getAIAssistantChoices, getModelUsed, getPromptTemplateKey, createLatestRequestGate } from '../aiVisibility.js'
 
 test('canSeeAIInternals: staff and superusers see the model, prompt template, URI and raw JSON', () => {
   assert.equal(canSeeAIInternals({ is_staff: true }), true)
@@ -13,9 +13,8 @@ test('canSeeAIInternals: a non-staff core user does not', () => {
   assert.equal(canSeeAIInternals({ is_staff: false, is_superuser: false, auth_groups: ['core_user'] }), false)
 })
 
-test('canSeeAIInternals: early-access, preview and signed-out users do not', () => {
-  assert.equal(canSeeAIInternals({ auth_groups: ['early_access'] }), false)
-  assert.equal(canSeeAIInternals({ auth_groups: ['preview'] }), false)
+test('canSeeAIInternals: other and signed-out users do not', () => {
+  assert.equal(canSeeAIInternals({ auth_groups: ['mapper_ai_assistant'] }), false)
   assert.equal(canSeeAIInternals(null), false)
   assert.equal(canSeeAIInternals(undefined), false)
 })
@@ -26,17 +25,17 @@ test('getAIAssistantChoices: staff and superusers choose the model, the prompt t
   assert.deepEqual(getAIAssistantChoices({ is_superuser: true }), both)
 })
 
-test('getAIAssistantChoices: non-staff core, early-access and unlimited-AI users choose the output language only', () => {
+test('getAIAssistantChoices: non-staff users granted the output language choose it only', () => {
   const localeOnly = { canSelectAIModel: false, canSetAIOutputLocale: true }
-  assert.deepEqual(getAIAssistantChoices({ is_staff: false, auth_groups: ['core_user'] }), localeOnly)
-  assert.deepEqual(getAIAssistantChoices({ auth_groups: ['early_access'] }), localeOnly)
-  assert.deepEqual(getAIAssistantChoices({ auth_groups: ['preview'] }, { unlimitedAICalls: true }), localeOnly)
+  assert.deepEqual(getAIAssistantChoices({ permissions: ['users.mapper_ai_assistant', AI_OUTPUT_LOCALE_PERMISSION] }), localeOnly)
+  assert.equal(AI_OUTPUT_LOCALE_PERMISSION, 'users.mapper_ai_output_locale')
 })
 
-test('getAIAssistantChoices: preview and signed-out users choose nothing', () => {
+test('getAIAssistantChoices: other users choose nothing, whatever their groups', () => {
   const none = { canSelectAIModel: false, canSetAIOutputLocale: false }
-  assert.deepEqual(getAIAssistantChoices({ auth_groups: ['preview'] }), none)
-  assert.deepEqual(getAIAssistantChoices({ auth_groups: ['preview'] }, { unlimitedAICalls: false }), none)
+  assert.deepEqual(getAIAssistantChoices({ permissions: ['users.mapper_ai_assistant'] }), none)
+  assert.deepEqual(getAIAssistantChoices({ auth_groups: ['mapper-approved'], permissions: [] }), none)
+  assert.deepEqual(getAIAssistantChoices({ auth_groups: ['mapper_ai_output_locale'] }), none)
   assert.deepEqual(getAIAssistantChoices(null), none)
   assert.deepEqual(getAIAssistantChoices(undefined), none)
 })

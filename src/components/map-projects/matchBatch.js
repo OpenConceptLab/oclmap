@@ -101,9 +101,10 @@ export const runMatchBatch = async ({
 
 /**
  * The bulk Auto Match scheduler: runs each item through run(item) with at most
- * concurrency in flight. While the gate is paused (a request got a 429) it
- * sends nothing new, and waits for the gate to reopen or a request in flight
- * to settle, so a throttled run doesn't drain its queue into more refusals.
+ * concurrency in flight, or fewer while the gate's server suggests fewer
+ * (OpenConceptLab/ocl_online#517). While the gate is paused (a request got a
+ * 429) it sends nothing new, and waits for the gate to reopen or a request in
+ * flight to settle, so a throttled run doesn't drain its queue into more refusals.
  * It holds the queue for at most maxHoldMs in all, however often the pause is
  * extended; after that, and for a pause longer than what's left of it, the
  * items go out and wait (or end throttled) as requests of their own.
@@ -120,8 +121,9 @@ export const runWithConcurrency = async (items, {
   const active = new Set()
   let heldMs = 0
   const isHeld = () => Boolean(gate?.isPaused() && gate.pausedForMs() <= maxHoldMs - heldMs)
+  const getLimit = () => Math.min(concurrency, gate?.suggestedConcurrency?.() || Infinity)
   while(queue.length || active.size) {
-    while(queue.length && active.size < concurrency) {
+    while(queue.length && active.size < getLimit()) {
       if(shouldAbort())
         return false
       if(shouldSkipRest()) {
@@ -138,7 +140,7 @@ export const runWithConcurrency = async (items, {
       active.add(promise)
     }
     const waitingOn = [...active]
-    const holding = queue.length && active.size < concurrency && isHeld()
+    const holding = queue.length && active.size < getLimit() && isHeld()
     if(holding)
       waitingOn.push(gate.wait(shouldAbort, {pollMs, maxMs: maxHoldMs - heldMs}))
     if(!waitingOn.length)
