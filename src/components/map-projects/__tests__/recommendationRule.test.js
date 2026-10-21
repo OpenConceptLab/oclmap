@@ -457,7 +457,7 @@ test('getRowMapping / isSameRowMapping: a row is unchanged until its target, dec
     reviewed: [],
   }
   const proposed = getRowMapping(state, 0)
-  assert.deepEqual(proposed, { url: '/concepts/718-7/', decision: 'map', mapType: 'SAME-AS', reviewed: false })
+  assert.deepEqual(proposed, { target: '/concepts/718-7/', decision: 'map', mapType: 'SAME-AS', reviewed: false })
   assert.equal(isSameRowMapping(proposed, getRowMapping({ ...state, mapSelected: { 0: { url: '/concepts/718-7/', display_name: 'renamed' } } }, 0)), true)
   assert.equal(isSameRowMapping(proposed, getRowMapping({ ...state, mapSelected: { 0: { url: '/concepts/717-9/' } } }, 0)), false)
   assert.equal(isSameRowMapping(proposed, getRowMapping({ ...state, decisions: { 0: 'rejected' } }, 0)), false)
@@ -466,4 +466,12 @@ test('getRowMapping / isSameRowMapping: a row is unchanged until its target, dec
   // an unmapped row
   assert.equal(isSameRowMapping(getRowMapping({}, 3), getRowMapping({ mapSelected: {}, decisions: {}, mapTypes: {}, reviewed: [] }, 3)), true)
   assert.equal(isSameRowMapping(undefined, getRowMapping({}, 3)), false)
+})
+
+test('getRowMapping: a target without a URL is told apart by its source and code', () => {
+  // A bridge target can be mapped before a lookup gives it a URL.
+  const withTarget = target => getRowMapping({ mapSelected: { 0: target }, decisions: { 0: 'map' }, mapTypes: { 0: 'SAME-AS' } }, 0)
+  assert.equal(isSameRowMapping(withTarget({ id: 'A', source: 'ICD-11-WHO' }), withTarget({ id: 'B', source: 'ICD-11-WHO' })), false)
+  assert.equal(isSameRowMapping(withTarget({ id: 'A', source: 'ICD-11-WHO' }), withTarget({ id: 'A', source: 'ICD-11-WHO' })), true)
+  assert.equal(withTarget({ id: 'A', url: '/concepts/A/' }).target, '/concepts/A/')
 })

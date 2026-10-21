@@ -178,17 +178,21 @@ export const getAutoMatchNoProposalReason = recommendation => {
   return { no_match: 'reject', not_enough: 'insufficient', pick_not_candidate: 'pick_not_candidate' }[recommendation.agreement] || null
 }
 
+// A mapped target's identity: its URL, or its source and code while it has no
+// URL yet (a bridge target before its lookup).
+export const getMappingTarget = concept => concept?.url || (concept?.id ? `${concept.source || ''}:${concept.id}` : null)
+
 // A row's mapping: its target, decision, map type and approval. A run keeps
 // what it left each row with, so that when the AI step decides the row again
 // it leaves alone a row the user changed meanwhile.
 export const getRowMapping = ({ mapSelected = {}, decisions = {}, mapTypes = {}, reviewed = [] } = {}, index) => ({
-  url: mapSelected[index]?.url || null,
+  target: getMappingTarget(mapSelected[index]),
   decision: decisions[index] || null,
   mapType: mapTypes[index] || null,
   reviewed: reviewed.includes(index),
 })
 
-export const isSameRowMapping = (a, b) => Boolean(a && b) && ['url', 'decision', 'mapType', 'reviewed'].every(key => a[key] === b[key])
+export const isSameRowMapping = (a, b) => Boolean(a && b) && ['target', 'decision', 'mapType', 'reviewed'].every(key => a[key] === b[key])
 
 // The ScispaCy service keys each row's results by the itemid sent, which is
 // the row's index, not its position in the run (ocl_online#258).

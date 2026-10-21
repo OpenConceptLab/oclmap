@@ -89,7 +89,7 @@ import MapProjectDeleteConfirmDialog from './MapProjectDeleteConfirmDialog';
 import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
 import DataGridControls from './DataGridControls'
-import { getPreviewEligibleRowIndexes, getRowsToProcess, countAIOnlyRows, canRunAlgorithm, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, AI_LOOKUP_WAIT_MS, RERANK_LOOKUP_WAIT_MS, RERANK_MAX_IN_FLIGHT, isScispacyWarmingUp, getAutoMatchLogExtras, getAutoMatchNoProposalReason, getRowMapping, isSameRowMapping } from './autoMatchRows'
+import { getPreviewEligibleRowIndexes, getRowsToProcess, countAIOnlyRows, canRunAlgorithm, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, AI_LOOKUP_WAIT_MS, RERANK_LOOKUP_WAIT_MS, RERANK_MAX_IN_FLIGHT, isScispacyWarmingUp, getAutoMatchLogExtras, getAutoMatchNoProposalReason, getMappingTarget, getRowMapping, isSameRowMapping } from './autoMatchRows'
 import { createAutosaveScheduler, createLatestSender, saveOnLeave, trackSave, whenSaved, installUnloadGuard } from './autosave'
 import MatchSummaryCard from './MatchSummaryCard'
 import MappingDecisionResult from './MappingDecisionResult'
@@ -1121,7 +1121,7 @@ const MapProject = () => {
           return (
             <span style={{display: 'flex', alignItems: 'flex-start', gap: '6px', width: '100%'}}>
               {
-                AI_ASSISTANT_API_URL && isAIPickTarget(rowRecommendation(params.row.__index), targetConcept) &&
+                showAIAssistantColumn && isAIPickTarget(rowRecommendation(params.row.__index), targetConcept) &&
                   <Tooltip title={t('map_project.ai_pick')}>
                     <span style={{display: 'inline-flex', paddingTop: '7px'}}>
                       <AssistantIcon color='primary' fontSize='small' />
@@ -2431,8 +2431,8 @@ const MapProject = () => {
     if(!isSameRowMapping(runMapping, getRowMapping(rowMappingStateRef.current, index)))
       return
     const recommendation = getRowRecommendationFor(index, analyses)
-    const url = recommendation.proposal ? (conceptForMapping(recommendation.proposal)?.url || null) : null
-    if(url === runMapping.url && recommendation.chosenBy === runMapping.chosenBy && recommendation.agreement !== 'pick_not_candidate')
+    const target = recommendation.proposal ? getMappingTarget(conceptForMapping(recommendation.proposal)) : null
+    if(target === runMapping.target && recommendation.chosenBy === runMapping.chosenBy && recommendation.agreement !== 'pick_not_candidate')
       return
     proposeRowMapping(index, recommendation)
   }
@@ -3264,7 +3264,7 @@ const MapProject = () => {
   const { recommended: recommendedCount, available: availableCount, low_ranked: lowRankedCount } = countQualityBuckets(rowQualities)
   // Rows where the OCL AI Assistant picked another candidate than the top
   // score, or found no match or too little to decide.
-  const showAIAssistantColumn = Boolean(AI_ASSISTANT_API_URL) && (inAIAssistantGroup || !isEmpty(analysis))
+  const showAIAssistantColumn = inAIAssistantGroup || !isEmpty(analysis)
   const aiDisagreesCount = showAIAssistantColumn ? filter(data, row => isAIDisagreement(rowRecommendation(row.__index))).length : 0
 
   const getStateFromIndex = index => {

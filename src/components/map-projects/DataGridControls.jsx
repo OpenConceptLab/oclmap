@@ -118,8 +118,9 @@ const DataGridControls = ({
         />
         {
           // OpenConceptLab/ocl_issues#2908: rows marked Different pick, No
-          // match or Not enough to decide in the OCL AI Assistant column.
-          (aiDisagreesCount > 0 || aiDisagreesSelected) &&
+          // match or Not enough to decide in the OCL AI Assistant column. Like
+          // the Match Quality buckets, it filters only while some row disagrees.
+          aiDisagreesCount > 0 &&
             <Tooltip title={t('map_project.ai_disagrees_help')}>
               <Chip
                 id='ai-disagrees-filter'
