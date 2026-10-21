@@ -27,7 +27,7 @@ import RepoChip from '../repos/RepoVersionChip'
 import AIAssistantSelectorPanel from './AIAssistantSelectorPanel'
 import { getAutoMatchBlocker } from './autoMatchRows'
 // A private package can fill this checkpoint in; see autoMatchCheck.js.
-import useAutoMatchCheck from 'ocl-online-mapper'
+import useAutoMatchCheck from '@openconceptlab/oclmap-extensions'
 
 // Lines an option's sub-text up with its checkbox label.
 const SUBTEXT_SX = {margin: '-6px 0 0 32px'}

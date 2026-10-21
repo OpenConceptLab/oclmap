@@ -8,8 +8,8 @@ const { ProvidePlugin, DefinePlugin, IgnorePlugin } = require('webpack');
 // Checkpoints a private package can fill in at build time
 // (OpenConceptLab/ocl_online#465). The Dockerfile installs the package when
 // PRIVATE_PACKAGES_GIT is set; without it, the open stub is used.
-const PRIVATE_PACKAGE = 'ocl-online-mapper';
-const privatePackagePath = path.resolve(__dirname, 'node_modules', PRIVATE_PACKAGE);
+const PRIVATE_PACKAGE = '@openconceptlab/oclmap-extensions';
+const privatePackagePath = path.resolve(__dirname, 'node_modules', ...PRIVATE_PACKAGE.split('/'));
 const privatePackageAlias = fs.existsSync(privatePackagePath) ?
   privatePackagePath :
   path.resolve(__dirname, 'src/components/map-projects/autoMatchCheck.js');
@@ -40,7 +40,7 @@ module.exports = (env) => {
           // The private package ships JSX source. A .babelrc doesn't reach
           // files in another package, so this rule extends ours.
           test: /\.(js|jsx)$/,
-          include: new RegExp(`node_modules[\\\\/]${PRIVATE_PACKAGE}[\\\\/]`),
+          include: new RegExp(`node_modules[\\\\/]${PRIVATE_PACKAGE.replace('/', '[\\\\/]')}[\\\\/]`),
           use: [{loader: 'babel-loader', options: {extends: path.resolve(__dirname, '.babelrc')}}],
         },
         {
@@ -123,7 +123,7 @@ module.exports = (env) => {
         disableDotRule: true,
       }
     },
-    devtool: env.NODE_ENV == 'production' ? "source-map" : undefined,
+    devtool: env.NODE_ENV == 'production' ? "nosources-source-map" : undefined,
     plugins: [
       new HtmlWebpackPlugin({
         template: './public/index.html',

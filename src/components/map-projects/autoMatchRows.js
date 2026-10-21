@@ -55,12 +55,22 @@ export const canRunAlgorithm = (algo, { canBridge = false, canScispacy = false }
   return ['custom', 'ocl-search', 'ocl-semantic'].includes(algo?.type)
 }
 
-// Rows a run can match before it runs out of match operations: each row costs
-// one operation per $match-spending algorithm. null when there is no cap.
-export const getRowCapByMatchOperations = (matchOperations, matchAlgorithmCount) => {
-  if(!matchOperations || matchOperations.unlimited || !matchAlgorithmCount)
-    return null
-  return Math.floor(Math.max(matchOperations.remaining || 0, 0) / matchAlgorithmCount)
+// The rows a run includes: the first maxRows of them, or all of them when
+// maxRows is null.
+export const takeRunRows = (rows, maxRows) => {
+  if(!Array.isArray(rows))
+    return []
+  if(!Number.isInteger(maxRows) || rows.length <= maxRows)
+    return rows
+  return rows.slice(0, Math.max(maxRows, 0))
+}
+
+// Row statuses once a run starts matching runRowIndexes: those rows lose their
+// proposed and approved statuses, and every other row keeps its own.
+export const clearRunRowStatuses = (rowStatuses, runRowIndexes) => {
+  const runRows = new Set((runRowIndexes || []).map(index => index?.toString()))
+  const keep = indexes => (indexes || []).filter(index => !runRows.has(index?.toString()))
+  return {...rowStatuses, readyForReview: keep(rowStatuses?.readyForReview), reviewed: keep(rowStatuses?.reviewed)}
 }
 
 export const countAIOnlyRows = (rowIndexes, analysableRowIndexes) => {
@@ -87,7 +97,7 @@ export const getAutoMatchBlocker = ({
   return null
 }
 
-// Whether the OCL AI Assistant starts ticked when the AutoMatch dialog opens
+// Whether the OCL AI Assistant starts ticked on the project's AutoMatch
 // (OpenConceptLab/ocl_online#465): as on the project's last run, or
 // firstRunDefault when it has never been auto-matched. projectLogs is newest
 // first.
@@ -96,6 +106,16 @@ export const getAutoMatchAIDefault = (projectLogs, firstRunDefault) => {
   if(!lastRun)
     return Boolean(firstRunDefault)
   return (lastRun.extras?.sub_actions || []).includes('with_ai_analysis')
+}
+
+// The OCL AI Assistant box when the AutoMatch dialog opens. Once the project's
+// logs have loaded, the first open takes the project's default; later opens
+// keep what the user left. aiOnByDefault false always opens it unticked.
+// Returns {runAI, applied}; applied says the project's default has been used.
+export const getAutoMatchAIOnOpen = ({ current = false, applied = false, logsLoaded = false, projectLogs = [], aiOnByDefault = true } = {}) => {
+  const useDefault = logsLoaded && !applied
+  const runAI = useDefault ? getAutoMatchAIDefault(projectLogs, true) : Boolean(current)
+  return {runAI: Boolean(aiOnByDefault) && runAI, applied: applied || useDefault}
 }
 
 // How many consecutive rows may fail, for a reason other than AI quota, before

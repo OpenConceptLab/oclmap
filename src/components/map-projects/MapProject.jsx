@@ -89,8 +89,8 @@ import MapProjectDeleteConfirmDialog from './MapProjectDeleteConfirmDialog';
 import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
 import DataGridControls from './DataGridControls'
-import { getPreviewEligibleRowIndexes, getRowsToProcess, countAIOnlyRows, getAutoMatchAIDefault, canRunAlgorithm, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, AI_LOOKUP_WAIT_MS, RERANK_LOOKUP_WAIT_MS, RERANK_MAX_IN_FLIGHT, isScispacyWarmingUp } from './autoMatchRows'
-import { aiOnByDefault } from 'ocl-online-mapper'
+import { getPreviewEligibleRowIndexes, getRowsToProcess, countAIOnlyRows, getAutoMatchAIOnOpen, takeRunRows, clearRunRowStatuses, canRunAlgorithm, spendsMatchQuota, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, AI_LOOKUP_WAIT_MS, RERANK_LOOKUP_WAIT_MS, RERANK_MAX_IN_FLIGHT, isScispacyWarmingUp } from './autoMatchRows'
+import { aiOnByDefault, getMaxRunRows } from '@openconceptlab/oclmap-extensions'
 import { createAutosaveScheduler, createLatestSender, saveOnLeave, trackSave, whenSaved, installUnloadGuard } from './autosave'
 import MatchSummaryCard from './MatchSummaryCard'
 import MappingDecisionResult from './MappingDecisionResult'
@@ -302,6 +302,10 @@ const MapProject = () => {
   const [projectLogs, setProjectLogs] = React.useState([])
   const logsRef = React.useRef({})
   const projectLogsRef = React.useRef([])
+  // A saved project's logs load after it opens. Until they have, AutoMatch
+  // can't tell a project's first run from a later one.
+  const projectLogsLoadedRef = React.useRef(!params.projectId)
+  const autoMatchAIDefaultAppliedRef = React.useRef(false)
   const configSnapshotOnOpenRef = React.useRef(null)
   const projectIdRef = React.useRef(null)
   const onSaveRef = React.useRef(null)
@@ -854,6 +858,7 @@ const MapProject = () => {
           projectLogsRef.current = savedProjectLogs
           setLogs(rowLogs)
           setProjectLogs(savedProjectLogs)
+          projectLogsLoadedRef.current = true
           projectLog({action: 'Opened'})
         })
       }
@@ -2286,14 +2291,13 @@ const MapProject = () => {
   }
 
 
-  const getRowsResults = async (rows, selectedAlgos) => {
+  const getRowsResults = async (rows, selectedAlgos, { runRows, requested, maxRows }) => {
     abortRef.current = false;
     matchQuotaStopRef.current = null;
     rerankQuotaStopRef.current = null;
     runPreviewLimitShownRef.current = false;
     const selectedRowIndexes = getSelectedRowIndexes(rows)
     const isAutoMatchUnmappedOnly = autoMatchScope === 'unmapped'
-    const isAutoMatchAllRows = autoMatchScope === 'all'
     const isAutoMatchAllIncludingApproved = autoMatchScope === 'allIncludingApproved'
     const isAutoMatchSelectedRows = autoMatchScope === 'selected'
     const selectedRowsLogExtras = isAutoMatchSelectedRows ? {
@@ -2510,35 +2514,15 @@ const MapProject = () => {
       }
     })
 
-    // An AI-only run doesn't match, so nothing would set these statuses again.
-    if(isAutoMatchAllRows && !isAIOnly)
-      setRowStatuses(prev => ({...prev, readyForReview: []}))
-    if(isAutoMatchAllIncludingApproved && !isAIOnly)
-      setRowStatuses(prev => ({...prev, readyForReview: [], reviewed: []}))
-    if(isAutoMatchSelectedRows && !isAIOnly)
-      setRowStatuses(prev => ({
-        ...prev,
-        readyForReview: without(prev.readyForReview, ...selectedRowIndexes),
-        reviewed: without(prev.reviewed, ...selectedRowIndexes)
-      }))
+    // Only the rows this run matches lose their statuses: the run sets them
+    // again. An AI-only run doesn't match, so it changes none.
+    if(!isAIOnly)
+      setRowStatuses(prev => clearRunRowStatuses(prev, map(runRows, '__index')))
+    if(maxRows !== null)
+      projectLog({action: 'auto_match_pre_truncated', extras: {requested, allowed: maxRows}})
 
     setTimeout(async () => {
-      const preview = getMapperPreview()
-      const previewEligibleRowIndexes = getPreviewEligibleRowIndexes(rows, preview)
-      let rowsToProcess = getRowsToProcess(rows, rowStatuses, autoMatchScope, selectedRowIndexes, previewEligibleRowIndexes)
-
-      // Rows per project is already applied by previewEligibleRowIndexes; the
-      // only spendable cap is match operations, counted over the algorithms
-      // that actually call $match.
-      const matchAlgorithmCount = filter(_selectedAlgos, algo => spendsMatchQuota(algo, {canBridge})).length
-      const rowCap = getRowCapByMatchOperations(preview.matchOperations, matchAlgorithmCount)
-      if(rowCap !== null && rowsToProcess.length > rowCap) {
-        const requested = rowsToProcess.length
-        rowsToProcess = rowsToProcess.slice(0, rowCap)
-        projectLog({action: 'auto_match_pre_truncated', extras: {requested, allowed: rowCap}})
-      }
-      if(isAIOnly)
-        rowsToProcess = getAIAnalysableRows(rowsToProcess)
+      const rowsToProcess = runRows
 
       // ocl_online#105 Phase 5: open the run record, then guarantee it is
       // closed out (completed / partial / failed / cancelled) via the finally,
@@ -2960,8 +2944,17 @@ const MapProject = () => {
     event.stopPropagation()
     event.preventDefault()
     setAutoMatchScope(getSelectedRowIndexes().length ? 'selected' : (rowStatuses.unmapped.length ? 'unmapped' : 'all'))
-    if(inAIAssistantGroup)
-      setAutoRunAIAnalysis(getAutoMatchAIDefault(projectLogsRef.current, aiOnByDefault()))
+    if(inAIAssistantGroup) {
+      const { runAI, applied } = getAutoMatchAIOnOpen({
+        current: autoRunAIAnalysis,
+        applied: autoMatchAIDefaultAppliedRef.current,
+        logsLoaded: projectLogsLoadedRef.current,
+        projectLogs: projectLogsRef.current,
+        aiOnByDefault: aiOnByDefault(),
+      })
+      autoMatchAIDefaultAppliedRef.current = applied
+      setAutoRunAIAnalysis(runAI)
+    }
     setMatchDialog(true)
   }
 
@@ -2977,11 +2970,28 @@ const MapProject = () => {
     return Boolean(inAIAssistantGroup && autoRunAIAnalysis) && (aiOnlyRowCounts?.analyse || 0) > 0
   }
 
+  // The rows a run includes, worked out before it changes anything: the
+  // scope's rows, at most getMaxRunRows of them, and for a run without
+  // algorithms the rows the OCL AI Assistant can analyse.
+  const getAutoMatchRunRows = (rows, selectedAlgos) => {
+    const algos = filter(runnableAlgos, algo => selectedAlgos.includes(algo.id))
+    const scopeRows = getRowsToProcess(rows, rowStatuses, autoMatchScope, getSelectedRowIndexes(rows), getPreviewEligibleRowIndexes(rows, getMapperPreview()))
+    const maxRows = getMaxRunRows({matchAlgorithmCount: filter(algos, algo => spendsMatchQuota(algo, {canBridge})).length})
+    const firstRows = takeRunRows(scopeRows, maxRows)
+    const isAIOnly = !algos.length && Boolean(inAIAssistantGroup && autoRunAIAnalysis)
+    return {
+      runRows: isAIOnly ? getAIAnalysableRows(firstRows) : firstRows,
+      requested: scopeRows.length,
+      maxRows: firstRows.length < scopeRows.length ? maxRows : null,
+    }
+  }
+
   const onGetCandidatesSubmit = (event, selectedAlgos) => {
     event.stopPropagation()
     event.preventDefault()
     setAlert(false)
-    if(!hasAutoMatchWork(selectedAlgos)) {
+    const run = hasAutoMatchWork(selectedAlgos) ? getAutoMatchRunRows(data, selectedAlgos) : null
+    if(!run?.runRows.length) {
       setAlert({message: t('map_project.auto_match_nothing_to_run'), severity: 'warning'})
     } else if(isAnyValidColumn()){
       setStartMatchingAt(moment())
@@ -2992,7 +3002,7 @@ const MapProject = () => {
       setScispacyCandidatesStartedAt(null)
       setScispacyCandidatesEndedAt(null)
       setLoadingMatches(true)
-      getRowsResults(data, selectedAlgos)
+      getRowsResults(data, selectedAlgos, run)
     } else {
       setAlert({message: t('map_project.no_valid_columns_for_matching')})
       setTimeout(() => setAlert(false), 10000)

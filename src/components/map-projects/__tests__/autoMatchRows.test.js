@@ -2,9 +2,9 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
-  getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep,
+  getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, takeRunRows, clearRunRowStatuses, shouldStopAIStep,
   getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, RERANK_LOOKUP_WAIT_MS, AI_LOOKUP_WAIT_MS, isScispacyWarmingUp, RERANK_MAX_IN_FLIGHT,
-  countAIOnlyRows, getAutoMatchBlocker, getAutoMatchAIDefault, canRunAlgorithm
+  countAIOnlyRows, getAutoMatchBlocker, getAutoMatchAIDefault, getAutoMatchAIOnOpen, canRunAlgorithm
 } from '../autoMatchRows.js'
 import { createLimiter } from '../../../services/capacity.js'
 
@@ -130,12 +130,25 @@ test('spendsMatchQuota: only algorithms that call $match spend match quota', () 
   assert.equal(spendsMatchQuota(null), false)
 })
 
-test('getRowCapByMatchOperations: divides remaining operations by $match algorithms', () => {
-  assert.equal(getRowCapByMatchOperations({ remaining: 50 }, 2), 25)
-  assert.equal(getRowCapByMatchOperations({ remaining: 5 }, 2), 2)
-  assert.equal(getRowCapByMatchOperations({ remaining: 0 }, 1), 0)
-  assert.equal(getRowCapByMatchOperations({ unlimited: true }, 2), null)
-  assert.equal(getRowCapByMatchOperations({ remaining: 10 }, 0), null)
+test('takeRunRows: takes the first maxRows rows, or all of them when maxRows is null', () => {
+  const scope = [{ __index: 3 }, { __index: 5 }, { __index: 8 }]
+  assert.deepEqual(takeRunRows(scope, null), scope)
+  assert.deepEqual(takeRunRows(scope, 5), scope)
+  assert.deepEqual(takeRunRows(scope, 2).map(row => row.__index), [3, 5])
+  assert.deepEqual(takeRunRows(scope, 0), [])
+  assert.deepEqual(takeRunRows(null, 2), [])
+})
+
+test('clearRunRowStatuses: only the rows the run includes lose their statuses', () => {
+  const statuses = { unmapped: [0], readyForReview: [1, 2, 3], reviewed: [4, 5] }
+  assert.deepEqual(clearRunRowStatuses(statuses, [1, 4]), { unmapped: [0], readyForReview: [2, 3], reviewed: [5] })
+  assert.deepEqual(clearRunRowStatuses(statuses, []), statuses)
+})
+
+test('clearRunRowStatuses: a run cut to its first rows keeps the proposals on the rest', () => {
+  const scope = [{ __index: 1 }, { __index: 2 }, { __index: 3 }]
+  const statuses = { unmapped: [], readyForReview: [1, 2, 3], reviewed: [] }
+  assert.deepEqual(clearRunRowStatuses(statuses, takeRunRows(scope, 1).map(row => row.__index)).readyForReview, [2, 3])
 })
 
 test('shouldStopAIStep: keeps going with no failures', () => {
@@ -399,4 +412,25 @@ test('canRunAlgorithm: ScispaCy runs only for a user who can run it', () => {
 test('canRunAlgorithm: an unknown or missing type doesn\'t run', () => {
   assert.equal(canRunAlgorithm({ type: 'something-else' }), false)
   assert.equal(canRunAlgorithm(null), false)
+})
+
+test('getAutoMatchAIOnOpen: the first open after the logs load takes the project\'s default', () => {
+  const lastRunWithoutAI = [{ action: 'auto_match_started', extras: { sub_actions: ['reranker'] } }]
+  assert.deepEqual(getAutoMatchAIOnOpen({ current: false, logsLoaded: true, projectLogs: [] }), { runAI: true, applied: true })
+  assert.deepEqual(getAutoMatchAIOnOpen({ current: true, logsLoaded: true, projectLogs: lastRunWithoutAI }), { runAI: false, applied: true })
+})
+
+test('getAutoMatchAIOnOpen: before the logs load, the box is left as it is', () => {
+  assert.deepEqual(getAutoMatchAIOnOpen({ current: false, logsLoaded: false, projectLogs: [] }), { runAI: false, applied: false })
+  assert.deepEqual(getAutoMatchAIOnOpen({ current: true, logsLoaded: false }), { runAI: true, applied: false })
+})
+
+test('getAutoMatchAIOnOpen: later opens keep what the user left', () => {
+  assert.deepEqual(getAutoMatchAIOnOpen({ current: false, applied: true, logsLoaded: true, projectLogs: [] }), { runAI: false, applied: true })
+  assert.deepEqual(getAutoMatchAIOnOpen({ current: true, applied: true, logsLoaded: true, projectLogs: [] }), { runAI: true, applied: true })
+})
+
+test('getAutoMatchAIOnOpen: aiOnByDefault false opens it unticked every time', () => {
+  assert.deepEqual(getAutoMatchAIOnOpen({ current: false, logsLoaded: true, projectLogs: [], aiOnByDefault: false }), { runAI: false, applied: true })
+  assert.deepEqual(getAutoMatchAIOnOpen({ current: true, applied: true, logsLoaded: true, aiOnByDefault: false }), { runAI: false, applied: true })
 })
