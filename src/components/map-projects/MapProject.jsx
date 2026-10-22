@@ -91,7 +91,7 @@ import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
 import DataGridControls from './DataGridControls'
 import { getPreviewEligibleRowIndexes, getRowsToProcess, countAIOnlyRows, getAutoMatchAIOnOpen, takeRunRows, clearRunRowStatuses, canRunAlgorithm, spendsMatchQuota, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, AI_LOOKUP_WAIT_MS, RERANK_LOOKUP_WAIT_MS, RERANK_MAX_IN_FLIGHT, isScispacyWarmingUp } from './autoMatchRows'
-import { aiOnByDefault, getMaxRunRows } from '@openconceptlab/oclmap-extensions'
+import { aiOnByDefault, getMaxRunRows, getMapperSettings } from '@openconceptlab/oclmap-extensions'
 import { createAutosaveScheduler, createLatestSender, saveOnLeave, trackSave, whenSaved, installUnloadGuard } from './autosave'
 import MatchSummaryCard from './MatchSummaryCard'
 import MappingDecisionResult from './MappingDecisionResult'
@@ -628,16 +628,14 @@ const MapProject = () => {
   const OCL_ONLINE_API_URL = window.OCL_ONLINE_API_URL || process.env.OCL_ONLINE_API_URL
   const inAIAssistantGroup = Boolean(hasCapability(user, 'users.mapper_ai_assistant') && AI_ASSISTANT_API_URL)
   const isCoreUser = hasAuthGroup(user, 'core_user')
-  // Batch size and concurrent requests per algorithm, by the user's tier
-  // (ocl_online#274, ocl_issues#2849)
-  const requestLimits = getRequestLimits(user)
+  // Batch size and concurrent requests per algorithm the user can set
+  // (ocl_online#274, ocl_issues#2849, ocl_online#517)
+  const requestLimits = getRequestLimits(getMapperSettings(user))
   const mapperPreview = getMapperPreview()
   // Only staff choose the AI model and prompt template (canSelectAIModel gates
-  // both pickers). Core, early-access and unlimited-AI users keep the output
-  // language; preview users get the project's template and its default model.
-  const { canSelectAIModel, canSetAIOutputLocale } = getAIAssistantChoices(
-    user, {unlimitedAICalls: mapperPreview.aiAssistantCalls.unlimited}
-  )
+  // both pickers). Users granted it keep the output language; everyone else
+  // gets the project's template and its default model.
+  const { canSelectAIModel, canSetAIOutputLocale } = getAIAssistantChoices(user)
   const CANDIDATES_LIMIT = 15
   const canBridge = bridgeRef?.current?.canBridge()
   const canScispacy = Boolean(
