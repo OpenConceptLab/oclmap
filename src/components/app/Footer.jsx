@@ -7,7 +7,9 @@ import {
   getAppliedServerConfig
 } from '../../common/utils';
 import { TERMS_OF_USE_URL, PRIVACY_POLICY_URL } from '../../common/constants';
+import HotjarService from '../../services/HotjarService';
 import AppVersions from './AppVersions';
+import PrivacyConsent from './PrivacyConsent';
 import './Footer.scss';
 
 const DEFAULT_FOOTER_TEXT = `${new Date().getFullYear()} Open Concept Lab`;
@@ -24,6 +26,7 @@ const EXTRA_HEIGHT_VAR = '--footer-extra-height';
 const Footer = () => {
   const { t } = useTranslation();
   const ref = React.useRef(null);
+  const [privacyPreferencesOpen, setPrivacyPreferencesOpen] = React.useState(false);
   const text = get(getAppliedServerConfig(), 'info.site.footerText', DEFAULT_FOOTER_TEXT);
   const isDefault = text === DEFAULT_FOOTER_TEXT;
 
@@ -47,6 +50,14 @@ const Footer = () => {
         <Link href={TERMS_OF_USE_URL} target='_blank' rel='noopener noreferrer' underline='hover' sx={LEGAL_LINK_SX}>{t('common.terms_of_use')}</Link>
         <Divider orientation='vertical' className='footer-divider-vertical' />
         <Link href={PRIVACY_POLICY_URL} target='_blank' rel='noopener noreferrer' underline='hover' sx={LEGAL_LINK_SX}>{t('common.privacy_policy')}</Link>
+        {
+          HotjarService.isConfigured() &&
+            <React.Fragment>
+              <Divider orientation='vertical' className='footer-divider-vertical' />
+              {/* Change or withdraw the consent PrivacyConsent asks for (ocl_online#533) */}
+              <Link component='button' type='button' underline='hover' sx={{...LEGAL_LINK_SX, fontSize: 'inherit', verticalAlign: 'baseline'}} onClick={() => setPrivacyPreferencesOpen(true)}>{t('privacy_consent.preferences')}</Link>
+            </React.Fragment>
+        }
       </div>
       <Divider orientation='vertical' className='footer-divider-vertical' />
       <span className='flex-vertical-center'>
@@ -58,6 +69,7 @@ const Footer = () => {
       </span>
       <Divider orientation='vertical' className='footer-divider-vertical' />
       <AppVersions />
+      <PrivacyConsent preferencesOpen={privacyPreferencesOpen} onPreferencesChange={setPrivacyPreferencesOpen} />
     </footer>
   );
 

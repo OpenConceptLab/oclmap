@@ -220,6 +220,7 @@ nosetests.xml
 coverage.xml
 *.cover
 .hypothesis/
+__tests__
 
 # Translations
 *.mo
@@ -313,3 +314,6 @@ output/*
 .code-review-graph/
 .claude/
 jsconfig.json
+
+# Local documentation
+docs/

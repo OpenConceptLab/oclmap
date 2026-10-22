@@ -6353,6 +6353,7 @@ const MapProject = () => {
                 </Alert>
               </Snackbar>
               <div
+                data-hj-suppress
                 style={{ width: '100%', height: `calc(var(--app-height) - ${getGridHeightFactor()}px)` }}
                 onPointerDownCapture={handleGridPointerDownCapture}
               >
@@ -6560,7 +6561,8 @@ const MapProject = () => {
               />
           }
       </Paper>
-      <Paper component="div" className={isSplitView ? 'col-xs-6 split padding-0 split-appear' : 'col-xs-6 padding-0'} sx={{boxShadow: 'none', p: 0, backgroundColor: WHITE, borderRadius: '10px', border: 'solid 0.3px', borderColor: 'surface.nv80', opacity: isSplitView ? 1 : 0, height: 'calc(var(--app-height) - 100px) !important', overflow: 'auto'}}>
+      {/* data-hj-suppress here and on the grid: Hotjar masks uploaded content in the browser (ocl_online#533) */}
+      <Paper data-hj-suppress component="div" className={isSplitView ? 'col-xs-6 split padding-0 split-appear' : 'col-xs-6 padding-0'} sx={{boxShadow: 'none', p: 0, backgroundColor: WHITE, borderRadius: '10px', border: 'solid 0.3px', borderColor: 'surface.nv80', opacity: isSplitView ? 1 : 0, height: 'calc(var(--app-height) - 100px) !important', overflow: 'auto'}}>
         {
           isConfigureInSplitView ?
             <div className='col-xs-12'>
