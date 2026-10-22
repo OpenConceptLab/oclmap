@@ -97,9 +97,8 @@ const CAPACITY_HEADERS = {
 
 /**
  * The server's X-OCL-Capacity-* headers (OpenConceptLab/ocl_online#275), or
- * null when the response carries none. A gate keeps the latest suggested
- * concurrency, and the Auto Match scheduler runs no more requests than it
- * (OpenConceptLab/ocl_online#517).
+ * null when the response carries none. Read and logged only for now; adapting
+ * to the suggested concurrency is OpenConceptLab/ocl_online#340.
  */
 export const getCapacityHeaders = response => {
   const capacity = {}
@@ -134,21 +133,13 @@ export const sleepUnlessCancelled = async (ms, isCancelled = () => false, { slee
 /**
  * One per server, shared by the requests a tab sends it. A 429 on any of them
  * pauses the gate for its Retry-After, and the others (and the Auto Match
- * scheduler) hold back until it reopens. It also keeps the concurrency the
- * server last suggested for this user, at least 1 (a paused lane suggests 0,
- * and its 429s pause the gate instead), or null before any suggestion.
+ * scheduler) hold back until it reopens.
  */
 export const createCapacityGate = ({ now = Date.now } = {}) => {
   let resumeAt = 0
   let pausedBy = CAPACITY_LIMIT
-  let suggestedConcurrency = null
   const pausedForMs = () => Math.max(resumeAt - now(), 0)
   return {
-    suggest: concurrency => {
-      if(Number.isFinite(concurrency))
-        suggestedConcurrency = Math.max(Math.floor(concurrency), 1)
-    },
-    suggestedConcurrency: () => suggestedConcurrency,
     pause: (ms, limit = CAPACITY_LIMIT) => {
       const at = now() + ms
       if(at >= resumeAt) {
@@ -217,12 +208,9 @@ export const requestWithCapacityRetry = async (send, {
   const end = fields => ({ ...fields, attempts, waitedMs })
   const cancelled = () => end({ ok: false, reason: 'cancelled', error: lastError })
   const reportCapacity = response => {
-    const capacity = (onCapacity || gate?.suggest) ? getCapacityHeaders(response) : null
-    if(!capacity)
-      return
-    if(capacity.suggestedConcurrency !== undefined)
-      gate?.suggest?.(capacity.suggestedConcurrency)
-    onCapacity?.(capacity)
+    const capacity = onCapacity ? getCapacityHeaders(response) : null
+    if(capacity)
+      onCapacity(capacity)
   }
   const waitFor = async (delayMs, info) => {
     onWait?.({ ...info, delayMs })

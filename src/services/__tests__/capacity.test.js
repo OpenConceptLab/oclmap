@@ -322,41 +322,6 @@ test('requestWithCapacityRetry: onWait and onWaitEnd bracket each wait, with the
   assert.deepEqual(events, [['wait', 'throttled', 10000, 429], ['end'], ['wait', 'error', 2250, 503], ['end']])
 })
 
-test('createCapacityGate: keeps the latest suggested concurrency, at least 1', () => {
-  const gate = createCapacityGate()
-  assert.equal(gate.suggestedConcurrency(), null)
-  gate.suggest(3)
-  assert.equal(gate.suggestedConcurrency(), 3)
-  gate.suggest(0)
-  assert.equal(gate.suggestedConcurrency(), 1)
-  gate.suggest(NaN)
-  gate.suggest(undefined)
-  assert.equal(gate.suggestedConcurrency(), 1)
-  gate.suggest(5)
-  assert.equal(gate.suggestedConcurrency(), 5)
-})
-
-test('requestWithCapacityRetry: the gate keeps the suggested concurrency of each response, without onCapacity', async () => {
-  const clock = virtualClock()
-  const gate = createCapacityGate({now: clock.now})
-  const {send} = scripted(
-    throttled(1, {headers: {'retry-after': '1', 'x-ocl-capacity-suggested-concurrency': '1'}}),
-    ok([], {'x-ocl-capacity-suggested-concurrency': '2'}),
-  )
-  const outcome = await requestWithCapacityRetry(send, {gate, now: clock.now, sleep: clock.sleep, random: () => 0})
-  assert.equal(outcome.ok, true)
-  assert.equal(gate.suggestedConcurrency(), 2)
-})
-
-test('requestWithCapacityRetry: a response without the header leaves the suggestion as it was', async () => {
-  const clock = virtualClock()
-  const gate = createCapacityGate({now: clock.now})
-  gate.suggest(4)
-  const {send} = scripted(ok([]))
-  await requestWithCapacityRetry(send, {gate, now: clock.now, sleep: clock.sleep})
-  assert.equal(gate.suggestedConcurrency(), 4)
-})
-
 test('requestWithCapacityRetry: onCapacity gets the capacity headers of a success and of a 429', async () => {
   const clock = virtualClock()
   const seen = []

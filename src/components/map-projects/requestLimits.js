@@ -5,8 +5,8 @@
  * The most a user can set in the form comes from the getMapperSettings
  * checkpoint ('@openconceptlab/oclmap-extensions'); the open build allows the
  * form's full range. Below that range, a project's earlier saved settings run
- * within it too. At run time the server can lower requests in flight further
- * (its suggested concurrency, services/capacity.js).
+ * within it too. Following the server's suggested concurrency is
+ * OpenConceptLab/ocl_online#340.
  */
 
 export const DEFAULT_BATCH_SIZE = 10

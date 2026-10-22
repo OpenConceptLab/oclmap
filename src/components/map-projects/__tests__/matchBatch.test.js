@@ -445,48 +445,6 @@ test('runWithConcurrency: at most `concurrency` in flight, every item run once',
   assert.deepEqual(ran.sort(), [1, 2, 3, 4, 5, 6, 7])
 })
 
-test('runWithConcurrency: runs no more in flight than the server suggests (ocl_online#517)', async () => {
-  const gate = createCapacityGate()
-  let inFlight = 0
-  let maxInFlight = 0
-  const maxAfterSuggestion = []
-  const done = await runWithConcurrency([1, 2, 3, 4, 5, 6, 7, 8], {
-    concurrency: 4,
-    gate,
-    run: async item => {
-      inFlight += 1
-      maxInFlight = Math.max(maxInFlight, inFlight)
-      if(item > 4)
-        maxAfterSuggestion.push(inFlight)
-      await new Promise(resolve => setTimeout(resolve, 3))
-      // the first response suggests 2
-      gate.suggest(2)
-      inFlight -= 1
-    },
-  })
-  assert.equal(done, true)
-  assert.equal(maxInFlight, 4)
-  assert.ok(maxAfterSuggestion.every(n => n <= 2), `in flight after the suggestion: ${maxAfterSuggestion}`)
-})
-
-test('runWithConcurrency: a higher suggestion never raises the project\'s concurrency', async () => {
-  const gate = createCapacityGate()
-  gate.suggest(10)
-  let inFlight = 0
-  let maxInFlight = 0
-  await runWithConcurrency([1, 2, 3, 4, 5, 6], {
-    concurrency: 2,
-    gate,
-    run: async () => {
-      inFlight += 1
-      maxInFlight = Math.max(maxInFlight, inFlight)
-      await new Promise(resolve => setTimeout(resolve, 3))
-      inFlight -= 1
-    },
-  })
-  assert.equal(maxInFlight, 2)
-})
-
 test('runWithConcurrency: sends no new batch while the gate is paused, then resumes', async () => {
   const gate = createCapacityGate()
   const started = Date.now()
