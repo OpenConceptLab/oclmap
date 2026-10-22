@@ -191,7 +191,8 @@ const MapProjects = () => {
           </div>
         </Paper>
         <Paper component="div" className='col-xs-12' sx={{boxShadow: 'none', padding: '16px', borderRadius: '10px 10px 0 0'}}>
-          <TableContainer sx={{ maxHeight: 'calc(100% - 250px)' }}>
+          {/* Hotjar masks project names, owners and usernames (ocl_online#533) */}
+          <TableContainer data-hj-suppress sx={{ maxHeight: 'calc(100% - 250px)' }}>
             <Table stickyHeader sx={{ minWidth: 650 }} size='small'>
               <TableHead>
                 <TableRow>

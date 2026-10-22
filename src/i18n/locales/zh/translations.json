@@ -634,5 +634,19 @@
         "import": "超出限制的行会保留在项目中，但不会被匹配。"
       }
     }
+  },
+  "privacy_consent": {
+    "preferences": "隐私偏好设置",
+    "banner_text": "我们希望使用 Hotjar 热图了解用户在 Mapper 中的点击和滚动位置，以便改进产品。您输入的内容和上传的内容都会被遮盖。除非您同意，否则不会收集任何数据。",
+    "accept": "接受",
+    "reject": "拒绝",
+    "choose": "自定义",
+    "essential_title": "必要",
+    "essential_text": "登录、您的语言和此项选择。Mapper 需要它们才能正常运行。",
+    "always_on": "始终开启",
+    "heatmaps_title": "热图（Hotjar）",
+    "heatmaps_text": "Mapper 页面上的点击、轻触、鼠标移动和滚动，以及页面布局的快照（不是视频），帮助我们了解需要改进的地方。您输入的内容和上传的内容在离开浏览器之前即被遮盖。",
+    "reload_notice": "Hotjar 已在此页面运行。保存后页面将重新加载以停止它；您的项目会自动保存。",
+    "save": "保存"
   }
 }

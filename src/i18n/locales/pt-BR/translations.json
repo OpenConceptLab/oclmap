@@ -634,5 +634,19 @@
         "import": "Linhas além do seu limite permanecem no projeto mas não são correspondidas."
       }
     }
+  },
+  "privacy_consent": {
+    "preferences": "Preferências de privacidade",
+    "banner_text": "Gostaríamos de usar mapas de calor do Hotjar para ver onde as pessoas clicam e rolam no Mapper e assim melhorá-lo. O que você digita e o conteúdo que você envia ficam mascarados. Nada é coletado se você não aceitar.",
+    "accept": "Aceitar",
+    "reject": "Recusar",
+    "choose": "Escolher",
+    "essential_title": "Essenciais",
+    "essential_text": "Login, seu idioma e esta escolha. O Mapper precisa deles para funcionar.",
+    "always_on": "Sempre ativos",
+    "heatmaps_title": "Mapas de calor (Hotjar)",
+    "heatmaps_text": "Cliques, toques, movimento do mouse e rolagem nas páginas do Mapper, e um instantâneo do layout da página (não é vídeo), para sabermos o que melhorar. O que você digita e o conteúdo que você envia são mascarados antes de sair do seu navegador.",
+    "reload_notice": "O Hotjar já está ativo nesta página. Ao salvar, a página é recarregada para desativá-lo; seu projeto é salvo automaticamente.",
+    "save": "Salvar"
   }
 }

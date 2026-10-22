@@ -634,5 +634,19 @@
         "import": "Rows past your limit stay in the project but aren't matched."
       }
     }
+  },
+  "privacy_consent": {
+    "preferences": "Privacy preferences",
+    "banner_text": "We would like to use Hotjar heatmaps to see where people click and scroll in the Mapper, so we can improve it. What you type and the content you upload are masked. Nothing is collected unless you accept.",
+    "accept": "Accept",
+    "reject": "Reject",
+    "choose": "Choose",
+    "essential_title": "Essential",
+    "essential_text": "Sign-in, your language and this choice. The Mapper needs them to work.",
+    "always_on": "Always on",
+    "heatmaps_title": "Heatmaps (Hotjar)",
+    "heatmaps_text": "Clicks, taps, mouse movement and scrolling on Mapper pages, and a snapshot of the page layout (not video), so we can see what to improve. What you type and the content you upload are masked before anything leaves your browser.",
+    "reload_notice": "Hotjar is already running on this page. Saving reloads the page to stop it; your project is saved automatically.",
+    "save": "Save"
   }
 }

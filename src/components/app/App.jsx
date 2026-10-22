@@ -19,7 +19,7 @@ import Footer from './Footer';
 import DocumentTitle from "./DocumentTitle"
 import SigninRedirect from './SigninRedirect'
 import './App.scss';
-import { hotjar } from 'react-hotjar';
+import HotjarService from '../../services/HotjarService';
 import APIService from '../../services/APIService'
 import Header from './Header';
 import OIDLoginCallback from '../users/OIDLoginCallback';
@@ -54,13 +54,6 @@ const App = props => {
   const { alert, setAlert, setToggles } = React.useContext(OperationsContext);
   const [authVersion, setAuthVersion] = React.useState(0)
   const silentCheckRunning = React.useRef(false)
-  const setupHotJar = () => {
-    /*eslint no-undef: 0*/
-    const HID = window.HOTJAR_ID || process.env.HOTJAR_ID
-    if(HID)
-      hotjar.initialize(HID, 6);
-  }
-
   const fetchToggles = async () => {
     return new Promise(resolve => {
       APIService.toggles().get().then(response => {
@@ -137,9 +130,14 @@ const App = props => {
     fetchToggles()
     addLogoutListenerForAllTabs()
     GAService.recordPageView()
-    setupHotJar()
+    // Loads only after consent (PrivacyConsent); setup in services/HotjarService.js
+    HotjarService.initialize()
+    const unlisten = props.history.listen(location => HotjarService.recordPageView(location.pathname))
 
-    return () => unsubscribe()
+    return () => {
+      unsubscribe()
+      unlisten()
+    }
   }, [])
 
   const clearThrottlingError = React.useCallback(() => {
