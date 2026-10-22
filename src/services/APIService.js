@@ -3,7 +3,7 @@ import axios from 'axios';
 import {get, omit, isPlainObject, isString, defaults } from 'lodash';
 import { currentUserToken, getAPIURL, renewOrSignOut } from '../common/utils';
 import { OCL_CLIENT } from '../common/constants';
-import { scopeToken, joinAPIPath } from './tokenScope.js';
+import { joinAPIPath } from './tokenScope.js';
 
 
 const APIServiceProvider = {};
@@ -177,9 +177,7 @@ class APIService {
   };
 
   getHeaders(token, headers) {
-    const userToken = currentUserToken();
-    token = token || (token !== false ? userToken : token);
-    token = scopeToken(token, this.URL, getAPIURL(), userToken);
+    token = token || (token !== false ? currentUserToken() : token);
     const obj = defaults(headers, this.headers);
     if (token) obj['Authorization'] = `Token ${token}`;
     obj['INCLUDESEARCHLATEST'] = true

@@ -1,4 +1,6 @@
-// The signed-in user's token belongs to the OCL API only (ocl_online#522).
+// Which token a request gets (ocl_online#522). `false` means no token: APIService
+// sends no Authorization header for it, where null or undefined falls back to
+// the signed-in user's token.
 
 // A relative URL (such as an API_URL of '/api') is on the page's own origin.
 const originOf = url => {
@@ -9,15 +11,21 @@ const originOf = url => {
   }
 }
 
+// Exact origin match (scheme, host and port).
 export const isAPIHost = (url, apiURL) => {
   const origin = originOf(url)
   return Boolean(origin) && origin === originOf(apiURL)
 }
 
-// The token to send: the user's own token only to the API host; any other
-// token (such as one configured on a project) goes where it was given.
-export const scopeToken = (token, url, apiURL, userToken) =>
-  token && token === userToken && !isAPIHost(url, apiURL) ? null : token
+// A custom algorithm uses only the token provided with it, or none. Any other
+// algorithm returns null, the default: the user's token, to an OCL service.
+export const matchToken = algo =>
+  (algo?.type === 'custom' && algo?.url) ? (algo.token || false) : null
+
+// A lookup uses the configured token if there is one. Otherwise the user's
+// token goes to the OCL API, and nothing goes to any other host.
+export const lookupToken = (configToken, url, apiURL, userToken) =>
+  configToken || (isAPIHost(url, apiURL) ? userToken : false)
 
 // Without a leading '/', a value like '@host/x' would change the request's host.
 export const joinAPIPath = (apiURL, path) => {
