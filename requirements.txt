@@ -1,4 +1,4 @@
-certifi==2024.12.14
+certifi==2026.10.19
 charset-normalizer==3.4.1
 et_xmlfile==2.0.0
 idna==3.10

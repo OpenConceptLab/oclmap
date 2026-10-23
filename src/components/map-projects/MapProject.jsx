@@ -71,9 +71,10 @@ import pick from 'lodash/pick'
 import { OperationsContext } from '../app/LayoutContext';
 
 import APIService, { isTransientNetworkError, retryWithBackoff } from '../../services/APIService';
+import { matchToken, lookupToken } from '../../services/tokenScope'
 import { buildAttributionHeaders, buildConfigSnapshot, summarizeRunCompletion, matchesOnOCL } from '../../services/attribution'
 import { CAPACITY_LIMIT, RATE_LIMIT, CAPACITY_WAIT_CAP_MS, HEAVY_REQUEST_TIMEOUT_MS, LIGHT_REQUEST_TIMEOUT_MS, createCapacityGate, createLimiter, isRetryableError, requestWithCapacityRetry, sleepUnlessCancelled, untilCancelled } from '../../services/capacity'
-import { highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, hasCapability, getMapperPreview, getNewProjectBlockReason, downloadObject, currentUserToken, refreshCurrentUserCapabilitiesCache } from '../../common/utils';
+import { getAPIURL, highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, hasCapability, getMapperPreview, getNewProjectBlockReason, downloadObject, currentUserToken, refreshCurrentUserCapabilitiesCache } from '../../common/utils';
 import { WHITE, SURFACE_COLORS, TEXT_GRAY } from '../../common/colors';
 
 import { useDoubleClick } from '../common/useDoubleClick'
@@ -90,7 +91,7 @@ import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
 import DataGridControls from './DataGridControls'
 import { getPreviewEligibleRowIndexes, getRowsToProcess, countAIOnlyRows, getAutoMatchAIOnOpen, takeRunRows, clearRunRowStatuses, canRunAlgorithm, spendsMatchQuota, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, AI_LOOKUP_WAIT_MS, RERANK_LOOKUP_WAIT_MS, RERANK_MAX_IN_FLIGHT, isScispacyWarmingUp, getAutoMatchLogExtras, getAutoMatchNoProposalReason, getMappingTarget, getRowMapping, isSameRowMapping } from './autoMatchRows'
-import { aiOnByDefault, getMaxRunRows } from '@openconceptlab/oclmap-extensions'
+import { aiOnByDefault, getMaxRunRows, getMapperSettings } from '@openconceptlab/oclmap-extensions'
 import { createAutosaveScheduler, createLatestSender, saveOnLeave, trackSave, whenSaved, installUnloadGuard } from './autosave'
 import MatchSummaryCard from './MatchSummaryCard'
 import MappingDecisionResult from './MappingDecisionResult'
@@ -629,16 +630,14 @@ const MapProject = () => {
   const OCL_ONLINE_API_URL = window.OCL_ONLINE_API_URL || process.env.OCL_ONLINE_API_URL
   const inAIAssistantGroup = Boolean(hasCapability(user, 'users.mapper_ai_assistant') && AI_ASSISTANT_API_URL)
   const isCoreUser = hasAuthGroup(user, 'core_user')
-  // Batch size and concurrent requests per algorithm, by the user's tier
-  // (ocl_online#274, ocl_issues#2849)
-  const requestLimits = getRequestLimits(user)
+  // Batch size and concurrent requests per algorithm the user can set
+  // (ocl_online#274, ocl_issues#2849, ocl_online#517)
+  const requestLimits = getRequestLimits(getMapperSettings(user))
   const mapperPreview = getMapperPreview()
   // Only staff choose the AI model and prompt template (canSelectAIModel gates
-  // both pickers). Core, early-access and unlimited-AI users keep the output
-  // language; preview users get the project's template and its default model.
-  const { canSelectAIModel, canSetAIOutputLocale } = getAIAssistantChoices(
-    user, {unlimitedAICalls: mapperPreview.aiAssistantCalls.unlimited}
-  )
+  // both pickers). Users granted it keep the output language; everyone else
+  // gets the project's template and its default model.
+  const { canSelectAIModel, canSetAIOutputLocale } = getAIAssistantChoices(user)
   const CANDIDATES_LIMIT = 15
   const canBridge = bridgeRef?.current?.canBridge()
   const canScispacy = Boolean(
@@ -2522,7 +2521,7 @@ const MapProject = () => {
         send: attempt => service.request(
           'POST',
           payload,
-          (algo.type === 'custom' && algo.url && algo.token) ? algo.token : null,
+          matchToken(algo),
           {
             headers: attrHeaders({rowIndices: rowIndexes, batchSize: rowBatch.length, algorithmId: algo.id, clientAttemptN: attempt + 1, isRunTraffic: true, capacityAware: matchesOnOCL(algo)}),
             query: {
@@ -4085,7 +4084,7 @@ const MapProject = () => {
     requestSingleMatch(() => service.request(
       'POST',
       payload,
-      (algoDef.type === 'custom' && algoDef.url) ? algoDef.token : null,
+      matchToken(algoDef),
       {
         ...(matchesOnOCL(algoDef) ? {headers: attrHeaders({rowIndex: __row.__index, algorithmId: algoDef.id, capacityAware: true})} : {}),
         query: {
@@ -5101,6 +5100,14 @@ const MapProject = () => {
     return service.appendToUrl('concepts/')
   }
 
+  // The token a lookup request to this URL gets (see lookupToken).
+  const getLookupToken = url => lookupToken(lookupConfig?.token, url, getAPIURL(), currentUserToken())
+
+  const requestLookup = query => {
+    const service = getLookupService()
+    return service.request('GET', undefined, getLookupToken(service.URL), {query, handlesThrottle: true, timeout: LIGHT_REQUEST_TIMEOUT_MS})
+  }
+
   // ensureLoaded — state-driven $lookup over $resolveReference
   // (plans/unified-mapper-model.md "$lookup — built on $resolveReference").
   // Idempotent over concept_keys: skips concepts already 'full' in the
@@ -5149,9 +5156,9 @@ const MapProject = () => {
     // for projects that don't override. Without this gate, the legacy
     // Search-tab fetches respected the user's token but the new unified
     // ensureLoaded path silently used the session token instead — leaving
-    // the LookupConfig widget half-decorative.
+    // the LookupConfig widget half-decorative. Without one, the session's user
+    // token goes only to the OCL API (getLookupToken), never to another host.
     const currentToken = currentUserToken()
-    const authToken = lookupConfig?.token || currentToken
 
     const directFetches = []
     const toResolve = []
@@ -5217,7 +5224,7 @@ const MapProject = () => {
           // A busy server's 429 is waited out, and a gateway error retried
           // (ocl_issues#2849); a 404 is retried below.
           const result = await requestWithCapacityRetry(
-            () => service.request('GET', undefined, authToken, {query: {includeMappings: true, mappingBrief: true, mapTypes: 'SAME-AS,SAME AS,SAME_AS', verbose: true}, headers: attrHeaders({rowIndex: logRowIndex, isRunTraffic}), handlesThrottle: true, timeout: LIGHT_REQUEST_TIMEOUT_MS}),
+            () => service.request('GET', undefined, getLookupToken(service.URL), {query: {includeMappings: true, mappingBrief: true, mapTypes: 'SAME-AS,SAME AS,SAME_AS', verbose: true}, headers: attrHeaders({rowIndex: logRowIndex, isRunTraffic}), handlesThrottle: true, timeout: LIGHT_REQUEST_TIMEOUT_MS}),
             {maxWaitMs: INTERACTIVE_WAIT_CAP_MS, onCapacity: noteCapacity}
           )
           if(!result.ok)
@@ -5394,7 +5401,7 @@ const MapProject = () => {
     // which then threw here. A 429 is waited out; an error says so
     // (ocl_issues#2849).
     requestWithCapacityRetry(
-      () => getLookupService().request('GET', undefined, lookupConfig?.token, {query, handlesThrottle: true, timeout: LIGHT_REQUEST_TIMEOUT_MS}),
+      () => requestLookup(query),
       {maxWaitMs: INTERACTIVE_WAIT_CAP_MS, onCapacity: noteCapacity, ...trackCapacityWait([])}
     ).then(result => {
       if(!result.ok) {
@@ -5455,7 +5462,7 @@ const MapProject = () => {
     // A failed facets call isn't cached, so the next look tries again
     // (ocl_issues#2849).
     const request = requestWithCapacityRetry(
-      () => getLookupService().request('GET', undefined, lookupConfig?.token, {query, handlesThrottle: true, timeout: LIGHT_REQUEST_TIMEOUT_MS}),
+      () => requestLookup(query),
       {maxWaitMs: INTERACTIVE_WAIT_CAP_MS, onCapacity: noteCapacity, ...trackCapacityWait([])}
     ).then(result => {
       if(!result.ok)

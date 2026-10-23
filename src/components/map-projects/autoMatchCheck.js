@@ -1,6 +1,6 @@
-// Checkpoints for AutoMatch (OpenConceptLab/ocl_online#465). The app imports
-// them as '@openconceptlab/oclmap-extensions'; webpack resolves that name to an installed
-// package when there is one, and to this file otherwise.
+// Checkpoints for the Mapper (OpenConceptLab/ocl_online#465, #517). The app
+// imports them as '@openconceptlab/oclmap-extensions'; webpack resolves that
+// name to an installed package when there is one, and to this file otherwise.
 //
 // useAutoMatchCheck receives what the user has selected in the dialog:
 // {open, autoMatchScope, rowsToMatchCount, totalRows, retrieveCandidates,
@@ -19,5 +19,11 @@ export const aiOnByDefault = () => true
 // all of the rows in its scope. A run takes its scope's first rows.
 // eslint-disable-next-line no-unused-vars
 export const getMaxRunRows = run => null
+
+// The most rows per matching request, and requests in flight per algorithm,
+// that the user can set in the form: {batchSize, concurrentRequests}. A saved
+// project runs within them too. Here, the form's full range.
+// eslint-disable-next-line no-unused-vars
+export const getMapperSettings = user => ({batchSize: 1000, concurrentRequests: 50})
 
 export default useAutoMatchCheck

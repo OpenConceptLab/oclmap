@@ -3,6 +3,7 @@ import axios from 'axios';
 import {get, omit, isPlainObject, isString, defaults } from 'lodash';
 import { currentUserToken, getAPIURL, renewOrSignOut } from '../common/utils';
 import { OCL_CLIENT } from '../common/constants';
+import { joinAPIPath } from './tokenScope.js';
 
 
 const APIServiceProvider = {};
@@ -105,7 +106,7 @@ class APIService {
   }
 
   overrideURL(url) {
-    this.URL = `${getAPIURL()}${url}`;
+    this.URL = joinAPIPath(getAPIURL(), url);
     return this;
   }
 
