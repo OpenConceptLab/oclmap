@@ -141,7 +141,7 @@ const ConceptHeader = ({concept, repo, onClose, repoURL, onEdit, nested, loading
                   color='primary'
                   variant='outlined'
                   icon={<AssistantIcon fontSize='small' />}
-                  label={t('map_project.ai_recommended')}
+                  label={t('map_project.ai_pick')}
                   sx={{padding: '4px'}}
                 />
             }

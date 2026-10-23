@@ -72,7 +72,7 @@ const Score = ({candidate, conceptRow, onScoreClick, sx, isAIRecommended, isAIAl
       >
         {
           isAIRecommended || isAIAlternate ?
-            <Tooltip title={isAIRecommended ? t('map_project.ai_recommended') : t('map_project.ai_alternate')}>
+            <Tooltip title={isAIRecommended ? t('map_project.ai_pick') : t('map_project.ai_alternate')}>
               <ListItemIcon sx={{minWidth: 'auto', marginRight: '6px'}}>
                 <AssistantIcon color={isAIRecommended ? 'primary' : 'warning'} fontSize='small' sx={{marginRight: '4px'}} />
               </ListItemIcon>

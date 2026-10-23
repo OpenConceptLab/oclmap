@@ -51,6 +51,9 @@ const Discuss = ({ logs, onAdd }) => {
           description += ':'
         description += ` (${log.extras.map_type || log.extras.mapType})`
       }
+      // OpenConceptLab/ocl_issues#2908: AutoMatch proposed the OCL AI Assistant's pick
+      if(log.action === 'auto-matched' && log.extras?.chosen_by === 'ai_assistant')
+        description += ` · ${t('map_project.ai_pick')}`
       return description
     }
     if (log.action === 'exclude')
@@ -84,7 +87,7 @@ const Discuss = ({ logs, onAdd }) => {
       return <ReviewedIcon fontSize='small' color={color} />
     if(['mapped', 'map_type_changed'].includes(log.action))
       return <MapIcon fontSize='small' color={color} />
-    if(['auto-matched'].includes(log.action))
+    if(['auto-matched', 'auto_match_no_proposal'].includes(log.action))
       return <AutoMatchIcon fontSize='small' color={color} />
     if(log.action === 'unmapped')
       return <UnmapIcon fontSize='small' color={color} />
