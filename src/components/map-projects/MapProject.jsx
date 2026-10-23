@@ -117,7 +117,7 @@ import { getPreviewLimitError, isAIPreviewLimitError } from './previewLimits'
 import { formatRowNumbers, rowNumberOf, runMatchBatch, requestSingleMatch, runWithConcurrency, INTERACTIVE_WAIT_CAP_MS } from './matchBatch'
 import { getAIAssistantChoices, getModelUsed, getPromptTemplateKey, createLatestRequestGate } from './aiVisibility'
 import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
-import { normalizeAlgorithmInvocation, hasSuccessfulAlgorithmResponse, getAlgorithmStagesFromResponses, lookupStatusRank, buildRecommendableConceptEntry, stripConstantClassAndDatatype, buildLookupConceptUrl, serializeCandidates, toStoredRowMatchState } from './normalizers'
+import { normalizeAlgorithmInvocation, hasSuccessfulAlgorithmResponse, getAlgorithmStagesFromResponses, lookupStatusRank, buildRecommendableConceptEntry, stripConstantClassAndDatatype, buildLookupConceptUrl, serializeCandidates, toStoredRowMatchState, dropMissingBridgeTargets } from './normalizers'
 import { parseConceptKey } from './conceptKey'
 import { normalizeLookupConfig } from './lookupConfigFields'
 import { getDeclaredLocales, getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getSavedTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId } from './projectTargetRepo'
@@ -537,7 +537,11 @@ const MapProject = () => {
         : cr
     })
 
-    rowMatchStateRef.current = { ...prevAll, [rowIndex]: nextRow }
+    // A bridge can propose codes the target version lacks; once a lookup has
+    // found one missing, later rows don't propose it again (ocl_issues#2840).
+    const keptRow = dropMissingBridgeTargets(nextRow, missingConceptKeysRef.current)
+
+    rowMatchStateRef.current = { ...prevAll, [rowIndex]: keptRow }
     setRowMatchState(rowMatchStateRef.current)
 
     // Merge ConceptDefinitions into the project-wide conceptCache, keyed by
@@ -567,7 +571,7 @@ const MapProject = () => {
     // free. Forward-ref pattern because ensureLoaded is declared later.
     if(ensureLoadedRef.current) {
       const keysToLoad = concept_definitions
-        .filter(d => d && d.lookup_status !== 'full')
+        .filter(d => d && d.lookup_status !== 'full' && !missingConceptKeysRef.current.has(d.key))
         .map(d => d.key)
       if(keysToLoad.length) {
         ensureLoadedRef.current(keysToLoad, rowIndex, isRunTraffic).then(() => {
@@ -601,9 +605,13 @@ const MapProject = () => {
   // ocl-scispacy uses a hardcoded canonical 'http://loinc.org' while
   // ocl-bridge cascade targets use target_repo's canonical — they produce
   // different concept_keys but resolve to the same OCL URL). Failed/404
-  // entries are deleted so they remain retryable; successful entries persist
-  // for the session.
+  // entries are deleted so they remain retryable; successful and 404 entries
+  // persist for the session, so a missing code is fetched once
+  // (ocl_issues#2840).
   const urlFetchCacheRef = React.useRef(new Map())
+  // concept_keys whose lookup came back 404: bridge_child candidates for them
+  // are dropped (ocl_issues#2840).
+  const missingConceptKeysRef = React.useRef(new Set())
 
   // Rerank scheduling (plans/unified-mapper-model.md "Rerank — debounce +
   // in-flight check"). Replaces the legacy "wait for every algo to
@@ -5017,6 +5025,23 @@ const MapProject = () => {
     writeConceptCachePatch(key, { ...existing, lookup_status: 'failed' })
   }, [writeConceptCachePatch])
 
+  // A bridge_child whose concept isn't in the target version isn't a
+  // proposal: drop it from every row (ocl_issues#2840).
+  const dropMissingConcept = React.useCallback((key) => {
+    missingConceptKeysRef.current.add(key)
+    const prevAll = rowMatchStateRef.current
+    let changed = false
+    const nextAll = {}
+    Object.entries(prevAll).forEach(([idx, rowState]) => {
+      nextAll[idx] = dropMissingBridgeTargets(rowState, missingConceptKeysRef.current)
+      if(nextAll[idx] !== rowState) changed = true
+    })
+    if(changed) {
+      rowMatchStateRef.current = nextAll
+      setRowMatchState(nextAll)
+    }
+  }, [])
+
   const ensureLoaded = React.useCallback(async (conceptKeys, logRowIndex, isRunTraffic = false) => {
     if(!Array.isArray(conceptKeys) || conceptKeys.length === 0) return
     const ctx = buildProjectContext()
@@ -5118,7 +5143,11 @@ const MapProject = () => {
             if(err?.response?.status === 404)
               log({action: 'lookup', description: t('map_project.lookup_concept_404', {code, attempt: attempt + 1}), extras: {url: oclUrl, error: t('map_project.lookup_concept_404', {code, attempt: attempt + 1})}}, logRowIndex)
           },
-        }).catch(() => {
+        }).catch(err => {
+          // Still 404 after the retries: the code isn't there. Keep that for
+          // the session so other rows don't fetch it again (ocl_issues#2840).
+          if(err?.response?.status === 404)
+            return {notFound: true}
           urlFetchCacheRef.current.delete(oclUrl)
           return null
         })
@@ -5139,6 +5168,8 @@ const MapProject = () => {
           })
         } else {
           writeLookupFailure(key)
+          if(data?.notFound)
+            dropMissingConcept(key)
         }
       } catch (_) {
         writeLookupFailure(key)
@@ -5197,7 +5228,7 @@ const MapProject = () => {
     }
 
     await Promise.all([directPromise, resolvePromise, ...pending])
-  }, [buildProjectContext, writeConceptCachePatch, writeLookupFailure, lookupConfig?.token])
+  }, [buildProjectContext, writeConceptCachePatch, writeLookupFailure, dropMissingConcept, lookupConfig?.token])
 
   // Wire the forward-ref consumed by mergeIntoRowMatchState. useEffect
   // so the ref always points at the latest closure (ensureLoaded captures
@@ -5206,6 +5237,13 @@ const MapProject = () => {
   React.useEffect(() => {
     ensureLoadedRef.current = ensureLoaded
   }, [ensureLoaded])
+
+  // A code missing from one target version may be in another, so the
+  // session's 404s only hold for the version they were fetched against.
+  React.useEffect(() => {
+    missingConceptKeysRef.current = new Set()
+    urlFetchCacheRef.current = new Map()
+  }, [selectedTargetRepoVersion, lookupConfig?.url])
 
   // Lazily enrich a row's saved candidates when it is opened. The persisted
   // v2 candidates payload intentionally carries sparse ConceptDefinitions
