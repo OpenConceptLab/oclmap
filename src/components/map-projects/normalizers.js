@@ -454,6 +454,33 @@ export const normalizeAlgorithmInvocation = (rawPayload, ctx = {}) => {
   }
 }
 
+/**
+ * Drop the bridge_child candidates whose concept the target version doesn't
+ * have (its lookup came back 404), and the concept_rows nothing references
+ * after that. The bridge filters cascade targets by the target repo, not its
+ * pinned version, so it can propose codes the version lacks (ocl_issues#2840).
+ * Returns the same rowState when nothing is dropped.
+ *
+ * @param {Object} rowState     {algorithm_responses, candidates, concept_rows}
+ * @param {Set} missingKeys     concept_keys known to be missing.
+ */
+export const dropMissingBridgeTargets = (rowState, missingKeys) => {
+  if (!rowState?.candidates || !missingKeys?.size) return rowState
+  const candidates = {}
+  let dropped = false
+  Object.entries(rowState.candidates).forEach(([id, c]) => {
+    if (c?.type === 'bridge_child' && missingKeys.has(c.concept_key)) dropped = true
+    else candidates[id] = c
+  })
+  if (!dropped) return rowState
+  const referencedKeys = new Set(Object.values(candidates).map(c => c?.concept_key))
+  const conceptRows = {}
+  Object.entries(rowState.concept_rows || {}).forEach(([key, cr]) => {
+    if (referencedKeys.has(key)) conceptRows[key] = cr
+  })
+  return { ...rowState, candidates, concept_rows: conceptRows }
+}
+
 const LOOKUP_RANK = { pending: 0, failed: 0, partial: 1, full: 2 }
 export const lookupStatusRank = (status) => LOOKUP_RANK[status] ?? 0
 
