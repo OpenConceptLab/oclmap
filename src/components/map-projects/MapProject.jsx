@@ -387,24 +387,31 @@ const MapProject = () => {
   // Leaving the project unmounts this page, often inside the autosave window:
   // save the pending change now rather than drop it
   // (OpenConceptLab/ocl_issues#2829). Nothing to save once signed out.
+  const saveNowOnLeave = () => saveOnLeave({
+    scheduler: autosaveSchedulerRef.current,
+    inFlightSave: inFlightSaveRef.current,
+    save: reasons => currentUserToken() && onSaveRef.current({source: 'auto', closeConfigure: false, reasons, leaving: true})
+  })
+
+  // Leaving stops a run at once, not gracefully: its record closes now and
+  // what it matched so far is saved. Once per run, whether or not leaving
+  // unmounts this page: a navigation to another project URL reuses it.
+  const stopRunOnLeave = () => {
+    if(!runClosersRef.current.hasOpen() && !(isRunActiveRef.current && !abortRef.current))
+      return
+    abortRef.current = true
+    projectLogRef.current({action: 'auto_match_stopped_on_leave'})
+    autosaveSchedulerRef.current.schedule('auto_match_stopped')
+    runClosersRef.current.closeAll(true)
+  }
+
   React.useEffect(() => {
     isMountedRef.current = true
     installUnloadGuard()
     return () => {
       isMountedRef.current = false
-      // Leaving stops a run at once, not gracefully: its record closes now and
-      // late results are dropped.
-      if(isRunActiveRef.current || runClosersRef.current.hasOpen()) {
-        abortRef.current = true
-        projectLogRef.current({action: 'auto_match_stopped_on_leave'})
-        autosaveSchedulerRef.current.schedule('auto_match_stopped')
-      }
-      runClosersRef.current.closeAll(true)
-      saveOnLeave({
-        scheduler: autosaveSchedulerRef.current,
-        inFlightSave: inFlightSaveRef.current,
-        save: reasons => currentUserToken() && onSaveRef.current({source: 'auto', closeConfigure: false, reasons, leaving: true})
-      })
+      stopRunOnLeave()
+      saveNowOnLeave()
     }
   }, [])
 
@@ -1798,7 +1805,7 @@ const MapProject = () => {
         if(!isUpdate)
           refreshMapperQuotaCache()
         // A save that lands after the user left mustn't pull them back here.
-        if(response.data.url && isMountedRef.current) {
+        if(response.data.url && isMountedRef.current && !options.leaving) {
           ownNavigationRef.current = true
           try {
             history.push(response.data.url)
@@ -2934,6 +2941,8 @@ const MapProject = () => {
   const onStopRunAndLeave = () => {
     const target = leaveTarget
     setLeaveTarget(null)
+    stopRunOnLeave()
+    saveNowOnLeave()
     unblockLeavingRef.current?.()
     unblockLeavingRef.current = null
     if(target)
