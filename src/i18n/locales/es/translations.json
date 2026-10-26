@@ -626,5 +626,19 @@
         "import": "Las filas que superan su límite permanecen en el proyecto pero no se emparejan."
       }
     }
+  },
+  "privacy_consent": {
+    "preferences": "Preferencias de privacidad",
+    "banner_text": "Nos gustaría usar mapas de calor de Hotjar para ver dónde hacen clic y desplazan las personas en el Mapper y así mejorarlo. Lo que escribes y el contenido que subes quedan ocultos. No se recopila nada si no aceptas.",
+    "accept": "Aceptar",
+    "reject": "Rechazar",
+    "choose": "Elegir",
+    "essential_title": "Esenciales",
+    "essential_text": "Inicio de sesión, tu idioma y esta elección. El Mapper los necesita para funcionar.",
+    "always_on": "Siempre activos",
+    "heatmaps_title": "Mapas de calor (Hotjar)",
+    "heatmaps_text": "Clics, toques, movimiento del ratón y desplazamiento en las páginas del Mapper, y una instantánea del diseño de la página (no es video), para saber qué mejorar. Lo que escribes y el contenido que subes se ocultan antes de salir de tu navegador.",
+    "reload_notice": "Hotjar ya está activo en esta página. Al guardar, la página se recarga para detenerlo; tu proyecto se guarda automáticamente.",
+    "save": "Guardar"
   }
 }
