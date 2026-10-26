@@ -7,7 +7,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { suggestColumnLabels, isCodeLikeHeader, updateColumnState, resuggestColumns } from '../columnSuggestions.js'
+import { suggestColumnLabels, isCodeLikeHeader, updateColumnState, resuggestColumns, applyTemplateColumns } from '../columnSuggestions.js'
 
 const BASE = [
   {label: 'ID'},
@@ -157,4 +157,28 @@ test('resuggestColumns: a manual choice takes its field back from a suggestion',
   assert.equal(cols[1].label, 'Name')
   cols = resuggestColumns(updateColumnState(cols, 0, 'Name'), BASE)
   assert.deepEqual(cols.map(col => col.label), ['Name', 'Test Name'])
+})
+
+test('applyTemplateColumns carries over the copied project mapping by sheet header', () => {
+  const uploaded = [
+    {label: 'LOINC', dataKey: 'LOINC', original: 'LOINC', auto: true},
+    {label: 'Component', dataKey: 'Component', original: 'Component', auto: true},
+    {label: 'Extra', dataKey: 'Extra', original: 'Extra', auto: true},
+  ]
+  const template = [
+    {label: 'ID', dataKey: 'LOINC', original: 'LOINC'},
+    {label: 'Name', dataKey: 'Component', original: 'Component', hidden: true},
+    {label: 'Extra', dataKey: 'Extra', original: 'Extra', unmapped: true},
+  ]
+  const result = applyTemplateColumns(uploaded, template)
+  assert.deepEqual(result.map(col => col.label), ['ID', 'Name', 'Extra'])
+  assert.ok(result.every(col => col.auto === false))
+  assert.equal(result[2].unmapped, true)
+  assert.equal(result[1].hidden, undefined)
+})
+
+test('applyTemplateColumns leaves unmatched columns as suggestions and ignores an empty template', () => {
+  const uploaded = [{label: 'Other', dataKey: 'Other', original: 'Other', auto: true}]
+  assert.equal(applyTemplateColumns(uploaded, []), uploaded)
+  assert.deepEqual(applyTemplateColumns(uploaded, [{label: 'Name', original: 'Component'}]), uploaded)
 })

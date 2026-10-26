@@ -86,7 +86,7 @@ import { buildPanelPayload } from './openConceptPanel'
 import LoaderDialog from '../common/LoaderDialog'
 import Error403 from '../errors/Error403'
 import { HEADERS, SEMANTIC_SEARCH_HEADERS, ROW_STATES, VIEWS, DECISION_TABS, ROW_STAGES, PROMPTS_KEY_DEFAULT, PROMPTS_ACTION_TYPE_DEFAULT, SCORES_COLOR } from './constants'
-import { updateColumnState, resuggestColumns } from './columnSuggestions'
+import { updateColumnState, resuggestColumns, applyTemplateColumns } from './columnSuggestions'
 import MapProjectDeleteConfirmDialog from './MapProjectDeleteConfirmDialog';
 import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
@@ -169,6 +169,8 @@ const MapProject = () => {
   }, [location.search])
 
   const bridgeRef = React.useRef()
+  // Column mapping of the project being copied, applied to the next upload.
+  const templateColumnsRef = React.useRef([])
   const facetsRequestsRef = React.useRef({})
   const latestFacetRequestRef = React.useRef({})
   // project state
@@ -821,8 +823,12 @@ const MapProject = () => {
 
   const createProjectFromTemplate = () => {
     setLoadingProject(true)
-    APIService.new().overrideURL(templateFromProjectURL).appendToUrl('configurations/').get().then(response => {
+    // Columns are not part of the configurations; they come with the project.
+    const columnsRequest = APIService.new().overrideURL(templateFromProjectURL).get()
+      .then(response => response?.data?.columns || []).catch(() => [])
+    APIService.new().overrideURL(templateFromProjectURL).appendToUrl('configurations/').get().then(async response => {
       const copiedProject = response.data
+      templateColumnsRef.current = await columnsRequest
       setProject(null)
       setProjectPromptTemplateKey(copiedProject.prompt_template_key || '')
       setName(copiedProject.name ? t('map_project.create_similar_name', {name: copiedProject.name}) : '')
@@ -1556,7 +1562,7 @@ const MapProject = () => {
 
     // Uploaded columns start as suggestions (`auto`) until the user edits them.
     const cols = map(getColumns(omit(_data[0], ['__index'])), col => ({...col, auto: true}))
-    setColumns(resuggestColumns(cols, headers))
+    setColumns(resuggestColumns(applyTemplateColumns(cols, templateColumnsRef.current), headers))
   }
 
   const getReferencesForImport = (collection, scope, cascadeMethod, transformReferences) => {
