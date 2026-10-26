@@ -13,7 +13,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { getRowQuality, getRowQualities, countQualityBuckets, filterRowsByQualityBucket, createBestCandidateScoreCache } from '../rowQuality.js'
+import { getRowQuality, getRowQualities, countQualityBuckets, filterRowsByQualityBucket, createRowRecommendationCache } from '../rowQuality.js'
 
 const candidatesScore = { recommended: 80, available: 50 }
 const proposed = score => ({ search_meta: { search_normalized_score: score } })
@@ -110,57 +110,77 @@ test('filterRowsByQualityBucket: combined with a search or status filter, a buck
   assert.deepEqual(filterRowsByQualityBucket([{ __index: 3 }], qualities, 'available', 'desc'), [])
 })
 
-test('createBestCandidateScoreCache: recomputes only the rows whose candidates or concepts changed', () => {
+test('createRowRecommendationCache: recomputes only the rows whose candidates, concepts or analyses changed', () => {
   const computed = []
-  const computeScore = index => { computed.push(index); return 50 + index }
-  const cache = createBestCandidateScoreCache()
+  const compute = index => { computed.push(index); return { score: 50 + index } }
+  const cache = createRowRecommendationCache()
   const concepts = { a: { key: 'a' }, b: { key: 'b' }, c: { key: 'c' } }
   const rows = { 0: { concept_rows: { a: {} } }, 1: { concept_rows: { b: {} } }, 2: { concept_rows: { c: {} } } }
+  const analyses = { 2: [{ output: { recommendation: 'RECOMMEND' } }] }
 
-  let get = cache.getter({ rows, concepts, targetKey: 't', computeScore })
-  assert.deepEqual([0, 1, 2].map(get), [50, 51, 52])
+  let get = cache.getter({ rows, concepts, analyses, contextKey: 't', compute })
+  assert.deepEqual([0, 1, 2].map(index => get(index).score), [50, 51, 52])
   assert.deepEqual(computed, [0, 1, 2])
 
   // nothing changed: nothing recomputed, even across renders
   computed.length = 0
-  get = cache.getter({ rows, concepts, targetKey: 't', computeScore })
+  get = cache.getter({ rows, concepts, analyses: { ...analyses }, contextKey: 't', compute })
   ;[0, 1, 2].forEach(get)
   assert.deepEqual(computed, [])
 
   // one row's candidates changed (a rerank replaced its state)
   const rows2 = { ...rows, 1: { concept_rows: { b: { rerank_score: 80 } } } }
-  get = cache.getter({ rows: rows2, concepts, targetKey: 't', computeScore })
+  get = cache.getter({ rows: rows2, concepts, analyses, contextKey: 't', compute })
   ;[0, 1, 2].forEach(get)
   assert.deepEqual(computed, [1])
 
   // a lookup filled in concept c, used only by row 2
   computed.length = 0
   const concepts2 = { ...concepts, c: { key: 'c', display_name: 'C' } }
-  get = cache.getter({ rows: rows2, concepts: concepts2, targetKey: 't', computeScore })
+  get = cache.getter({ rows: rows2, concepts: concepts2, analyses, contextKey: 't', compute })
   ;[0, 1, 2].forEach(get)
   assert.deepEqual(computed, [2])
 
-  // the target repo changed: every row again
+  // an analysis landed for row 0
   computed.length = 0
-  get = cache.getter({ rows: rows2, concepts: concepts2, targetKey: 'u', computeScore })
+  const analyses2 = { ...analyses, 0: [{ output: { recommendation: 'REJECT' } }] }
+  get = cache.getter({ rows: rows2, concepts: concepts2, analyses: analyses2, contextKey: 't', compute })
+  ;[0, 1, 2].forEach(get)
+  assert.deepEqual(computed, [0])
+
+  // the target repo or the thresholds changed: every row again
+  computed.length = 0
+  get = cache.getter({ rows: rows2, concepts: concepts2, analyses: analyses2, contextKey: 'u', compute })
   ;[0, 1, 2].forEach(get)
   assert.deepEqual(computed, [0, 1, 2])
 })
 
-test('createBestCandidateScoreCache: a row with no candidates has no score and is not computed', () => {
+test('createRowRecommendationCache: a row with no candidates has no recommendation and is not computed', () => {
   const computed = []
-  const cache = createBestCandidateScoreCache()
-  const get = cache.getter({ rows: {}, concepts: {}, targetKey: 't', computeScore: index => { computed.push(index); return 1 } })
+  const cache = createRowRecommendationCache()
+  const get = cache.getter({ rows: {}, concepts: {}, analyses: {}, contextKey: 't', compute: index => { computed.push(index); return {} } })
   assert.equal(get(7), undefined)
   assert.deepEqual(computed, [])
 })
 
-test('createBestCandidateScoreCache: uses each render\'s own computeScore, not the first one it saw', () => {
-  // MapProject's first render has no target repo yet, so its pickTopRowView
-  // scores nothing; a later render's must be the one used.
-  const cache = createBestCandidateScoreCache()
+test('createRowRecommendationCache: a row with analyses but no candidates is still computed', () => {
+  // A refresh cleared the row's candidates and the match hasn't answered yet:
+  // its saved analysis is out of date, not gone.
+  const computed = []
+  const cache = createRowRecommendationCache()
+  const analyses = { 4: [{ output: { recommendation: 'RECOMMEND' } }] }
+  const get = cache.getter({ rows: {}, concepts: {}, analyses, contextKey: 't', compute: index => { computed.push(index); return { agreement: 'out_of_date' } } })
+  assert.deepEqual(get(4), { agreement: 'out_of_date' })
+  assert.equal(get(5), undefined)
+  assert.deepEqual(computed, [4])
+})
+
+test('createRowRecommendationCache: uses each render\'s own compute, not the first one it saw', () => {
+  // MapProject's first render has no target repo yet, so its rule sees no
+  // candidates; a later render's must be the one used.
+  const cache = createRowRecommendationCache()
   const rows = { 0: { concept_rows: { a: {} } } }
   const concepts = { a: { key: 'a' } }
-  assert.equal(cache.getter({ rows, concepts, targetKey: '|', computeScore: () => undefined })(0), undefined)
-  assert.equal(cache.getter({ rows, concepts, targetKey: 'loinc|/orgs/Regenstrief/sources/LOINC/', computeScore: () => 72 })(0), 72)
+  assert.equal(cache.getter({ rows, concepts, analyses: {}, contextKey: '|', compute: () => undefined })(0), undefined)
+  assert.equal(cache.getter({ rows, concepts, analyses: {}, contextKey: 'loinc|/orgs/Regenstrief/sources/LOINC/', compute: () => 72 })(0), 72)
 })

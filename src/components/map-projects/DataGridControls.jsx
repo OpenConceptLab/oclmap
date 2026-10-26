@@ -6,11 +6,13 @@ import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
 import MenuItem from '@mui/material/MenuItem';
 import Select from '@mui/material/Select';
+import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 
 import DoneIcon from '@mui/icons-material/Done';
 import CloseIcon from '@mui/icons-material/Close';
 import ClearIcon from '@mui/icons-material/Clear';
+import AssistantIcon from '@mui/icons-material/Assistant';
 
 import debounce from 'lodash/debounce'
 import filter from 'lodash/filter'
@@ -44,6 +46,9 @@ const DataGridControls = ({
   recommendedCount,
   availableCount,
   lowRankedCount,
+  aiDisagreesCount,
+  aiDisagreesSelected,
+  onAIDisagreesClick,
   decisions,
   decisionFilters,
   setDecisionFilters,
@@ -111,6 +116,24 @@ const DataGridControls = ({
           available={availableCount}
           low_ranked={lowRankedCount}
         />
+        {
+          // OpenConceptLab/ocl_issues#2908: rows marked Different pick, No
+          // match or Not enough to decide in the OCL AI Assistant column. Like
+          // the Match Quality buckets, it filters only while some row disagrees.
+          aiDisagreesCount > 0 &&
+            <Tooltip title={t('map_project.ai_disagrees_help')}>
+              <Chip
+                id='ai-disagrees-filter'
+                label={t('map_project.ai_disagrees', {n: aiDisagreesCount})}
+                icon={<AssistantIcon fontSize='inherit' />}
+                color='warning'
+                size='small'
+                variant={aiDisagreesSelected ? 'filled' : 'outlined'}
+                onClick={onAIDisagreesClick}
+                sx={{marginRight: '8px'}}
+              />
+            </Tooltip>
+        }
         <div style={{display: 'inline-block'}}>
           {
             selectedRowStatus === 'unmapped' &&

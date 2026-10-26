@@ -13,7 +13,6 @@ import { getAppTitle } from '../app/DocumentTitle'
 
 import Paper from '@mui/material/Paper'
 import Button from '@mui/material/Button';
-import CircularProgress from '@mui/material/CircularProgress';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton'
 import Tabs from '@mui/material/Tabs';
@@ -91,7 +90,7 @@ import MapProjectDeleteConfirmDialog from './MapProjectDeleteConfirmDialog';
 import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
 import DataGridControls from './DataGridControls'
-import { getPreviewEligibleRowIndexes, getRowsToProcess, countAIOnlyRows, getAutoMatchAIOnOpen, takeRunRows, clearRunRowStatuses, canRunAlgorithm, spendsMatchQuota, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, AI_LOOKUP_WAIT_MS, RERANK_LOOKUP_WAIT_MS, RERANK_MAX_IN_FLIGHT, isScispacyWarmingUp } from './autoMatchRows'
+import { getPreviewEligibleRowIndexes, getRowsToProcess, countAIOnlyRows, getAutoMatchAIOnOpen, takeRunRows, clearRunRowStatuses, canRunAlgorithm, spendsMatchQuota, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, AI_LOOKUP_WAIT_MS, RERANK_LOOKUP_WAIT_MS, RERANK_MAX_IN_FLIGHT, isScispacyWarmingUp, getAutoMatchLogExtras, getAutoMatchNoProposalReason, getMappingTarget, getRowMapping, isSameRowMapping } from './autoMatchRows'
 import { aiOnByDefault, getMaxRunRows, getMapperSettings } from '@openconceptlab/oclmap-extensions'
 import { createAutosaveScheduler, createLatestSender, saveOnLeave, trackSave, whenSaved, installUnloadGuard } from './autosave'
 import MatchSummaryCard from './MatchSummaryCard'
@@ -107,7 +106,7 @@ import ImportToCollection from './ImportToCollection'
 import ProjectLogs from './ProjectLogs';
 import { useAlgos, ensureConceptIdentity } from './algorithms'
 import { applyRequestSettings, getRequestLimits, getRequestSettings } from './requestLimits'
-import { countQualityBuckets, createBestCandidateScoreCache, filterRowsByQualityBucket, getRowQualities } from './rowQuality'
+import { countQualityBuckets, createRowRecommendationCache, filterRowsByQualityBucket, getRowQualities } from './rowQuality'
 import AutoMatchDialog from './AutoMatchDialog'
 import PreviewLimitDialog from './PreviewLimitDialog'
 import QuotaDialog from '../common/QuotaDialog'
@@ -122,7 +121,8 @@ import { createLookupSession, LOOKUP_NOT_FOUND } from './lookupSession'
 import { parseConceptKey } from './conceptKey'
 import { normalizeLookupConfig } from './lookupConfigFields'
 import { getDeclaredLocales, getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getSavedTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId } from './projectTargetRepo'
-import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, findTargetRowView, formatBridgeTargetDownloadEntry, resolveAICandidateID, getScoreDetails, getAIAnalysisCandidateIDs, withCachedConcept, withCandidateNames, withOwnNames, withSavedMatch } from './viewBuilders.js'
+import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, findTargetRowView, formatBridgeTargetDownloadEntry, resolveAICandidateID, getScoreDetails, getAIAnalysisCandidateIDs, getRowAIStatus, getRowRecommendation, getTargetRepoQualityViews, isAIDisagreement, isAIPickTarget, withCachedConcept, withCandidateNames, withOwnNames, withSavedMatch } from './viewBuilders.js'
+import { AIAssistantStatusCell, getAIStatusLabel } from './AIAssistantVerdict'
 import { formatClockTime, getCapacityWaitLabel, mergeCapacityWaits } from './rowProgress.js'
 
 import './MapProject.scss'
@@ -134,7 +134,7 @@ import '../common/ResizablePanel.scss'
  * once: (a) the write-side parallel state was wired up in PR1, (b) PR2a
  * routed all algorithm types (bridge, scispacy, AI payload v2) through the
  * normalizer, (c) PR2b flipped reads (Candidates / Concept / Score /
- * setAutoMatched / setStateViews) to consume rowMatchState + conceptCache
+ * setAutoMatched) to consume rowMatchState + conceptCache
  * via structured tuples, and (d) PR3-C dropped the legacy allCandidates
  * state + v1 save/load format. The wire format is now v2 only
  * (mapper_schema_version: 2); prod data was migrated under
@@ -293,6 +293,7 @@ const MapProject = () => {
   const [decisionTab, setDecisionTab] = React.useState('candidates')
   const [searchText, setSearchText] = React.useState('')  // csv row search
   const [selectedCandidatesScoreBucket, setSelectedCandidatesScoreBucket] = React.useState(false)
+  const [aiDisagreesFilter, setAIDisagreesFilter] = React.useState(false)
   const [scoreBucketSortBy, setScoreBucketSortBy] = React.useState('desc')
 
   const [matchDialog, setMatchDialog] = React.useState(false)
@@ -549,7 +550,7 @@ const MapProject = () => {
     // Merge ConceptDefinitions into the project-wide conceptCache, keyed by
     // the opaque concept_key. Prefer richer (lookup_status='full') over
     // stubs ('pending'/'partial'). Update conceptCacheRef synchronously so
-    // same-tick consumers (setStateViews / setAutoMatched) read the just-
+    // same-tick consumers (setAutoMatched) read the just-
     // merged entries before React commits the setState.
     const nextCache = { ...conceptCacheRef.current }
     let cacheChanged = false
@@ -1048,18 +1049,6 @@ const MapProject = () => {
     return qualityBucket ? t('map_project.' + qualityBucket) : t('map_project.unranked')
   }
 
-  const getRowAIIndicatorMeta = (index, targetConcept) => {
-    const status = rowStageRef.current[index]?.recommend
-    const { latestAnalysis, primaryCandidateId, alternateCandidateIds } = getAIAnalysisCandidateIDs(analysis[index], conceptCacheRef.current)
-    const targetCode = targetConcept?.id || targetConcept?.reference?.code
-    return {
-      status,
-      latestAnalysis,
-      isPrimaryMatch: Boolean(targetCode && primaryCandidateId && targetCode === primaryCandidateId),
-      isAlternateMatch: Boolean(targetCode && alternateCandidateIds.includes(targetCode)),
-    }
-  }
-
   const getColumnsForTable = () => {
     let cols = []
     forEach(columns, (column, idx) => {
@@ -1140,30 +1129,16 @@ const MapProject = () => {
       width: columnWidth['_targetCode_'] || 360,
       renderCell: params => {
         const targetConcept = getConcept(mapSelected[params.row.__index])
-        const aiMeta = AI_ASSISTANT_API_URL ? getRowAIIndicatorMeta(params.row.__index, targetConcept) : null
         if(targetConcept?.id) {
           return (
             <span style={{display: 'flex', alignItems: 'flex-start', gap: '6px', width: '100%'}}>
               {
-                aiMeta?.status === 0 ?
-                  <Tooltip title={t('map_project.ai_recommendation_running')}>
+                showAIAssistantColumn && isAIPickTarget(rowRecommendation(params.row.__index), targetConcept) &&
+                  <Tooltip title={t('map_project.ai_pick')}>
                     <span style={{display: 'inline-flex', paddingTop: '7px'}}>
-                      <CircularProgress size={14} />
+                      <AssistantIcon color='primary' fontSize='small' />
                     </span>
-                  </Tooltip> :
-                aiMeta?.status === -2 ?
-                  <Tooltip title={t('map_project.ai_recommendation_failed_retry')}>
-                    <IconButton size='small' sx={{padding: '4px', marginTop: '3px'}} onClick={e => { e.stopPropagation(); fetchRecommendation(params.row) }}>
-                      <AssistantIcon color='error' fontSize='small' />
-                    </IconButton>
-                  </Tooltip> :
-                aiMeta?.latestAnalysis ?
-                  <Tooltip title={aiMeta.isPrimaryMatch ? t('map_project.ai_recommended') : (aiMeta.isAlternateMatch ? t('map_project.ai_alternate') : t('map_project.ai_analysis'))}>
-                    <span style={{display: 'inline-flex', paddingTop: '7px'}}>
-                      <AssistantIcon color={aiMeta.isPrimaryMatch ? 'primary' : 'warning'} fontSize='small' />
-                    </span>
-                  </Tooltip> :
-                null
+                  </Tooltip>
               }
               <span style={{minWidth: 0, flex: 1}}>
                 <Concept key={`${params.row.__index}-${targetConcept.id}`} sx={{padding: 0}} repoVersion={repoVersion} notClickable firstChild concept={withCandidateNames(targetConcept, rowMatchStateRef.current?.[params.row.__index], conceptCacheRef.current)} noScore onCardClick={false} inputLocale={inputLocale} locales={filters.locale || ''} asTarget />
@@ -1231,6 +1206,32 @@ const MapProject = () => {
         )
       }
     })
+    // The OCL AI Assistant's agreement with the top score, or its call running
+    // or failed (OpenConceptLab/ocl_issues#2908): for users who can run it, or
+    // on a project that has analyses.
+    if(showAIAssistantColumn)
+      cols.push({
+        field: '_aiAssistant_',
+        headerName: t('map_project.ocl_ai_assistant'),
+        width: columnWidth['_aiAssistant_'] || 210,
+        align: 'left',
+        headerAlign: 'left',
+        valueGetter: (_, row) => {
+          const recommendation = rowRecommendation(row.__index)
+          return getAIStatusLabel(t, getRowAIStatus(recommendation, rowStageRef.current[row.__index]?.recommend), recommendation)
+        },
+        renderCell: params => {
+          const recommendation = rowRecommendation(params.row.__index)
+          return (
+            <AIAssistantStatusCell
+              status={getRowAIStatus(recommendation, rowStageRef.current[params.row.__index]?.recommend)}
+              recommendation={recommendation}
+              candidatesScore={candidatesScore}
+              onRetry={() => fetchRecommendation(params.row)}
+            />
+          )
+        }
+      })
     cols.push({
       field: '_bestScore_',
       headerName: t('search.search_score'),
@@ -1422,6 +1423,7 @@ const MapProject = () => {
     setSelectedRowIds([])
     setAlert(false)
     setSelectedCandidatesScoreBucket(false)
+    setAIDisagreesFilter(false)
     setScoreBucketSortBy('desc')
     rowThrottlesRef.current = {}
     setRowStage({})
@@ -2228,106 +2230,223 @@ const MapProject = () => {
     return service
   }
 
-  // Pick the highest-scoring target-repo ConceptRow for a given rowIndex
-  // from the unified-model state. Returns a RowView ({candidate,
-  // conceptDefinition, conceptRow, bridgeConceptDefinition?}) or null.
-  // The target canonical comes from buildProjectContext — the SAME source
-  // the normalizer used to stamp ConceptDefinition.reference.url, so the
-  // filter is guaranteed to agree with the data. Reading canonical from
-  // the caller's `_repo` would risk the derived-vs-explicit mismatch the
-  // unified-model spec exists to avoid.
-  // (plans/unified-mapper-model.md — score-grouped view's bucketing rule.)
-  const pickTopRowView = (rowIndex) => {
-    const rowState = rowMatchStateRef.current[rowIndex]
-    if(!rowState) return null
-    const targetRepo = buildProjectContext()?.target_repo
-    const targetCanonical = targetRepo?.canonical_url
-    const targetRelativeUrl = targetRepo?.relative_url
-    if(!targetCanonical && !targetRelativeUrl) return null
-    const views = buildQualityRowViews(rowState, conceptCacheRef.current)
-    // Auto-match must land on a target-repo concept. Bridge intermediaries
-    // are excluded — even if their rerank_score is high, they're not
-    // mappable. Score view already places bridge_child rows under the
-    // target concept's ConceptRow, so filtering by canonical_url here is
-    // the right invariant.
-    const eligible = views.filter(v => conceptBelongsToTargetRepo(v.conceptDefinition, targetCanonical, targetRelativeUrl))
-    if(!eligible.length) return null
-    return orderBy(eligible, [v => v.conceptRow?.rerank_score ?? -1], ['desc'])[0]
-  }
+  // Build the v2 AI Assistant payload sections (recommendable_concepts +
+  // bridge_context + target_repo) by reading directly from rowMatchState +
+  // conceptCache. See plans/unified-mapper-model.md "AI Assistant payload
+  // (match-recommend)".
+  const buildV2RecommendationPayload = (rowIndex) => {
+    const projectContext = buildProjectContext()
+    if(!projectContext?.target_repo?.canonical_url) return null
 
-  // Each row's best target-repo candidate score, for the grid's match quality
-  // (ocl_issues#2837). A row is recomputed only when its candidates, a concept
-  // they use, or the target repo changes.
-  const bestCandidateScoreCacheRef = React.useRef(null)
-  if(!bestCandidateScoreCacheRef.current)
-    bestCandidateScoreCacheRef.current = createBestCandidateScoreCache()
-  const getBestCandidateScoreGetter = () => {
-    const targetRepo = buildProjectContext()?.target_repo
-    return bestCandidateScoreCacheRef.current.getter({
-      rows: rowMatchStateRef.current,
-      concepts: conceptCacheRef.current,
-      targetKey: `${targetRepo?.canonical_url || ''}|${targetRepo?.relative_url || ''}`,
-      // this render's pickTopRowView, which sees this render's target repo
-      computeScore: index => pickTopRowView(index)?.conceptRow?.rerank_score,
-    })
-  }
+    const rowState = rowMatchStateRef.current?.[rowIndex]
+    if(!rowState || !Object.keys(rowState.candidates || {}).length) return null
 
-  const setStateViews = (data, _repo) => {
-    setRowStatuses(prev => {
-      forEach(data, concept => {
-        const rowIdx = concept?.row?.__index
-        if(!isNumber(rowIdx)) return
-        const top = pickTopRowView(rowIdx)
-        const topScore = top?.conceptRow?.rerank_score
-        if(isNumber(topScore) && topScore >= candidatesScore.recommended) {
-          const _concept = {...conceptForMapping(top), repo: {..._repo, version: repoVersion?.id || _repo.version, version_url: repoVersion?.version_url || _repo.version_url}}
-          setMapSelected(_prev => {
-            _prev[rowIdx] = _concept
-            return _prev
-          })
-          const mapType = top.candidate?.map_type || 'SAME-AS'
-          prev.readyForReview = uniq([...prev.readyForReview, rowIdx])
-          setDecisions(p => ({...p, [rowIdx]: 'map'}))
-          setMapTypes(p => ({...p, [rowIdx]: mapType}))
-          log({action: 'auto-matched', extras: {repoVersion: repoVersion?.version_url || _repo.version_url, name: getConceptLabel(_concept), map_type: mapType}}, rowIdx)
-        } else {
-          setMapSelected(prev => omit(prev, rowIdx))
-          setDecisions(prev => omit(prev, rowIdx))
-          setMapTypes(prev => omit(prev, rowIdx))
-          prev.unmapped = uniq([...prev.unmapped, rowIdx])
-        }
-      })
-      return prev
-    })
-  }
-
-  const setAutoMatched = (indexes) => {
-    forEach(indexes, index => {
-      const top = pickTopRowView(index)
-      const topScore = top?.conceptRow?.rerank_score
-      if(isNumber(topScore) && topScore >= candidatesScore.recommended) {
-        setRowStatuses(prev => {
-          let newStatuses = {...prev}
-          const _concept = {...conceptForMapping(top), repo: {...repo, version: repoVersion?.id || repo.version, version_url: repoVersion?.version_url || repo.version_url}}
-          setMapSelected(_prev => {
-            _prev[index] = _concept
-            return _prev
-          })
-          const mapType = top.candidate?.map_type || 'SAME-AS'
-          newStatuses.readyForReview = uniq([...newStatuses.readyForReview, index])
-          setDecisions(_prev => ({..._prev, [index]: 'map'}))
-          setMapTypes(_prev => ({..._prev, [index]: mapType}))
-          log({action: 'auto-matched', extras: {repoVersion: repoVersion?.version_url || repo.version_url, name: getConceptLabel(_concept), map_type: mapType, algorithm: top.candidate?.algorithm_id}}, index)
-          newStatuses.unmapped = without(newStatuses.unmapped, index)
-          return newStatuses
-        })
-      } else {
-        setMapSelected(prev => omit(prev, index))
-        setDecisions(prev => omit(prev, index))
-        setMapTypes(prev => omit(prev, index))
-        setRowStatuses(prev => ({...prev, unmapped: uniq([...prev.unmapped, index])}))
+    const allNormCandidates = Object.values(rowState.candidates)
+    const defsByKey = new Map()
+    allNormCandidates.forEach(cand => {
+      const def = conceptCacheRef.current[cand.concept_key]
+      if(!def) return
+      const existing = defsByKey.get(def.key)
+      if(!existing || lookupStatusRank(def.lookup_status) > lookupStatusRank(existing.lookup_status))
+        defsByKey.set(def.key, def)
+      if(cand.bridge_concept_key) {
+        const bridgeDef = conceptCacheRef.current[cand.bridge_concept_key]
+        if(bridgeDef && !defsByKey.has(bridgeDef.key)) defsByKey.set(bridgeDef.key, bridgeDef)
       }
     })
+
+    const targetCanonical = projectContext.target_repo.canonical_url
+    // Project-pinned identifying property codes. When absent (FHIR-passthrough
+    // sources or repos that haven't pinned a summary), filterPropertyBySummary
+    // passes def.property through whole.
+    const summaryPropertyCodes = repoVersion?.meta?.display?.concept_summary_properties
+    // PR3-H: union of (input_locale, filters.locale). Empty set = no locale
+    // filter applied (backwards-compatible for projects with neither set).
+    const filterLocaleString = (filters?.locale || '')
+    const filterLocales = filterLocaleString ? filterLocaleString.split(',').map(s => s.trim()).filter(Boolean) : []
+    const effectiveLocales = [
+      ...(inputLocale ? [inputLocale] : []),
+      ...filterLocales
+    ]
+    const recommendable_concepts = []
+    const bridge_context = []
+
+    defsByKey.forEach((def, key) => {
+      const isBridgeIntermediary = allNormCandidates.some(c => c.concept_key === key && c.type === 'bridge')
+
+      if(isBridgeIntermediary) {
+        // Bridges are CONTEXT only — never recommendable. Their target_concept_keys
+        // tell the AI which recommendable_concepts they justify.
+        const bridgeCandidate = allNormCandidates.find(c => c.concept_key === key && c.type === 'bridge')
+        const target_concept_keys = [...new Set(
+          allNormCandidates
+            .filter(c => c.type === 'bridge_child' && c.bridge_concept_key === key)
+            .map(c => c.concept_key)
+        )]
+        bridge_context.push({
+          concept_key: key,
+          canonical_reference: def.reference,
+          display_name: def.display_name,
+          score: bridgeCandidate?.score,
+          target_concept_keys
+        })
+      } else if(conceptBelongsToTargetRepo(def, targetCanonical, projectContext.target_repo.relative_url)) {
+        // Target-repo concepts only. Evidence shows which algorithms surfaced
+        // this concept (and via which bridge, if applicable).
+        const evidence = allNormCandidates
+          .filter(c => c.concept_key === key)
+          .map(c => {
+            const e = {
+              algorithm_id: c.algorithm_id,
+              candidate_type: c.type,
+              score: c.score,
+              highlights: c.highlights
+            }
+            if(c.type === 'bridge_child' && c.bridge_concept_key)
+              e.via = {bridge_concept_key: c.bridge_concept_key, bridge_map_type: c.map_type}
+            return e
+          })
+        recommendable_concepts.push(buildRecommendableConceptEntry({
+          def, key, evidence, rowState, summaryPropertyCodes, effectiveLocales
+        }))
+      }
+      // Else: concept from a non-target, non-bridge source — skip
+    })
+
+    // PR3-D3-lite (L-3): drop `concept_class` / `datatype` from every entry
+    // when constant across the surfaced set. LOINC always emits both as
+    // constants ("LOINC" / "Nom"); for mixed-class repos the fields stay.
+    stripConstantClassAndDatatype(recommendable_concepts)
+
+    // PR3-D3-lite (L-6): strip `canonical_url_source` from the target_repo
+    // projection. The field is admin metadata (tells UI whether the canonical
+    // was explicit on the repo vs. derived) — the LLM has no use for it.
+    // eslint-disable-next-line no-unused-vars
+    const { canonical_url_source: _src, ...aiTargetRepo } = projectContext.target_repo
+    return {
+      target_repo: aiTargetRepo,
+      recommendable_concepts,
+      bridge_context
+    }
+  }
+
+  // A row's recommendation (OpenConceptLab/ocl_issues#2908): the rule in
+  // getRowRecommendation, given the row's target-repo candidates with their
+  // scores and the row's OCL AI Assistant analyses. The candidate-pool
+  // fingerprint, which says whether the latest analysis saw these candidates,
+  // is only built for a row that has analyses. Until the target repo is known
+  // no candidate can be mapped, so there are none to recommend.
+  const getRowRecommendationFor = (index, analyses = analysis[index]) => {
+    const targetRepo = buildProjectContext()?.target_repo
+    const hasTargetRepo = Boolean(targetRepo?.canonical_url || targetRepo?.relative_url)
+    const history = Array.isArray(analyses) ? analyses : (analyses ? [analyses] : [])
+    return getRowRecommendation({
+      views: hasTargetRepo ? getTargetRepoQualityViews(rowMatchStateRef.current[index], conceptCacheRef.current, targetRepo.canonical_url, targetRepo.relative_url) : [],
+      analyses: history,
+      fingerprint: history.length ? getCandidatePoolFingerprint(buildV2RecommendationPayload(index)?.recommendable_concepts) : null,
+      candidatesScore,
+      conceptCache: conceptCacheRef.current,
+    })
+  }
+
+  // Each row's recommendation, for the grid: its match quality
+  // (ocl_issues#2837), its OCL AI Assistant column, Target Code icon and
+  // filter. A row is recomputed only when its candidates, a concept they use,
+  // its analyses or the project context change.
+  const rowRecommendationCacheRef = React.useRef(null)
+  if(!rowRecommendationCacheRef.current)
+    rowRecommendationCacheRef.current = createRowRecommendationCache()
+  const getRowRecommendationGetter = () => {
+    const targetRepo = buildProjectContext()?.target_repo
+    return rowRecommendationCacheRef.current.getter({
+      rows: rowMatchStateRef.current,
+      concepts: conceptCacheRef.current,
+      analyses: analysis,
+      // what the rule and the candidate-pool fingerprint read besides the row
+      contextKey: JSON.stringify([
+        targetRepo?.canonical_url, targetRepo?.relative_url, candidatesScore?.recommended, candidatesScore?.available,
+        repoVersion?.meta?.display?.concept_summary_properties, inputLocale, filters?.locale
+      ]),
+      // this render's rule, which sees this render's project context
+      compute: index => getRowRecommendationFor(index),
+    })
+  }
+
+  // Each row's mapping as the user sees it, and what the current run left
+  // each of its rows with, so that the run's AI step deciding a row again
+  // leaves alone a row the user changed meanwhile (OpenConceptLab/ocl_issues#2908).
+  const rowMappingStateRef = React.useRef({})
+  rowMappingStateRef.current = {mapSelected, decisions, mapTypes, reviewed: rowStatuses.reviewed}
+  const runRowMappingsRef = React.useRef({})
+
+  // AutoMatch's proposal for a row of the run: the row's recommendation
+  // (getRowRecommendationFor) mapped, or the row left Unmapped, with who chose
+  // it in the row's log. A row the run decides is no longer Approved; a full
+  // run already clears approvals when it starts, an AI-only run doesn't.
+  const proposeRowMapping = (index, recommendation, _repo = repo) => {
+    const proposal = recommendation?.proposal
+    const logExtras = getAutoMatchLogExtras(recommendation)
+    const current = rowMappingStateRef.current
+    if(proposal) {
+      const _concept = {...conceptForMapping(proposal), repo: {..._repo, version: repoVersion?.id || _repo.version, version_url: repoVersion?.version_url || _repo.version_url}}
+      const mapType = proposal.candidate?.map_type || 'SAME-AS'
+      setMapSelected(_prev => {
+        _prev[index] = _concept
+        return _prev
+      })
+      setDecisions(_prev => ({..._prev, [index]: 'map'}))
+      setMapTypes(_prev => ({..._prev, [index]: mapType}))
+      setRowStatuses(prev => ({...prev, readyForReview: uniq([...prev.readyForReview, index]), unmapped: without(prev.unmapped, index), reviewed: without(prev.reviewed, index)}))
+      log({action: 'auto-matched', extras: {repoVersion: repoVersion?.version_url || _repo.version_url, name: getConceptLabel(_concept), map_type: mapType, algorithm: proposal.candidate?.algorithm_id, ...logExtras}}, index)
+      // Until the next render, the row as the run just left it.
+      rowMappingStateRef.current = {
+        mapSelected: {...current.mapSelected, [index]: _concept}, decisions: {...current.decisions, [index]: 'map'},
+        mapTypes: {...current.mapTypes, [index]: mapType}, reviewed: without(current.reviewed || [], index)
+      }
+      runRowMappingsRef.current[index] = {...getRowMapping(rowMappingStateRef.current, index), chosenBy: logExtras.chosen_by, proposed: true}
+    } else {
+      setMapSelected(prev => omit(prev, index))
+      setDecisions(prev => omit(prev, index))
+      setMapTypes(prev => omit(prev, index))
+      // A proposal the rule withdraws (the AI found no match over a Recommended
+      // score) is no longer Proposed.
+      setRowStatuses(prev => ({...prev, unmapped: uniq([...prev.unmapped, index]), readyForReview: without(prev.readyForReview, index), reviewed: without(prev.reviewed, index)}))
+      const reason = getAutoMatchNoProposalReason(recommendation)
+      if(reason)
+        log({action: 'auto_match_no_proposal', description: t(`map_project.auto_match_no_proposal_${reason}`), extras: logExtras}, index)
+      rowMappingStateRef.current = {
+        mapSelected: omit(current.mapSelected, index), decisions: omit(current.decisions, index),
+        mapTypes: omit(current.mapTypes, index), reviewed: without(current.reviewed || [], index)
+      }
+      runRowMappingsRef.current[index] = {...getRowMapping(rowMappingStateRef.current, index), chosenBy: logExtras.chosen_by, proposed: true}
+    }
+  }
+
+  // The rows' proposals, by the recommendation rule with any current analysis
+  // each row has (OpenConceptLab/ocl_issues#2908). A row the run already
+  // proposed, and the user changed since, is left alone.
+  const setAutoMatched = (indexes, _repo = repo) => {
+    forEach(indexes, index => {
+      const runMapping = runRowMappingsRef.current[index]
+      if(runMapping?.proposed && !isSameRowMapping(runMapping, getRowMapping(rowMappingStateRef.current, index)))
+        return
+      proposeRowMapping(index, getRowRecommendationFor(index), _repo)
+    })
+  }
+
+  // The run's AI step returned for a row: decide it again with the new
+  // analysis, unless the user changed the row after the run set it. Nothing
+  // changes, and nothing is logged, when the outcome and who chose are the
+  // same, except that a pick that isn't a candidate is always logged.
+  const proposeRowMappingAfterAI = (index, analyses) => {
+    const runMapping = runRowMappingsRef.current[index]
+    if(!isSameRowMapping(runMapping, getRowMapping(rowMappingStateRef.current, index)))
+      return
+    const recommendation = getRowRecommendationFor(index, analyses)
+    const target = recommendation.proposal ? getMappingTarget(conceptForMapping(recommendation.proposal)) : null
+    if(target === runMapping.target && recommendation.chosenBy === runMapping.chosenBy && recommendation.agreement !== 'pick_not_candidate')
+      return
+    proposeRowMapping(index, recommendation)
   }
 
   const getAlgoLogExtras = algo => {
@@ -2478,8 +2597,8 @@ const MapProject = () => {
           // A batch that answers after a newer run started belongs to no run.
           if(!isCurrentRun())
             return
-          // Populate rowMatchState before any consumer (setStateViews /
-          // setAutoMatched) tries to read it. The per-row fetch flow
+          // Populate rowMatchState before any consumer (setAutoMatched)
+          // tries to read it. The per-row fetch flow
           // routes through `onResponse` which already calls
           // mergeIntoRowMatchState; bulk processBatch doesn't, so we
           // run the normalizer here.
@@ -2507,7 +2626,7 @@ const MapProject = () => {
             }
           }
           if(!isMultiAlgo)
-            setStateViews(data, _repo)
+            setAutoMatched(filter(map(data, entry => entry?.row?.__index), isNumber), _repo)
           setMatchedConcepts(prev => [...prev, ...data]);
           if(Array.isArray(data) && data.length)
             saveLateRunResult()
@@ -2579,6 +2698,8 @@ const MapProject = () => {
       // began: it changed nothing to save.
       const runStarted = !isRunStopped()
       const aiOutcomes = {}
+      // What each row starts the run with; the run's proposals update it.
+      runRowMappingsRef.current = Object.fromEntries(rowsToProcess.map(row => [row.__index, getRowMapping(rowMappingStateRef.current, row.__index)]))
       try {
         bulkMatchAlgoIdsRef.current = map(_selectedAlgos, 'id')
         // Reset all algo stages to -1 for every row before starting so that
@@ -3144,18 +3265,26 @@ const MapProject = () => {
       rows = filter(rows, row => indexes.includes(row.__index.toString()))
     }
     rows = filterRowsByQualityBucket(rows, rowQualities, selectedCandidatesScoreBucket, scoreBucketSortBy)
+    if(aiDisagreesFilter && aiDisagreesCount)
+      rows = filter(rows, row => isAIDisagreement(rowRecommendation(row.__index)))
     return rows
   }
 
   // Rows with a proposed match count by its score; rows with candidates and no
   // decision yet, by their best candidate (ocl_issues#2837).
+  const rowRecommendation = getRowRecommendationGetter()
   const rowQualities = getRowQualities({
     rowIndexes: data?.length ? map(data, '__index') : [],
     mapSelected,
     decisions,
-    getBestCandidateScore: getBestCandidateScoreGetter(),
+    // Match Quality stays score-only (OpenConceptLab/ocl_issues#2908)
+    getBestCandidateScore: index => rowRecommendation(index)?.top?.conceptRow?.rerank_score,
   }, candidatesScore)
   const { recommended: recommendedCount, available: availableCount, low_ranked: lowRankedCount } = countQualityBuckets(rowQualities)
+  // Rows where the OCL AI Assistant picked another candidate than the top
+  // score, or found no match or too little to decide.
+  const showAIAssistantColumn = inAIAssistantGroup || !isEmpty(analysis)
+  const aiDisagreesCount = showAIAssistantColumn ? filter(data, row => isAIDisagreement(rowRecommendation(row.__index))).length : 0
 
   const getStateFromIndex = index => {
     if(rowStatuses.reviewed.includes(index))
@@ -5726,106 +5855,6 @@ const MapProject = () => {
     }
   }
 
-  // Build the v2 AI Assistant payload sections (recommendable_concepts +
-  // bridge_context + target_repo) by reading directly from rowMatchState +
-  // conceptCache. See plans/unified-mapper-model.md "AI Assistant payload
-  // (match-recommend)".
-  const buildV2RecommendationPayload = (rowIndex) => {
-    const projectContext = buildProjectContext()
-    if(!projectContext?.target_repo?.canonical_url) return null
-
-    const rowState = rowMatchStateRef.current?.[rowIndex]
-    if(!rowState || !Object.keys(rowState.candidates || {}).length) return null
-
-    const allNormCandidates = Object.values(rowState.candidates)
-    const defsByKey = new Map()
-    allNormCandidates.forEach(cand => {
-      const def = conceptCacheRef.current[cand.concept_key]
-      if(!def) return
-      const existing = defsByKey.get(def.key)
-      if(!existing || lookupStatusRank(def.lookup_status) > lookupStatusRank(existing.lookup_status))
-        defsByKey.set(def.key, def)
-      if(cand.bridge_concept_key) {
-        const bridgeDef = conceptCacheRef.current[cand.bridge_concept_key]
-        if(bridgeDef && !defsByKey.has(bridgeDef.key)) defsByKey.set(bridgeDef.key, bridgeDef)
-      }
-    })
-
-    const targetCanonical = projectContext.target_repo.canonical_url
-    // Project-pinned identifying property codes. When absent (FHIR-passthrough
-    // sources or repos that haven't pinned a summary), filterPropertyBySummary
-    // passes def.property through whole.
-    const summaryPropertyCodes = repoVersion?.meta?.display?.concept_summary_properties
-    // PR3-H: union of (input_locale, filters.locale). Empty set = no locale
-    // filter applied (backwards-compatible for projects with neither set).
-    const filterLocaleString = (filters?.locale || '')
-    const filterLocales = filterLocaleString ? filterLocaleString.split(',').map(s => s.trim()).filter(Boolean) : []
-    const effectiveLocales = [
-      ...(inputLocale ? [inputLocale] : []),
-      ...filterLocales
-    ]
-    const recommendable_concepts = []
-    const bridge_context = []
-
-    defsByKey.forEach((def, key) => {
-      const isBridgeIntermediary = allNormCandidates.some(c => c.concept_key === key && c.type === 'bridge')
-
-      if(isBridgeIntermediary) {
-        // Bridges are CONTEXT only — never recommendable. Their target_concept_keys
-        // tell the AI which recommendable_concepts they justify.
-        const bridgeCandidate = allNormCandidates.find(c => c.concept_key === key && c.type === 'bridge')
-        const target_concept_keys = [...new Set(
-          allNormCandidates
-            .filter(c => c.type === 'bridge_child' && c.bridge_concept_key === key)
-            .map(c => c.concept_key)
-        )]
-        bridge_context.push({
-          concept_key: key,
-          canonical_reference: def.reference,
-          display_name: def.display_name,
-          score: bridgeCandidate?.score,
-          target_concept_keys
-        })
-      } else if(conceptBelongsToTargetRepo(def, targetCanonical, projectContext.target_repo.relative_url)) {
-        // Target-repo concepts only. Evidence shows which algorithms surfaced
-        // this concept (and via which bridge, if applicable).
-        const evidence = allNormCandidates
-          .filter(c => c.concept_key === key)
-          .map(c => {
-            const e = {
-              algorithm_id: c.algorithm_id,
-              candidate_type: c.type,
-              score: c.score,
-              highlights: c.highlights
-            }
-            if(c.type === 'bridge_child' && c.bridge_concept_key)
-              e.via = {bridge_concept_key: c.bridge_concept_key, bridge_map_type: c.map_type}
-            return e
-          })
-        recommendable_concepts.push(buildRecommendableConceptEntry({
-          def, key, evidence, rowState, summaryPropertyCodes, effectiveLocales
-        }))
-      }
-      // Else: concept from a non-target, non-bridge source — skip
-    })
-
-    // PR3-D3-lite (L-3): drop `concept_class` / `datatype` from every entry
-    // when constant across the surfaced set. LOINC always emits both as
-    // constants ("LOINC" / "Nom"); for mixed-class repos the fields stay.
-    stripConstantClassAndDatatype(recommendable_concepts)
-
-    // PR3-D3-lite (L-6): strip `canonical_url_source` from the target_repo
-    // projection. The field is admin metadata (tells UI whether the canonical
-    // was explicit on the repo vs. derived) — the LLM has no use for it.
-    // eslint-disable-next-line no-unused-vars
-    const { canonical_url_source: _src, ...aiTargetRepo } = projectContext.target_repo
-    return {
-      target_repo: aiTargetRepo,
-      recommendable_concepts,
-      bridge_context
-    }
-  }
-
   // Rows with candidates and no analysis of them yet; fetchRecommendation skips the rest.
   const getAIAnalysableRows = _rows => filter(_rows, _row => {
     const concepts = isNumber(_row?.__index) ? buildV2RecommendationPayload(_row.__index)?.recommendable_concepts : null
@@ -6004,6 +6033,11 @@ const MapProject = () => {
         }
         const newEntry = {...response.data, model: modelUsed, model_name: modelUsedRef?.name, prompt_template: resolvedPromptRef, prompt_template_uri: resolvedPromptRef.uri, output_locale: promptOutputLocale || null, candidate_pool_fingerprint: candidatePoolFingerprint, timestamp: timestamp, user: user.username || user.id}
         setAnalysis(prev => ({...prev, [__index]: [...(prev[__index] || []), newEntry]}))
+        // A run's analysis decides the row again (OpenConceptLab/ocl_issues#2908);
+        // one the user runs on a row reorders its candidates but changes no
+        // mapping. A stopped run proposes no more mappings.
+        if(isBulk && !isSuperseded() && !abortRef.current)
+          proposeRowMappingAfterAI(__index, [...existingAnalyses, newEntry])
         // Schedule a save, or leaving loses the result
         // (OpenConceptLab/ocl_issues#2833). Auto Match rows (isBulk) are saved
         // when the run completes. A result that lands after the user left
@@ -6365,6 +6399,9 @@ const MapProject = () => {
                 recommendedCount={recommendedCount}
                 availableCount={availableCount}
                 lowRankedCount={lowRankedCount}
+                aiDisagreesCount={aiDisagreesCount}
+                aiDisagreesSelected={aiDisagreesFilter}
+                onAIDisagreesClick={() => setAIDisagreesFilter(!aiDisagreesFilter)}
                 decisions={decisions}
                 decisionFilters={decisionFilters}
                 setDecisionFilters={setDecisionFilters}
@@ -6724,6 +6761,7 @@ const MapProject = () => {
                       repoVersion={repoVersion}
                       onFetchRecommendation={fetchRecommendation}
                       analysis={analysis[rowIndex]}
+                      recommendation={rowRecommendation(rowIndex)}
                       columns={getValidColumns()}
                       facets={getFacetsForRow(rowIndex)}
                       appliedFacets={appliedFacets[rowIndex]}
