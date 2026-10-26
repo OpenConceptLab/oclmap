@@ -42,3 +42,13 @@ export const createRunClosers = () => {
     hasUnsettled: () => unsettled.size > 0,
   }
 }
+
+// MapProject loads its project once, on mount, so another project's URL needs
+// a new page. Its own navigation (a save's) passes the path it left in
+// location.state.mapProjectFrom and keeps the page. Returns the key and path
+// to keep for the next location.
+export const getPageKey = ({key, path}, location) => {
+  if(key && location.state?.mapProjectFrom === path)
+    return {key, path: location.pathname}
+  return {key: location.pathname, path: location.pathname}
+}

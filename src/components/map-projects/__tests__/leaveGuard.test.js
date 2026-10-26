@@ -5,7 +5,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { blockLeaving, continueLeaving, createRunClosers } from '../leaveGuard.js'
+import { blockLeaving, continueLeaving, createRunClosers, getPageKey } from '../leaveGuard.js'
 
 // Stands in for a history v4 object: block's prompt decides each transition.
 const createFakeHistory = () => {
@@ -134,4 +134,27 @@ test('closing the tab sends nothing for a run already closed', async () => {
   await closers.closeAll(true, {keepalive: true})
 
   assert.deepEqual(calls, [[false, false]])
+})
+
+test('getPageKey gives another project a new page', () => {
+  const first = getPageKey({key: null, path: null}, {pathname: '/orgs/A/map-projects/1/'})
+  assert.deepEqual(first, {key: '/orgs/A/map-projects/1/', path: '/orgs/A/map-projects/1/'})
+
+  const next = getPageKey(first, {pathname: '/orgs/A/map-projects/2/'})
+  assert.deepEqual(next, {key: '/orgs/A/map-projects/2/', path: '/orgs/A/map-projects/2/'})
+})
+
+test("getPageKey keeps the page for a save's own navigation", () => {
+  const page = getPageKey({key: null, path: null}, {pathname: '/map-projects/new'})
+  const saved = getPageKey(page, {pathname: '/orgs/A/map-projects/1/', state: {mapProjectFrom: '/map-projects/new'}})
+  assert.deepEqual(saved, {key: '/map-projects/new', path: '/orgs/A/map-projects/1/'})
+})
+
+test('getPageKey gives a new page on Back to an entry a save pushed', () => {
+  // new -> saved as 1 (kept) -> project 2 -> Back to 1, whose entry still
+  // carries the save's state.
+  const saved = getPageKey(getPageKey({key: null, path: null}, {pathname: '/map-projects/new'}), {pathname: '/p/1', state: {mapProjectFrom: '/map-projects/new'}})
+  const other = getPageKey(saved, {pathname: '/p/2'})
+  const back = getPageKey(other, {pathname: '/p/1', state: {mapProjectFrom: '/map-projects/new'}})
+  assert.deepEqual(back, {key: '/p/1', path: '/p/1'})
 })

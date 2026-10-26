@@ -1773,6 +1773,9 @@ const MapProject = () => {
     else
       service = service.post(formData, null, {"Content-Type": "multipart/form-data"}, undefined, true)
 
+    // Where the user was when saving: a save that lands once they went
+    // elsewhere mustn't pull them back.
+    const pathAtSave = history.location.pathname
     const request = service.then(response => {
       setIsSaving(false)
       const status = response?.response?.status || response?.status
@@ -1804,11 +1807,10 @@ const MapProject = () => {
         setProject(response.data)
         if(!isUpdate)
           refreshMapperQuotaCache()
-        // A save that lands after the user left mustn't pull them back here.
-        if(response.data.url && isMountedRef.current && !options.leaving) {
+        if(response.data.url && isMountedRef.current && !options.leaving && history.location.pathname === pathAtSave) {
           ownNavigationRef.current = true
           try {
-            history.push(response.data.url)
+            history.push(response.data.url, {mapProjectFrom: pathAtSave})
           } finally {
             ownNavigationRef.current = false
           }
