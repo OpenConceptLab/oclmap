@@ -455,14 +455,9 @@ export const normalizeAlgorithmInvocation = (rawPayload, ctx = {}) => {
 }
 
 /**
- * Drop the bridge_child candidates whose concept the target version doesn't
- * have (its lookup came back 404), and the concept_rows nothing references
- * after that. The bridge filters cascade targets by the target repo, not its
- * pinned version, so it can propose codes the version lacks (ocl_issues#2840).
- * Returns the same rowState when nothing is dropped.
- *
- * @param {Object} rowState     {algorithm_responses, candidates, concept_rows}
- * @param {Set} missingKeys     concept_keys known to be missing.
+ * Drop bridge_child candidates for concept_keys missing from the target
+ * version, and the concept_rows left unreferenced. Returns the same rowState
+ * when nothing is dropped.
  */
 export const dropMissingBridgeTargets = (rowState, missingKeys) => {
   if (!rowState?.candidates || !missingKeys?.size) return rowState
@@ -478,6 +473,26 @@ export const dropMissingBridgeTargets = (rowState, missingKeys) => {
   Object.entries(rowState.concept_rows || {}).forEach(([key, cr]) => {
     if (referencedKeys.has(key)) conceptRows[key] = cr
   })
+  return { ...rowState, candidates, concept_rows: conceptRows }
+}
+
+/**
+ * Put back candidates dropMissingBridgeTargets removed, unless their bridge
+ * parent is gone. Returns the same rowState when nothing is restored.
+ */
+export const restoreBridgeTargets = (rowState, dropped) => {
+  if (!rowState?.candidates || !dropped?.candidates) return rowState
+  const candidates = { ...rowState.candidates }
+  const conceptRows = { ...(rowState.concept_rows || {}) }
+  let restored = false
+  Object.entries(dropped.candidates).forEach(([id, c]) => {
+    if (candidates[id] || !candidates[c?.parent_candidate_id]) return
+    candidates[id] = c
+    if (!conceptRows[c.concept_key])
+      conceptRows[c.concept_key] = dropped.concept_rows?.[c.concept_key] || { concept_key: c.concept_key, rerank_score: undefined }
+    restored = true
+  })
+  if (!restored) return rowState
   return { ...rowState, candidates, concept_rows: conceptRows }
 }
 

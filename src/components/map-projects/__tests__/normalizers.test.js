@@ -1787,7 +1787,7 @@ test('getAlgorithmStagesFromResponses: done (1) when any response succeeded, fai
 })
 
 // ---------------------------------------------------------------------------
-// dropMissingBridgeTargets (ocl_issues#2840)
+// dropMissingBridgeTargets
 // ---------------------------------------------------------------------------
 
 test('dropMissingBridgeTargets drops bridge_child candidates for missing codes and their concept_rows', () => {

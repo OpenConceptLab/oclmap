@@ -117,7 +117,8 @@ import { getPreviewLimitError, isAIPreviewLimitError } from './previewLimits'
 import { formatRowNumbers, rowNumberOf, runMatchBatch, requestSingleMatch, runWithConcurrency, INTERACTIVE_WAIT_CAP_MS } from './matchBatch'
 import { getAIAssistantChoices, getModelUsed, getPromptTemplateKey, createLatestRequestGate } from './aiVisibility'
 import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
-import { normalizeAlgorithmInvocation, hasSuccessfulAlgorithmResponse, getAlgorithmStagesFromResponses, lookupStatusRank, buildRecommendableConceptEntry, stripConstantClassAndDatatype, buildLookupConceptUrl, serializeCandidates, toStoredRowMatchState, dropMissingBridgeTargets } from './normalizers'
+import { normalizeAlgorithmInvocation, hasSuccessfulAlgorithmResponse, getAlgorithmStagesFromResponses, lookupStatusRank, buildRecommendableConceptEntry, stripConstantClassAndDatatype, buildLookupConceptUrl, serializeCandidates, toStoredRowMatchState } from './normalizers'
+import { createLookupSession, LOOKUP_NOT_FOUND } from './lookupSession'
 import { parseConceptKey } from './conceptKey'
 import { normalizeLookupConfig } from './lookupConfigFields'
 import { getDeclaredLocales, getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getSavedTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId } from './projectTargetRepo'
@@ -537,9 +538,8 @@ const MapProject = () => {
         : cr
     })
 
-    // A bridge can propose codes the target version lacks; once a lookup has
-    // found one missing, later rows don't propose it again (ocl_issues#2840).
-    const keptRow = dropMissingBridgeTargets(nextRow, missingConceptKeysRef.current)
+    // Drop bridge targets already found missing from the target version.
+    const keptRow = lookupSessionRef.current.dropMissing(rowIndex, nextRow)
 
     rowMatchStateRef.current = { ...prevAll, [rowIndex]: keptRow }
     setRowMatchState(rowMatchStateRef.current)
@@ -571,7 +571,7 @@ const MapProject = () => {
     // free. Forward-ref pattern because ensureLoaded is declared later.
     if(ensureLoadedRef.current) {
       const keysToLoad = concept_definitions
-        .filter(d => d && d.lookup_status !== 'full' && !missingConceptKeysRef.current.has(d.key))
+        .filter(d => d && d.lookup_status !== 'full' && !lookupSessionRef.current.isMissing(d.key))
         .map(d => d.key)
       if(keysToLoad.length) {
         ensureLoadedRef.current(keysToLoad, rowIndex, isRunTraffic).then(() => {
@@ -599,19 +599,12 @@ const MapProject = () => {
   // later rows don't wait on them again (ocl_online#258).
   const stuckLookupsRef = React.useRef(new WeakSet())
 
-  // URL-level fetch dedup for ensureLoaded. Keyed by ocl_url. Stores
-  // Promise<data|null>: in-flight entries deduplicate concurrent requests for
-  // the same URL even when they arrive under different concept_keys (e.g.
-  // ocl-scispacy uses a hardcoded canonical 'http://loinc.org' while
-  // ocl-bridge cascade targets use target_repo's canonical — they produce
-  // different concept_keys but resolve to the same OCL URL). Failed/404
-  // entries are deleted so they remain retryable; successful and 404 entries
-  // persist for the session, so a missing code is fetched once
-  // (ocl_issues#2840).
-  const urlFetchCacheRef = React.useRef(new Map())
-  // concept_keys whose lookup came back 404: bridge_child candidates for them
-  // are dropped (ocl_issues#2840).
-  const missingConceptKeysRef = React.useRef(new Set())
+  // Per target version: URL-level fetch dedup for ensureLoaded (different
+  // concept_keys can resolve to the same OCL URL), 404s included, and the
+  // concept_keys found missing.
+  const lookupSessionRef = React.useRef(null)
+  if(!lookupSessionRef.current)
+    lookupSessionRef.current = createLookupSession()
 
   // Rerank scheduling (plans/unified-mapper-model.md "Rerank — debounce +
   // in-flight check"). Replaces the legacy "wait for every algo to
@@ -5025,15 +5018,16 @@ const MapProject = () => {
     writeConceptCachePatch(key, { ...existing, lookup_status: 'failed' })
   }, [writeConceptCachePatch])
 
-  // A bridge_child whose concept isn't in the target version isn't a
-  // proposal: drop it from every row (ocl_issues#2840).
-  const dropMissingConcept = React.useCallback((key) => {
-    missingConceptKeysRef.current.add(key)
+  // Drop a missing concept's bridge_child candidates from every row, unless
+  // the lookup was for an earlier target version.
+  const dropMissingConcept = React.useCallback((key, generation) => {
+    const session = lookupSessionRef.current
+    if(!session.markMissing(generation, key)) return
     const prevAll = rowMatchStateRef.current
     let changed = false
     const nextAll = {}
     Object.entries(prevAll).forEach(([idx, rowState]) => {
-      nextAll[idx] = dropMissingBridgeTargets(rowState, missingConceptKeysRef.current)
+      nextAll[idx] = session.dropMissing(idx, rowState)
       if(nextAll[idx] !== rowState) changed = true
     })
     if(changed) {
@@ -5055,6 +5049,11 @@ const MapProject = () => {
     // the LookupConfig widget half-decorative. Without one, the session's user
     // token goes only to the OCL API (getLookupToken), never to another host.
     const currentToken = currentUserToken()
+    // Results from before a target version change are ignored.
+    const session = lookupSessionRef.current
+    const generation = session.generation
+    const inFlight = inFlightLookupsRef.current
+    const isCurrent = () => session.isCurrent(generation)
 
     const directFetches = []
     const toResolve = []
@@ -5065,12 +5064,12 @@ const MapProject = () => {
       if(!key) return
       const def = cache[key]
       if(def?.lookup_status === 'full') return
-      if(inFlightLookupsRef.current.has(key)) {
-        pending.push(inFlightLookupsRef.current.get(key))
+      if(inFlight.has(key)) {
+        pending.push(inFlight.get(key))
         return
       }
       const promise = new Promise(resolve => settlers.set(key, resolve))
-      inFlightLookupsRef.current.set(key, promise)
+      inFlight.set(key, promise)
       pending.push(promise)
 
       if(def?.ocl_url) {
@@ -5092,24 +5091,21 @@ const MapProject = () => {
           const reference = parseConceptKey(key)
           toResolve.push({key, reference})
         } catch (_) {
-          inFlightLookupsRef.current.delete(key)
+          inFlight.delete(key)
           settlers.get(key)()
         }
       }
     })
 
     const settle = (key) => {
-      inFlightLookupsRef.current.delete(key)
+      inFlight.delete(key)
       const fn = settlers.get(key)
       if(fn) fn()
     }
 
     const fetchConceptByOclUrl = async (key, oclUrl, source, logRowIndex) => {
-      // URL-level dedup: if a different concept_key is already fetching this
-      // same OCL URL (or fetched it successfully), reuse that promise instead
-      // of issuing a duplicate network request.
-      let dataPromise = urlFetchCacheRef.current.get(oclUrl)
-      if(!dataPromise) {
+      // URL-level dedup: reuse a fetch of the same OCL URL by another concept_key.
+      const dataPromise = session.fetchOnce(oclUrl, () => {
         const attemptFetch = async () => {
           let service = APIService.new()
           if(oclUrl.startsWith('http://') || oclUrl.startsWith('https://')) {
@@ -5126,14 +5122,12 @@ const MapProject = () => {
           if(!result.ok)
             throw result.error || new Error(result.reason)
           const data = result.response?.data
-          if(data?.id) return data
-          urlFetchCacheRef.current.delete(oclUrl)
-          return null
+          return data?.id ? data : null
         }
         // Retry on 404: the lookup repo may still be lazily building the concept.
         // Attempts happen at t=0s, t=3s, t=7s.
         const code = parseConceptKey(key).code
-        dataPromise = retryWithBackoff(attemptFetch, {
+        return retryWithBackoff(attemptFetch, {
           maxRetries: 2,
           baseDelayMs: 3000,
           backoffFactor: 4/3,
@@ -5143,19 +5137,13 @@ const MapProject = () => {
             if(err?.response?.status === 404)
               log({action: 'lookup', description: t('map_project.lookup_concept_404', {code, attempt: attempt + 1}), extras: {url: oclUrl, error: t('map_project.lookup_concept_404', {code, attempt: attempt + 1})}}, logRowIndex)
           },
-        }).catch(err => {
-          // Still 404 after the retries: the code isn't there. Keep that for
-          // the session so other rows don't fetch it again (ocl_issues#2840).
-          if(err?.response?.status === 404)
-            return {notFound: true}
-          urlFetchCacheRef.current.delete(oclUrl)
-          return null
         })
-        urlFetchCacheRef.current.set(oclUrl, dataPromise)
-      }
+      })
 
       try {
         const data = await dataPromise
+        if(!isCurrent())
+          return
         if(data?.id) {
           const existing = conceptCacheRef.current[key] || {}
           writeConceptCachePatch(key, {
@@ -5168,11 +5156,12 @@ const MapProject = () => {
           })
         } else {
           writeLookupFailure(key)
-          if(data?.notFound)
-            dropMissingConcept(key)
+          if(data === LOOKUP_NOT_FOUND)
+            dropMissingConcept(key, generation)
         }
       } catch (_) {
-        writeLookupFailure(key)
+        if(isCurrent())
+          writeLookupFailure(key)
       } finally {
         settle(key)
       }
@@ -5210,7 +5199,8 @@ const MapProject = () => {
             const item = items[i]
             const repoUrl = lookupConfig?.url || (item?.resolved === true ? item?.result?.url : null)
             if(!repoUrl) {
-              writeLookupFailure(key)
+              if(isCurrent())
+                writeLookupFailure(key)
               settle(key)
               return
             }
@@ -5221,14 +5211,15 @@ const MapProject = () => {
         })
         .catch(() => {
           toResolve.forEach(({key}) => {
-            writeLookupFailure(key)
+            if(isCurrent())
+              writeLookupFailure(key)
             settle(key)
           })
         })
     }
 
     await Promise.all([directPromise, resolvePromise, ...pending])
-  }, [buildProjectContext, writeConceptCachePatch, writeLookupFailure, dropMissingConcept, lookupConfig?.token])
+  }, [buildProjectContext, writeConceptCachePatch, writeLookupFailure, dropMissingConcept, lookupConfig?.url, lookupConfig?.token])
 
   // Wire the forward-ref consumed by mergeIntoRowMatchState. useEffect
   // so the ref always points at the latest closure (ensureLoaded captures
@@ -5238,11 +5229,26 @@ const MapProject = () => {
     ensureLoadedRef.current = ensureLoaded
   }, [ensureLoaded])
 
-  // A code missing from one target version may be in another, so the
-  // session's 404s only hold for the version they were fetched against.
+  // On a target version change, redo interrupted lookups and bring back the
+  // bridge candidates dropped under the old version.
   React.useEffect(() => {
-    missingConceptKeysRef.current = new Set()
-    urlFetchCacheRef.current = new Map()
+    const interrupted = new Set(inFlightLookupsRef.current.keys())
+    inFlightLookupsRef.current = new Map()
+    const { rowMatchState: nextState, restored } = lookupSessionRef.current.reset(rowMatchStateRef.current)
+    if(nextState !== rowMatchStateRef.current) {
+      rowMatchStateRef.current = nextState
+      setRowMatchState(nextState)
+    }
+    Object.entries(nextState || {}).forEach(([idx, rowState]) => {
+      const keysToLoad = uniq([
+        ...(restored[idx] || []),
+        ...Object.keys(rowState?.concept_rows || {}).filter(key => interrupted.has(key))
+      ])
+      if(keysToLoad.length && ensureLoadedRef.current)
+        ensureLoadedRef.current(keysToLoad, Number(idx)).then(() => {
+          if(scheduleRerankRef.current) scheduleRerankRef.current(Number(idx))
+        })
+    })
   }, [selectedTargetRepoVersion, lookupConfig?.url])
 
   // Lazily enrich a row's saved candidates when it is opened. The persisted
