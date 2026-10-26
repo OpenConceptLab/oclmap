@@ -44,11 +44,12 @@ export const createRunClosers = () => {
 }
 
 // MapProject loads its project once, on mount, so another project's URL needs
-// a new page. Its own navigation (a save's) passes the path it left in
-// location.state.mapProjectFrom and keeps the page. Returns the key and path
-// to keep for the next location.
-export const getPageKey = ({key, path}, location) => {
-  if(key && location.state?.mapProjectFrom === path)
+// a new page. Only a save's own navigation keeps it: a push or replace that
+// passes the path it left in location.state.mapProjectFrom. Back/Forward
+// replays that state, so a POP always gets a new page. Returns the key and
+// path to keep for the next location.
+export const getPageKey = ({key, path}, location, action) => {
+  if(key && action !== 'POP' && location.state?.mapProjectFrom === path)
     return {key, path: location.pathname}
-  return {key: location.pathname, path: location.pathname}
+  return {key: (key || 0) + 1, path: location.pathname}
 }

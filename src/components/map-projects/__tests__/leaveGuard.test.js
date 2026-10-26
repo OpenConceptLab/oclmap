@@ -136,25 +136,37 @@ test('closing the tab sends nothing for a run already closed', async () => {
   assert.deepEqual(calls, [[false, false]])
 })
 
-test('getPageKey gives another project a new page', () => {
-  const first = getPageKey({key: null, path: null}, {pathname: '/orgs/A/map-projects/1/'})
-  assert.deepEqual(first, {key: '/orgs/A/map-projects/1/', path: '/orgs/A/map-projects/1/'})
+const start = {key: null, path: null}
 
-  const next = getPageKey(first, {pathname: '/orgs/A/map-projects/2/'})
-  assert.deepEqual(next, {key: '/orgs/A/map-projects/2/', path: '/orgs/A/map-projects/2/'})
+test('getPageKey gives another project a new page', () => {
+  const first = getPageKey(start, {pathname: '/p/1'}, 'PUSH')
+  const next = getPageKey(first, {pathname: '/p/2'}, 'PUSH')
+  assert.equal(first.path, '/p/1')
+  assert.deepEqual(next, {key: first.key + 1, path: '/p/2'})
 })
 
 test("getPageKey keeps the page for a save's own navigation", () => {
-  const page = getPageKey({key: null, path: null}, {pathname: '/map-projects/new'})
-  const saved = getPageKey(page, {pathname: '/orgs/A/map-projects/1/', state: {mapProjectFrom: '/map-projects/new'}})
-  assert.deepEqual(saved, {key: '/map-projects/new', path: '/orgs/A/map-projects/1/'})
+  const page = getPageKey(start, {pathname: '/map-projects/new'}, 'POP')
+  const saved = getPageKey(page, {pathname: '/p/1', state: {mapProjectFrom: '/map-projects/new'}}, 'PUSH')
+  assert.deepEqual(saved, {key: page.key, path: '/p/1'})
+})
+
+test('getPageKey gives a new page on Back and Forward after new -> saved', () => {
+  const page = getPageKey(start, {pathname: '/map-projects/new'}, 'POP')
+  const saved = getPageKey(page, {pathname: '/p/1', state: {mapProjectFrom: '/map-projects/new'}}, 'PUSH')
+  const back = getPageKey(saved, {pathname: '/map-projects/new'}, 'POP')
+  // Forward replays the save's state, but it isn't the save.
+  const forward = getPageKey(back, {pathname: '/p/1', state: {mapProjectFrom: '/map-projects/new'}}, 'POP')
+
+  assert.notEqual(back.key, saved.key)
+  assert.notEqual(forward.key, back.key)
+  assert.deepEqual(forward, {key: back.key + 1, path: '/p/1'})
 })
 
 test('getPageKey gives a new page on Back to an entry a save pushed', () => {
-  // new -> saved as 1 (kept) -> project 2 -> Back to 1, whose entry still
-  // carries the save's state.
-  const saved = getPageKey(getPageKey({key: null, path: null}, {pathname: '/map-projects/new'}), {pathname: '/p/1', state: {mapProjectFrom: '/map-projects/new'}})
-  const other = getPageKey(saved, {pathname: '/p/2'})
-  const back = getPageKey(other, {pathname: '/p/1', state: {mapProjectFrom: '/map-projects/new'}})
-  assert.deepEqual(back, {key: '/p/1', path: '/p/1'})
+  const page = getPageKey(start, {pathname: '/map-projects/new'}, 'POP')
+  const saved = getPageKey(page, {pathname: '/p/1', state: {mapProjectFrom: '/map-projects/new'}}, 'PUSH')
+  const other = getPageKey(saved, {pathname: '/p/2'}, 'PUSH')
+  const back = getPageKey(other, {pathname: '/p/1', state: {mapProjectFrom: '/map-projects/new'}}, 'POP')
+  assert.deepEqual(back, {key: other.key + 1, path: '/p/1'})
 })
