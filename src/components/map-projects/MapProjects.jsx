@@ -342,9 +342,10 @@ const MapProjects = () => {
           <QuotaDialog
             open
             onClose={() => setNewProjectBlock(null)}
+            errorCode='mapper_projects_limit_reached'
             meter='projects'
             surface='new_project'
-            usage={{used: newProjectBlock.preview.projects.used, limit: newProjectBlock.preview.projects.limit, period: 'one_time'}}
+            usage={{used: newProjectBlock.preview.projects.used, limit: newProjectBlock.preview.projects.limit}}
           /> :
           <PreviewLimitDialog
             open={Boolean(newProjectBlock)}

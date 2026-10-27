@@ -151,6 +151,7 @@ import '../common/ResizablePanel.scss'
 // }
 
 const NEW_PROJECT_BLOCK_ERROR_CODES = {access: 'mapper_access_denied', projects_not_entitled: 'mapper_projects_not_entitled', projects: 'mapper_projects_limit_reached'}
+const NEW_PROJECT_BLOCK_MESSAGES = {access: 'map_project.limit_unavailable_body_access', projects_not_entitled: 'map_project.limit_unavailable_body_projects_not_entitled', projects: 'quota.consequence.projects.new_project'}
 const MAPPER_QUOTA_SURFACE = {match_operations: 'auto_match', ai_assistant_calls: 'auto_match', projects: 'new_project', rows: 'import'}
 
 const MapProject = () => {
@@ -811,7 +812,7 @@ const MapProject = () => {
 
   React.useEffect(() => {
     if(newProjectBlockReason)
-      baseSetAlert({severity: 'error', message: t(`map_project.preview_limit_title_${newProjectBlockReason}`), duration: 8000})
+      baseSetAlert({severity: 'error', message: t(NEW_PROJECT_BLOCK_MESSAGES[newProjectBlockReason]), duration: 8000})
   }, [newProjectBlockReason])
 
   React.useEffect(() => {
@@ -6688,16 +6689,15 @@ const MapProject = () => {
               <QuotaDialog
                 open
                 onClose={() => setPreviewLimit(null)}
+                errorCode={previewLimitQuota.errorCode}
                 meter={previewLimitQuota.meter}
                 surface={MAPPER_QUOTA_SURFACE[previewLimitQuota.meter]}
-                usage={{...previewLimitQuota.usage, period: 'one_time'}}
+                usage={previewLimitQuota.usage}
               /> :
               <PreviewLimitDialog
                 open={Boolean(previewLimit)}
                 onClose={() => setPreviewLimit(null)}
                 errorCode={previewLimit?.errorCode}
-                limit={previewLimit?.limit}
-                used={previewLimit?.used}
               />
           }
       </Paper>
