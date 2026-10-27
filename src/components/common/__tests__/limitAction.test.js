@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-const { getLimitActionRequest, getLimitCapability, toLimitAction } = await import('../limitAction.js')
+const { getLimitActionRequest, getLimitSubject, toLimitAction } = await import('../limitAction.js')
 const { PREVIEW_LIMIT_ERROR_CODES } = await import('../../map-projects/previewLimits.js')
 
 const ACTION = {kind: 'example', url: 'https://online.example.org/next', label: 'Next step', message: 'A message from the service.'}
@@ -23,7 +23,14 @@ test('asks about the refused capability in the UI language, with the person\'s t
   )
 })
 
-test('every refusal the dialogs show names a capability', () => {
+test('an access check asks about its permission', () => {
+  assert.deepEqual(
+    getLimitActionRequest({baseURL: 'https://online.example.org', token: 'personal-token', errorCode: 'mapper_scispacy_denied', lang: 'en'}).params,
+    {context: 'limit', permission: 'users.mapper_scispacy', lang: 'en'}
+  )
+})
+
+test('every refusal the dialogs show names one capability or permission', () => {
   [
     'mapper_match_operations_limit_reached',
     'ai_assistant_calls_limit_reached',
@@ -31,8 +38,8 @@ test('every refusal the dialogs show names a capability', () => {
     'mapper_projects_limit_reached',
     'mapper_rows_per_project_limit_reached',
     ...PREVIEW_LIMIT_ERROR_CODES,
-  ].forEach(errorCode => assert.ok(getLimitCapability(errorCode), errorCode))
-  assert.equal(getLimitCapability('validation_error'), undefined)
+  ].forEach(errorCode => assert.equal(Object.keys(getLimitSubject(errorCode)).length, 1, errorCode))
+  assert.deepEqual(getLimitSubject('validation_error'), {})
 })
 
 test('an action with a link and a label is shown as sent', () => {

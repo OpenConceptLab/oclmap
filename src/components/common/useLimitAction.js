@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 
 import GAService from '../../services/GAService'
 import { currentUserToken } from '../../common/utils'
-import { getLimitActionRequest, getLimitCapability, toLimitAction } from './limitAction'
+import { getLimitActionRequest, getLimitSubject, toLimitAction } from './limitAction'
 
 /*eslint no-undef: 0*/
 const getOnlineAPIURL = () => window.OCL_ONLINE_API_URL || process.env.OCL_ONLINE_API_URL
@@ -16,13 +16,13 @@ const getOnlineAPIURL = () => window.OCL_ONLINE_API_URL || process.env.OCL_ONLIN
 const useLimitAction = (open, errorCode) => {
   const { i18n } = useTranslation()
   const [action, setAction] = React.useState(null)
-  const capability = getLimitCapability(errorCode)
+  const subject = getLimitSubject(errorCode)
 
   React.useEffect(() => {
     setAction(null)
     if(!open)
       return undefined
-    GAService.recordActionEvent('Limit', 'limit_hit', errorCode, {capability})
+    GAService.recordActionEvent('Limit', 'limit_hit', errorCode, subject)
     const request = getLimitActionRequest({baseURL: getOnlineAPIURL(), token: currentUserToken(), errorCode, lang: i18n.language})
     if(!request)
       return undefined
@@ -35,7 +35,7 @@ const useLimitAction = (open, errorCode) => {
     }
   }, [open, errorCode])
 
-  const onActionClick = () => GAService.recordActionEvent('Limit', 'limit_action_click', errorCode, {capability, action_kind: action?.kind})
+  const onActionClick = () => GAService.recordActionEvent('Limit', 'limit_action_click', errorCode, {...subject, action_kind: action?.kind})
 
   return {action, onActionClick}
 }

@@ -2,32 +2,33 @@
 // service (OpenConceptLab/ocl_online#367). Open code shows only what the
 // service sends; with no service configured it shows nothing.
 
-// The capability each refusal is about, as the service names it.
-const LIMIT_CAPABILITIES = {
-  mapper_match_operations_limit_reached: 'mapper.match_operations',
-  mapper_match_operations_not_entitled: 'mapper.match_operations',
-  mapper_rows_per_project_limit_reached: 'mapper.rows_per_project',
-  mapper_rows_per_project_not_entitled: 'mapper.rows_per_project',
-  mapper_projects_limit_reached: 'mapper.projects',
-  mapper_projects_not_entitled: 'mapper.projects',
-  ai_assistant_calls_limit_reached: 'ai_assistant.calls',
-  ai_assistant_calls_not_entitled: 'ai_assistant.calls',
-  ai_assistant_change_comments_limit_reached: 'ai_assistant.change_comments',
-  mapper_access_denied: 'users.mapper_use',
-  mapper_org_projects_denied: 'users.mapper_org_projects',
-  mapper_custom_algorithms_denied: 'users.mapper_custom_algorithms',
-  mapper_ai_assistant_denied: 'users.mapper_ai_assistant',
-  mapper_scispacy_denied: 'users.mapper_scispacy',
+// What each refusal is about, as the service names it: the capability for a
+// limit, the permission for an access check.
+const LIMIT_SUBJECTS = {
+  mapper_match_operations_limit_reached: {capability: 'mapper.match_operations'},
+  mapper_match_operations_not_entitled: {capability: 'mapper.match_operations'},
+  mapper_rows_per_project_limit_reached: {capability: 'mapper.rows_per_project'},
+  mapper_rows_per_project_not_entitled: {capability: 'mapper.rows_per_project'},
+  mapper_projects_limit_reached: {capability: 'mapper.projects'},
+  mapper_projects_not_entitled: {capability: 'mapper.projects'},
+  ai_assistant_calls_limit_reached: {capability: 'ai_assistant.calls'},
+  ai_assistant_calls_not_entitled: {capability: 'ai_assistant.calls'},
+  ai_assistant_change_comments_limit_reached: {capability: 'ai_assistant.change_comments'},
+  mapper_access_denied: {permission: 'users.mapper_use'},
+  mapper_org_projects_denied: {permission: 'users.mapper_org_projects'},
+  mapper_custom_algorithms_denied: {permission: 'users.mapper_custom_algorithms'},
+  mapper_ai_assistant_denied: {permission: 'users.mapper_ai_assistant'},
+  mapper_scispacy_denied: {permission: 'users.mapper_scispacy'},
 }
 
-export const getLimitCapability = errorCode => LIMIT_CAPABILITIES[errorCode]
+export const getLimitSubject = errorCode => LIMIT_SUBJECTS[errorCode] || {}
 
 export const getLimitActionRequest = ({baseURL, token, errorCode, lang}) => {
   if(!baseURL || !token)
     return null
   return {
     url: `${baseURL.replace(/\/+$/, '')}/billing/plan/`,
-    params: {context: 'limit', capability: getLimitCapability(errorCode), lang},
+    params: {context: 'limit', ...getLimitSubject(errorCode), lang},
     headers: {Authorization: `Token ${token}`},
   }
 }
