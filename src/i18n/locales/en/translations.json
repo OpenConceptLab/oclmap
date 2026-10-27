@@ -375,6 +375,7 @@
     "stop_processing": "Stop Processing",
     "leave_while_running_title": "Auto Match is running",
     "leave_while_running_body": "Leaving this project stops the run now. What it has matched so far is saved.",
+    "leave_while_running_body_unsaved": "This project isn't saved yet. Leaving stops the run now and discards the project and its results.",
     "stay": "Stay",
     "stop_and_leave": "Stop and leave",
     "auto_match_all_including_approved_confirm": "I understand that {{approvedCount}} approved decisions will be overwritten",

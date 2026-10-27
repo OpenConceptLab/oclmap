@@ -233,33 +233,55 @@ test('saveOnLeave: nothing pending, nothing saved', () => {
   assert.deepEqual(leaveSaves, [])
 })
 
-test('saveOnLeave: waits for a save in flight, so the newer payload lands last', async () => {
+test('saveOnLeave: builds the payload at once, to send after the save in flight', () => {
   const { scheduler } = setup()
-  const order = []
-  let finish
-  const inFlightSave = new Promise(resolve => { finish = resolve }).then(() => order.push('in-flight save'))
+  const inFlightSave = new Promise(() => {})
+  const leaveSaves = []
 
   scheduler.schedule('decision_change')
-  saveOnLeave({ scheduler, inFlightSave, save: reasons => order.push(`leave save: ${reasons}`) })
-  assert.deepEqual(order, [], 'must not save on top of the in-flight save')
+  saveOnLeave({ scheduler, inFlightSave, save: (reasons, {after}) => leaveSaves.push({reasons, after}) })
 
-  finish()
-  await inFlightSave
-  await nextTick()
-  assert.deepEqual(order, ['in-flight save', 'leave save: decision_change'])
+  // Called now, before anything after leaving can change what it saves.
+  assert.equal(leaveSaves.length, 1)
+  assert.deepEqual(leaveSaves[0].reasons, ['decision_change'])
+  assert.equal(leaveSaves[0].after, inFlightSave)
 })
 
-test('saveOnLeave: still saves when the in-flight save fails', async () => {
+test('saveOnLeave: a rejected leave save is logged', async () => {
   const { scheduler } = setup()
-  const leaveSaves = []
-  const inFlightSave = Promise.reject(new Error('network'))
+  const logged = []
+  const originalError = console.error
+  console.error = (...args) => logged.push(args[0])
+  try {
+    scheduler.schedule('decision_change')
+    saveOnLeave({ scheduler, inFlightSave: null, save: () => Promise.reject(new Error('network')) })
+    await nextTick()
+  } finally {
+    console.error = originalError
+  }
+  assert.deepEqual(logged, ['Mapper: saving on leave failed'])
+})
 
-  scheduler.schedule('decision_change')
-  saveOnLeave({ scheduler, inFlightSave, save: reasons => leaveSaves.push(reasons) })
+test('saveOnLeave: reopening the project waits for the leave save, not just the save before it', async () => {
+  const { scheduler } = setup()
+  const order = []
+  let finishFirst
+  let finishLeave
+  const first = trackSave('project-chain', new Promise(resolve => { finishFirst = resolve }).then(() => order.push('first save')))
+  const send = () => new Promise(resolve => { finishLeave = resolve }).then(() => order.push('leave save'))
 
-  await inFlightSave.catch(() => {})
+  scheduler.schedule('auto_match_stopped')
+  // As onSave does with {after}: tracked now, sent once the first settles.
+  saveOnLeave({ scheduler, inFlightSave: first, save: (reasons, {after}) => trackSave('project-chain', Promise.resolve(after).then(send, send)) })
+  const reopened = whenSaved('project-chain').then(() => order.push('reopen'))
+
+  finishFirst()
+  await first
   await nextTick()
-  assert.deepEqual(leaveSaves, [['decision_change']])
+  assert.deepEqual(order, ['first save'], 'the reopen still waits')
+  finishLeave()
+  await reopened
+  assert.deepEqual(order, ['first save', 'leave save', 'reopen'])
 })
 
 // Saves that outlive their page: reopening the project waits for them, and

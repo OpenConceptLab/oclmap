@@ -390,7 +390,7 @@ const MapProject = () => {
   const saveNowOnLeave = () => saveOnLeave({
     scheduler: autosaveSchedulerRef.current,
     inFlightSave: inFlightSaveRef.current,
-    save: reasons => currentUserToken() && onSaveRef.current({source: 'auto', closeConfigure: false, reasons, leaving: true})
+    save: (reasons, {after}) => currentUserToken() && onSaveRef.current({source: 'auto', closeConfigure: false, reasons, leaving: true, after})
   })
 
   // Leaving stops a run at once, not gracefully: its record closes now and
@@ -1766,12 +1766,16 @@ const MapProject = () => {
     const isUpdate = Boolean(project?.id)
     if(!isAutoSave)
       GAService.recordUpsertEvent('MapProject', isUpdate, 'map_project')
-    let service = APIService.new().overrideURL(owner).appendToUrl('map-projects/')
-    if(isUpdate)
-      service = service.appendToUrl(project.id + '/')
-        .put(formData, null, {"Content-Type": "multipart/form-data"}, undefined, true)
-    else
-      service = service.post(formData, null, {"Content-Type": "multipart/form-data"}, undefined, true)
+    const send = () => {
+      const service = APIService.new().overrideURL(owner).appendToUrl('map-projects/')
+      if(isUpdate)
+        return service.appendToUrl(project.id + '/')
+          .put(formData, null, {"Content-Type": "multipart/form-data"}, undefined, true)
+      return service.post(formData, null, {"Content-Type": "multipart/form-data"}, undefined, true)
+    }
+    // options.after: a save still in flight. This payload is built now and
+    // sent once that settles, so the older one can't land after it.
+    const service = options.after ? Promise.resolve(options.after).then(send, send) : send()
 
     // Where the user was when saving: a save that lands once they went
     // elsewhere mustn't pull them back.
@@ -1835,6 +1839,7 @@ const MapProject = () => {
     inFlightSaveRef.current = request
     if(isUpdate)
       trackSave(project.id, request)
+    return request
   }
 
   // onSave takes options, so it can't be bound to onClick directly — the click
@@ -4497,7 +4502,10 @@ const MapProject = () => {
     if(!isNumber(index)) return null
     // A run's rerank ends when the run stops, and a stopped run proposes no
     // more mappings; a row reranked by hand isn't stopped (ocl_issues#2849).
-    const isStopped = isRunTraffic ? getRunStopCheck() : () => false
+    const runStop = isRunTraffic ? getRunStopCheck() : () => false
+    // Nothing is sent once the page is gone.
+    const isStopped = () => !isMountedRef.current || runStop()
+    if(!isMountedRef.current) return null
     // The run this call belongs to, captured now: a newer run's stages are
     // its own (ocl_issues#2849).
     const runTicket = autoMatchRunTicketRef.current
@@ -4724,7 +4732,7 @@ const MapProject = () => {
       || (Array.isArray(def?.names) && def.names.some(n => n?.name))
     )
   const scheduleRerank = (rowIndex) => {
-    if(!isNumber(rowIndex)) return
+    if(!isNumber(rowIndex) || !isMountedRef.current) return
     const stage = rowStageRef.current[rowIndex] || {}
     // ocl_online#105 Phase 5: this debounced path does most of the reranking
     // during a bulk auto-match (candidates stream in asynchronously, so the
@@ -4772,7 +4780,7 @@ const MapProject = () => {
     const scheduledTicket = autoMatchRunTicketRef.current
     rerankDebounceRef.current[rowIndex] = setTimeout(() => {
       delete rerankDebounceRef.current[rowIndex]
-      if(isRunTraffic && scheduledTicket !== autoMatchRunTicketRef.current)
+      if(!isMountedRef.current || (isRunTraffic && scheduledTicket !== autoMatchRunTicketRef.current))
         return
       // isBulk=false (don't double the setAutoMatched side-effect the explicit
       // bulk rerank already performs); isRunTraffic carries the run attribution.
@@ -6046,7 +6054,7 @@ const MapProject = () => {
             baseDelayMs: 3000,
             backoffFactor: 4,
             jitterFactor: 0.25,
-            isCancelled: () => abortRef.current,
+            isCancelled: () => abortRef.current || !isMountedRef.current,
             isRetryable: isTransientNetworkError,
             onAttemptFailed: (err, attempt) => {
               const errorMessage = err?.response?.data?.detail || err?.message || t('unknown_error')
@@ -6875,7 +6883,7 @@ const MapProject = () => {
         <DialogTitle>{t('map_project.leave_while_running_title')}</DialogTitle>
         <DialogContent>
           <Typography component='p' sx={{fontSize: '14px', color: 'surface.dark'}}>
-            {t('map_project.leave_while_running_body')}
+            {t(project?.id ? 'map_project.leave_while_running_body' : 'map_project.leave_while_running_body_unsaved')}
           </Typography>
         </DialogContent>
         <DialogActions>

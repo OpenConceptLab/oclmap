@@ -375,6 +375,7 @@
     "stop_processing": "Parar Processamento",
     "leave_while_running_title": "O Auto Match está em execução",
     "leave_while_running_body": "Sair deste projeto interrompe a execução agora. O que já foi correspondido é salvo.",
+    "leave_while_running_body_unsaved": "Este projeto ainda não foi salvo. Sair interrompe a execução agora e descarta o projeto e seus resultados.",
     "stay": "Ficar",
     "stop_and_leave": "Parar e sair",
     "auto_match_all_including_approved_confirm": "Entendo que {{approvedCount}} decisões aprovadas serão sobrescritas",

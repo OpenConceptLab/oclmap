@@ -54,17 +54,17 @@ test('continueLeaving replays a held navigation once unblocked', () => {
   let held = null
   const unblock = blockLeaving(history, {onBlocked: next => { held = next }})
 
-  history.replace('/elsewhere')
+  history.replace({pathname: '/elsewhere'})
   unblock()
   continueLeaving(history, held)
 
-  assert.deepEqual(history.calls, [{action: 'REPLACE', location: '/elsewhere'}])
+  assert.deepEqual(history.calls, [{action: 'REPLACE', location: {pathname: '/elsewhere', state: undefined}}])
 })
 
 test('continueLeaving pushes a held Back', () => {
   const history = createFakeHistory()
-  continueLeaving(history, {location: '/back', action: 'POP'})
-  assert.deepEqual(history.calls, [{action: 'PUSH', location: '/back'}])
+  continueLeaving(history, {location: {pathname: '/back'}, action: 'POP'})
+  assert.deepEqual(history.calls, [{action: 'PUSH', location: {pathname: '/back', state: undefined}}])
 })
 
 test('a run closer closes its run once, whoever calls first', async () => {
@@ -169,4 +169,26 @@ test('getPageKey gives a new page on Back to an entry a save pushed', () => {
   const other = getPageKey(saved, {pathname: '/p/2'}, 'PUSH')
   const back = getPageKey(other, {pathname: '/p/1', state: {mapProjectFrom: '/map-projects/new'}}, 'POP')
   assert.deepEqual(back, {key: other.key + 1, path: '/p/1'})
+})
+
+test('continueLeaving drops the save marker, so a held Forward to a saved entry gets a new page', () => {
+  // new saved as /p/1 (kept), Back to new, Forward to /p/1 held by the dialog
+  // and continued as a push.
+  const history = createFakeHistory()
+  const page = getPageKey(start, {pathname: '/map-projects/new'}, 'POP')
+  const saved = getPageKey(page, {pathname: '/p/1', state: {mapProjectFrom: '/map-projects/new'}}, 'PUSH')
+  const back = getPageKey(saved, {pathname: '/map-projects/new'}, 'POP')
+
+  continueLeaving(history, {location: {pathname: '/p/1', state: {mapProjectFrom: '/map-projects/new'}}, action: 'POP'})
+  const [pushed] = history.calls
+  const forward = getPageKey(back, pushed.location, pushed.action)
+
+  assert.equal(pushed.location.state, undefined)
+  assert.deepEqual(forward, {key: back.key + 1, path: '/p/1'})
+})
+
+test('continueLeaving keeps other state', () => {
+  const history = createFakeHistory()
+  continueLeaving(history, {location: {pathname: '/x', state: {mapProjectFrom: '/y', other: 1}}, action: 'PUSH'})
+  assert.deepEqual(history.calls[0].location.state, {other: 1})
 })

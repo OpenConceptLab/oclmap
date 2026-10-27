@@ -361,6 +361,7 @@
     "stop_processing": "Detener Procesamiento",
     "leave_while_running_title": "Auto Match está en ejecución",
     "leave_while_running_body": "Salir de este proyecto detiene la ejecución ahora. Lo que ya se ha emparejado se guarda.",
+    "leave_while_running_body_unsaved": "Este proyecto aún no se ha guardado. Salir detiene la ejecución ahora y descarta el proyecto y sus resultados.",
     "stay": "Quedarse",
     "stop_and_leave": "Detener y salir",
     "auto_match_all_including_approved_confirm": "Entiendo que se sobrescribirán {{approvedCount}} decisiones aprobadas",

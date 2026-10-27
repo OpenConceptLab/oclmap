@@ -10,9 +10,13 @@ export const blockLeaving = (history, {isAllowed = () => false, onBlocked}) =>
     return false
   })
 
-// A held Back/Forward (POP) can't be replayed by distance, so it is pushed.
-export const continueLeaving = (history, {location, action}) =>
-  action === 'REPLACE' ? history.replace(location) : history.push(location)
+// A held Back/Forward (POP) can't be replayed by distance, so it is pushed,
+// without its mapProjectFrom: the push is the user's, not a save's.
+export const continueLeaving = (history, {location, action}) => {
+  const { mapProjectFrom, ...state } = location.state || {} // eslint-disable-line no-unused-vars
+  const next = {...location, state: Object.keys(state).length ? state : undefined}
+  return action === 'REPLACE' ? history.replace(next) : history.push(next)
+}
 
 // Each closer closes its run's record once, whether the run ends or the page
 // closes it first on leave. A close still in flight as the tab closes is sent
