@@ -1,4 +1,4 @@
-// Theme settings for keyboard focus on buttons (OpenConceptLab/ocl_issues#2970),
+// Theme settings for focused and hovered buttons (OpenConceptLab/ocl_issues#2970),
 // in a plain .js module so the integration test can import them.
 //
 // MUI's focus ripple pulses a circle of the text color at 30% behind the label,
@@ -17,6 +17,13 @@ export const buttonFocusComponents = (inner, outer) => {
           // contained button's focus elevation.
           '&.Mui-focusVisible': {
             boxShadow: ring,
+          },
+          // On a contained button rendered as a link, Bootstrap 3's
+          // `a:hover, a:focus` color and underline outrank MUI's (an element
+          // and a class beat one class). This restores MUI's text color.
+          'a&.MuiButton-contained:hover, a&.MuiButton-contained:focus': {
+            color: 'var(--variant-containedColor)',
+            textDecoration: 'none',
           },
         },
       },

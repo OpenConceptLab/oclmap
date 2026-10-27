@@ -15,9 +15,10 @@
 
 import test, { afterEach } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import React from 'react'
 import { render, act, cleanup } from '@testing-library/react'
-import { ThemeProvider, createTheme } from '@mui/material/styles'
+import { ThemeProvider, createTheme, getContrastRatio } from '@mui/material/styles'
 import Button from '@mui/material/Button'
 import ButtonGroup from '@mui/material/ButtonGroup'
 
@@ -72,3 +73,47 @@ test('a focused button in a contained ButtonGroup shows the ring and no focus ri
   // Raised, so a filled neighbour can't paint over the ring's shared edge.
   assert.equal(window.getComputedStyle(button).zIndex, '1')
 })
+
+test('a contained link-button keeps its text color under Bootstrap\'s a:focus and a:hover', async () => {
+  // The app loads Bootstrap 3, whose anchor rule outranks MUI's button color.
+  const css = readFileSync(new URL('../../../public/bootstrap.min.css', import.meta.url), 'utf8')
+  const bootstrap = document.createElement('style')
+  bootstrap.textContent = css.match(/a:hover,a:focus\{[^}]*\}/)[0]
+  document.head.appendChild(bootstrap)
+  let undoHover = () => {}
+  try {
+    const { getByRole } = render(React.createElement(ThemeProvider, { theme }, React.createElement(Button, { variant: 'contained', href: '#new' }, 'New')))
+    const link = getByRole('link', { name: 'New' })
+    const assertTextColor = state => {
+      const { color, backgroundColor } = window.getComputedStyle(link)
+      assert.equal(getContrastRatio(color, theme.palette.primary.contrastText), 1, `${state}: text is ${color}`)
+      assert.ok(getContrastRatio(color, backgroundColor) >= 4.5, `${state}: ${color} on ${backgroundColor}`)
+    }
+
+    await act(async () => { link.focus() })
+    assertTextColor('focused')
+    await act(async () => { link.blur() })
+
+    undoHover = copyHoverRulesToClass('hover')
+    link.classList.add('hover')
+    assertTextColor('hovered')
+  } finally {
+    undoHover()
+    bootstrap.remove()
+  }
+})
+
+// happy-dom doesn't match :hover. Copy every :hover rule, right after itself,
+// as a rule for `.<name>`; returns a function that removes the copies.
+function copyHoverRulesToClass(name) {
+  const copies = []
+  for (const sheet of document.styleSheets) {
+    for (let i = 0; i < sheet.cssRules.length; i++) {
+      const text = sheet.cssRules[i].cssText
+      if (!text.includes(':hover')) continue
+      sheet.insertRule(text.replaceAll(':hover', `.${name}`), ++i)
+      copies.push([sheet, i])
+    }
+  }
+  return () => copies.reverse().forEach(([sheet, i]) => sheet.deleteRule(i))
+}
