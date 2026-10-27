@@ -570,15 +570,6 @@
   "quota": {
     "title_quota": "Ha alcanzado su cuota",
     "title_cap": "Ha alcanzado su límite",
-    "used_of": "{{used}} de {{limit}} usados",
-    "meter": {
-      "match_operations": "Operaciones de coincidencia",
-      "ai_assistant_calls": "Llamadas al asistente de IA de OCL",
-      "ai_assistant_change_comments": "Comentarios de actualización del asistente de IA de OCL",
-      "projects": "Proyectos de mapeo",
-      "rows": "Filas por proyecto",
-      "generic": "Uso"
-    },
     "consequence": {
       "generic": "Algunas funciones están en pausa.",
       "ai_assistant_calls": {

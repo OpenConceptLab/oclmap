@@ -15,7 +15,7 @@ export const getQuotaError = value => {
   const config = QUOTA_ERRORS[data?.error_code]
   if(!config)
     return null
-  return {...config, errorCode: data.error_code, usage: {used: data.used, limit: data.limit}}
+  return {...config, errorCode: data.error_code}
 }
 
 export const isQuotaError = value => Boolean(getQuotaError(value))

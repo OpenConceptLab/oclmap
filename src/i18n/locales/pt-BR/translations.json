@@ -570,15 +570,6 @@
   "quota": {
     "title_quota": "Você atingiu sua cota",
     "title_cap": "Você atingiu seu limite",
-    "used_of": "{{used}} de {{limit}} usado(s)",
-    "meter": {
-      "match_operations": "Operações de correspondência",
-      "ai_assistant_calls": "Chamadas do Assistente de IA do OCL",
-      "ai_assistant_change_comments": "Comentários de atualização do Assistente de IA do OCL",
-      "projects": "Projetos de Mapeamento",
-      "rows": "Linhas por projeto",
-      "generic": "Uso"
-    },
     "consequence": {
       "generic": "Alguns recursos estão pausados.",
       "ai_assistant_calls": {

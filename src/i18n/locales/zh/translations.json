@@ -569,15 +569,6 @@
   "quota": {
     "title_quota": "您已达到配额上限",
     "title_cap": "您已达到使用上限",
-    "used_of": "已使用 {{used}} / {{limit}}",
-    "meter": {
-      "match_operations": "匹配操作",
-      "ai_assistant_calls": "OCL AI 助手调用",
-      "ai_assistant_change_comments": "OCL AI 助手更新备注",
-      "projects": "映射项目",
-      "rows": "每个项目的行数",
-      "generic": "用量"
-    },
     "consequence": {
       "generic": "部分功能已暂停。",
       "ai_assistant_calls": {

@@ -570,15 +570,6 @@
   "quota": {
     "title_quota": "You've reached your quota",
     "title_cap": "You've reached your limit",
-    "used_of": "{{used}} of {{limit}} used",
-    "meter": {
-      "match_operations": "Match operations",
-      "ai_assistant_calls": "OCL AI Assistant calls",
-      "ai_assistant_change_comments": "OCL AI Assistant update comments",
-      "projects": "Map projects",
-      "rows": "Rows per project",
-      "generic": "Usage"
-    },
     "consequence": {
       "generic": "Some features are paused.",
       "ai_assistant_calls": {
