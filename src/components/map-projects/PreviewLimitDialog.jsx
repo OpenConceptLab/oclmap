@@ -8,47 +8,38 @@ import Typography from '@mui/material/Typography'
 import Button from '@mui/material/Button'
 
 import CloseIconButton from '../common/CloseIconButton'
-import { REQUEST_MORE_ACCESS_URL } from '../common/quotaErrors'
+import useLimitAction from '../common/useLimitAction'
 import { PREVIEW_LIMIT_COPY_KEY } from './previewLimits'
 
-// The community site's newsletter sign-up (it redirects to the Brevo form).
-const NOTIFY_ME_URL = 'https://openconceptlab.org/newsletter'
-const LINK_PROPS = {target: '_blank', rel: 'noopener noreferrer'}
-
-// R12: at the limit, offer "request more access" (the community site's
-// early-access form, which creates a lead) and "notify me when plans launch"
-// (the newsletter). There is no checkout until November, so neither button
-// takes a payment (ocl_online#170). Both open in a new tab, like QuotaDialog's.
-// One-time allowance (R2): no reset date is ever shown here.
-const PreviewLimitDialog = ({open, onClose, errorCode, limit, used}) => {
+// Says what the account can't use. Any next step comes from the connected
+// service (OpenConceptLab/ocl_online#367) and opens in a new tab.
+const PreviewLimitDialog = ({open, onClose, errorCode}) => {
   const { t } = useTranslation()
+  const { action, onActionClick } = useLimitAction(open, errorCode)
   const kind = PREVIEW_LIMIT_COPY_KEY[errorCode] || 'generic'
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth='xs' fullWidth>
       <DialogTitle sx={{display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
-        {t(`map_project.preview_limit_title_${kind}`)}
+        {t('map_project.limit_unavailable_title')}
         <CloseIconButton onClick={onClose} />
       </DialogTitle>
       <DialogContent>
-        <Typography variant='body1' sx={{mb: 2}}>
-          {
-            (limit || limit === 0) ?
-              t(`map_project.preview_limit_body_${kind}`, {limit, used}) :
-              t(`map_project.preview_limit_body_${kind}_no_count`)
-          }
+        <Typography variant='body1'>
+          {t([`map_project.limit_unavailable_body_${kind}`, 'map_project.limit_unavailable_body_generic'])}
         </Typography>
-        <Typography variant='body2' color='text.secondary'>
-          {t('map_project.preview_limit_hardship_note')}
-        </Typography>
+        {
+          action?.message &&
+            <Typography variant='body1' sx={{mt: 2}}>{action.message}</Typography>
+        }
       </DialogContent>
       <DialogActions sx={{flexWrap: 'wrap', gap: 1, px: 3, pb: 2}}>
-        <Button href={NOTIFY_ME_URL} {...LINK_PROPS} variant='contained' color='primary' sx={{textTransform: 'none'}}>
-          {t('map_project.preview_limit_notify_me')}
-        </Button>
-        <Button href={REQUEST_MORE_ACCESS_URL} {...LINK_PROPS} variant='text' sx={{textTransform: 'none'}}>
-          {t('map_project.preview_limit_request_access')}
-        </Button>
+        {
+          action &&
+            <Button href={action.url} onClick={onActionClick} target='_blank' rel='noopener noreferrer' variant='contained' color='primary' sx={{textTransform: 'none'}}>
+              {action.label}
+            </Button>
+        }
         <Button onClick={onClose} variant='text' color='inherit' sx={{textTransform: 'none', ml: 'auto'}}>
           {t('map_project.preview_limit_dismiss')}
         </Button>

@@ -289,8 +289,8 @@ const MapProject = () => {
   const ownNavigationRef = React.useRef(false)
   const refreshRowStageSnapshotRef = React.useRef({});
 
-  const [previewLimit, setPreviewLimit] = React.useState(null) // {errorCode, limit, used} or null
-  const previewLimitQuota = previewLimit ? getQuotaError({error_code: previewLimit.errorCode, limit: previewLimit.limit, used: previewLimit.used}) : null
+  const [previewLimit, setPreviewLimit] = React.useState(null) // {errorCode} or null
+  const previewLimitQuota = previewLimit ? getQuotaError({error_code: previewLimit.errorCode}) : null
 
   const [row, setRow] = React.useState(false)
   const [loadingMatches, setLoadingMatches] = React.useState(false)
@@ -808,11 +808,6 @@ const MapProject = () => {
   const newProjectBlockReason = (!params.projectId && !project?.id && mapperQuotaCacheVersion > 0)
     ? getNewProjectBlockReason(getMapperPreview())
     : null
-
-  React.useEffect(() => {
-    if(newProjectBlockReason)
-      baseSetAlert({severity: 'error', message: t(`map_project.preview_limit_title_${newProjectBlockReason}`), duration: 8000})
-  }, [newProjectBlockReason])
 
   React.useEffect(() => {
     const isDefaultApplied = isRepoDefaultFilterApplied(repoVersion)
@@ -1827,7 +1822,7 @@ const MapProject = () => {
         // The user has left the project, so no dialog can show: say so once.
         baseSetAlert({severity: 'error', message: t('map_project.leave_save_failed', {name: name || project?.name, detail: errorData?.detail || t('unknown_error')}), duration: 12000})
       } else if(status === 403 && errorData?.error_code) {
-        setPreviewLimit({errorCode: errorData.error_code, limit: errorData.limit, used: errorData.used})
+        setPreviewLimit({errorCode: errorData.error_code})
       } else if(!isAutoSave && status !== 429 && status !== 401) {
         baseSetAlert({severity: 'error', message: errorData?.detail || t('unknown_error'), duration: 8000})
       }
@@ -2073,7 +2068,7 @@ const MapProject = () => {
         abortRef.current = true
         setLoadingMatches(false)
         setIsLoadingInDecisionView(false)
-        setPreviewLimit({errorCode: data.error_code, limit: data.limit, used: data.used})
+        setPreviewLimit({errorCode: data.error_code})
         return
       }
       projectLog({action: 'automatch_run_create_failed', extras: {status: status || 'no-id', ...(result.ok ? {} : {reason: result.reason, error: result.error?.message || null})}})
@@ -4003,7 +3998,7 @@ const MapProject = () => {
       if(isNumber(rowId))
         refreshMapperQuotaCache()
     }
-    setPreviewLimit({errorCode: response.error_code, limit: response.limit, used: response.used})
+    setPreviewLimit({errorCode: response.error_code})
     return true
   }
 
@@ -6214,10 +6209,9 @@ const MapProject = () => {
   const onCopyClick = event => {
     event.preventDefault()
     event.stopPropagation()
-    const preview = getMapperPreview()
-    const blockReason = getNewProjectBlockReason(preview)
+    const blockReason = getNewProjectBlockReason()
     if(blockReason) {
-      setPreviewLimit({errorCode: NEW_PROJECT_BLOCK_ERROR_CODES[blockReason], limit: preview.projects.limit, used: preview.projects.used})
+      setPreviewLimit({errorCode: NEW_PROJECT_BLOCK_ERROR_CODES[blockReason]})
       return
     }
     if(project?.url) {
@@ -6234,7 +6228,7 @@ const MapProject = () => {
     return minFactor
   }
 
-  return permissionDenied ? <Error403/> : newProjectBlockReason ? <Redirect to='/' /> : (
+  return permissionDenied ? <Error403/> : newProjectBlockReason ? <Redirect to={{pathname: '/', state: {newProjectBlock: newProjectBlockReason}}} /> : (
     <div className='col-xs-12 padding-0' style={{borderRadius: '10px', width: 'calc(100vw - 32px)'}}>
       {
         (() => {
@@ -6688,16 +6682,14 @@ const MapProject = () => {
               <QuotaDialog
                 open
                 onClose={() => setPreviewLimit(null)}
+                errorCode={previewLimitQuota.errorCode}
                 meter={previewLimitQuota.meter}
                 surface={MAPPER_QUOTA_SURFACE[previewLimitQuota.meter]}
-                usage={{...previewLimitQuota.usage, period: 'one_time'}}
               /> :
               <PreviewLimitDialog
                 open={Boolean(previewLimit)}
                 onClose={() => setPreviewLimit(null)}
                 errorCode={previewLimit?.errorCode}
-                limit={previewLimit?.limit}
-                used={previewLimit?.used}
               />
           }
       </Paper>

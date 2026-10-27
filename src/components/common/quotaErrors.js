@@ -1,7 +1,3 @@
-// Community-site pages (ocl_online#170).
-export const QUOTA_PRICING_URL = 'https://openconceptlab.org/pricing'
-export const REQUEST_MORE_ACCESS_URL = 'https://openconceptlab.org/early-access?source=mapper-limit'
-
 const QUOTA_ERRORS = {
   mapper_match_operations_limit_reached: {meter: 'match_operations', kind: 'quota'},
   ai_assistant_calls_limit_reached: {meter: 'ai_assistant_calls', kind: 'quota'},
@@ -19,7 +15,7 @@ export const getQuotaError = value => {
   const config = QUOTA_ERRORS[data?.error_code]
   if(!config)
     return null
-  return {...config, errorCode: data.error_code, usage: {used: data.used, limit: data.limit}}
+  return {...config, errorCode: data.error_code}
 }
 
 export const isQuotaError = value => Boolean(getQuotaError(value))
