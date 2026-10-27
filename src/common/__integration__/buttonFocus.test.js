@@ -74,46 +74,60 @@ test('a focused button in a contained ButtonGroup shows the ring and no focus ri
   assert.equal(window.getComputedStyle(button).zIndex, '1')
 })
 
-test('a contained link-button keeps its text color under Bootstrap\'s a:focus and a:hover', async () => {
+test('Bootstrap\'s a:hover and a:focus don\'t change a contained button\'s text color', async () => {
   // The app loads Bootstrap 3, whose anchor rule outranks MUI's button color.
   const css = readFileSync(new URL('../../../public/bootstrap.min.css', import.meta.url), 'utf8')
   const bootstrap = document.createElement('style')
   bootstrap.textContent = css.match(/a:hover,a:focus\{[^}]*\}/)[0]
   document.head.appendChild(bootstrap)
-  let undoHover = () => {}
+  let hover
   try {
-    const { getByRole } = render(React.createElement(ThemeProvider, { theme }, React.createElement(Button, { variant: 'contained', href: '#new' }, 'New')))
+    const page = React.createElement(
+      React.Fragment,
+      null,
+      React.createElement(Button, { variant: 'contained', href: '#new' }, 'New'),
+      // Not a link, so the theme's fix mustn't touch the color it sets.
+      React.createElement(Button, { variant: 'contained', sx: { color: '#000' } }, 'Own color')
+    )
+    const { getByRole } = render(React.createElement(ThemeProvider, { theme }, page))
     const link = getByRole('link', { name: 'New' })
-    const assertTextColor = state => {
+    const own = getByRole('button', { name: 'Own color' })
+    const assertLinkText = state => {
       const { color, backgroundColor } = window.getComputedStyle(link)
-      assert.equal(getContrastRatio(color, theme.palette.primary.contrastText), 1, `${state}: text is ${color}`)
-      assert.ok(getContrastRatio(color, backgroundColor) >= 4.5, `${state}: ${color} on ${backgroundColor}`)
+      assert.equal(getContrastRatio(color, theme.palette.primary.contrastText), 1, `${state} link: text is ${color}`)
+      assert.ok(getContrastRatio(color, backgroundColor) >= 4.5, `${state} link: ${color} on ${backgroundColor}`)
+    }
+    const assertOwnText = state => {
+      const { color } = window.getComputedStyle(own)
+      assert.equal(getContrastRatio(color, '#000'), 1, `${state} button: text is ${color}`)
     }
 
     await act(async () => { link.focus() })
-    assertTextColor('focused')
-    await act(async () => { link.blur() })
+    assertLinkText('focused')
+    await act(async () => { own.focus() })
+    assertOwnText('focused')
+    await act(async () => { own.blur() })
 
-    undoHover = copyHoverRulesToClass('hover')
+    hover = hoverRulesAsClass('hover')
     link.classList.add('hover')
-    assertTextColor('hovered')
+    own.classList.add('hover')
+    assertLinkText('hovered')
+    assertOwnText('hovered')
   } finally {
-    undoHover()
+    hover?.remove()
     bootstrap.remove()
   }
 })
 
-// happy-dom doesn't match :hover. Copy every :hover rule, right after itself,
-// as a rule for `.<name>`; returns a function that removes the copies.
-function copyHoverRulesToClass(name) {
-  const copies = []
-  for (const sheet of document.styleSheets) {
-    for (let i = 0; i < sheet.cssRules.length; i++) {
-      const text = sheet.cssRules[i].cssText
-      if (!text.includes(':hover')) continue
-      sheet.insertRule(text.replaceAll(':hover', `.${name}`), ++i)
-      copies.push([sheet, i])
-    }
-  }
-  return () => copies.reverse().forEach(([sheet, i]) => sheet.deleteRule(i))
+// happy-dom doesn't match :hover. Add a stylesheet that repeats every :hover
+// rule for `.<name>`, and return it so the caller can remove it.
+function hoverRulesAsClass(name) {
+  const style = document.createElement('style')
+  style.textContent = Array.from(document.styleSheets)
+    .flatMap(sheet => Array.from(sheet.cssRules, rule => rule.cssText))
+    .filter(text => text.includes(':hover'))
+    .map(text => text.replaceAll(':hover', `.${name}`))
+    .join('\n')
+  document.head.appendChild(style)
+  return style
 }
