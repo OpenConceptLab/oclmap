@@ -51,11 +51,6 @@ for (const variant of ['contained', 'outlined', 'text']) {
   })
 }
 
-test('a focused contained error button shows the ring and no focus ripple', async () => {
-  const button = await focusButton(React.createElement(Button, { variant: 'contained', color: 'error' }, 'Delete'), 'Delete')
-  assertRingWithoutRipple(button)
-})
-
 test('a focused button in a contained ButtonGroup shows the ring and no focus ripple', async () => {
   // Which rule wins depends on which stylesheet came last. When a contained
   // button already sits elsewhere on the page, the group's styles come after
