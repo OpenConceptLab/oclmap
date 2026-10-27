@@ -69,4 +69,6 @@ test('a focused button in a contained ButtonGroup shows the ring and no focus ri
   )
   const button = await focusButton(page, 'Map')
   assertRingWithoutRipple(button)
+  // Raised, so a filled neighbour can't paint over the ring's shared edge.
+  assert.equal(window.getComputedStyle(button).zIndex, '1')
 })

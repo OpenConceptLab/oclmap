@@ -23,11 +23,11 @@ export const buttonFocusComponents = (inner, outer) => {
     },
     MuiButtonGroup: {
       styleOverrides: {
-        root: {
+        grouped: {
           // A contained group sets `box-shadow: none` on its buttons, as
           // specific as the rule above. Raised so the next button can't cover
           // the ring's edge.
-          '& .MuiButtonGroup-grouped.Mui-focusVisible': {
+          '&.Mui-focusVisible': {
             boxShadow: ring,
             zIndex: 1,
           },
