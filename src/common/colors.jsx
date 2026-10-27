@@ -16,7 +16,10 @@ export const PENDING_RERANK_COLOR = 'rgb(189, 189, 189)'
 export const PRIMARY_COLORS = {
   main: '#4836ff',
   light: '#4836ff',
-  dark: '#c3c0ff',
+  // `dark` is MUI's hover and focus fill under contrastText (contained buttons,
+  // clickable chips), so in every palette it stays darker than main: tone 30.
+  // For a light tint, use a numbered tone such as '80'.
+  dark: '#2d00e5',
   contrastText: WHITE,
   '99': '#fffbff',
   '95': '#f2efff',
@@ -34,7 +37,7 @@ export const PRIMARY_COLORS = {
 export const SECONDARY_COLORS = {
   main: '#5e5c71',
   light: '#5e5c71',
-  dark: '#c7c4dd',
+  dark: '#464559',
   contrastText: WHITE,
   '99': '#fffbff',
   '95': '#f2efff',
@@ -52,7 +55,7 @@ export const SECONDARY_COLORS = {
 export const TERTIARY_COLORS = {
   main: '#7a5368',
   light: '#7a5368',
-  dark: '#eab9d1',
+  dark: '#603c50',
   contrastText: WHITE,
   '99': '#fffbff',
   '95': '#ffecf3',
@@ -82,7 +85,7 @@ export const SURFACE_COLORS = {
 export const ERROR_COLORS = {
   main: '#ba1a1a',
   light: '#ba1a1a',
-  dark: '#ffb4ab',
+  dark: '#93000a',
   contrastText: WHITE,
   '95': '#ffedea'
 }
