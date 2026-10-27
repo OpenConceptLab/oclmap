@@ -94,6 +94,7 @@ import DataGridControls from './DataGridControls'
 import { getPreviewEligibleRowIndexes, getRowsToProcess, countAIOnlyRows, getAutoMatchAIOnOpen, takeRunRows, clearRunRowStatuses, canRunAlgorithm, spendsMatchQuota, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, AI_LOOKUP_WAIT_MS, RERANK_LOOKUP_WAIT_MS, RERANK_MAX_IN_FLIGHT, isScispacyWarmingUp } from './autoMatchRows'
 import { aiOnByDefault, getMaxRunRows, getMapperSettings } from '@openconceptlab/oclmap-extensions'
 import { createAutosaveScheduler, createLatestSender, saveOnLeave, trackSave, whenSaved, installUnloadGuard } from './autosave'
+import { blockLeaving, continueLeaving, createRunClosers } from './leaveGuard'
 import MatchSummaryCard from './MatchSummaryCard'
 import MappingDecisionResult from './MappingDecisionResult'
 import DecisionSelector from './DecisionSelector'
@@ -279,6 +280,13 @@ const MapProject = () => {
   // A ref so every per-row backend call reads the run id synchronously without
   // prop-drilling or re-renders; null outside a run → 'mapper-ui-manual'.
   const automatchRunRef = React.useRef(null);
+  // Lets leaving close open run records at once.
+  const runClosersRef = React.useRef(null)
+  if(!runClosersRef.current)
+    runClosersRef.current = createRunClosers()
+  const isRunActiveRef = React.useRef(false)
+  const [leaveTarget, setLeaveTarget] = React.useState(null)
+  const ownNavigationRef = React.useRef(false)
   const refreshRowStageSnapshotRef = React.useRef({});
 
   const [previewLimit, setPreviewLimit] = React.useState(null) // {errorCode, limit, used} or null
@@ -315,6 +323,7 @@ const MapProject = () => {
   const configSnapshotOnOpenRef = React.useRef(null)
   const projectIdRef = React.useRef(null)
   const onSaveRef = React.useRef(null)
+  const projectLogRef = React.useRef(() => {})
   // A save can complete after the user has left the project
   // (OpenConceptLab/ocl_issues#2829): these track the request still in flight
   // (accurate after unmount, unlike isSaving state) and whether this page is
@@ -372,21 +381,37 @@ const MapProject = () => {
   // captured when the change happened rather than what is on screen now.
   React.useEffect(() => {
     onSaveRef.current = onSave
+    projectLogRef.current = projectLog
   })
 
   // Leaving the project unmounts this page, often inside the autosave window:
   // save the pending change now rather than drop it
   // (OpenConceptLab/ocl_issues#2829). Nothing to save once signed out.
+  const saveNowOnLeave = () => saveOnLeave({
+    scheduler: autosaveSchedulerRef.current,
+    inFlightSave: inFlightSaveRef.current,
+    save: (reasons, {after}) => currentUserToken() && onSaveRef.current({source: 'auto', closeConfigure: false, reasons, leaving: true, after})
+  })
+
+  // Leaving stops a run at once, not gracefully: its record closes now and
+  // what it matched so far is saved. Once per run, whether or not leaving
+  // unmounts this page: a navigation to another project URL reuses it.
+  const stopRunOnLeave = () => {
+    if(!runClosersRef.current.hasOpen() && !(isRunActiveRef.current && !abortRef.current))
+      return
+    abortRef.current = true
+    projectLogRef.current({action: 'auto_match_stopped_on_leave'})
+    autosaveSchedulerRef.current.schedule('auto_match_stopped')
+    runClosersRef.current.closeAll(true)
+  }
+
   React.useEffect(() => {
     isMountedRef.current = true
     installUnloadGuard()
     return () => {
       isMountedRef.current = false
-      saveOnLeave({
-        scheduler: autosaveSchedulerRef.current,
-        inFlightSave: inFlightSaveRef.current,
-        save: reasons => currentUserToken() && onSaveRef.current({source: 'auto', closeConfigure: false, reasons, leaving: true})
-      })
+      stopRunOnLeave()
+      saveNowOnLeave()
     }
   }, [])
 
@@ -395,13 +420,25 @@ const MapProject = () => {
   // covers a save that outlives this page.
   React.useEffect(() => {
     const warnIfUnsaved = event => {
-      if(!autosaveSchedulerRef.current.hasPending() && !inFlightSaveRef.current)
+      if(!autosaveSchedulerRef.current.hasPending() && !inFlightSaveRef.current && !isRunActiveRef.current)
         return
       event.preventDefault()
       event.returnValue = ''
     }
     window.addEventListener('beforeunload', warnIfUnsaved)
     return () => window.removeEventListener('beforeunload', warnIfUnsaved)
+  }, [])
+
+  // Closing the tab stops a run too, and closes its record.
+  React.useEffect(() => {
+    const stopRunOnPageHide = () => {
+      if(!runClosersRef.current.hasUnsettled())
+        return
+      abortRef.current = true
+      runClosersRef.current.closeAll(true, {keepalive: true})
+    }
+    window.addEventListener('pagehide', stopRunOnPageHide)
+    return () => window.removeEventListener('pagehide', stopRunOnPageHide)
   }, [])
 
   // repo state
@@ -1729,13 +1766,20 @@ const MapProject = () => {
     const isUpdate = Boolean(project?.id)
     if(!isAutoSave)
       GAService.recordUpsertEvent('MapProject', isUpdate, 'map_project')
-    let service = APIService.new().overrideURL(owner).appendToUrl('map-projects/')
-    if(isUpdate)
-      service = service.appendToUrl(project.id + '/')
-        .put(formData, null, {"Content-Type": "multipart/form-data"}, undefined, true)
-    else
-      service = service.post(formData, null, {"Content-Type": "multipart/form-data"}, undefined, true)
+    const send = () => {
+      const service = APIService.new().overrideURL(owner).appendToUrl('map-projects/')
+      if(isUpdate)
+        return service.appendToUrl(project.id + '/')
+          .put(formData, null, {"Content-Type": "multipart/form-data"}, undefined, true)
+      return service.post(formData, null, {"Content-Type": "multipart/form-data"}, undefined, true)
+    }
+    // options.after: a save still in flight. This payload is built now and
+    // sent once that settles, so the older one can't land after it.
+    const service = options.after ? Promise.resolve(options.after).then(send, send) : send()
 
+    // Where the user was when saving: a save that lands once they went
+    // elsewhere mustn't pull them back.
+    const pathAtSave = history.location.pathname
     const request = service.then(response => {
       setIsSaving(false)
       const status = response?.response?.status || response?.status
@@ -1767,9 +1811,14 @@ const MapProject = () => {
         setProject(response.data)
         if(!isUpdate)
           refreshMapperQuotaCache()
-        // A save that lands after the user left mustn't pull them back here.
-        if(response.data.url && isMountedRef.current)
-          history.push(response.data.url)
+        if(response.data.url && isMountedRef.current && !options.leaving && history.location.pathname === pathAtSave) {
+          ownNavigationRef.current = true
+          try {
+            history.push(response.data.url, {mapProjectFrom: pathAtSave})
+          } finally {
+            ownNavigationRef.current = false
+          }
+        }
         if(!isAutoSave)
           baseSetAlert({severity: 'success', message: t('map_project.successfully_saved'), duration: 2000})
 
@@ -1790,6 +1839,7 @@ const MapProject = () => {
     inFlightSaveRef.current = request
     if(isUpdate)
       trackSave(project.id, request)
+    return request
   }
 
   // onSave takes options, so it can't be bound to onClick directly — the click
@@ -1830,7 +1880,12 @@ const MapProject = () => {
     logsSendersRef.current.get(url).trigger({logs})
   }
 
-  const scheduleAutoSave = reason => autosaveSchedulerRef.current.schedule(reason)
+  // Not after unmount: frozen state plus a late run's refs would save an
+  // inconsistent project.
+  const scheduleAutoSave = reason => {
+    if(isMountedRef.current)
+      autosaveSchedulerRef.current.schedule(reason)
+  }
 
   // ── Waiting out a busy server (ocl_issues#2849) ───────────────────────────
   // The gate for a request's server, shared by every request this tab sends it.
@@ -2036,7 +2091,7 @@ const MapProject = () => {
   // here, a newer run's record may be the current one (ocl_issues#2849).
   // An AI-only run is recorded from aiOutcomes, its own AI results, not the
   // shared row stages a manual action or a stopped run's late call can change.
-  const completeAutomatchRun = async (selectedAlgos, intendedRows, run, aborted, aiOutcomes = {}) => {
+  const completeAutomatchRun = async (selectedAlgos, intendedRows, run, aborted, aiOutcomes = {}, {keepalive = false} = {}) => {
     if(automatchRunRef.current === run)
       automatchRunRef.current = null
     if(!run?.id) return
@@ -2050,6 +2105,9 @@ const MapProject = () => {
       aborted,
       stoppedForQuota: Boolean(matchQuotaStopRef.current || (run.aiOnly && aiQuotaExhaustedRef.current)),
     })
+    // The tab is closing: one request, sent before this function yields.
+    if(keepalive)
+      return APIService.new().overrideURL('/auto-match-runs/' + run.id + '/').keepalive('PATCH', payload)
     // Closing the run is idempotent, so a busy server or a gateway error is
     // retried; Stop doesn't end it, so a stopped run is closed too
     // (ocl_issues#2849). requestWithCapacityRetry never rejects.
@@ -2579,6 +2637,7 @@ const MapProject = () => {
       // began: it changed nothing to save.
       const runStarted = !isRunStopped()
       const aiOutcomes = {}
+      const closeRun = runClosersRef.current.add((aborted, options) => completeAutomatchRun(_selectedAlgos, rowsToProcess, runRecord, aborted, aiOutcomes, options))
       try {
         bulkMatchAlgoIdsRef.current = map(_selectedAlgos, 'id')
         // Reset all algo stages to -1 for every row before starting so that
@@ -2698,7 +2757,7 @@ const MapProject = () => {
         // way (ocl_issues#2849).
         if(runStarted)
           scheduleAutoSave(isRunStopped() ? 'auto_match_stopped' : 'auto_match')
-        await completeAutomatchRun(_selectedAlgos, rowsToProcess, runRecord, isRunStopped(), aiOutcomes)
+        await closeRun(isRunStopped())
         refreshMapperQuotaCache()
       }
     }, 1000)
@@ -2866,7 +2925,36 @@ const MapProject = () => {
 
   const isRunningBulkAnalysis = bulkAIAnalysisEndedAt ? moment().isBetween(bulkAIAnalysisStartedAt, bulkAIAnalysisEndedAt) : Boolean(bulkAIAnalysisStartedAt)
   const isRunningBulkBridgeCandidates = bridgeCandidatesEndedAt ? moment().isBetween(bridgeCandidatesStartedAt, bridgeCandidatesEndedAt) : Boolean(bridgeCandidatesStartedAt)
-  const isRunningBulkScispacyCandidates = scispacyCandidatesStartedAt ? moment().isBetween(scispacyCandidatesStartedAt, scispacyCandidatesEndedAt) : Boolean(scispacyCandidatesStartedAt)
+  const isRunningBulkScispacyCandidates = scispacyCandidatesEndedAt ? moment().isBetween(scispacyCandidatesStartedAt, scispacyCandidatesEndedAt) : Boolean(scispacyCandidatesStartedAt)
+
+  // Leaving while a run is going asks first.
+  const isRunActive = Boolean(loadingMatches || isRunningBulkAnalysis || isRunningBulkBridgeCandidates || isRunningBulkScispacyCandidates)
+  isRunActiveRef.current = isRunActive
+  const unblockLeavingRef = React.useRef(null)
+  React.useEffect(() => {
+    if(!isRunActive)
+      return
+    const unblock = blockLeaving(history, {
+      isAllowed: () => ownNavigationRef.current,
+      onBlocked: setLeaveTarget,
+    })
+    unblockLeavingRef.current = unblock
+    return () => {
+      unblockLeavingRef.current = null
+      unblock()
+    }
+  }, [isRunActive])
+
+  const onStopRunAndLeave = () => {
+    const target = leaveTarget
+    setLeaveTarget(null)
+    stopRunOnLeave()
+    saveNowOnLeave()
+    unblockLeavingRef.current?.()
+    unblockLeavingRef.current = null
+    if(target)
+      continueLeaving(history, target)
+  }
 
   // Only the latest request may set the version: a slower response is for a
   // repository no longer chosen.
@@ -4414,7 +4502,10 @@ const MapProject = () => {
     if(!isNumber(index)) return null
     // A run's rerank ends when the run stops, and a stopped run proposes no
     // more mappings; a row reranked by hand isn't stopped (ocl_issues#2849).
-    const isStopped = isRunTraffic ? getRunStopCheck() : () => false
+    const runStop = isRunTraffic ? getRunStopCheck() : () => false
+    // Nothing is sent once the page is gone.
+    const isStopped = () => !isMountedRef.current || runStop()
+    if(!isMountedRef.current) return null
     // The run this call belongs to, captured now: a newer run's stages are
     // its own (ocl_issues#2849).
     const runTicket = autoMatchRunTicketRef.current
@@ -4641,7 +4732,7 @@ const MapProject = () => {
       || (Array.isArray(def?.names) && def.names.some(n => n?.name))
     )
   const scheduleRerank = (rowIndex) => {
-    if(!isNumber(rowIndex)) return
+    if(!isNumber(rowIndex) || !isMountedRef.current) return
     const stage = rowStageRef.current[rowIndex] || {}
     // ocl_online#105 Phase 5: this debounced path does most of the reranking
     // during a bulk auto-match (candidates stream in asynchronously, so the
@@ -4689,7 +4780,7 @@ const MapProject = () => {
     const scheduledTicket = autoMatchRunTicketRef.current
     rerankDebounceRef.current[rowIndex] = setTimeout(() => {
       delete rerankDebounceRef.current[rowIndex]
-      if(isRunTraffic && scheduledTicket !== autoMatchRunTicketRef.current)
+      if(!isMountedRef.current || (isRunTraffic && scheduledTicket !== autoMatchRunTicketRef.current))
         return
       // isBulk=false (don't double the setAutoMatched side-effect the explicit
       // bulk rerank already performs); isRunTraffic carries the run attribution.
@@ -5963,7 +6054,7 @@ const MapProject = () => {
             baseDelayMs: 3000,
             backoffFactor: 4,
             jitterFactor: 0.25,
-            isCancelled: () => abortRef.current,
+            isCancelled: () => abortRef.current || !isMountedRef.current,
             isRetryable: isTransientNetworkError,
             onAttemptFailed: (err, attempt) => {
               const errorMessage = err?.response?.data?.detail || err?.message || t('unknown_error')
@@ -6788,6 +6879,22 @@ const MapProject = () => {
         }
     </Paper>
     </Split>
+      <Dialog open={Boolean(leaveTarget)} onClose={() => setLeaveTarget(null)} maxWidth='xs' fullWidth>
+        <DialogTitle>{t('map_project.leave_while_running_title')}</DialogTitle>
+        <DialogContent>
+          <Typography component='p' sx={{fontSize: '14px', color: 'surface.dark'}}>
+            {t(project?.id ? 'map_project.leave_while_running_body' : 'map_project.leave_while_running_body_unsaved')}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setLeaveTarget(null)} color='secondary' sx={{textTransform: 'none'}}>
+            {t('map_project.stay')}
+          </Button>
+          <Button onClick={onStopRunAndLeave} color='error' variant='contained' sx={{textTransform: 'none'}}>
+            {t('map_project.stop_and_leave')}
+          </Button>
+        </DialogActions>
+      </Dialog>
       {
         deleteProject && project?.id &&
           <MapProjectDeleteConfirmDialog open={deleteProject} onClose={() => setDeleteProject(false)} onDeleted={() => { autosaveSchedulerRef.current.cancel(); refreshMapperQuotaCache() }} project={project} />

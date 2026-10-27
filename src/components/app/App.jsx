@@ -25,7 +25,7 @@ import Header from './Header';
 import OIDLoginCallback from '../users/OIDLoginCallback';
 import { OperationsContext } from './LayoutContext';
 import Alert from '../common/Alert';
-import MapProject from '../map-projects/MapProject'
+import MapProjectRoute from '../map-projects/MapProjectRoute'
 import MapProjects from '../map-projects/MapProjects'
 import { useTranslation } from 'react-i18next';
 
@@ -166,8 +166,8 @@ const App = props => {
                   <Route exact path="/oidc/login" component={OIDLoginCallback} />
                   <AuthenticationRequiredRoute exact path='/' component={MapProjects} />
                   <AuthenticationRequiredRoute exact path='/map-projects' component={MapProjects} />
-                  <AuthenticationRequiredRoute exact path='/map-projects/new' component={MapProject} />
-                  <AuthenticationRequiredRoute exact path='/:ownerType/:owner/map-projects/:projectId' component={MapProject} />
+                  <AuthenticationRequiredRoute exact path='/map-projects/new' component={MapProjectRoute} />
+                  <AuthenticationRequiredRoute exact path='/:ownerType/:owner/map-projects/:projectId' component={MapProjectRoute} />
                   <Route exact path='/403' component={Error403} />
                   <Route component={Error404} />
                 </Switch>

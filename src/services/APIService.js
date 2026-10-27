@@ -176,6 +176,13 @@ class APIService {
     });
   };
 
+  // For a request sent as the page closes: fetch's keepalive outlives the page,
+  // axios's XHR doesn't. Best effort, never rejects.
+  keepalive(method, data, token) {
+    const { url, headers } = this.getRequest(method, data, token, {});
+    return fetch(url, {method, headers, body: JSON.stringify(data), keepalive: true}).catch(() => null);
+  }
+
   getHeaders(token, headers) {
     token = token || (token !== false ? currentUserToken() : token);
     const obj = defaults(headers, this.headers);
