@@ -7,6 +7,13 @@ export const getTargetRepoVersionFromUrl = url => {
 // The OCL Semantic Algorithm runs only on versions vectorized for it.
 export const isLLMBridgeRepoVersion = version => version?.match_algorithms?.includes('llm')
 
+// Warn about the chosen version only when the OCL Semantic Algorithm is
+// selected and the version can't run it. Otherwise the picker just shows that
+// algorithm as unavailable (OpenConceptLab/ocl_issues#2935).
+export const needsSemanticSearchWarning = (version, algosSelected) =>
+  Boolean(version?.version_url) && !isLLMBridgeRepoVersion(version) &&
+  Boolean(algosSelected?.some(algo => algo?.type === 'ocl-semantic'))
+
 // The API lists versions newest first.
 export const getLatestReleasedTargetRepoVersion = versions =>
   (Array.isArray(versions) && versions.find(version => version?.released)) || null

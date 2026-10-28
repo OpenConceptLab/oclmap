@@ -13,7 +13,8 @@ import {
   getTargetRepoVersionFromUrl,
   getTargetRepoVersionId,
   getTargetRepoVersionReleaseDate,
-  hasSelectedTargetRepoVersion
+  hasSelectedTargetRepoVersion,
+  needsSemanticSearchWarning
 } from '../projectTargetRepo.js'
 
 // LOINC's versions as the API lists them, newest first: only 2.81 supports
@@ -223,4 +224,32 @@ test('getDeclaredLocales reads the version default and supported locales', () =>
   assert.deepEqual(getDeclaredLocales({ default_locale: 'en' }), ['en'])
   assert.deepEqual(getDeclaredLocales({}), [])
   assert.deepEqual(getDeclaredLocales(null), [])
+})
+
+// ICD-11's HEAD isn't vectorized for Semantic Search; LOINC 2.81 is.
+const ICD11_HEAD = { id: 'HEAD', version_url: '/orgs/WHO/sources/ICD-11-WHO/', match_algorithms: ['es'] }
+const LOINC_281 = { id: '2.81', version_url: '/orgs/Regenstrief/sources/LOINC/2.81/', match_algorithms: ['es', 'llm'] }
+const SEMANTIC_ALGO = { id: 'ocl-semantic', type: 'ocl-semantic', provider: 'ocl' }
+
+test('needsSemanticSearchWarning stays quiet when no selected algorithm uses Semantic Search', () => {
+  const algosSelected = [
+    { id: 'ocl-ciel-bridge', type: 'ocl-ciel-bridge', provider: 'ocl' },
+    { id: 'icd11-lexical', type: 'custom', provider: 'external', url: 'https://match.example.org/icd11/' },
+    { id: 'ocl-search', type: 'ocl-search', provider: 'ocl' }
+  ]
+  assert.equal(needsSemanticSearchWarning(ICD11_HEAD, algosSelected), false)
+  assert.equal(needsSemanticSearchWarning(ICD11_HEAD, []), false)
+  assert.equal(needsSemanticSearchWarning(ICD11_HEAD, undefined), false)
+})
+
+test('needsSemanticSearchWarning warns when the OCL Semantic Algorithm is selected on a version without it', () => {
+  assert.equal(needsSemanticSearchWarning(ICD11_HEAD, [SEMANTIC_ALGO]), true)
+})
+
+test('needsSemanticSearchWarning stays quiet on a version that runs Semantic Search', () => {
+  assert.equal(needsSemanticSearchWarning(LOINC_281, [SEMANTIC_ALGO]), false)
+})
+
+test('needsSemanticSearchWarning waits for a version to be chosen', () => {
+  assert.equal(needsSemanticSearchWarning(false, [SEMANTIC_ALGO]), false)
 })
