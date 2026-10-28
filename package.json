@@ -1,6 +1,6 @@
 {
   "name": "ocl-map",
-  "version": "1.0.40-beta",
+  "version": "1.0.41-beta",
   "private": true,
   "main": "index.js",
   "homepage": ".",
