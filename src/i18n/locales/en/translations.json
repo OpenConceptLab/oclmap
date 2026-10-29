@@ -327,7 +327,6 @@
     "limit_unavailable_body_match_operations_not_entitled": "Your account can't run AutoMatch.",
     "limit_unavailable_body_projects_not_entitled": "Your account can't create map projects.",
     "limit_unavailable_body_generic": "This isn't available for your account.",
-    "preview_limit_dismiss": "Back to my project",
     "preview_config_unavailable_title": "This project uses preview-restricted settings",
     "preview_config_unavailable_org_projects": "Organization-owned Mapper projects are not part of your preview. Choose your personal namespace as the project owner.",
     "preview_config_unavailable_custom_algorithms": "Externally hosted algorithms are not part of your preview. Remove the custom algorithm before saving.",

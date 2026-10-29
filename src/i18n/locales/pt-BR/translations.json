@@ -327,7 +327,6 @@
     "limit_unavailable_body_match_operations_not_entitled": "Sua conta não pode executar o AutoMatch.",
     "limit_unavailable_body_projects_not_entitled": "Sua conta não pode criar projetos de mapeamento.",
     "limit_unavailable_body_generic": "Isto não está disponível para sua conta.",
-    "preview_limit_dismiss": "Voltar ao meu projeto",
     "preview_config_unavailable_title": "Este projeto usa configurações restritas de prévia",
     "preview_config_unavailable_org_projects": "Projetos de Mapper pertencentes a organizações não fazem parte de sua prévia. Escolha seu namespace pessoal como proprietário do projeto.",
     "preview_config_unavailable_custom_algorithms": "Algoritmos hospedados externamente não fazem parte de sua prévia. Remova o algoritmo personalizado antes de salvar.",

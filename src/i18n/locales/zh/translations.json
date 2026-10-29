@@ -323,7 +323,6 @@
     "limit_unavailable_body_match_operations_not_entitled": "你的账户无法运行 AutoMatch。",
     "limit_unavailable_body_projects_not_entitled": "你的账户无法创建映射项目。",
     "limit_unavailable_body_generic": "你的账户无法使用此功能。",
-    "preview_limit_dismiss": "返回我的项目",
     "preview_config_unavailable_title": "此项目使用了预览版受限设置",
     "preview_config_unavailable_org_projects": "组织拥有的 Mapper 项目不在你的预览范围内。请选择个人命名空间作为项目所有者。",
     "preview_config_unavailable_custom_algorithms": "外部托管算法不在你的预览范围内。请先移除自定义算法再保存。",
