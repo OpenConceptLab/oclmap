@@ -26,7 +26,8 @@ class ErrorBoundary extends React.Component {
         projectId: 1,
         projectKey: this.ERRBIT_KEY,
         environment: getEnv(),
-        host: this.ERRBIT_URL
+        host: this.ERRBIT_URL,
+        remoteConfig: false
       })
   }
 
