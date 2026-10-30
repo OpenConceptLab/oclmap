@@ -6,7 +6,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { headerSearchOptions, oclSearchURL } from '../headerSearch.js'
+import { headerSearchOptions, oclSearchURL } from '../headerSearchOptions.js'
 
 test('the header search offers the project rows first, then all of OCL', () => {
   assert.deepEqual(headerSearchOptions({canSearchRows: true, canSearchOCL: true}), ['rows', 'ocl'])

@@ -16,7 +16,7 @@ import UpIcon from '@mui/icons-material/ArrowUpward'
 import DownIcon from '@mui/icons-material/ArrowDownward'
 import { getV3URL, hasTermBrowser } from '../../common/utils'
 import { OperationsContext } from './LayoutContext'
-import { headerSearchOptions, oclSearchURL } from './headerSearch'
+import { headerSearchOptions, oclSearchURL } from './headerSearchOptions'
 
 // Ported from TBv3's SearchInput and SearchInputDrawer, so search looks and
 // behaves the same in both apps. A magnifier opens the drawer, which searches
