@@ -6,7 +6,7 @@ import Link from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
 import CampaignOutlinedIcon from '@mui/icons-material/CampaignOutlined';
 import CloseIcon from '@mui/icons-material/Close';
-import { getAnnouncement, isDismissed, rememberDismissal } from '../../common/announcement';
+import { getAnnouncement, isDismissed, msUntilExpiry, rememberDismissal } from '../../common/announcement';
 
 // This deployment's announcement, from its ANNOUNCEMENT setting (README,
 // "Announcement banner"), fixed above the app bar. Same component in TBv3
@@ -19,10 +19,20 @@ const HEIGHT_VAR = '--announcement-height';
 
 const AnnouncementBanner = () => {
   const { t, i18n } = useTranslation();
-  const announcement = getAnnouncement(window.ANNOUNCEMENT, i18n.language);
+  const [now, setNow] = React.useState(Date.now);
+  const announcement = getAnnouncement(window.ANNOUNCEMENT, i18n.language, now);
   const [dismissed, setDismissed] = React.useState(() => Boolean(announcement) && isDismissed(announcement.id));
   const open = Boolean(announcement) && !dismissed;
   const ref = React.useRef(null);
+
+  // Check again when until arrives, so the banner hides on a page left open.
+  const delay = open ? msUntilExpiry(announcement, now) : null;
+  React.useEffect(() => {
+    if (delay === null)
+      return;
+    const timer = setTimeout(() => setNow(Date.now()), delay);
+    return () => clearTimeout(timer);
+  }, [delay, now]);
 
   // Publish the banner's height (it wraps on narrow screens and in longer
   // translations) and clear it once dismissed.

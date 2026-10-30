@@ -6,6 +6,9 @@
 
 const DISMISSED_KEY = 'announcementDismissed'
 
+// setTimeout's longest delay; it runs a longer one at once.
+const MAX_DELAY = 2 ** 31 - 1
+
 const isObject = value => Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 
 const has = (object, key) => Object.prototype.hasOwnProperty.call(object, key)
@@ -27,8 +30,9 @@ const httpsURL = url => {
   }
 }
 
-// What the banner shows in language at now: {id, text, links: [{label, url}]},
-// or null when the setting is unset, malformed or past its until.
+// What the banner shows in language at now: {id, text, links: [{label, url}],
+// until} (until in ms, or null), or null when the setting is unset, malformed
+// or past its until.
 export const getAnnouncement = (raw, language, now = Date.now()) => {
   if(typeof raw !== 'string' || !raw.trim())
     return null
@@ -42,27 +46,32 @@ export const getAnnouncement = (raw, language, now = Date.now()) => {
     return null
 
   const text = localize(setting.text, language)
-  const links = setting.links === undefined ? [] : setting.links
-  if(!text || !Array.isArray(links))
+  if(!text || !Array.isArray(setting.links))
     return null
 
-  const shown = []
-  for(const link of links) {
+  const links = []
+  for(const link of setting.links) {
     const label = isObject(link) ? localize(link.label, language) : null
     const url = isObject(link) ? httpsURL(link.url) : null
     if(!label || !url)
       return null
-    shown.push({label, url})
+    links.push({label, url})
   }
 
+  let until = null
   if(setting.until !== undefined) {
-    const until = typeof setting.until === 'string' ? Date.parse(setting.until) : NaN
+    until = typeof setting.until === 'string' ? Date.parse(setting.until) : NaN
     if(Number.isNaN(until) || now >= until)
       return null
   }
 
-  return {id: setting.id, text, links: shown}
+  return {id: setting.id, text, links, until}
 }
+
+// How long until a shown banner must be checked again, so that it hides at its
+// until while the page stays open: null when it has no until.
+export const msUntilExpiry = (announcement, now = Date.now()) =>
+  announcement?.until ? Math.min(announcement.until - now, MAX_DELAY) : null
 
 export const isDismissed = id => {
   try {

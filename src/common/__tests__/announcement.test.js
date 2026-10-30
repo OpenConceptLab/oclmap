@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 
-const { getAnnouncement, isDismissed, rememberDismissal } = await import('../announcement.js')
+const { getAnnouncement, isDismissed, msUntilExpiry, rememberDismissal } = await import('../announcement.js')
 
 const SETTING = {
   id: 'maintenance-2026-11',
@@ -34,15 +34,16 @@ test('a valid setting shows its text and links', () => {
       {label: 'Details', url: 'https://status.example.org/maintenance'},
       {label: 'Contact us', url: 'https://example.org/contact'},
     ],
+    until: Date.parse('2026-11-09T00:00:00Z'),
   })
 })
 
-test('links and until are optional', () => {
-  assert.deepEqual(announce({id: 'a', text: {en: 'Hello'}}), {id: 'a', text: 'Hello', links: []})
+test('until is optional, and links may be empty', () => {
+  assert.deepEqual(announce({id: 'a', text: {en: 'Hello'}, links: []}), {id: 'a', text: 'Hello', links: [], until: null})
 })
 
 test('text is returned as it was given, for the banner to show as plain text', () => {
-  assert.equal(announce({id: 'a', text: {en: '<b onmouseover="alert(1)">Hi</b>'}}).text, '<b onmouseover="alert(1)">Hi</b>')
+  assert.equal(announce({id: 'a', text: {en: '<b onmouseover="alert(1)">Hi</b>'}, links: []}).text, '<b onmouseover="alert(1)">Hi</b>')
 })
 
 test('invalid JSON: no banner', () => {
@@ -68,7 +69,9 @@ test('missing or malformed text: no banner', () => {
   assert.equal(announce({...SETTING, text: {en: 'Hi', es: 3}}), null)
 })
 
-test('a malformed link: no banner', () => {
+test('missing or malformed links: no banner', () => {
+  assert.equal(announce({...SETTING, links: undefined}), null)
+  assert.equal(announce({...SETTING, links: null}), null)
   assert.equal(announce({...SETTING, links: {label: {en: 'Details'}, url: 'https://example.org'}}), null)
   assert.equal(announce({...SETTING, links: ['https://example.org']}), null)
   assert.equal(announce({...SETTING, links: [{url: 'https://example.org'}]}), null)
@@ -88,6 +91,24 @@ test('hidden after until', () => {
   assert.equal(announce(SETTING, 'en', Date.parse('2026-11-08T23:59:59Z')).id, 'maintenance-2026-11')
 })
 
+test('the banner is checked again when its until arrives', () => {
+  assert.equal(msUntilExpiry(announce(SETTING), Date.parse('2026-11-08T23:00:00Z')), 60 * 60 * 1000)
+  assert.equal(msUntilExpiry(announce({...SETTING, until: undefined})), null)
+  assert.equal(msUntilExpiry(null), null)
+})
+
+test('checking again at each delay hides a banner at its until, even weeks away', () => {
+  const setting = {...SETTING, until: '2027-03-01T00:00:00Z'}
+  let now = BEFORE, checks = 0
+  for(let shown = announce(setting, 'en', now); shown; shown = announce(setting, 'en', now)) {
+    const delay = msUntilExpiry(shown, now)
+    assert.ok(delay > 0 && delay <= 2 ** 31 - 1, `a delay setTimeout can wait: ${delay}`)
+    now += delay
+    assert.ok(++checks < 10)
+  }
+  assert.equal(now, Date.parse('2027-03-01T00:00:00Z'))
+})
+
 test('an until that is not a date: no banner', () => {
   assert.equal(announce({...SETTING, until: 'next week'}), null)
   assert.equal(announce({...SETTING, until: 1762646400000}), null)
@@ -101,6 +122,7 @@ test('shows the user\'s language, or its base language, or en', () => {
       {label: 'Details, in Spanish', url: 'https://status.example.org/maintenance'},
       {label: 'Contact us', url: 'https://example.org/contact'},
     ],
+    until: Date.parse('2026-11-09T00:00:00Z'),
   })
   assert.equal(announce(SETTING, 'pt-BR').text, 'Saturday maintenance, in Portuguese.')
   assert.equal(announce(SETTING, 'es-MX').text, 'Saturday maintenance, in Spanish.')

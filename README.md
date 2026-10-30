@@ -31,7 +31,7 @@ To show a banner above the app, for example for planned maintenance, set the opt
 
 - `id`: dismissing the banner hides it in that browser until `id` changes.
 - `text` and each link's `label`: plain text for each language code (`en`, `es`, `pt-BR`, `zh`). `en` is required, and shows for any language that has no entry.
-- `links` (optional): `https:` URLs, shown after the text.
+- `links`: `https:` URLs, shown after the text. Use `[]` for none.
 - `until` (optional): an ISO 8601 time. The banner stops showing after it, without a restart.
 
 `start-prod.sh` writes the setting into `env-config.js` when the container starts, so a change shows after a restart. When it's unset, or isn't valid (bad JSON, a missing field, a link that isn't `https:`), no banner shows. With `npm start`, put `var ANNOUNCEMENT = '<the JSON>';` in `public/env-config.js` instead, and don't commit it.
