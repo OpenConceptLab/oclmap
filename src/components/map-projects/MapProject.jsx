@@ -325,6 +325,7 @@ const MapProject = () => {
   const projectLogsLoadedRef = React.useRef(!params.projectId)
   const autoMatchAIDefaultAppliedRef = React.useRef(false)
   const configSnapshotOnOpenRef = React.useRef(null)
+  const getConfigurationSnapshotRef = React.useRef(null)
   const projectIdRef = React.useRef(null)
   const onSaveRef = React.useRef(null)
   const projectLogRef = React.useRef(() => {})
@@ -388,7 +389,15 @@ const MapProject = () => {
   React.useEffect(() => {
     onSaveRef.current = onSave
     projectLogRef.current = projectLog
+    getConfigurationSnapshotRef.current = getConfigurationSnapshot
   })
+
+  // Configure's edits save when it closes, so leaving with it open and changed
+  // would drop them.
+  const hasUnsavedConfiguration = () => {
+    const opened = configSnapshotOnOpenRef.current
+    return Boolean(opened && getConfigurationSnapshotRef.current) && opened !== getConfigurationSnapshotRef.current()
+  }
 
   // Leaving the project unmounts this page, often inside the autosave window:
   // save the pending change now rather than drop it
@@ -417,6 +426,8 @@ const MapProject = () => {
     return () => {
       isMountedRef.current = false
       stopRunOnLeave()
+      if(hasUnsavedConfiguration())
+        autosaveSchedulerRef.current.schedule('configuration_change')
       saveNowOnLeave()
     }
   }, [])
@@ -431,6 +442,7 @@ const MapProject = () => {
         pendingAutosave: autosaveSchedulerRef.current.hasPending(),
         saveInFlight: inFlightSaveRef.current,
         saveFailed: lastSaveFailedRef.current,
+        configChanged: hasUnsavedConfiguration(),
         runActive: isRunActiveRef.current,
         projectId: projectIdRef.current,
         hasInput: hasInputRef.current,

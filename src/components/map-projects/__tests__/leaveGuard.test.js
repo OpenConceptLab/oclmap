@@ -214,4 +214,5 @@ test('closing the tab also warns while a change waits to be saved', () => {
   assert.equal(shouldWarnBeforeUnload({...saved, pendingAutosave: false, saveInFlight: true}), true)
   assert.equal(shouldWarnBeforeUnload({pendingAutosave: false, saveInFlight: false, runActive: false, projectId: null, hasInput: true}), true)
   assert.equal(shouldWarnBeforeUnload({...saved, pendingAutosave: false, saveInFlight: false, saveFailed: true}), true, 'a failed save still has a change to lose')
+  assert.equal(shouldWarnBeforeUnload({...saved, pendingAutosave: false, saveInFlight: false, configChanged: true}), true, 'Configure open with changes has them to lose')
 })
