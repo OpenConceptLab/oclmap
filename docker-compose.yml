@@ -19,6 +19,7 @@ services:
       - ERRBIT_URL
       - ERRBIT_KEY
       - HOTJAR_ID
+      - ANNOUNCEMENT
       - BRIDGE_MATCH_URL
       - AI_ASSISTANT_API_URL
       - SCISPACY_LOINC_API_URL
