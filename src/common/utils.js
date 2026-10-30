@@ -246,7 +246,7 @@ export const arrayToCSV = objArray => {
 }
 
 export const refreshCurrentUserCache = (callback, onFailure) => {
-  APIService.user().get(null, null, {includeAuthGroups: true, includeSubscribedOrgs: true, includeCapabilities: true}).then(response => {
+  APIService.user().get(null, null, {includeAuthGroups: true, includeSubscribedOrgs: true, includeFollowing: true, includeCapabilities: true}).then(response => {
     if(response?.status === 200) {
       localStorage.setItem('user', JSON.stringify(response.data));
       if(callback) callback(response);
