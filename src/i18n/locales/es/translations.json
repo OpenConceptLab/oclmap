@@ -574,13 +574,6 @@
     "global_registry": "Registro global"
   },
   "unknown_error": "Error desconocido",
-  "announcement": {
-    "title": "Las suscripciones abren el 1 de noviembre.",
-    "text": "Las cuentas existentes que usan funciones premium tienen un periodo de gracia hasta el 1 de diciembre.",
-    "link_label": "Más información",
-    "pricing_link_label": "Ver precios",
-    "dismiss": "Descartar"
-  },
   "quota": {
     "title_quota": "Ha alcanzado su cuota",
     "title_cap": "Ha alcanzado su límite",

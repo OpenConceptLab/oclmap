@@ -574,13 +574,6 @@
     "api_version": "Versão API"
   },
   "unknown_error": "Erro desconhecido",
-  "announcement": {
-    "title": "Bem-vindo à prévia pública do OCL Mapper!",
-    "text": "Experimente agora, antes do lançamento completo que chegará em breve.",
-    "link_label": "Saiba mais",
-    "pricing_link_label": "Ver preços",
-    "dismiss": "Dispensar"
-  },
   "quota": {
     "title_quota": "Você atingiu sua cota",
     "title_cap": "Você atingiu seu limite",
