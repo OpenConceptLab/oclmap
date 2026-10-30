@@ -3640,6 +3640,7 @@ const MapProject = () => {
         setShowItem(false)
       return prev
     })
+    scheduleAutoSave('decision_change')
     return false
   }
 
@@ -6797,7 +6798,10 @@ const MapProject = () => {
                 <Divider sx={{width: '100%'}} />
                 <ReviewNote
                   value={notes[rowIndex]}
-                  onChange={event => setNotes({...notes, [rowIndex]: event.target.value || ''})}
+                  onChange={event => {
+                    setNotes({...notes, [rowIndex]: event.target.value || ''})
+                    scheduleAutoSave('note_change')
+                  }}
                 />
                 <div className='col-xs-12' style={{padding: '0 0 8px 78px'}}>
                   <Button size='small' disabled={rowStatuses.reviewed.includes(rowIndex) || decisions[rowIndex] === 'none' || !decisions[rowIndex]} color='primary' onClick={() => onReviewDone(true)} variant='contained' sx={{textTransform: 'none'}}>
