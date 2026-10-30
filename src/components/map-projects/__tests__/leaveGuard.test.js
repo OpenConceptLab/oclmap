@@ -1,11 +1,12 @@
 /**
- * Tests for leaving a project while Auto Match runs.
+ * Tests for leaving a project while Auto Match runs, or before a new
+ * project's first save.
  */
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { blockLeaving, continueLeaving, createRunClosers, getPageKey } from '../leaveGuard.js'
+import { blockLeaving, continueLeaving, createRunClosers, getPageKey, isUnsavedNewProject, shouldAskBeforeLeaving, shouldWarnBeforeUnload } from '../leaveGuard.js'
 
 // Stands in for a history v4 object: block's prompt decides each transition.
 const createFakeHistory = () => {
@@ -191,4 +192,25 @@ test('continueLeaving keeps other state', () => {
   const history = createFakeHistory()
   continueLeaving(history, {location: {pathname: '/x', state: {mapProjectFrom: '/y', other: 1}}, action: 'PUSH'})
   assert.deepEqual(history.calls[0].location.state, {other: 1})
+})
+
+test('a new project with a file loaded is unsaved until it has an id', () => {
+  assert.equal(isUnsavedNewProject({projectId: undefined, hasInput: {name: 'terms.csv'}}), true)
+  assert.equal(isUnsavedNewProject({projectId: undefined, hasInput: false}), false)
+  assert.equal(isUnsavedNewProject({projectId: 42, hasInput: {name: 'terms.csv'}}), false)
+})
+
+test('in-app navigation asks first for a run or an unsaved new project only', () => {
+  assert.equal(shouldAskBeforeLeaving({runActive: false, projectId: 42, hasInput: true}), false)
+  assert.equal(shouldAskBeforeLeaving({runActive: true, projectId: 42, hasInput: true}), true)
+  assert.equal(shouldAskBeforeLeaving({runActive: false, projectId: null, hasInput: true}), true)
+  assert.equal(shouldAskBeforeLeaving({runActive: false, projectId: null, hasInput: false}), false)
+})
+
+test('closing the tab also warns while a change waits to be saved', () => {
+  const saved = {runActive: false, projectId: 42, hasInput: true}
+  assert.equal(shouldWarnBeforeUnload({...saved, pendingAutosave: false, saveInFlight: false}), false)
+  assert.equal(shouldWarnBeforeUnload({...saved, pendingAutosave: true, saveInFlight: false}), true)
+  assert.equal(shouldWarnBeforeUnload({...saved, pendingAutosave: false, saveInFlight: true}), true)
+  assert.equal(shouldWarnBeforeUnload({pendingAutosave: false, saveInFlight: false, runActive: false, projectId: null, hasInput: true}), true)
 })
