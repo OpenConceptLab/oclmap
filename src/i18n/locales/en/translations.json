@@ -62,7 +62,8 @@
     "advance_settings": "Advanced Settings",
     "remove": "Remove",
     "at": "at",
-    "none": "None"
+    "none": "None",
+    "create": "Create"
   },
   "errors": {
     "401": "Login is required",
@@ -175,7 +176,8 @@
   "org": {
     "my": "My Organizations",
     "orgs": "Organizations",
-    "members": "Members"
+    "members": "Members",
+    "org": "Organization"
   },
   "user": {
     "my_profile": "My Profile",
@@ -196,7 +198,8 @@
     "no_match_metrics": "No algorithm match metrics available for this concept.",
     "list_view": "List View",
     "table_view": "Table View",
-    "select_all_rows": "Select all rows"
+    "select_all_rows": "Select all rows",
+    "input_placeholder": "Search OCL..."
   },
   "url_registry": {
     "global_registry": "Global registry"
@@ -552,7 +555,8 @@
     "ai_recommendation_failed_retry": "OCL AI Assistant recommendation failed — click to retry",
     "ai_recommendation_running": "OCL AI Assistant recommendation running",
     "repo_url": "Repo URL",
-    "repo_version": "Repo Version"
+    "repo_version": "Repo Version",
+    "mapping_project": "Mapping project"
   },
   "app": {
     "web_version": "Web Version",
@@ -593,5 +597,8 @@
         "import": "Rows past your limit stay in the project but aren't matched."
       }
     }
+  },
+  "import": {
+    "bulk_import": "Bulk Import"
   }
 }

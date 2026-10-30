@@ -38,9 +38,6 @@ fi
 if [[ ! -z "${OIDC_REALM}" ]]; then
     echo "var OIDC_REALM = \"${OIDC_REALM}\";" >> ${ENV_FILE}
 fi
-if [[ ! -z "${OCL_ONLINE}" ]]; then
-    echo "var OCL_ONLINE = \"${OCL_ONLINE}\";" >> ${ENV_FILE}
-fi
 if [[ ! -z "${BRIDGE_MATCH_URL}" ]]; then
     echo "var BRIDGE_MATCH_URL = \"${BRIDGE_MATCH_URL}\";" >> ${ENV_FILE}
 fi
@@ -49,6 +46,9 @@ if [[ ! -z "${AI_ASSISTANT_API_URL}" ]]; then
 fi
 if [[ ! -z "${SCISPACY_LOINC_API_URL}" ]]; then
     echo "var SCISPACY_LOINC_API_URL = \"${SCISPACY_LOINC_API_URL}\";" >> ${ENV_FILE}
+fi
+if [[ ! -z "${TERMBROWSER_URL}" ]]; then
+    echo "var TERMBROWSER_URL = \"${TERMBROWSER_URL}\";" >> ${ENV_FILE}
 fi
 if [[ ! -z "${OCL_ONLINE_API_URL}" ]]; then
     echo "var OCL_ONLINE_API_URL = \"${OCL_ONLINE_API_URL}\";" >> ${ENV_FILE}

@@ -12,6 +12,7 @@ import { getCurrentUser } from '../../common/utils';
 import './Header.scss';
 import HeaderControls from './HeaderControls';
 import LeftMenu from './LeftMenu'
+import HeaderSearch from './HeaderSearch'
 import AnnouncementBanner from './AnnouncementBanner';
 
 
@@ -64,7 +65,10 @@ const Header = props => {
               }
               <OCLLogo />
             </div>
-            <div className='col-xs-8' />
+            <div className='col-xs-3' />
+            <div className='col-xs-4 padding-0' style={{textAlign: 'center'}}>
+              {Boolean(user?.url) && <HeaderSearch />}
+            </div>
             <HeaderControls />
           </div>
         </Toolbar>

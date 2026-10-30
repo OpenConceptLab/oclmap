@@ -114,6 +114,7 @@ import PreviewLimitDialog from './PreviewLimitDialog'
 import QuotaDialog from '../common/QuotaDialog'
 import { getQuotaError } from '../common/quotaErrors'
 import MapperQuotaChip from './MapperQuotaChip'
+import MapProjectBreadcrumb from './MapProjectBreadcrumb'
 import { getPreviewLimitError, isAIPreviewLimitError } from './previewLimits'
 import { formatRowNumbers, rowNumberOf, runMatchBatch, requestSingleMatch, runWithConcurrency, INTERACTIVE_WAIT_CAP_MS } from './matchBatch'
 import { getAIAssistantChoices, getModelUsed, getPromptTemplateKey, createLatestRequestGate } from './aiVisibility'
@@ -780,13 +781,6 @@ const MapProject = () => {
   }, [headersKey])
 
   React.useEffect(() => {
-    if(!isEmpty(decisions)) {
-      window.addEventListener("beforeunload", alertUser);
-      return () => window.removeEventListener("beforeunload", alertUser);
-    }
-  }, [decisions]);
-
-  React.useEffect(() => {
     fetchMapTypes()
     fetchOclLocales()
     fetchAIModels()
@@ -1048,11 +1042,6 @@ const MapProject = () => {
       .sort((a, b) => a.name.localeCompare(b.name, 'en'))
     setOclLocales(sorted)
   })
-
-  const alertUser = (e) => {
-    e.preventDefault();
-    e.returnValue = "";
-  };
 
   const rowIndex = row?.__index
 
@@ -6278,6 +6267,7 @@ const MapProject = () => {
             {
               !isConfigFormInline &&
                 <span style={{display: 'flex', alignItems: 'center'}}>
+                  <MapProjectBreadcrumb ownerType={params.ownerType} owner={params.owner} />
                   {
                     name &&
                       <span style={{fontWeight: 'bold', fontSize: '18px', maxWidth: isSplitView ? '300px' : '500px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', marginRight: '8px'}}>

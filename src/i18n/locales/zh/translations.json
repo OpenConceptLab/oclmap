@@ -62,7 +62,8 @@
     "action": "操作",
     "remove": "移除",
     "at": "于",
-    "none": "无"
+    "none": "无",
+    "create": "创建"
   },
   "errors": {
     "401": "需要登录",
@@ -175,7 +176,8 @@
   "org": {
     "my": "我的组织机构",
     "orgs": "组织机构",
-    "members": "成员"
+    "members": "成员",
+    "org": "组织机构"
   },
   "user": {
     "my_profile": "我的个人资料",
@@ -196,7 +198,8 @@
     "no_match_metrics": "此概念没有可用的算法匹配指标。",
     "list_view": "列表视图",
     "table_view": "表格视图",
-    "select_all_rows": "选择全部行"
+    "select_all_rows": "选择全部行",
+    "input_placeholder": "搜索 OCL..."
   },
   "url_registry": {
     "global_registry": "全球注册库"
@@ -551,7 +554,8 @@
     "ai_recommendation_failed_retry": "OCL AI 助手推荐失败 — 点击重试",
     "ai_recommendation_running": "OCL AI 助手推荐进行中",
     "repo_url": "仓库 URL",
-    "repo_version": "仓库版本"
+    "repo_version": "仓库版本",
+    "mapping_project": "映射项目"
   },
   "app": {
     "web_version": "Web 版本",

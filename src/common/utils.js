@@ -1093,20 +1093,23 @@ export const highlightTexts = (items, texts, unmark=false, additionalTexts) => {
 
 export const pluralize = (count, singular, plural) => `${count?.toLocaleString()} ${count === 1 ? singular : plural}`;
 
-export const toV3URL = path => {
-  let url = 'https://app.v3.openconceptlab.org'
+export const getV3URL = () => {
+  const configured = (window.TERMBROWSER_URL || process.env.TERMBROWSER_URL || '').trim().replace(/\/+$/, '')
+  if(configured)
+    return configured
   if(window.location.host?.includes('localhost'))
-    url = 'http://localhost:4002'
-  if(['map.dev.openconceptlab.org', 'map.demo.openconceptlab.org'].includes(window.location.host))
-    url = 'https://app.v3.qa.openconceptlab.org'
-  if(window.location.host.match('map.*.openconceptlab.org'))
-    url = window.location.origin.replace('//map.', '//app.v3.')
+    return 'http://localhost:4002'
+  if(/^https:\/\/map\.([a-z]+\.)*openconceptlab\.org$/.test(window.location.origin))
+    return window.location.origin.replace('//map.', '//app.v3.')
+  return 'https://app.v3.openconceptlab.org'
+}
 
+export const toV3URL = path => {
   let referrerParams = `referrer=${window.location.href}`
   if(isLoggedIn())
     referrerParams += '?auth=true'
 
-  return `${url}/#${path || '/'}?${referrerParams}`
+  return `${getV3URL()}/#${path || '/'}?${referrerParams}`
 }
 
 export const isV3URL = url => {

@@ -62,7 +62,8 @@
     "advance_settings": "Configurações avançadas",
     "remove": "Remover",
     "at": "em",
-    "none": "Nenhum"
+    "none": "Nenhum",
+    "create": "Criar"
   },
   "errors": {
     "401": "Login é necessário",
@@ -175,7 +176,8 @@
   "org": {
     "my": "Minhas Organizações",
     "orgs": "Organizações",
-    "members": "Membros"
+    "members": "Membros",
+    "org": "Organização"
   },
   "user": {
     "my_profile": "Meu Perfil",
@@ -196,7 +198,8 @@
     "no_match_metrics": "Nenhuma métrica de correspondência de algoritmo disponível para este conceito.",
     "list_view": "Visualização em Lista",
     "table_view": "Visualização em Tabela",
-    "select_all_rows": "Selecionar todas as linhas"
+    "select_all_rows": "Selecionar todas as linhas",
+    "input_placeholder": "Buscar no OCL..."
   },
   "url_registry": {
     "global_registry": "Registro Global"
@@ -552,7 +555,8 @@
     "ai_recommendation_failed_retry": "Recomendação do Assistente de IA do OCL falhou — clique para tentar novamente",
     "ai_recommendation_running": "Recomendação do Assistente de IA do OCL em execução",
     "repo_url": "URL do Repo",
-    "repo_version": "Versão do Repo"
+    "repo_version": "Versão do Repo",
+    "mapping_project": "Projeto de mapeamento"
   },
   "app": {
     "web_version": "Versão Web",
@@ -593,5 +597,8 @@
         "import": "Linhas além do seu limite permanecem no projeto mas não são correspondidas."
       }
     }
+  },
+  "import": {
+    "bulk_import": "Importação em massa"
   }
 }

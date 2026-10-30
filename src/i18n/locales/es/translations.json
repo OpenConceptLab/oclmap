@@ -62,7 +62,8 @@
     "checking_auth": "Verificando autenticación...",
     "remove": "Eliminar",
     "at": "a las",
-    "none": "Ninguno"
+    "none": "Ninguno",
+    "create": "Crear"
   },
   "errors": {
     "401": "Se requiere iniciar sesión",
@@ -166,7 +167,8 @@
   "org": {
     "orgs": "Organizaciones",
     "my": "Mis organizaciones",
-    "members": "Miembros"
+    "members": "Miembros",
+    "org": "Organización"
   },
   "user": {
     "my_profile": "Mi perfil",
@@ -187,7 +189,8 @@
     "no_match_metrics": "No hay métricas de coincidencia de algoritmos disponibles para este concepto.",
     "list_view": "Vista de lista",
     "table_view": "Vista de tabla",
-    "select_all_rows": "Seleccionar todas las filas"
+    "select_all_rows": "Seleccionar todas las filas",
+    "input_placeholder": "Buscar en OCL..."
   },
   "locale": {
     "add_custom_language_codes": "Agregar código(s) de idioma personalizado(s)",
@@ -540,7 +543,8 @@
     "ai_recommendation_failed_retry": "Error en la recomendación del asistente de IA de OCL — haga clic para intentar de nuevo",
     "ai_recommendation_running": "Recomendación del asistente de IA de OCL en curso",
     "repo_url": "URL del repositorio",
-    "repo_version": "Versión del repositorio"
+    "repo_version": "Versión del repositorio",
+    "mapping_project": "Proyecto de mapeo"
   },
   "app": {
     "web_version": "Versión Web",
@@ -593,5 +597,8 @@
         "import": "Las filas que superan su límite permanecen en el proyecto pero no se emparejan."
       }
     }
+  },
+  "import": {
+    "bulk_import": "Importación masiva"
   }
 }
