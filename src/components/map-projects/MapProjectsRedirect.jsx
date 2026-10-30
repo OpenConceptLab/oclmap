@@ -1,11 +1,11 @@
 import React from 'react';
-import { getCurrentUser, toV3URL } from '../../common/utils';
+import { getCurrentUser, hasTermBrowser, toV3URL } from '../../common/utils';
 import MapProjects from './MapProjects';
 
 const MapProjectsRedirect = props => {
   const user = getCurrentUser()
   const blockedNewProject = Boolean(props.location?.state?.newProjectBlock)
-  const redirect = Boolean(user?.url) && !blockedNewProject
+  const redirect = Boolean(user?.url) && !blockedNewProject && hasTermBrowser()
 
   React.useEffect(() => {
     if(redirect)

@@ -2,7 +2,7 @@ export const PRODUCTION_TERMBROWSER_URL = 'https://app.v3.openconceptlab.org'
 
 const OFFICIAL_MAPPER_ORIGIN = /^https:\/\/map\.([a-z]+\.)*openconceptlab\.org$/
 
-export const resolveV3URL = (configured, origin, host) => {
+export const resolveIntegratedV3URL = (configured, origin, host) => {
   const url = (configured || '').trim().replace(/\/+$/, '')
   if(url)
     return url
@@ -10,5 +10,7 @@ export const resolveV3URL = (configured, origin, host) => {
     return 'http://localhost:4002'
   if(OFFICIAL_MAPPER_ORIGIN.test(origin || ''))
     return origin.replace('//map.', '//app.v3.')
-  return PRODUCTION_TERMBROWSER_URL
+  return ''
 }
+
+export const resolveV3URL = (configured, origin, host) => resolveIntegratedV3URL(configured, origin, host) || PRODUCTION_TERMBROWSER_URL

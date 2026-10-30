@@ -2,7 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next'
 import { Menu, ListItemButton, ListItemText, ListItemIcon, Divider} from '@mui/material'
 import ImportIcon from '@mui/icons-material/Publish';
-import { getCurrentUser, toV3URL } from '../../common/utils';
+import { getCurrentUser, hasTermBrowser, toV3URL } from '../../common/utils';
 import { createItems } from '../../common/navigation';
 import OrgIcon from '../orgs/OrgIcon'
 import RepoIcon from '../repos/RepoIcon'
@@ -30,7 +30,7 @@ const AddMenuList = ({ anchorEl, open, onClose }) => {
       sx={{'.MuiPaper-root': {backgroundColor: 'surface.n94', minWidth: '200px'}}}
     >
       {
-        createItems(user, true).flatMap(item => [
+        createItems(user, true).filter(item => hasTermBrowser() || item.app !== 'v3').flatMap(item => [
           item.divider && <Divider key={`${item.key}-divider`} />,
           <ListItemButton key={item.key} id={CREATE_ITEM_IDS[item.key]} href={item.app === 'v3' ? toV3URL(item.path) : item.path} sx={ITEM_SX} onClick={onClose}>
             <ListItemIcon sx={{minWidth: 'auto', marginRight: '12px'}}>

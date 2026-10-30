@@ -13,7 +13,7 @@ import FolderOpenIcon from '@mui/icons-material/FolderOutlined';
 import Divider from '@mui/material/Divider';
 import map from 'lodash/map'
 import { PRIMARY_COLORS } from '../../common/colors'
-import { getCurrentUser, refreshCurrentUserCache, getCurrentUserOrgs, toV3URL } from '../../common/utils';
+import { getCurrentUser, refreshCurrentUserCache, getCurrentUserOrgs, hasTermBrowser, toV3URL } from '../../common/utils';
 import Drawer from '../common/Drawer';
 import OrgIcon from '../orgs/OrgIcon';
 import EntityIcon from '../common/EntityIcon'
@@ -42,6 +42,7 @@ const LeftMenu = ({ isOpen, onClose }) => {
   const { t } = useTranslation()
   const location = useLocation()
   const user = getCurrentUser()
+  const integrated = hasTermBrowser()
 
   const formatFollowing = following => map(following, 'object') || []
 
@@ -85,13 +86,14 @@ const LeftMenu = ({ isOpen, onClose }) => {
       </DrawerHeader>
       <List sx={{p: 0}}>
         {
-          trayItems(user, true).map(item => {
+          trayItems(user, true).filter(item => integrated || item.key === 'map-projects').map(tray => {
+            const item = integrated ? tray : {...tray, path: '/map-projects'}
             const selected = isTrayItemSelected(item, location.pathname)
             return (
               <ListItem key={item.key} disablePadding sx={{ display: 'block' }}>
                 <ListItemButton
                   onClick={onClose}
-                  href={toV3URL(item.path)}
+                  href={integrated ? toV3URL(item.path) : `#${item.path}`}
                   className='no-anchor-styles'
                   selected={selected}
                   sx={{
@@ -125,6 +127,8 @@ const LeftMenu = ({ isOpen, onClose }) => {
           })
         }
       </List>
+      {integrated && (
+        <>
       <Divider style={{width: '100%', marginTop: '16px'}} />
       <List sx={{maxHeight: '300px', overflow: 'auto', p: 0}} dense>
         <ListItem
@@ -224,6 +228,8 @@ const LeftMenu = ({ isOpen, onClose }) => {
           ))
         }
       </List>
+        </>
+      )}
     </Drawer>
   )
 }
