@@ -10,9 +10,9 @@ export const shouldAskBeforeLeaving = ({runActive, projectId, hasInput}) =>
   Boolean(runActive) || isUnsavedNewProject({projectId, hasInput})
 
 // Closing the tab or opening another site gets no unmount save: ask while a
-// change waits for autosave or a save is in flight too.
-export const shouldWarnBeforeUnload = ({pendingAutosave, saveInFlight, runActive, projectId, hasInput}) =>
-  Boolean(pendingAutosave || saveInFlight) || shouldAskBeforeLeaving({runActive, projectId, hasInput})
+// change waits for autosave, a save is in flight, or the last save failed.
+export const shouldWarnBeforeUnload = ({pendingAutosave, saveInFlight, saveFailed, runActive, projectId, hasInput}) =>
+  Boolean(pendingAutosave || saveInFlight || saveFailed) || shouldAskBeforeLeaving({runActive, projectId, hasInput})
 
 // Holds in-app navigation, unless isAllowed, and hands it to onBlocked as
 // {location, action}. Returns the unblock function.

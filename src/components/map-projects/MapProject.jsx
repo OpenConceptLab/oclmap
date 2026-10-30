@@ -335,6 +335,8 @@ const MapProject = () => {
   const inFlightSaveRef = React.useRef(null)
   const isMountedRef = React.useRef(true)
   const autosaveSchedulerRef = React.useRef(null)
+  // Set when a save fails, cleared when one succeeds: the change is still unsaved.
+  const lastSaveFailedRef = React.useRef(false)
   if(!autosaveSchedulerRef.current)
     autosaveSchedulerRef.current = createAutosaveScheduler({
       getProjectId: () => projectIdRef.current,
@@ -428,6 +430,7 @@ const MapProject = () => {
       const warn = shouldWarnBeforeUnload({
         pendingAutosave: autosaveSchedulerRef.current.hasPending(),
         saveInFlight: inFlightSaveRef.current,
+        saveFailed: lastSaveFailedRef.current,
         runActive: isRunActiveRef.current,
         projectId: projectIdRef.current,
         hasInput: hasInputRef.current,
@@ -1819,8 +1822,11 @@ const MapProject = () => {
           baseSetAlert({severity: 'success', message: t('map_project.successfully_saved'), duration: 2000})
 
         postProjectLogs(response.data.url, {row_logs: savedRowLogs, project_logs: savedProjectLogs})
+        lastSaveFailedRef.current = false
         return true
-      } else if(options.leaving && status !== 401) {
+      }
+      lastSaveFailedRef.current = true
+      if(options.leaving && status !== 401) {
         // The user has left the project, so no dialog can show: say so once.
         baseSetAlert({severity: 'error', message: t('map_project.leave_save_failed', {name: name || project?.name, detail: errorData?.detail || t('unknown_error')}), duration: 12000})
       } else if(status === 403 && errorData?.error_code) {

@@ -22,9 +22,10 @@ test('custom hosts without configuration point to production', () => {
   assert.equal(resolveV3URL('', undefined, undefined), PRODUCTION_TERMBROWSER_URL)
 })
 
-test('an integrated TermBrowser needs configuration, localhost or an official Mapper host', () => {
+test('an integrated TermBrowser needs configuration or an official Mapper host', () => {
   assert.equal(resolveIntegratedV3URL('https://tb.example.org/', 'https://mapper.example.org', 'mapper.example.org'), 'https://tb.example.org')
-  assert.equal(resolveIntegratedV3URL('', 'http://localhost:4004', 'localhost:4004'), 'http://localhost:4002')
+  assert.equal(resolveIntegratedV3URL('http://localhost:4002', 'http://localhost:4004', 'localhost:4004'), 'http://localhost:4002')
+  assert.equal(resolveIntegratedV3URL('', 'http://localhost:4004', 'localhost:4004'), '', 'a standalone local Mapper keeps its own pages')
   assert.equal(resolveIntegratedV3URL('', 'https://map.qa.openconceptlab.org', 'map.qa.openconceptlab.org'), 'https://app.v3.qa.openconceptlab.org')
   assert.equal(resolveIntegratedV3URL('', 'https://mapper.example.org', 'mapper.example.org'), '')
   assert.equal(resolveIntegratedV3URL('', undefined, undefined), '')

@@ -4,7 +4,9 @@ import MapProjects from './MapProjects';
 
 const MapProjectsRedirect = props => {
   const user = getCurrentUser()
-  const blockedNewProject = Boolean(props.location?.state?.newProjectBlock)
+  // A refused new project lands here with its reason in location.state. MapProjects
+  // shows that reason and clears the state, so the choice to stay is kept for this visit.
+  const [blockedNewProject] = React.useState(() => Boolean(props.location?.state?.newProjectBlock))
   const redirect = Boolean(user?.url) && !blockedNewProject && hasTermBrowser()
 
   React.useEffect(() => {
