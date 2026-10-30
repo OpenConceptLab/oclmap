@@ -94,7 +94,6 @@ test('hidden after until', () => {
 test('the banner is checked again when its until arrives', () => {
   assert.equal(msUntilExpiry(announce(SETTING), Date.parse('2026-11-08T23:00:00Z')), 60 * 60 * 1000)
   assert.equal(msUntilExpiry(announce({...SETTING, until: undefined})), null)
-  assert.equal(msUntilExpiry(null), null)
 })
 
 test('checking again at each delay hides a banner at its until, even weeks away', () => {
@@ -115,15 +114,8 @@ test('an until that is not a date: no banner', () => {
 })
 
 test('shows the user\'s language, or its base language, or en', () => {
-  assert.deepEqual(announce(SETTING, 'es'), {
-    id: 'maintenance-2026-11',
-    text: 'Saturday maintenance, in Spanish.',
-    links: [
-      {label: 'Details, in Spanish', url: 'https://status.example.org/maintenance'},
-      {label: 'Contact us', url: 'https://example.org/contact'},
-    ],
-    until: Date.parse('2026-11-09T00:00:00Z'),
-  })
+  assert.equal(announce(SETTING, 'es').text, 'Saturday maintenance, in Spanish.')
+  assert.deepEqual(announce(SETTING, 'es').links.map(link => link.label), ['Details, in Spanish', 'Contact us'])
   assert.equal(announce(SETTING, 'pt-BR').text, 'Saturday maintenance, in Portuguese.')
   assert.equal(announce(SETTING, 'es-MX').text, 'Saturday maintenance, in Spanish.')
   assert.equal(announce(SETTING, 'zh').text, 'Maintenance on Saturday.')

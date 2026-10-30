@@ -33,9 +33,7 @@ const httpsURL = url => {
 // What the banner shows in language at now: {id, text, links: [{label, url}],
 // until} (until in ms, or null), or null when the setting is unset, malformed
 // or past its until.
-export const getAnnouncement = (raw, language, now = Date.now()) => {
-  if(typeof raw !== 'string' || !raw.trim())
-    return null
+export const getAnnouncement = (raw, language, now) => {
   let setting
   try {
     setting = JSON.parse(raw)
@@ -49,14 +47,9 @@ export const getAnnouncement = (raw, language, now = Date.now()) => {
   if(!text || !Array.isArray(setting.links))
     return null
 
-  const links = []
-  for(const link of setting.links) {
-    const label = isObject(link) ? localize(link.label, language) : null
-    const url = isObject(link) ? httpsURL(link.url) : null
-    if(!label || !url)
-      return null
-    links.push({label, url})
-  }
+  const links = setting.links.map(link => ({label: localize(link?.label, language), url: httpsURL(link?.url)}))
+  if(links.some(link => !link.label || !link.url))
+    return null
 
   let until = null
   if(setting.until !== undefined) {
@@ -70,8 +63,8 @@ export const getAnnouncement = (raw, language, now = Date.now()) => {
 
 // How long until a shown banner must be checked again, so that it hides at its
 // until while the page stays open: null when it has no until.
-export const msUntilExpiry = (announcement, now = Date.now()) =>
-  announcement?.until ? Math.min(announcement.until - now, MAX_DELAY) : null
+export const msUntilExpiry = (announcement, now) =>
+  announcement.until ? Math.min(announcement.until - now, MAX_DELAY) : null
 
 export const isDismissed = id => {
   try {
