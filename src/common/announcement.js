@@ -6,8 +6,9 @@
 
 const DISMISSED_KEY = 'announcementDismissed'
 
-// setTimeout's longest delay; it runs a longer one at once.
-const MAX_DELAY = 2 ** 31 - 1
+// The longest wait between checks of until, so a timer that a sleeping laptop
+// or a clock change delays can't keep an ended banner up for long.
+const MAX_DELAY = 60 * 1000
 
 const isObject = value => Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 

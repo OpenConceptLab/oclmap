@@ -79,7 +79,7 @@ const AnnouncementBanner = () => {
         pr: 2,
       }}
     >
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap', flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>
         <CampaignOutlinedIcon color='primary' fontSize='small' />
         <Typography variant='body2' sx={{ fontWeight: 600, color: 'surface.dark' }}>
           {announcement.text}
@@ -90,7 +90,7 @@ const AnnouncementBanner = () => {
               {announcement.links.map(({ label, url }, i) => (
                 <React.Fragment key={i}>
                   {i ? ' · ' : ''}
-                  <Link href={url} target='_blank' rel='noopener noreferrer' sx={{ fontWeight: 600, whiteSpace: 'nowrap', '&:hover, &:focus': { color: 'primary.main' } }}>
+                  <Link href={url} target='_blank' rel='noopener noreferrer' sx={{ fontWeight: 600, '&:hover, &:focus': { color: 'primary.main' } }}>
                     {label}
                   </Link>
                 </React.Fragment>
@@ -98,7 +98,7 @@ const AnnouncementBanner = () => {
             </Typography>
         }
       </Box>
-      <IconButton size='small' aria-label={t('common.close')} onClick={onClose}>
+      <IconButton size='small' aria-label={t('common.close')} onClick={onClose} sx={{ flexShrink: 0 }}>
         <CloseIcon fontSize='small' />
       </IconButton>
     </Box>

@@ -91,21 +91,22 @@ test('hidden after until', () => {
   assert.equal(announce(SETTING, 'en', Date.parse('2026-11-08T23:59:59Z')).id, 'maintenance-2026-11')
 })
 
-test('the banner is checked again when its until arrives', () => {
-  assert.equal(msUntilExpiry(announce(SETTING), Date.parse('2026-11-08T23:00:00Z')), 60 * 60 * 1000)
-  assert.equal(msUntilExpiry(announce({...SETTING, until: undefined})), null)
+test('the banner is checked again when its until arrives, or within a minute', () => {
+  assert.equal(msUntilExpiry(announce(SETTING), Date.parse('2026-11-08T23:59:30Z')), 30 * 1000)
+  assert.equal(msUntilExpiry(announce(SETTING), BEFORE), 60 * 1000)
+  assert.equal(msUntilExpiry(announce({...SETTING, until: undefined}), BEFORE), null)
 })
 
-test('checking again at each delay hides a banner at its until, even weeks away', () => {
-  const setting = {...SETTING, until: '2027-03-01T00:00:00Z'}
+test('checking again at each delay hides a banner at its until', () => {
+  const setting = {...SETTING, until: '2026-11-01T12:10:00Z'}
   let now = BEFORE, checks = 0
   for(let shown = announce(setting, 'en', now); shown; shown = announce(setting, 'en', now)) {
     const delay = msUntilExpiry(shown, now)
-    assert.ok(delay > 0 && delay <= 2 ** 31 - 1, `a delay setTimeout can wait: ${delay}`)
+    assert.ok(delay > 0 && delay <= 60 * 1000, `a delay of at most a minute: ${delay}`)
     now += delay
-    assert.ok(++checks < 10)
+    assert.ok(++checks <= 10)
   }
-  assert.equal(now, Date.parse('2027-03-01T00:00:00Z'))
+  assert.equal(now, Date.parse('2026-11-01T12:10:00Z'))
 })
 
 test('an until that is not a date: no banner', () => {

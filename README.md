@@ -32,9 +32,9 @@ To show a banner above the app, for example for planned maintenance, set the opt
 - `id`: dismissing the banner hides it in that browser until `id` changes.
 - `text` and each link's `label`: plain text for each language code (`en`, `es`, `pt-BR`, `zh`). `en` is required, and shows for any language that has no entry.
 - `links`: `https:` URLs, shown after the text. Use `[]` for none.
-- `until` (optional): an ISO 8601 time. The banner stops showing after it, without a restart.
+- `until` (optional): an ISO 8601 time with `Z` or an offset, such as `2026-11-09T00:00:00Z`. The banner stops showing after it, without a restart.
 
-`start-prod.sh` writes the setting into `env-config.js` when the container starts, so a change shows after a restart. When it's unset, or isn't valid (bad JSON, a missing field, a link that isn't `https:`), no banner shows. With `npm start`, put `var ANNOUNCEMENT = '<the JSON>';` in `public/env-config.js` instead, and don't commit it.
+`start-prod.sh` writes the setting into `env-config.js` when the container starts, so a change shows after a restart. When it's unset, or isn't valid (bad JSON, a missing field, a link that isn't `https:`), no banner shows. With `npm start`, put `var ANNOUNCEMENT = <the JSON as a JavaScript string>;` in `public/env-config.js` instead (`node -p 'JSON.stringify(process.argv[1])' '<the JSON>'` prints one), and don't commit it.
 
 
 ### Eslint
