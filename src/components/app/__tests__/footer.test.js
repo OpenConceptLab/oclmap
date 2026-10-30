@@ -1,6 +1,7 @@
 /**
  * The footer, on every page, links OCL's Terms of Use and Privacy Policy
- * (OpenConceptLab/ocl_issues#2900).
+ * (OpenConceptLab/ocl_issues#2900) and the OCL Community website
+ * (OpenConceptLab/ocl_online#418).
  *
  * Footer is JSX, which these tests can't mount (they run without a JSX
  * transform), so this reads its source: each link must go to the page's URL,
@@ -14,6 +15,7 @@ import { readFileSync } from 'node:fs'
 import babel from '@babel/core'
 
 const LINKS = {
+  'https://openconceptlab.org': 'OCL Community website',
   'https://openconceptlab.org/terms-of-use': 'Terms of Use',
   'https://openconceptlab.org/privacy-policy': 'Privacy Policy',
 }
