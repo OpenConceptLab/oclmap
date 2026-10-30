@@ -10,3 +10,12 @@ export const createItems = (user, hasMapper) => [
   ...(hasMapper ? [{key: 'map-project', app: 'mapper', path: '/map-projects/new'}] : []),
   {key: 'import', app: 'v3', path: '/imports', divider: true}
 ]
+
+export const isTrayItemSelected = (item, pathname) => {
+  if(!pathname)
+    return false
+  if(item.key === 'dashboard')
+    return pathname === item.path
+  const base = item.path.replace(/\/+$/, '')
+  return pathname === base || pathname === `${base}/` || pathname.startsWith(`${base}/`)
+}

@@ -18,6 +18,7 @@ import GAService from '../services/GAService';
 import { ensureIdToken, prepareSignOut, settleForcedSignOut, renewSessionSilently } from './ssoSession';
 import { SERVER_CONFIGS } from './serverConfigs';
 import { legacyHashRoute, isSameSitePath } from './history';
+import { resolveV3URL } from './appUrls';
 
 export const currentPath = () => window.location.pathname;
 
@@ -1093,16 +1094,7 @@ export const highlightTexts = (items, texts, unmark=false, additionalTexts) => {
 
 export const pluralize = (count, singular, plural) => `${count?.toLocaleString()} ${count === 1 ? singular : plural}`;
 
-export const getV3URL = () => {
-  const configured = (window.TERMBROWSER_URL || process.env.TERMBROWSER_URL || '').trim().replace(/\/+$/, '')
-  if(configured)
-    return configured
-  if(window.location.host?.includes('localhost'))
-    return 'http://localhost:4002'
-  if(/^https:\/\/map\.([a-z]+\.)*openconceptlab\.org$/.test(window.location.origin))
-    return window.location.origin.replace('//map.', '//app.v3.')
-  return 'https://app.v3.openconceptlab.org'
-}
+export const getV3URL = () => resolveV3URL(window.TERMBROWSER_URL || process.env.TERMBROWSER_URL, window.location.origin, window.location.host)
 
 export const toV3URL = path => {
   let referrerParams = `referrer=${window.location.href}`

@@ -17,7 +17,9 @@ import { getCurrentUser, refreshCurrentUserCache, getCurrentUserOrgs, toV3URL } 
 import Drawer from '../common/Drawer';
 import OrgIcon from '../orgs/OrgIcon';
 import EntityIcon from '../common/EntityIcon'
-import { trayItems } from '../../common/navigation'
+import { trayItems, isTrayItemSelected } from '../../common/navigation'
+import { projectCount } from '../../common/mapProjects'
+import APIService from '../../services/APIService'
 import Button from '@mui/material/Button';
 
 
@@ -43,6 +45,7 @@ const LeftMenu = ({ isOpen, onClose }) => {
 
   const formatFollowing = following => map(following, 'object') || []
 
+  const [mapProjectCount, setMapProjectCount] = React.useState(null)
   const [orgs, setOrgs] = React.useState(getCurrentUserOrgs())
   const [following, setFollowing] = React.useState(formatFollowing(user?.following))
 
@@ -59,6 +62,20 @@ const LeftMenu = ({ isOpen, onClose }) => {
       fetchData()
   }, [isOpen && user?.url])
 
+  React.useEffect(() => {
+    if(!isOpen || !user?.username)
+      return
+    let active = true
+    Promise.all([
+      APIService.users(user.username).appendToUrl('map-projects/').get(null, null, {limit: 1}, true),
+      APIService.users(user.username).appendToUrl('orgs/map-projects/').get(null, null, {limit: 1}, true),
+    ]).then(responses => {
+      if(active)
+        setMapProjectCount(projectCount(...responses))
+    }).catch(() => {})
+    return () => { active = false }
+  }, [isOpen && user?.username])
+
   return (
     <Drawer isOpen={isOpen} onClose={onClose} anchor='left' bgColor='default.main'>
       <DrawerHeader>
@@ -69,7 +86,7 @@ const LeftMenu = ({ isOpen, onClose }) => {
       <List sx={{p: 0}}>
         {
           trayItems(user, true).map(item => {
-            const selected = location.pathname === item.path
+            const selected = isTrayItemSelected(item, location.pathname)
             return (
               <ListItem key={item.key} disablePadding sx={{ display: 'block' }}>
                 <ListItemButton
@@ -97,6 +114,10 @@ const LeftMenu = ({ isOpen, onClose }) => {
                   {
                     item.key === 'repos' &&
                       <span><b>{((user?.collections || 0) + (user?.sources + 0)).toLocaleString()}</b></span>
+                  }
+                  {
+                    item.key === 'map-projects' && mapProjectCount !== null &&
+                      <span><b>{mapProjectCount.toLocaleString()}</b></span>
                   }
                 </ListItemButton>
               </ListItem>
