@@ -33,6 +33,9 @@
     "more_actions": "More actions",
     "copied_to_clipboard": "Copied to clipboard",
     "search": "Search",
+    "clear": "Clear",
+    "navigate": "Navigate",
+    "select": "Select",
     "please": "Please",
     "save": "Save",
     "saved": "Saved",
@@ -62,7 +65,8 @@
     "advance_settings": "Advanced Settings",
     "remove": "Remove",
     "at": "at",
-    "none": "None"
+    "none": "None",
+    "create": "Create"
   },
   "errors": {
     "401": "Login is required",
@@ -175,7 +179,8 @@
   "org": {
     "my": "My Organizations",
     "orgs": "Organizations",
-    "members": "Members"
+    "members": "Members",
+    "org": "Organization"
   },
   "user": {
     "my_profile": "My Profile",
@@ -196,7 +201,12 @@
     "no_match_metrics": "No algorithm match metrics available for this concept.",
     "list_view": "List View",
     "table_view": "Table View",
-    "select_all_rows": "Select all rows"
+    "select_all_rows": "Select all rows",
+    "input_placeholder_drawer": "Enter a search term",
+    "search_project_rows": "Search this project's rows for ",
+    "search_project_rows_hint": "Filter this project",
+    "search_all_site": "Search all of OCL for ",
+    "search_all_concepts": "Search all concepts"
   },
   "url_registry": {
     "global_registry": "Global registry"
@@ -353,6 +363,10 @@
     "leave_while_running_body_unsaved": "This project isn't saved yet. Leaving stops the run now and discards the project and its results.",
     "stay": "Stay",
     "stop_and_leave": "Stop and leave",
+    "leave_unsaved_title": "Leave without saving?",
+    "leave_unsaved_body": "This project isn't saved yet. If you leave, it's discarded along with everything you've done in it.",
+    "leave": "Leave",
+    "save_and_leave": "Save and leave",
     "auto_match_all_including_approved_confirm": "I understand that {{approvedCount}} approved decisions will be overwritten",
     "auto_match_selected_rows_note_no_count": "Select rows in the left panel to enable this option",
     "auto_match_rows_failed": "Matching failed for {{count}} input row(s), so they're missing candidates: {{details}}. Rows count from the first data row of your file. Run AutoMatch on those rows again to retry them.",
@@ -552,7 +566,8 @@
     "ai_recommendation_failed_retry": "OCL AI Assistant recommendation failed — click to retry",
     "ai_recommendation_running": "OCL AI Assistant recommendation running",
     "repo_url": "Repo URL",
-    "repo_version": "Repo Version"
+    "repo_version": "Repo Version",
+    "mapping_project": "Mapping project"
   },
   "app": {
     "web_version": "Web Version",
@@ -593,5 +608,8 @@
         "import": "Rows past your limit stay in the project but aren't matched."
       }
     }
+  },
+  "import": {
+    "bulk_import": "Bulk Import"
   }
 }

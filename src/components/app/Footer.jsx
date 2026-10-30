@@ -6,7 +6,7 @@ import { get } from 'lodash';
 import {
   getAppliedServerConfig
 } from '../../common/utils';
-import { TERMS_OF_USE_URL, PRIVACY_POLICY_URL } from '../../common/constants';
+import { COMMUNITY_SITE_URL, TERMS_OF_USE_URL, PRIVACY_POLICY_URL } from '../../common/constants';
 import AppVersions from './AppVersions';
 import './Footer.scss';
 
@@ -44,6 +44,8 @@ const Footer = () => {
     <footer ref={ref} className='col-sm-12 footer-container flex-vertical-center' style={{textAlign: 'right'}}>
       {/* On every page, signed in or not: using the Mapper means accepting the Terms of Use */}
       <div className='footer-legal flex-vertical-center'>
+        <Link href={COMMUNITY_SITE_URL} target='_blank' rel='noopener noreferrer' underline='hover' sx={LEGAL_LINK_SX}>{t('common.community_website')}</Link>
+        <Divider orientation='vertical' className='footer-divider-vertical' />
         <Link href={TERMS_OF_USE_URL} target='_blank' rel='noopener noreferrer' underline='hover' sx={LEGAL_LINK_SX}>{t('common.terms_of_use')}</Link>
         <Divider orientation='vertical' className='footer-divider-vertical' />
         <Link href={PRIVACY_POLICY_URL} target='_blank' rel='noopener noreferrer' underline='hover' sx={LEGAL_LINK_SX}>{t('common.privacy_policy')}</Link>

@@ -33,6 +33,9 @@
     "more_actions": "Mais ações",
     "copied_to_clipboard": "Copiado para a área de transferência",
     "search": "Buscar",
+    "clear": "Limpar",
+    "navigate": "Navegar",
+    "select": "Selecionar",
     "please": "Por favor,",
     "save": "Salvar",
     "saved": "Salvo",
@@ -62,7 +65,8 @@
     "advance_settings": "Configurações avançadas",
     "remove": "Remover",
     "at": "em",
-    "none": "Nenhum"
+    "none": "Nenhum",
+    "create": "Criar"
   },
   "errors": {
     "401": "Login é necessário",
@@ -175,7 +179,8 @@
   "org": {
     "my": "Minhas Organizações",
     "orgs": "Organizações",
-    "members": "Membros"
+    "members": "Membros",
+    "org": "Organização"
   },
   "user": {
     "my_profile": "Meu Perfil",
@@ -196,7 +201,12 @@
     "no_match_metrics": "Nenhuma métrica de correspondência de algoritmo disponível para este conceito.",
     "list_view": "Visualização em Lista",
     "table_view": "Visualização em Tabela",
-    "select_all_rows": "Selecionar todas as linhas"
+    "select_all_rows": "Selecionar todas as linhas",
+    "input_placeholder_drawer": "Digite um termo de busca",
+    "search_project_rows": "Buscar nas linhas deste projeto por ",
+    "search_project_rows_hint": "Filtrar este projeto",
+    "search_all_site": "Buscar em todo o OCL por ",
+    "search_all_concepts": "Buscar todos os conceitos"
   },
   "url_registry": {
     "global_registry": "Registro Global"
@@ -353,6 +363,10 @@
     "leave_while_running_body_unsaved": "Este projeto ainda não foi salvo. Sair interrompe a execução agora e descarta o projeto e seus resultados.",
     "stay": "Ficar",
     "stop_and_leave": "Parar e sair",
+    "leave_unsaved_title": "Sair sem salvar?",
+    "leave_unsaved_body": "Este projeto ainda não foi salvo. Se você sair, ele será descartado junto com tudo o que você fez nele.",
+    "leave": "Sair",
+    "save_and_leave": "Salvar e sair",
     "auto_match_all_including_approved_confirm": "Entendo que {{approvedCount}} decisões aprovadas serão sobrescritas",
     "auto_match_selected_rows_note_no_count": "Selecione linhas no painel esquerdo para habilitar esta opção",
     "auto_match_rows_failed": "O AutoMatch falhou para {{count}} linha(s) de entrada, então elas estão sem candidatos: {{details}}. As linhas contam a partir da primeira linha de dados do seu arquivo. Execute o AutoMatch nessas linhas novamente para tentar de novo.",
@@ -552,7 +566,8 @@
     "ai_recommendation_failed_retry": "Recomendação do Assistente de IA do OCL falhou — clique para tentar novamente",
     "ai_recommendation_running": "Recomendação do Assistente de IA do OCL em execução",
     "repo_url": "URL do Repo",
-    "repo_version": "Versão do Repo"
+    "repo_version": "Versão do Repo",
+    "mapping_project": "Projeto de mapeamento"
   },
   "app": {
     "web_version": "Versão Web",
@@ -593,5 +608,8 @@
         "import": "Linhas além do seu limite permanecem no projeto mas não são correspondidas."
       }
     }
+  },
+  "import": {
+    "bulk_import": "Importação em massa"
   }
 }

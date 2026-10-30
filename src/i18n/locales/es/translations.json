@@ -22,6 +22,9 @@
     "more_actions": "Más acciones",
     "copied_to_clipboard": "Copiado al portapapeles",
     "search": "Buscar",
+    "clear": "Borrar",
+    "navigate": "Navegar",
+    "select": "Seleccionar",
     "save": "Guardar",
     "saved": "Guardado",
     "delete": "Eliminar",
@@ -62,7 +65,8 @@
     "checking_auth": "Verificando autenticación...",
     "remove": "Eliminar",
     "at": "a las",
-    "none": "Ninguno"
+    "none": "Ninguno",
+    "create": "Crear"
   },
   "errors": {
     "401": "Se requiere iniciar sesión",
@@ -166,7 +170,8 @@
   "org": {
     "orgs": "Organizaciones",
     "my": "Mis organizaciones",
-    "members": "Miembros"
+    "members": "Miembros",
+    "org": "Organización"
   },
   "user": {
     "my_profile": "Mi perfil",
@@ -187,7 +192,12 @@
     "no_match_metrics": "No hay métricas de coincidencia de algoritmos disponibles para este concepto.",
     "list_view": "Vista de lista",
     "table_view": "Vista de tabla",
-    "select_all_rows": "Seleccionar todas las filas"
+    "select_all_rows": "Seleccionar todas las filas",
+    "input_placeholder_drawer": "Ingresa un término de búsqueda",
+    "search_project_rows": "Buscar en las filas de este proyecto para ",
+    "search_project_rows_hint": "Filtrar este proyecto",
+    "search_all_site": "Buscar en todo OCL para ",
+    "search_all_concepts": "Buscar todos los conceptos"
   },
   "locale": {
     "add_custom_language_codes": "Agregar código(s) de idioma personalizado(s)",
@@ -339,6 +349,10 @@
     "leave_while_running_body_unsaved": "Este proyecto aún no se ha guardado. Salir detiene la ejecución ahora y descarta el proyecto y sus resultados.",
     "stay": "Quedarse",
     "stop_and_leave": "Detener y salir",
+    "leave_unsaved_title": "¿Salir sin guardar?",
+    "leave_unsaved_body": "Este proyecto aún no se ha guardado. Si sale, se descartará junto con todo lo que ha hecho en él.",
+    "leave": "Salir",
+    "save_and_leave": "Guardar y salir",
     "auto_match_all_including_approved_confirm": "Entiendo que se sobrescribirán {{approvedCount}} decisiones aprobadas",
     "auto_match_selected_rows_note_no_count": "Seleccione filas en el panel izquierdo para habilitar esta opción",
     "auto_match_rows_failed": "La coincidencia falló en {{count}} fila(s) de entrada, así que les faltan candidatos: {{details}}. Las filas se cuentan desde la primera fila de datos de tu archivo. Vuelve a ejecutar AutoMatch en esas filas para reintentarlo.",
@@ -540,7 +554,8 @@
     "ai_recommendation_failed_retry": "Error en la recomendación del asistente de IA de OCL — haga clic para intentar de nuevo",
     "ai_recommendation_running": "Recomendación del asistente de IA de OCL en curso",
     "repo_url": "URL del repositorio",
-    "repo_version": "Versión del repositorio"
+    "repo_version": "Versión del repositorio",
+    "mapping_project": "Proyecto de mapeo"
   },
   "app": {
     "web_version": "Versión Web",
@@ -593,5 +608,8 @@
         "import": "Las filas que superan su límite permanecen en el proyecto pero no se emparejan."
       }
     }
+  },
+  "import": {
+    "bulk_import": "Importación masiva"
   }
 }

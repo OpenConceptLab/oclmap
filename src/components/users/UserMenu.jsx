@@ -17,7 +17,7 @@ import ChatIcon from '@mui/icons-material/ForumOutlined';
 import CommunityIcon from '@mui/icons-material/GroupsOutlined';
 import find from 'lodash/find';
 import { getCurrentUser, logoutUser, isLoggedIn, getLoginURL, getRegisterURL, toV3URL } from '../../common/utils'
-import { LANGUAGES } from '../../common/constants';
+import { LANGUAGES, COMMUNITY_SITE_URL } from '../../common/constants';
 import Button from '../common/Button';
 import Link from '../common/Link';
 import Drawer from '../common/Drawer';
@@ -120,7 +120,7 @@ const UserMenu = ({ isOpen, onClose }) => {
         <Divider style={{width: '100%'}} />
         <div className='col-xs-12 padding-0'>
           <List>
-            <ListItemButton sx={{p: 1, borderRadius: '100px'}} component='a' className='no-anchor-styles' href='https://openconceptlab.org' target='_blank' rel='noopener noreferrer'>
+            <ListItemButton sx={{p: 1, borderRadius: '100px'}} component='a' className='no-anchor-styles' href={COMMUNITY_SITE_URL} target='_blank' rel='noopener noreferrer'>
               <ListItemIcon sx={{minWidth: 'auto', paddingRight: '14px'}}>
                 <CommunityIcon />
               </ListItemIcon>

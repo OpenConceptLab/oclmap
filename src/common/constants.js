@@ -78,3 +78,4 @@ export const MAPPER_ANNOUNCEMENT_LETTER_URL = 'https://openconceptlab.org/blog/l
 export const MAPPER_ANNOUNCEMENT_PRICING_URL = 'https://openconceptlab.org/pricing?utm_source=oclmap&utm_medium=banner&utm_campaign=subscription_dates'
 export const TERMS_OF_USE_URL = 'https://openconceptlab.org/terms-of-use'
 export const PRIVACY_POLICY_URL = 'https://openconceptlab.org/privacy-policy'
+export const COMMUNITY_SITE_URL = 'https://openconceptlab.org'

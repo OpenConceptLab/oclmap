@@ -18,6 +18,7 @@ import GAService from '../services/GAService';
 import { ensureIdToken, prepareSignOut, settleForcedSignOut, renewSessionSilently } from './ssoSession';
 import { SERVER_CONFIGS } from './serverConfigs';
 import { legacyHashRoute, isSameSitePath } from './history';
+import { resolveV3URL, resolveIntegratedV3URL } from './appUrls';
 
 export const currentPath = () => window.location.pathname;
 
@@ -245,7 +246,7 @@ export const arrayToCSV = objArray => {
 }
 
 export const refreshCurrentUserCache = (callback, onFailure) => {
-  APIService.user().get(null, null, {includeAuthGroups: true, includeSubscribedOrgs: true, includeCapabilities: true}).then(response => {
+  APIService.user().get(null, null, {includeAuthGroups: true, includeSubscribedOrgs: true, includeFollowing: true, includeCapabilities: true}).then(response => {
     if(response?.status === 200) {
       localStorage.setItem('user', JSON.stringify(response.data));
       if(callback) callback(response);
@@ -1093,20 +1094,16 @@ export const highlightTexts = (items, texts, unmark=false, additionalTexts) => {
 
 export const pluralize = (count, singular, plural) => `${count?.toLocaleString()} ${count === 1 ? singular : plural}`;
 
-export const toV3URL = path => {
-  let url = 'https://app.v3.openconceptlab.org'
-  if(window.location.host?.includes('localhost'))
-    url = 'http://localhost:4002'
-  if(['map.dev.openconceptlab.org', 'map.demo.openconceptlab.org'].includes(window.location.host))
-    url = 'https://app.v3.qa.openconceptlab.org'
-  if(window.location.host.match('map.*.openconceptlab.org'))
-    url = window.location.origin.replace('//map.', '//app.v3.')
+export const getV3URL = () => resolveV3URL(window.TERMBROWSER_URL || process.env.TERMBROWSER_URL, window.location.origin, window.location.host)
 
+export const hasTermBrowser = () => Boolean(resolveIntegratedV3URL(window.TERMBROWSER_URL || process.env.TERMBROWSER_URL, window.location.origin, window.location.host))
+
+export const toV3URL = path => {
   let referrerParams = `referrer=${window.location.href}`
   if(isLoggedIn())
     referrerParams += '?auth=true'
 
-  return `${url}/#${path || '/'}?${referrerParams}`
+  return `${getV3URL()}/#${path || '/'}?${referrerParams}`
 }
 
 export const isV3URL = url => {

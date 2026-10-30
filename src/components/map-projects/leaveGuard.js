@@ -1,4 +1,19 @@
-// Leaving a project while Auto Match runs.
+// Leaving a project while Auto Match runs, or before a new project's first save.
+
+// A new project exists only on this page until its first save: leaving with
+// its file loaded discards it. A saved project autosaves instead.
+export const isUnsavedNewProject = ({projectId, hasInput}) => !projectId && Boolean(hasInput)
+
+// In-app navigation unmounts the page, which saves a saved project's pending
+// change, so only a run or an unsaved new project needs asking first.
+export const shouldAskBeforeLeaving = ({runActive, projectId, hasInput}) =>
+  Boolean(runActive) || isUnsavedNewProject({projectId, hasInput})
+
+// Closing the tab or opening another site gets no unmount save: ask while a
+// change waits for autosave, a save is in flight, the last save failed, or
+// Configure is open with changes.
+export const shouldWarnBeforeUnload = ({pendingAutosave, saveInFlight, saveFailed, configChanged, runActive, projectId, hasInput}) =>
+  Boolean(pendingAutosave || saveInFlight || saveFailed || configChanged) || shouldAskBeforeLeaving({runActive, projectId, hasInput})
 
 // Holds in-app navigation, unless isAllowed, and hands it to onBlocked as
 // {location, action}. Returns the unblock function.

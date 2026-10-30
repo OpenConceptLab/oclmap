@@ -32,6 +32,9 @@
     "more_actions": "更多操作",
     "copied_to_clipboard": "已复制到粘贴板",
     "search": "搜索",
+    "clear": "清除",
+    "navigate": "导航",
+    "select": "选择",
     "please": "请",
     "save": "保存",
     "saved": "已保存",
@@ -62,7 +65,8 @@
     "action": "操作",
     "remove": "移除",
     "at": "于",
-    "none": "无"
+    "none": "无",
+    "create": "创建"
   },
   "errors": {
     "401": "需要登录",
@@ -175,7 +179,8 @@
   "org": {
     "my": "我的组织机构",
     "orgs": "组织机构",
-    "members": "成员"
+    "members": "成员",
+    "org": "组织机构"
   },
   "user": {
     "my_profile": "我的个人资料",
@@ -196,7 +201,12 @@
     "no_match_metrics": "此概念没有可用的算法匹配指标。",
     "list_view": "列表视图",
     "table_view": "表格视图",
-    "select_all_rows": "选择全部行"
+    "select_all_rows": "选择全部行",
+    "input_placeholder_drawer": "输入搜索词",
+    "search_project_rows": "在此项目的行中搜索 ",
+    "search_project_rows_hint": "筛选此项目",
+    "search_all_site": "在整个 OCL 中搜索 ",
+    "search_all_concepts": "搜索所有概念"
   },
   "url_registry": {
     "global_registry": "全球注册库"
@@ -351,6 +361,10 @@
     "leave_while_running_body_unsaved": "此项目尚未保存。离开会立即停止运行，并丢弃该项目及其结果。",
     "stay": "留下",
     "stop_and_leave": "停止并离开",
+    "leave_unsaved_title": "不保存就离开？",
+    "leave_unsaved_body": "此项目尚未保存。如果离开，项目及其中的所有工作都将被丢弃。",
+    "leave": "离开",
+    "save_and_leave": "保存并离开",
     "auto_match_all_including_approved_confirm": "我明白将覆盖 {{approvedCount}} 个已批准的决策",
     "auto_match_selected_rows_note_no_count": "请在左侧面板选择行以启用此选项",
     "auto_match_rows_failed": "{{count}} 个输入行匹配失败，缺少候选项：{{details}}。行号从文件的第一个数据行开始计数。请对这些行重新运行 AutoMatch 以重试。",
@@ -551,7 +565,8 @@
     "ai_recommendation_failed_retry": "OCL AI 助手推荐失败 — 点击重试",
     "ai_recommendation_running": "OCL AI 助手推荐进行中",
     "repo_url": "仓库 URL",
-    "repo_version": "仓库版本"
+    "repo_version": "仓库版本",
+    "mapping_project": "映射项目"
   },
   "app": {
     "web_version": "Web 版本",
@@ -592,5 +607,8 @@
         "import": "超出限制的行会保留在项目中，但不会被匹配。"
       }
     }
+  },
+  "import": {
+    "bulk_import": "批量导入"
   }
 }

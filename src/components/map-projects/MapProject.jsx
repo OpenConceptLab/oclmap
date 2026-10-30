@@ -94,7 +94,7 @@ import DataGridControls from './DataGridControls'
 import { getPreviewEligibleRowIndexes, getRowsToProcess, countAIOnlyRows, getAutoMatchAIOnOpen, takeRunRows, clearRunRowStatuses, canRunAlgorithm, spendsMatchQuota, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, AI_LOOKUP_WAIT_MS, RERANK_LOOKUP_WAIT_MS, RERANK_MAX_IN_FLIGHT, isScispacyWarmingUp } from './autoMatchRows'
 import { aiOnByDefault, getMaxRunRows, getMapperSettings } from '@openconceptlab/oclmap-extensions'
 import { createAutosaveScheduler, createLatestSender, saveOnLeave, trackSave, whenSaved, installUnloadGuard } from './autosave'
-import { blockLeaving, continueLeaving, createRunClosers } from './leaveGuard'
+import { blockLeaving, continueLeaving, createRunClosers, isUnsavedNewProject, shouldAskBeforeLeaving, shouldWarnBeforeUnload } from './leaveGuard'
 import MatchSummaryCard from './MatchSummaryCard'
 import MappingDecisionResult from './MappingDecisionResult'
 import DecisionSelector from './DecisionSelector'
@@ -114,6 +114,7 @@ import PreviewLimitDialog from './PreviewLimitDialog'
 import QuotaDialog from '../common/QuotaDialog'
 import { getQuotaError } from '../common/quotaErrors'
 import MapperQuotaChip from './MapperQuotaChip'
+import MapProjectBreadcrumb from './MapProjectBreadcrumb'
 import { getPreviewLimitError, isAIPreviewLimitError } from './previewLimits'
 import { formatRowNumbers, rowNumberOf, runMatchBatch, requestSingleMatch, runWithConcurrency, INTERACTIVE_WAIT_CAP_MS } from './matchBatch'
 import { getAIAssistantChoices, getModelUsed, getPromptTemplateKey, createLatestRequestGate } from './aiVisibility'
@@ -155,7 +156,7 @@ const MAPPER_QUOTA_SURFACE = {match_operations: 'auto_match', ai_assistant_calls
 
 const MapProject = () => {
   const { t } = useTranslation();
-  const { toggles, setAlert: baseSetAlert } = React.useContext(OperationsContext);
+  const { toggles, setAlert: baseSetAlert, setProjectRowSearch } = React.useContext(OperationsContext);
   const user = getCurrentUser()
   const [mapperQuotaCacheVersion, setMapperQuotaCacheVersion] = React.useState(0)
   const refreshMapperQuotaCache = React.useCallback(() => {
@@ -285,7 +286,9 @@ const MapProject = () => {
   if(!runClosersRef.current)
     runClosersRef.current = createRunClosers()
   const isRunActiveRef = React.useRef(false)
+  const hasInputRef = React.useRef(false)
   const [leaveTarget, setLeaveTarget] = React.useState(null)
+  const [isSavingToLeave, setIsSavingToLeave] = React.useState(false)
   const ownNavigationRef = React.useRef(false)
   const refreshRowStageSnapshotRef = React.useRef({});
 
@@ -300,6 +303,7 @@ const MapProject = () => {
   const [selectedRowStatus, setSelectedRowStatus] = React.useState('all')
   const [decisionTab, setDecisionTab] = React.useState('candidates')
   const [searchText, setSearchText] = React.useState('')  // csv row search
+  const [headerRowSearch, setHeaderRowSearch] = React.useState(null)  // set by the header's search
   const [selectedCandidatesScoreBucket, setSelectedCandidatesScoreBucket] = React.useState(false)
   const [scoreBucketSortBy, setScoreBucketSortBy] = React.useState('desc')
 
@@ -321,6 +325,7 @@ const MapProject = () => {
   const projectLogsLoadedRef = React.useRef(!params.projectId)
   const autoMatchAIDefaultAppliedRef = React.useRef(false)
   const configSnapshotOnOpenRef = React.useRef(null)
+  const getConfigurationSnapshotRef = React.useRef(null)
   const projectIdRef = React.useRef(null)
   const onSaveRef = React.useRef(null)
   const projectLogRef = React.useRef(() => {})
@@ -331,6 +336,8 @@ const MapProject = () => {
   const inFlightSaveRef = React.useRef(null)
   const isMountedRef = React.useRef(true)
   const autosaveSchedulerRef = React.useRef(null)
+  // Set when a save fails, cleared when one succeeds: the change is still unsaved.
+  const lastSaveFailedRef = React.useRef(false)
   if(!autosaveSchedulerRef.current)
     autosaveSchedulerRef.current = createAutosaveScheduler({
       getProjectId: () => projectIdRef.current,
@@ -382,7 +389,15 @@ const MapProject = () => {
   React.useEffect(() => {
     onSaveRef.current = onSave
     projectLogRef.current = projectLog
+    getConfigurationSnapshotRef.current = getConfigurationSnapshot
   })
+
+  // Configure's edits save when it closes, so leaving with it open and changed
+  // would drop them.
+  const hasUnsavedConfiguration = () => {
+    const opened = configSnapshotOnOpenRef.current
+    return Boolean(opened && getConfigurationSnapshotRef.current) && opened !== getConfigurationSnapshotRef.current()
+  }
 
   // Leaving the project unmounts this page, often inside the autosave window:
   // save the pending change now rather than drop it
@@ -411,16 +426,28 @@ const MapProject = () => {
     return () => {
       isMountedRef.current = false
       stopRunOnLeave()
+      if(hasUnsavedConfiguration())
+        autosaveSchedulerRef.current.schedule('configuration_change')
       saveNowOnLeave()
     }
   }, [])
 
-  // Closing or reloading the tab inside the autosave window, or while a save
-  // is in flight, would lose the change, so ask first. installUnloadGuard
-  // covers a save that outlives this page.
+  // Closing or reloading the tab, or following a link to another site, inside
+  // the autosave window, while a save is in flight, or before a new project's
+  // first save would lose work, so ask first. installUnloadGuard covers a save
+  // that outlives this page.
   React.useEffect(() => {
     const warnIfUnsaved = event => {
-      if(!autosaveSchedulerRef.current.hasPending() && !inFlightSaveRef.current && !isRunActiveRef.current)
+      const warn = shouldWarnBeforeUnload({
+        pendingAutosave: autosaveSchedulerRef.current.hasPending(),
+        saveInFlight: inFlightSaveRef.current,
+        saveFailed: lastSaveFailedRef.current,
+        configChanged: hasUnsavedConfiguration(),
+        runActive: isRunActiveRef.current,
+        projectId: projectIdRef.current,
+        hasInput: hasInputRef.current,
+      })
+      if(!warn)
         return
       event.preventDefault()
       event.returnValue = ''
@@ -780,13 +807,6 @@ const MapProject = () => {
   }, [headersKey])
 
   React.useEffect(() => {
-    if(!isEmpty(decisions)) {
-      window.addEventListener("beforeunload", alertUser);
-      return () => window.removeEventListener("beforeunload", alertUser);
-    }
-  }, [decisions]);
-
-  React.useEffect(() => {
     fetchMapTypes()
     fetchOclLocales()
     fetchAIModels()
@@ -1048,11 +1068,6 @@ const MapProject = () => {
       .sort((a, b) => a.name.localeCompare(b.name, 'en'))
     setOclLocales(sorted)
   })
-
-  const alertUser = (e) => {
-    e.preventDefault();
-    e.returnValue = "";
-  };
 
   const rowIndex = row?.__index
 
@@ -1775,6 +1790,7 @@ const MapProject = () => {
     // Where the user was when saving: a save that lands once they went
     // elsewhere mustn't pull them back.
     const pathAtSave = history.location.pathname
+    // Resolves true once the project saved.
     const request = service.then(response => {
       setIsSaving(false)
       const status = response?.response?.status || response?.status
@@ -1818,7 +1834,11 @@ const MapProject = () => {
           baseSetAlert({severity: 'success', message: t('map_project.successfully_saved'), duration: 2000})
 
         postProjectLogs(response.data.url, {row_logs: savedRowLogs, project_logs: savedProjectLogs})
-      } else if(options.leaving && status !== 401) {
+        lastSaveFailedRef.current = false
+        return true
+      }
+      lastSaveFailedRef.current = true
+      if(options.leaving && status !== 401) {
         // The user has left the project, so no dialog can show: say so once.
         baseSetAlert({severity: 'error', message: t('map_project.leave_save_failed', {name: name || project?.name, detail: errorData?.detail || t('unknown_error')}), duration: 12000})
       } else if(status === 403 && errorData?.error_code) {
@@ -1826,6 +1846,7 @@ const MapProject = () => {
       } else if(!isAutoSave && status !== 429 && status !== 401) {
         baseSetAlert({severity: 'error', message: errorData?.detail || t('unknown_error'), duration: 8000})
       }
+      return false
     }).finally(() => {
       setIsSaving(false)
       if(inFlightSaveRef.current === request)
@@ -2922,12 +2943,29 @@ const MapProject = () => {
   const isRunningBulkBridgeCandidates = bridgeCandidatesEndedAt ? moment().isBetween(bridgeCandidatesStartedAt, bridgeCandidatesEndedAt) : Boolean(bridgeCandidatesStartedAt)
   const isRunningBulkScispacyCandidates = scispacyCandidatesEndedAt ? moment().isBetween(scispacyCandidatesStartedAt, scispacyCandidatesEndedAt) : Boolean(scispacyCandidatesStartedAt)
 
-  // Leaving while a run is going asks first.
+  // The header's search can search this project's rows once it has some.
+  const hasRows = Boolean(data?.length)
+  React.useEffect(() => {
+    if(!hasRows)
+      return
+    setProjectRowSearch({
+      search: text => {
+        setSearchText(text)
+        setHeaderRowSearch({text})
+      }
+    })
+    return () => setProjectRowSearch(null)
+  }, [hasRows])
+
+  // Leaving while a run is going, or before a new project's first save, asks first.
   const isRunActive = Boolean(loadingMatches || isRunningBulkAnalysis || isRunningBulkBridgeCandidates || isRunningBulkScispacyCandidates)
   isRunActiveRef.current = isRunActive
+  hasInputRef.current = Boolean(file)
+  const isUnsavedNew = isUnsavedNewProject({projectId: project?.id, hasInput: file})
+  const askBeforeLeaving = shouldAskBeforeLeaving({runActive: isRunActive, projectId: project?.id, hasInput: file})
   const unblockLeavingRef = React.useRef(null)
   React.useEffect(() => {
-    if(!isRunActive)
+    if(!askBeforeLeaving)
       return
     const unblock = blockLeaving(history, {
       isAllowed: () => ownNavigationRef.current,
@@ -2938,17 +2976,46 @@ const MapProject = () => {
       unblockLeavingRef.current = null
       unblock()
     }
-  }, [isRunActive])
+  }, [askBeforeLeaving])
 
   const onStopRunAndLeave = () => {
     const target = leaveTarget
     setLeaveTarget(null)
     stopRunOnLeave()
     saveNowOnLeave()
+    leaveTo(target)
+  }
+
+  const leaveTo = target => {
     unblockLeavingRef.current?.()
     unblockLeavingRef.current = null
     if(target)
       continueLeaving(history, target)
+  }
+
+  const onLeaveUnsaved = () => {
+    const target = leaveTarget
+    setLeaveTarget(null)
+    leaveTo(target)
+  }
+
+  // Leaves only once the first save lands; a save already in flight is
+  // awaited rather than sent again, which would create a second project.
+  const onSaveAndLeave = () => {
+    const target = leaveTarget
+    const request = inFlightSaveRef.current || onSave({source: 'manual'})
+    if(!request) {
+      setLeaveTarget(null)
+      return
+    }
+    const done = saved => {
+      setIsSavingToLeave(false)
+      setLeaveTarget(null)
+      if(saved === true)
+        leaveTo(target)
+    }
+    setIsSavingToLeave(true)
+    Promise.resolve(request).then(done, () => done(false))
   }
 
   // Only the latest request may set the version: a slower response is for a
@@ -3582,6 +3649,7 @@ const MapProject = () => {
         setShowItem(false)
       return prev
     })
+    scheduleAutoSave('decision_change')
     return false
   }
 
@@ -6278,6 +6346,7 @@ const MapProject = () => {
             {
               !isConfigFormInline &&
                 <span style={{display: 'flex', alignItems: 'center'}}>
+                  <MapProjectBreadcrumb ownerType={params.ownerType} owner={params.owner} />
                   {
                     name &&
                       <span style={{fontWeight: 'bold', fontSize: '18px', maxWidth: isSplitView ? '300px' : '500px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', marginRight: '8px'}}>
@@ -6462,6 +6531,7 @@ const MapProject = () => {
                 onBulkMapTypeChange={onBulkMapTypeChange}
                 allMapTypes={allMapTypes}
                 onSearchTextChange={setSearchText}
+                searchValue={headerRowSearch}
               />
               <Snackbar
                 open={Boolean(alert?.message)}
@@ -6737,7 +6807,10 @@ const MapProject = () => {
                 <Divider sx={{width: '100%'}} />
                 <ReviewNote
                   value={notes[rowIndex]}
-                  onChange={event => setNotes({...notes, [rowIndex]: event.target.value || ''})}
+                  onChange={event => {
+                    setNotes({...notes, [rowIndex]: event.target.value || ''})
+                    scheduleAutoSave('note_change')
+                  }}
                 />
                 <div className='col-xs-12' style={{padding: '0 0 8px 78px'}}>
                   <Button size='small' disabled={rowStatuses.reviewed.includes(rowIndex) || decisions[rowIndex] === 'none' || !decisions[rowIndex]} color='primary' onClick={() => onReviewDone(true)} variant='contained' sx={{textTransform: 'none'}}>
@@ -6871,7 +6944,26 @@ const MapProject = () => {
         }
     </Paper>
     </Split>
-      <Dialog open={Boolean(leaveTarget)} onClose={() => setLeaveTarget(null)} maxWidth='xs' fullWidth>
+      <Dialog open={Boolean(leaveTarget) && isUnsavedNew && !isRunActive} onClose={() => !isSavingToLeave && setLeaveTarget(null)} maxWidth='xs' fullWidth>
+        <DialogTitle>{t('map_project.leave_unsaved_title')}</DialogTitle>
+        <DialogContent>
+          <Typography component='p' sx={{fontSize: '14px', color: 'surface.dark'}}>
+            {t('map_project.leave_unsaved_body')}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setLeaveTarget(null)} disabled={isSavingToLeave} color='secondary' sx={{textTransform: 'none'}}>
+            {t('common.cancel')}
+          </Button>
+          <Button onClick={onLeaveUnsaved} disabled={isSavingToLeave} color='error' sx={{textTransform: 'none'}}>
+            {t('map_project.leave')}
+          </Button>
+          <Button onClick={onSaveAndLeave} disabled={isSavingToLeave} variant='contained' sx={{textTransform: 'none'}}>
+            {t('map_project.save_and_leave')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={Boolean(leaveTarget) && (isRunActive || !isUnsavedNew)} onClose={() => setLeaveTarget(null)} maxWidth='xs' fullWidth>
         <DialogTitle>{t('map_project.leave_while_running_title')}</DialogTitle>
         <DialogContent>
           <Typography component='p' sx={{fontSize: '14px', color: 'surface.dark'}}>
