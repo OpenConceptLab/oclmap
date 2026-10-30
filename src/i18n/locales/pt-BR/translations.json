@@ -202,7 +202,6 @@
     "list_view": "Visualização em Lista",
     "table_view": "Visualização em Tabela",
     "select_all_rows": "Selecionar todas as linhas",
-    "input_placeholder": "Buscar no OCL...",
     "input_placeholder_drawer": "Digite um termo de busca",
     "search_project_rows": "Buscar nas linhas deste projeto por ",
     "search_project_rows_hint": "Filtrar este projeto",

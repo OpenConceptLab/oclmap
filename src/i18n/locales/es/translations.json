@@ -193,7 +193,6 @@
     "list_view": "Vista de lista",
     "table_view": "Vista de tabla",
     "select_all_rows": "Seleccionar todas las filas",
-    "input_placeholder": "Buscar en OCL...",
     "input_placeholder_drawer": "Ingresa un término de búsqueda",
     "search_project_rows": "Buscar en las filas de este proyecto para ",
     "search_project_rows_hint": "Filtrar este proyecto",

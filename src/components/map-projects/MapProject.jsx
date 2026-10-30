@@ -2971,10 +2971,7 @@ const MapProject = () => {
     setLeaveTarget(null)
     stopRunOnLeave()
     saveNowOnLeave()
-    unblockLeavingRef.current?.()
-    unblockLeavingRef.current = null
-    if(target)
-      continueLeaving(history, target)
+    leaveTo(target)
   }
 
   const leaveTo = target => {

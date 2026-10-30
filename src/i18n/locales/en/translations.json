@@ -202,7 +202,6 @@
     "list_view": "List View",
     "table_view": "Table View",
     "select_all_rows": "Select all rows",
-    "input_placeholder": "Search OCL...",
     "input_placeholder_drawer": "Enter a search term",
     "search_project_rows": "Search this project's rows for ",
     "search_project_rows_hint": "Filter this project",
