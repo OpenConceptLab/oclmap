@@ -22,6 +22,9 @@
     "more_actions": "Más acciones",
     "copied_to_clipboard": "Copiado al portapapeles",
     "search": "Buscar",
+    "clear": "Borrar",
+    "navigate": "Navegar",
+    "select": "Seleccionar",
     "save": "Guardar",
     "saved": "Guardado",
     "delete": "Eliminar",
@@ -190,7 +193,12 @@
     "list_view": "Vista de lista",
     "table_view": "Vista de tabla",
     "select_all_rows": "Seleccionar todas las filas",
-    "input_placeholder": "Buscar en OCL..."
+    "input_placeholder": "Buscar en OCL...",
+    "input_placeholder_drawer": "Ingresa un término de búsqueda",
+    "search_project_rows": "Buscar en las filas de este proyecto para ",
+    "search_project_rows_hint": "Filtrar este proyecto",
+    "search_all_site": "Buscar en todo OCL para ",
+    "search_all_concepts": "Buscar todos los conceptos"
   },
   "locale": {
     "add_custom_language_codes": "Agregar código(s) de idioma personalizado(s)",

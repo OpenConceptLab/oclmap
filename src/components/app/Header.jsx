@@ -8,11 +8,10 @@ import CssBaseline from '@mui/material/CssBaseline';
 import MenuIcon from '@mui/icons-material/Menu';
 import { COLORS } from '../../common/colors';
 import OCLLogo from '../common/OCLLogo';
-import { getCurrentUser, hasTermBrowser } from '../../common/utils';
+import { getCurrentUser } from '../../common/utils';
 import './Header.scss';
 import HeaderControls from './HeaderControls';
 import LeftMenu from './LeftMenu'
-import HeaderSearch from './HeaderSearch'
 import AnnouncementBanner from './AnnouncementBanner';
 
 
@@ -65,10 +64,7 @@ const Header = props => {
               }
               <OCLLogo />
             </div>
-            <div className='col-xs-3' />
-            <div className='col-xs-4 padding-0' style={{textAlign: 'center'}}>
-              {Boolean(user?.url) && hasTermBrowser() && <HeaderSearch />}
-            </div>
+            <div className='col-xs-8' />
             <HeaderControls />
           </div>
         </Toolbar>

@@ -4,6 +4,7 @@ import AddIcon from '@mui/icons-material/Add'
 import UserMenu from '../users/UserMenu';
 import UserProfileButton from '../users/UserProfileButton';
 import AddMenuList from '../users/AddMenuList'
+import HeaderSearch from './HeaderSearch'
 import { isLoggedIn } from '../../common/utils';
 
 
@@ -15,6 +16,7 @@ const HeaderControls = () => {
 
   return (
     <div className='col-xs-4 padding-0' style={{textAlign: 'right'}}>
+      {authenticated && <HeaderSearch />}
       {
         authenticated &&
           <IconButton sx={{marginRight: '8px'}} aria-label='create' onClick={event => setAddMenuAnchorEl(event.currentTarget)}>

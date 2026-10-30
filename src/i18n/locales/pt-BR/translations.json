@@ -33,6 +33,9 @@
     "more_actions": "Mais ações",
     "copied_to_clipboard": "Copiado para a área de transferência",
     "search": "Buscar",
+    "clear": "Limpar",
+    "navigate": "Navegar",
+    "select": "Selecionar",
     "please": "Por favor,",
     "save": "Salvar",
     "saved": "Salvo",
@@ -199,7 +202,12 @@
     "list_view": "Visualização em Lista",
     "table_view": "Visualização em Tabela",
     "select_all_rows": "Selecionar todas as linhas",
-    "input_placeholder": "Buscar no OCL..."
+    "input_placeholder": "Buscar no OCL...",
+    "input_placeholder_drawer": "Digite um termo de busca",
+    "search_project_rows": "Buscar nas linhas deste projeto por ",
+    "search_project_rows_hint": "Filtrar este projeto",
+    "search_all_site": "Buscar em todo o OCL por ",
+    "search_all_concepts": "Buscar todos os conceitos"
   },
   "url_registry": {
     "global_registry": "Registro Global"

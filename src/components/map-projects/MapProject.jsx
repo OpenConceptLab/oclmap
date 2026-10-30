@@ -156,7 +156,7 @@ const MAPPER_QUOTA_SURFACE = {match_operations: 'auto_match', ai_assistant_calls
 
 const MapProject = () => {
   const { t } = useTranslation();
-  const { toggles, setAlert: baseSetAlert } = React.useContext(OperationsContext);
+  const { toggles, setAlert: baseSetAlert, setProjectRowSearch } = React.useContext(OperationsContext);
   const user = getCurrentUser()
   const [mapperQuotaCacheVersion, setMapperQuotaCacheVersion] = React.useState(0)
   const refreshMapperQuotaCache = React.useCallback(() => {
@@ -303,6 +303,7 @@ const MapProject = () => {
   const [selectedRowStatus, setSelectedRowStatus] = React.useState('all')
   const [decisionTab, setDecisionTab] = React.useState('candidates')
   const [searchText, setSearchText] = React.useState('')  // csv row search
+  const [headerRowSearch, setHeaderRowSearch] = React.useState(null)  // set by the header's search
   const [selectedCandidatesScoreBucket, setSelectedCandidatesScoreBucket] = React.useState(false)
   const [scoreBucketSortBy, setScoreBucketSortBy] = React.useState('desc')
 
@@ -2923,6 +2924,20 @@ const MapProject = () => {
   const isRunningBulkAnalysis = bulkAIAnalysisEndedAt ? moment().isBetween(bulkAIAnalysisStartedAt, bulkAIAnalysisEndedAt) : Boolean(bulkAIAnalysisStartedAt)
   const isRunningBulkBridgeCandidates = bridgeCandidatesEndedAt ? moment().isBetween(bridgeCandidatesStartedAt, bridgeCandidatesEndedAt) : Boolean(bridgeCandidatesStartedAt)
   const isRunningBulkScispacyCandidates = scispacyCandidatesEndedAt ? moment().isBetween(scispacyCandidatesStartedAt, scispacyCandidatesEndedAt) : Boolean(scispacyCandidatesStartedAt)
+
+  // The header's search can search this project's rows once it has some.
+  const hasRows = Boolean(data?.length)
+  React.useEffect(() => {
+    if(!hasRows)
+      return
+    setProjectRowSearch({
+      search: text => {
+        setSearchText(text)
+        setHeaderRowSearch({text})
+      }
+    })
+    return () => setProjectRowSearch(null)
+  }, [hasRows])
 
   // Leaving while a run is going, or before a new project's first save, asks first.
   const isRunActive = Boolean(loadingMatches || isRunningBulkAnalysis || isRunningBulkBridgeCandidates || isRunningBulkScispacyCandidates)
@@ -6500,6 +6515,7 @@ const MapProject = () => {
                 onBulkMapTypeChange={onBulkMapTypeChange}
                 allMapTypes={allMapTypes}
                 onSearchTextChange={setSearchText}
+                searchValue={headerRowSearch}
               />
               <Snackbar
                 open={Boolean(alert?.message)}

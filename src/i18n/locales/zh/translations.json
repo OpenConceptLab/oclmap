@@ -32,6 +32,9 @@
     "more_actions": "更多操作",
     "copied_to_clipboard": "已复制到粘贴板",
     "search": "搜索",
+    "clear": "清除",
+    "navigate": "导航",
+    "select": "选择",
     "please": "请",
     "save": "保存",
     "saved": "已保存",
@@ -199,7 +202,12 @@
     "list_view": "列表视图",
     "table_view": "表格视图",
     "select_all_rows": "选择全部行",
-    "input_placeholder": "搜索 OCL..."
+    "input_placeholder": "搜索 OCL...",
+    "input_placeholder_drawer": "输入搜索词",
+    "search_project_rows": "在此项目的行中搜索 ",
+    "search_project_rows_hint": "筛选此项目",
+    "search_all_site": "在整个 OCL 中搜索 ",
+    "search_all_concepts": "搜索所有概念"
   },
   "url_registry": {
     "global_registry": "全球注册库"

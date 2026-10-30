@@ -33,6 +33,9 @@
     "more_actions": "More actions",
     "copied_to_clipboard": "Copied to clipboard",
     "search": "Search",
+    "clear": "Clear",
+    "navigate": "Navigate",
+    "select": "Select",
     "please": "Please",
     "save": "Save",
     "saved": "Saved",
@@ -199,7 +202,12 @@
     "list_view": "List View",
     "table_view": "Table View",
     "select_all_rows": "Select all rows",
-    "input_placeholder": "Search OCL..."
+    "input_placeholder": "Search OCL...",
+    "input_placeholder_drawer": "Enter a search term",
+    "search_project_rows": "Search this project's rows for ",
+    "search_project_rows_hint": "Filter this project",
+    "search_all_site": "Search all of OCL for ",
+    "search_all_concepts": "Search all concepts"
   },
   "url_registry": {
     "global_registry": "Global registry"
