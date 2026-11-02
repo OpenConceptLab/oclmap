@@ -124,7 +124,7 @@ import { createLookupSession, LOOKUP_NOT_FOUND } from './lookupSession'
 import { parseConceptKey } from './conceptKey'
 import { normalizeLookupConfig } from './lookupConfigFields'
 import { getDeclaredLocales, getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getSavedTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId } from './projectTargetRepo'
-import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, findTargetRowView, formatBridgeTargetDownloadEntry, resolveAICandidateID, getScoreDetails, getAIAnalysisCandidateIDs, withCachedConcept, withCandidateNames, restoredNote, unmappedNoteMatches, withOwnNames, withSavedMatch } from './viewBuilders.js'
+import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, findTargetRowView, formatBridgeTargetDownloadEntry, resolveAICandidateID, getScoreDetails, getAIAnalysisCandidateIDs, withCachedConcept, withCandidateNames, buildMatchEntries, restoredNote, withOwnNames, withSavedMatch } from './viewBuilders.js'
 import { formatClockTime, getCapacityWaitLabel, mergeCapacityWaits } from './rowProgress.js'
 
 import './MapProject.scss'
@@ -1717,7 +1717,7 @@ const MapProject = () => {
     const projectLogsForSave = options.projectLogs || projectLogsRef.current
     setIsSaving(true)
     const f = getFileObjectFromRows()
-    const selected = map(mapSelected, (data, i) => {
+    const selected = buildMatchEntries(map(data, row => row.__index), mapSelected, notes, (data, i) => {
       return {
         url: data?.url,
         repoURL: data?.repo?.version_url || data?.repo?.url,
@@ -1730,7 +1730,6 @@ const MapProject = () => {
         concept: getConcept(data)
       }
     })
-    selected.push(...unmappedNoteMatches(map(data, row => row.__index), mapSelected, notes))
     // v2 wire format: rowMatchState + conceptCache (see serializeCandidates).
     const candidates = serializeCandidates(rowMatchStateRef.current, conceptCacheRef.current)
     const formData = new FormData();

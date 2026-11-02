@@ -481,14 +481,17 @@ export const withSavedMatch = (target, savedMatch) => {
 }
 
 /**
- * The `matches` entries a save sends for rows with no mapping: a row's review
- * note is kept only in its entry, so one without a mapped target still needs
- * one (OpenConceptLab/ocl_issues#2984). Rows without a note get none.
+ * The `matches` a save sends: one entry per row. `entryFor` builds the entry
+ * of each row `mapSelected` holds, a cleared one (a null) included. A row it
+ * holds no key for, with a review note, gets a note-only entry, as the note is
+ * kept only in its entry (OpenConceptLab/ocl_issues#2984).
  */
-export const unmappedNoteMatches = (rowIndexes, mapSelected, notes) =>
-  rowIndexes
-    .filter(index => !mapSelected[index] && notes[index])
+export const buildMatchEntries = (rowIndexes, mapSelected, notes, entryFor) => [
+  ...Object.entries(mapSelected).map(([index, target]) => entryFor(target, index)),
+  ...rowIndexes
+    .filter(index => !Object.prototype.hasOwnProperty.call(mapSelected, index) && notes[index])
     .map(index => ({rowIndex: index, note: notes[index]}))
+]
 
 /**
  * A row's review note on reopen: the one its CSV row holds, else the one its
