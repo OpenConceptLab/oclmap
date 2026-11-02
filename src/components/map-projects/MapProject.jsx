@@ -6347,7 +6347,7 @@ const MapProject = () => {
                   <MapProjectBreadcrumb ownerType={params.ownerType} owner={params.owner} />
                   {
                     name &&
-                      <span title={name} style={{fontWeight: 'bold', fontSize: '18px', flex: '0 1 auto', minWidth: '40px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', marginRight: '8px'}}>
+                      <span title={name} data-shrinkable='true' style={{fontWeight: 'bold', fontSize: '18px', flex: '0 1 auto', minWidth: '40px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', marginRight: '8px'}}>
                         {name}
                       </span>
                   }

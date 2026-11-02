@@ -22,7 +22,9 @@ import JSONIcon from '@mui/icons-material/DataObject';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import { copyToClipboard } from '../../common/utils'
 import RepoIcon from '../repos/RepoIcon'
-import { getToolbarLayout, HEADER_RESERVED_WIDTH } from './controlsLayout'
+import { getToolbarLayout } from './controlsLayout'
+
+const SHRINKABLE_MIN_WIDTH = 48
 
 const IkonButton = ({title, icon, onClick, color, disabled, id}) => {
   return (
@@ -60,18 +62,42 @@ const Controls = ({project, onDownload, onSave, onDelete, owner, file, isSaving,
   React.useEffect(() => {
     const node = toolbarRef.current?.parentElement
     if (!node) return undefined
+    const sibling = toolbarRef.current.previousElementSibling
+
+    const getOuterWidth = element => {
+      const style = window.getComputedStyle(element)
+      return element.getBoundingClientRect().width + (parseFloat(style.marginLeft) || 0) + (parseFloat(style.marginRight) || 0)
+    }
 
     const updateToolbarWidth = () => {
-      const nextWidth = node.getBoundingClientRect?.().width
-      setToolbarWidth(nextWidth ? nextWidth - HEADER_RESERVED_WIDTH : Number.POSITIVE_INFINITY)
+      const headerWidth = node.getBoundingClientRect?.().width
+      if (!headerWidth) {
+        setToolbarWidth(Number.POSITIVE_INFINITY)
+        return
+      }
+      const reservedWidth = sibling ?
+        Array.from(sibling.children).reduce((sum, child) => sum + (child.dataset.shrinkable ? SHRINKABLE_MIN_WIDTH : getOuterWidth(child)), 0) :
+        0
+      setToolbarWidth(headerWidth - reservedWidth)
     }
 
     updateToolbarWidth()
 
     if (typeof ResizeObserver !== 'undefined') {
-      const observer = new ResizeObserver(updateToolbarWidth)
-      observer.observe(node)
-      return () => observer.disconnect()
+      const resizeObserver = new ResizeObserver(updateToolbarWidth)
+      const observeChildren = () => {
+        resizeObserver.disconnect()
+        resizeObserver.observe(node)
+        Array.from(sibling?.children || []).forEach(child => resizeObserver.observe(child))
+      }
+      observeChildren()
+      const mutationObserver = typeof MutationObserver !== 'undefined' && sibling ?
+        new MutationObserver(() => { observeChildren(); updateToolbarWidth() }) : null
+      mutationObserver?.observe(sibling, {childList: true})
+      return () => {
+        resizeObserver.disconnect()
+        mutationObserver?.disconnect()
+      }
     }
 
     window.addEventListener('resize', updateToolbarWidth)

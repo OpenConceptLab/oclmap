@@ -4,7 +4,6 @@ const ACTION_BUTTON_WIDTH = 46
 const TIER_DIVIDER_WIDTH = 12
 const COLLAPSE_BUFFER_WIDTH = 40
 const AUTO_MATCH_FULL_WIDTH = 200
-export const HEADER_RESERVED_WIDTH = 340
 
 const getRequiredToolbarWidth = (visibleSecondaryCount, hasOverflowItems) => {
   let requiredWidth = ACTION_BUTTON_WIDTH // Save
