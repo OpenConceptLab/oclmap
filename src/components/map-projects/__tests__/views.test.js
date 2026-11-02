@@ -28,7 +28,9 @@ import {
   withCachedConcept,
   withCandidateNames,
   withOwnNames,
-  withSavedMatch
+  withSavedMatch,
+  buildMatchEntries,
+  restoredNote
 } from '../viewBuilders.js'
 
 // ---------- Helpers ----------
@@ -830,4 +832,31 @@ test('withOwnNames: a mapped target keeps its own names and highlight over a can
   const withNames = { ...fromCandidate, names: glucoseNames, search_meta: { search_highlight: { name: ['x'] } } }
   assert.equal(withOwnNames(withNames, searchedTarget).names, glucoseNames)
   assert.deepEqual(withOwnNames(withNames, searchedTarget).search_meta.search_highlight, { name: ['x'] })
+})
+
+// ---------- unmapped row notes (OpenConceptLab/ocl_issues#2984) ----------
+
+// The save's entry for a row `mapSelected` holds, as onSave builds it.
+const entryFor = (target, index) => ({rowIndex: index, url: target?.url, note: notesFixture[index] || undefined})
+let notesFixture = {}
+
+// Save, serialise, reopen: what MapProject sends and what it restores.
+const roundTrip = (mapSelected, notes, rows) => {
+  notesFixture = notes
+  const sent = JSON.parse(JSON.stringify(buildMatchEntries(rows, mapSelected, notes, entryFor)))
+  const saved = Object.fromEntries(sent.map(entry => [entry.rowIndex, entry]))
+  return {sent, restored: Object.fromEntries(rows.map(index => [index, restoredNote(undefined, saved[index])]))}
+}
+
+test('a note on an unmapped row survives save and reopen', () => {
+  const { sent, restored } = roundTrip({0: searchedTarget}, {0: 'mapped note', 1: 'needs a clinician', 2: ''}, [0, 1, 2])
+  assert.deepEqual(sent.map(entry => entry.rowIndex), ['0', 1])
+  assert.deepEqual(restored, {0: 'mapped note', 1: 'needs a clinician', 2: undefined})
+  assert.equal(restoredNote('csv note', sent[1]), 'csv note')
+})
+
+test('a cleared row (null in mapSelected) with a note is sent once and keeps its note', () => {
+  const { sent, restored } = roundTrip({0: null}, {0: 'rejected: wrong unit'}, [0])
+  assert.equal(sent.length, 1)
+  assert.equal(restored[0], 'rejected: wrong unit')
 })
