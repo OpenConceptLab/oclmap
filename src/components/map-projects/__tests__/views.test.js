@@ -28,7 +28,9 @@ import {
   withCachedConcept,
   withCandidateNames,
   withOwnNames,
-  withSavedMatch
+  withSavedMatch,
+  unmappedNoteMatches,
+  restoredNote
 } from '../viewBuilders.js'
 
 // ---------- Helpers ----------
@@ -830,4 +832,18 @@ test('withOwnNames: a mapped target keeps its own names and highlight over a can
   const withNames = { ...fromCandidate, names: glucoseNames, search_meta: { search_highlight: { name: ['x'] } } }
   assert.equal(withOwnNames(withNames, searchedTarget).names, glucoseNames)
   assert.deepEqual(withOwnNames(withNames, searchedTarget).search_meta.search_highlight, { name: ['x'] })
+})
+
+// ---------- unmapped row notes (OpenConceptLab/ocl_issues#2984) ----------
+
+test('a note on an unmapped row survives save and reopen', () => {
+  const mapSelected = {0: searchedTarget}
+  const notes = {0: 'mapped note', 1: 'needs a clinician', 2: ''}
+  // Save: mapped rows send their own entry, unmapped rows with a note get one.
+  const sent = JSON.parse(JSON.stringify(unmappedNoteMatches([0, 1, 2], mapSelected, notes)))
+  assert.deepEqual(sent, [{rowIndex: 1, note: 'needs a clinician'}])
+  // Reopen: the CSV carries no note for that row, the saved entry does.
+  assert.equal(restoredNote(undefined, sent[0]), 'needs a clinician')
+  assert.equal(restoredNote('csv note', sent[0]), 'csv note')
+  assert.equal(restoredNote(undefined, undefined), undefined)
 })

@@ -481,6 +481,22 @@ export const withSavedMatch = (target, savedMatch) => {
 }
 
 /**
+ * The `matches` entries a save sends for rows with no mapping: a row's review
+ * note is kept only in its entry, so one without a mapped target still needs
+ * one (OpenConceptLab/ocl_issues#2984). Rows without a note get none.
+ */
+export const unmappedNoteMatches = (rowIndexes, mapSelected, notes) =>
+  rowIndexes
+    .filter(index => !mapSelected[index] && notes[index])
+    .map(index => ({rowIndex: index, note: notes[index]}))
+
+/**
+ * A row's review note on reopen: the one its CSV row holds, else the one its
+ * saved `matches` entry holds (OpenConceptLab/ocl_issues#2984).
+ */
+export const restoredNote = (csvNote, savedMatch) => csvNote || savedMatch?.note || undefined
+
+/**
  * A mapped target with its own names and match highlight put back over a
  * candidate's: the ones it was mapped with, or that a reopened project
  * restored (OpenConceptLab/ocl_issues#2916).

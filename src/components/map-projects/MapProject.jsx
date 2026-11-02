@@ -124,7 +124,7 @@ import { createLookupSession, LOOKUP_NOT_FOUND } from './lookupSession'
 import { parseConceptKey } from './conceptKey'
 import { normalizeLookupConfig } from './lookupConfigFields'
 import { getDeclaredLocales, getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getSavedTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId } from './projectTargetRepo'
-import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, findTargetRowView, formatBridgeTargetDownloadEntry, resolveAICandidateID, getScoreDetails, getAIAnalysisCandidateIDs, withCachedConcept, withCandidateNames, withOwnNames, withSavedMatch } from './viewBuilders.js'
+import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, findTargetRowView, formatBridgeTargetDownloadEntry, resolveAICandidateID, getScoreDetails, getAIAnalysisCandidateIDs, withCachedConcept, withCandidateNames, restoredNote, unmappedNoteMatches, withOwnNames, withSavedMatch } from './viewBuilders.js'
 import { formatClockTime, getCapacityWaitLabel, mergeCapacityWaits } from './rowProgress.js'
 
 import './MapProject.scss'
@@ -1563,7 +1563,7 @@ const MapProject = () => {
         _states[state] = _states[state] || []
         _states[state].push(index)
         _decisions[index] = (data['__Decision__'] || data['__row_decision__']) === t('map_project.none') ? undefined : (data['__Decision__'] || data['__row_decision__'])
-        _notes[index] = data['__Note__']
+        _notes[index] = restoredNote(data['__Note__'], savedMatches[index])
         _mapTypes[index] = data['__Map Type__'] || data['__map_type__']
         _proposed[index] = (data['__Proposed__'] || data['__proposed__']) ? JSON.parse(data['__Proposed__'] || data['__proposed__']) : undefined
         data = omit(data, [...reservedKeys, ...optionalReservedKeys])
@@ -1730,6 +1730,7 @@ const MapProject = () => {
         concept: getConcept(data)
       }
     })
+    selected.push(...unmappedNoteMatches(map(data, row => row.__index), mapSelected, notes))
     // v2 wire format: rowMatchState + conceptCache (see serializeCandidates).
     const candidates = serializeCandidates(rowMatchStateRef.current, conceptCacheRef.current)
     const formData = new FormData();
