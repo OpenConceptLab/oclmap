@@ -30,10 +30,8 @@ import Snackbar from '@mui/material/Snackbar';
 import { DataGrid, GRID_CHECKBOX_SELECTION_COL_DEF } from '@mui/x-data-grid';
 
 
-import DoubleArrowIcon from '@mui/icons-material/DoubleArrow';
 import DoneIcon from '@mui/icons-material/Done';
 import CloseIcon from '@mui/icons-material/Close';
-import AutoMatchIcon from '@mui/icons-material/MotionPhotosAutoOutlined';
 import ClearIcon from '@mui/icons-material/Clear';
 import AssistantIcon from '@mui/icons-material/Assistant';
 import PendingIcon from '@mui/icons-material/HourglassBottom';
@@ -6345,30 +6343,17 @@ const MapProject = () => {
             <div className='col-xs-12 padding-0' style={{backgroundColor: isConfigFormInline ? WHITE : SURFACE_COLORS.main, marginLeft: '-5px', paddingBottom: '0px', paddingLeft: '0px', paddingTop: '0px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start'}}>
             {
               !isConfigFormInline &&
-                <span style={{display: 'flex', alignItems: 'center'}}>
+                <span style={{display: 'flex', alignItems: 'center', flex: '1 1 0', minWidth: 0}}>
                   <MapProjectBreadcrumb ownerType={params.ownerType} owner={params.owner} />
                   {
                     name &&
-                      <span style={{fontWeight: 'bold', fontSize: '18px', maxWidth: isSplitView ? '300px' : '500px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', marginRight: '8px'}}>
+                      <span title={name} data-shrinkable='true' style={{fontWeight: 'bold', fontSize: '18px', flex: '0 1 auto', minWidth: '40px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', marginRight: '8px'}}>
                         {name}
                       </span>
                   }
                   <span style={{marginRight: '8px'}}>
                     <MapperQuotaChip />
                   </span>
-                  <Button
-                    variant='contained'
-                    size='small'
-                    sx={{textTransform: 'none', margin: '5px'}}
-                    endIcon={<DoubleArrowIcon />}
-                    startIcon={<AutoMatchIcon />}
-                    disabled={!file}
-                    onClick={onGetCandidates}
-                    loading={loadingMatches}
-                    loadingPosition="start"
-                  >
-                    {getCandidatesButtonLabel()}
-                  </Button>
                   {
                     scispacyCandidatesStartedAt &&
                       <Button
@@ -6445,8 +6430,9 @@ const MapProject = () => {
                 </span>
             }
               {
-                file?.name &&
+                (file?.name || !isConfigFormInline) &&
                   <Controls
+                    autoMatch={isConfigFormInline ? undefined : {label: getCandidatesButtonLabel(), onClick: onGetCandidates, disabled: !file, loading: Boolean(loadingMatches)}}
                     isCoreUser={isCoreUser}
                     project={project}
                     onDownload={onDownloadClick}

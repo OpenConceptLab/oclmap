@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  getToolbarLayout,
   getVisibleSecondaryActionCount,
   splitSecondaryActionsByVisibility
 } from '../controlsLayout.js'
@@ -47,4 +48,35 @@ test('controlsLayout may skip directly to a single visible secondary action when
       visibleActionKeys: ['download']
     }
   )
+})
+
+test('getToolbarLayout shows AutoMatch in full when width is unconstrained', () => {
+  assert.deepEqual(
+    getToolbarLayout({ toolbarWidth: Number.POSITIVE_INFINITY, hasOverflowItems: true, hasAutoMatch: true }),
+    { autoMatch: 'full', saveInMenu: false, overflowActionKeys: [], visibleActionKeys: ['settings', 'timeline', 'download'] }
+  )
+})
+
+test('getToolbarLayout compacts AutoMatch before collapsing secondary actions', () => {
+  const layout = getToolbarLayout({ toolbarWidth: 400, hasOverflowItems: true, hasAutoMatch: true })
+  assert.equal(layout.autoMatch, 'compact')
+  assert.deepEqual(layout.overflowActionKeys, [])
+})
+
+test('getToolbarLayout moves Save and then AutoMatch into the menu as space runs out', () => {
+  assert.deepEqual(
+    getToolbarLayout({ toolbarWidth: 160, hasOverflowItems: true, hasAutoMatch: true }),
+    { autoMatch: 'compact', saveInMenu: true, overflowActionKeys: ['settings', 'timeline', 'download'], visibleActionKeys: [] }
+  )
+  assert.equal(getToolbarLayout({ toolbarWidth: 80, hasOverflowItems: true, hasAutoMatch: true }).autoMatch, 'menu')
+  assert.equal(getToolbarLayout({ toolbarWidth: 80, hasOverflowItems: true, hasAutoMatch: false }).autoMatch, 'none')
+})
+
+test('getToolbarLayout falls back to the narrowest layout when the budget is zero or negative', () => {
+  for (const toolbarWidth of [0, -1]) {
+    assert.deepEqual(
+      getToolbarLayout({ toolbarWidth, hasOverflowItems: true, hasAutoMatch: true }),
+      { autoMatch: 'menu', saveInMenu: true, overflowActionKeys: ['settings', 'timeline', 'download'], visibleActionKeys: [] }
+    )
+  }
 })
