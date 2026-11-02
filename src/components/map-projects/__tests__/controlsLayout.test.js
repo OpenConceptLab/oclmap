@@ -71,3 +71,12 @@ test('getToolbarLayout moves Save and then AutoMatch into the menu as space runs
   assert.equal(getToolbarLayout({ toolbarWidth: 80, hasOverflowItems: true, hasAutoMatch: true }).autoMatch, 'menu')
   assert.equal(getToolbarLayout({ toolbarWidth: 80, hasOverflowItems: true, hasAutoMatch: false }).autoMatch, 'none')
 })
+
+test('getToolbarLayout falls back to the narrowest layout when the budget is zero or negative', () => {
+  for (const toolbarWidth of [0, -1]) {
+    assert.deepEqual(
+      getToolbarLayout({ toolbarWidth, hasOverflowItems: true, hasAutoMatch: true }),
+      { autoMatch: 'menu', saveInMenu: true, overflowActionKeys: ['settings', 'timeline', 'download'], visibleActionKeys: [] }
+    )
+  }
+})

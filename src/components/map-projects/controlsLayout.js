@@ -71,7 +71,7 @@ const getStateWidth = (state, hasOverflowItems) => {
 export const getToolbarLayout = ({ toolbarWidth, hasOverflowItems, hasAutoMatch }) => {
   const states = getLayoutStates(hasAutoMatch)
   let state = states[0]
-  if (Number.isFinite(toolbarWidth) && toolbarWidth > 0) {
+  if (Number.isFinite(toolbarWidth)) {
     const effectiveToolbarWidth = Math.max(0, toolbarWidth - COLLAPSE_BUFFER_WIDTH)
     state = states.find(candidate => effectiveToolbarWidth >= getStateWidth(candidate, hasOverflowItems)) || states[states.length - 1]
   }
