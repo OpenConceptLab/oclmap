@@ -26,9 +26,11 @@ const MapProjectBreadcrumb = ({ ownerType, owner }) => {
         ownerType={ownerType}
         owner={owner}
         ownerURL={ownerCrumb.href ? ownerPath : undefined}
+        {...(ownerCrumb.href ? {} : {noTooltip: true, component: 'span', disableRipple: true})}
         sx={{
           '.owner-button-label': LABEL_SX,
           '.MuiButton-startIcon': {fontSize: '18px'},
+          ...(ownerCrumb.href ? {} : {cursor: 'default'}),
         }}
       />
       <DotSeparator />
