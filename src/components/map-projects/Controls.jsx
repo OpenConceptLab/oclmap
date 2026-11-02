@@ -10,6 +10,8 @@ import Menu from '@mui/material/Menu';
 import Divider from '@mui/material/Divider';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import CircularProgress from '@mui/material/CircularProgress'
+import DoubleArrowIcon from '@mui/icons-material/DoubleArrow';
+import AutoMatchIcon from '@mui/icons-material/MotionPhotosAutoOutlined';
 import DownloadIcon from '@mui/icons-material/Download';
 import TimelineIcon from '@mui/icons-material/Timeline';
 import SettingsIcon from '@mui/icons-material/Settings';
@@ -20,7 +22,7 @@ import JSONIcon from '@mui/icons-material/DataObject';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import { copyToClipboard } from '../../common/utils'
 import RepoIcon from '../repos/RepoIcon'
-import { splitSecondaryActionsByVisibility } from './controlsLayout'
+import { getToolbarLayout, HEADER_RESERVED_WIDTH } from './controlsLayout'
 
 const IkonButton = ({title, icon, onClick, color, disabled, id}) => {
   return (
@@ -42,7 +44,7 @@ const IkonButton = ({title, icon, onClick, color, disabled, id}) => {
   )
 }
 
-const Controls = ({project, onDownload, onSave, onDelete, owner, file, isSaving, onImport, importResponse, onDownloadImportReport, onProjectLogsClick, isProjectsLogOpen, configure, setConfigure, isCoreUser, loadingMatches, onCopyClick}) => {
+const Controls = ({project, onDownload, onSave, onDelete, owner, file, isSaving, onImport, importResponse, onDownloadImportReport, onProjectLogsClick, isProjectsLogOpen, configure, setConfigure, isCoreUser, loadingMatches, onCopyClick, autoMatch}) => {
   const { t } = useTranslation();
   const toolbarRef = React.useRef(null)
   const overflowButtonRef = React.useRef(null)
@@ -56,12 +58,12 @@ const Controls = ({project, onDownload, onSave, onDelete, owner, file, isSaving,
   const hasPersistentOverflowActions = Boolean(project?.id)
 
   React.useEffect(() => {
-    const node = toolbarRef.current
+    const node = toolbarRef.current?.parentElement
     if (!node) return undefined
 
     const updateToolbarWidth = () => {
       const nextWidth = node.getBoundingClientRect?.().width
-      setToolbarWidth(nextWidth || Number.POSITIVE_INFINITY)
+      setToolbarWidth(nextWidth ? nextWidth - HEADER_RESERVED_WIDTH : Number.POSITIVE_INFINITY)
     }
 
     updateToolbarWidth()
@@ -110,14 +112,24 @@ const Controls = ({project, onDownload, onSave, onDelete, owner, file, isSaving,
     }
   }
 
-  const { overflowActionKeys, visibleActionKeys } = splitSecondaryActionsByVisibility({
-    toolbarWidth,
-    hasOverflowItems: hasPersistentOverflowActions
-  })
+  const hasActions = Boolean(file?.name)
+  const { autoMatch: autoMatchMode, saveInMenu, overflowActionKeys, visibleActionKeys } = hasActions ?
+    getToolbarLayout({
+      toolbarWidth,
+      hasOverflowItems: hasPersistentOverflowActions,
+      hasAutoMatch: Boolean(autoMatch)
+    }) :
+    {autoMatch: 'full', saveInMenu: false, overflowActionKeys: [], visibleActionKeys: []}
 
   const visibleSecondaryActions = visibleActionKeys.map(key => actionsByKey[key])
   const overflowSecondaryActions = overflowActionKeys.map(key => actionsByKey[key])
-  const hasOverflowActions = hasPersistentOverflowActions || overflowSecondaryActions.length > 0
+  const autoMatchInMenu = Boolean(autoMatch) && autoMatchMode === 'menu'
+  const hasOverflowActions = hasActions && (hasPersistentOverflowActions || overflowSecondaryActions.length > 0 || saveInMenu || autoMatchInMenu)
+  const overflowMenuActions = [
+    ...(autoMatchInMenu ? [{key: 'autoMatch', icon: <AutoMatchIcon />, title: autoMatch.label, disabled: autoMatch.disabled || autoMatch.loading, onClick: autoMatch.onClick}] : []),
+    ...overflowSecondaryActions,
+    ...(saveInMenu ? [actionsByKey.save] : [])
+  ]
 
   const closeDownloadMenu = () => setDownloadAnchorEl(null)
   const closeOverflowMenu = () => setOverflowAnchorEl(null)
@@ -134,8 +146,43 @@ const Controls = ({project, onDownload, onSave, onDelete, owner, file, isSaving,
   }
 
   return (
-    <span ref={toolbarRef} style={{display: 'flex', flex: '1 1 auto', flexDirection: 'column', alignItems: 'flex-end', maxWidth: '100%', minWidth: 0}}>
-      <div style={{display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end', alignContent: 'flex-end', width: '100%', minWidth: 0}}>
+    <span ref={toolbarRef} style={{display: 'flex', flex: '0 0 auto', flexDirection: 'column', alignItems: 'flex-end', minWidth: 0}}>
+      <div style={{display: 'flex', flexWrap: 'nowrap', alignItems: 'center', justifyContent: 'flex-end', minWidth: 0}}>
+        {
+          autoMatch && !autoMatchInMenu && (autoMatchMode === 'compact' ?
+            <Tooltip title={autoMatch.label} placement='bottom'>
+              <span>
+                <IconButton
+                  aria-label={autoMatch.label}
+                  color='primary'
+                  size='small'
+                  sx={{margin: '2px 5px'}}
+                  onClick={autoMatch.onClick}
+                  disabled={autoMatch.disabled || autoMatch.loading}
+                >
+                  {autoMatch.loading ? <CircularProgress size={20} /> : <AutoMatchIcon />}
+                </IconButton>
+              </span>
+            </Tooltip> :
+            <Button
+              variant='contained'
+              size='small'
+              sx={{textTransform: 'none', margin: '5px', whiteSpace: 'nowrap', flexShrink: 0}}
+              endIcon={<DoubleArrowIcon />}
+              startIcon={<AutoMatchIcon />}
+              disabled={autoMatch.disabled}
+              onClick={autoMatch.onClick}
+              loading={autoMatch.loading}
+              loadingPosition='start'
+            >
+              {autoMatch.label}
+            </Button>
+          )
+        }
+        {
+          autoMatch && !autoMatchInMenu && hasActions &&
+            <Divider flexItem orientation='vertical' sx={{mx: 0.5, my: 0.75}} />
+        }
         {
           visibleSecondaryActions.map(action => (
             <IkonButton
@@ -153,17 +200,20 @@ const Controls = ({project, onDownload, onSave, onDelete, owner, file, isSaving,
           visibleSecondaryActions.length > 0 &&
             <Divider flexItem orientation='vertical' sx={{mx: 0.5, my: 0.75}} />
         }
-        <IkonButton
-          color={actionsByKey.save.color}
-          onClick={actionsByKey.save.onClick}
-          title={actionsByKey.save.title}
-          disabled={actionsByKey.save.disabled}
-          icon={actionsByKey.save.icon}
-        />
+        {
+          hasActions && !saveInMenu &&
+            <IkonButton
+              color={actionsByKey.save.color}
+              onClick={actionsByKey.save.onClick}
+              title={actionsByKey.save.title}
+              disabled={actionsByKey.save.disabled}
+              icon={actionsByKey.save.icon}
+            />
+        }
         {
           hasOverflowActions &&
             <>
-              <Divider flexItem orientation='vertical' sx={{mx: 0.5, my: 0.75}} />
+              {!saveInMenu && <Divider flexItem orientation='vertical' sx={{mx: 0.5, my: 0.75}} />}
               <Tooltip title={t('common.more_actions')} placement='bottom'>
                 <span>
                   <IconButton
@@ -187,7 +237,7 @@ const Controls = ({project, onDownload, onSave, onDelete, owner, file, isSaving,
       </div>
       {
         (lastSavedText || isSaving) &&
-          <div style={{fontSize: '11px', color: 'rgba(0, 0, 0, 0.6)', textAlign: 'right', marginTop: '-4px'}}>
+          <div style={{fontSize: '11px', color: 'rgba(0, 0, 0, 0.6)', textAlign: 'right', marginTop: '-4px', whiteSpace: 'nowrap'}}>
             {
               isSaving ? t('map_project.saving') :
                 t('map_project.last_saved', {time: lastSavedText})
@@ -266,7 +316,7 @@ const Controls = ({project, onDownload, onSave, onDelete, owner, file, isSaving,
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
         {
-          overflowSecondaryActions.map(action => (
+          overflowMenuActions.map(action => (
             <MenuItem key={action.key} onClick={onOverflowActionClick(action)} disabled={action.disabled}>
               <ListItemIcon>{action.icon}</ListItemIcon>
               <ListItemText>{action.title}</ListItemText>
@@ -274,7 +324,7 @@ const Controls = ({project, onDownload, onSave, onDelete, owner, file, isSaving,
           ))
         }
         {
-          overflowSecondaryActions.length > 0 && project?.id &&
+          overflowMenuActions.length > 0 && project?.id &&
             <Divider />
         }
         {
