@@ -34,8 +34,8 @@ const MapProjectBreadcrumb = ({ ownerType, owner }) => {
               '.MuiButton-startIcon': {fontSize: '18px'},
             }}
           /> :
-          <span style={{display: 'flex', alignItems: 'center', padding: '0 8px'}}>
-            <OwnerIcon noTooltip ownerType={ownerType} color='secondary' style={{marginRight: '8px', width: '0.8em', fontSize: '18px'}} />
+          <span style={{display: 'flex', alignItems: 'center', padding: '4px', fontSize: '14px', lineHeight: 1.75}}>
+            <OwnerIcon noTooltip ownerType={ownerType} color='secondary' style={{marginRight: '8px', width: '0.8em', fontSize: '18px', flexShrink: 0}} />
             <span style={LABEL_SX}>{owner}</span>
           </span>
       }
