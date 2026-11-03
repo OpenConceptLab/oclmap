@@ -5,6 +5,8 @@ export const REQUEST_MORE_ACCESS_URL = 'https://openconceptlab.org/early-access?
 const QUOTA_ERRORS = {
   mapper_match_operations_limit_reached: {meter: 'match_operations', kind: 'quota'},
   ai_assistant_calls_limit_reached: {meter: 'ai_assistant_calls', kind: 'quota'},
+  // A decision call is an AI Assistant call to the user, so it shares the meter label and copy.
+  ai_assistant_decision_calls_limit_reached: {meter: 'ai_assistant_calls', kind: 'quota'},
   ai_assistant_change_comments_limit_reached: {meter: 'ai_assistant_change_comments', kind: 'quota'},
   mapper_projects_limit_reached: {meter: 'projects', kind: 'cap'},
   mapper_rows_per_project_limit_reached: {meter: 'rows', kind: 'cap'},

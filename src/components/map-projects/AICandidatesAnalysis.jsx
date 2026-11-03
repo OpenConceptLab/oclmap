@@ -120,6 +120,9 @@ const AICandidatesAnalysis = ({ analysis: analysisProp, onClose, sx, isInProgres
                 {getAlternateIds() || '-'}
               </Field>
             </div>
+            {
+              // A decision model writes no narrative: no empty block.
+              narrative &&
             <div style={{position: 'relative'}}>
               <Typography
                 ref={narrativeRef}
@@ -140,6 +143,7 @@ const AICandidatesAnalysis = ({ analysis: analysisProp, onClose, sx, isInProgres
                   </Link>
               }
             </div>
+            }
             {
               expanded &&
                 <Link component='button' type='button' underline='hover' sx={{fontSize: 12}} onClick={() => setExpanded(false)}>

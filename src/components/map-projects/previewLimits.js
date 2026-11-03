@@ -12,6 +12,8 @@ export const PREVIEW_LIMIT_ERROR_CODES = new Set([
   'mapper_projects_not_entitled',
   'ai_assistant_calls_limit_reached',
   'ai_assistant_calls_not_entitled',
+  'ai_assistant_decision_calls_limit_reached',
+  'ai_assistant_decision_calls_not_entitled',
 ])
 
 export const PREVIEW_LIMIT_COPY_KEY = {
@@ -28,6 +30,8 @@ export const PREVIEW_LIMIT_COPY_KEY = {
   mapper_projects_not_entitled: 'projects_not_entitled',
   ai_assistant_calls_limit_reached: 'ai_assistant',
   ai_assistant_calls_not_entitled: 'ai_assistant',
+  ai_assistant_decision_calls_limit_reached: 'ai_assistant',
+  ai_assistant_decision_calls_not_entitled: 'ai_assistant',
 }
 
 export const getPreviewLimitError = value => {
@@ -40,4 +44,6 @@ export const isPreviewLimitError = value => Boolean(getPreviewLimitError(value))
 export const isAIPreviewLimitError = errorCode =>
   errorCode === 'ai_assistant_calls_limit_reached'
   || errorCode === 'ai_assistant_calls_not_entitled'
+  || errorCode === 'ai_assistant_decision_calls_limit_reached'
+  || errorCode === 'ai_assistant_decision_calls_not_entitled'
   || errorCode === 'mapper_ai_assistant_denied'

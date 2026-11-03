@@ -235,6 +235,32 @@ test('hasCurrentAnalysis: an analysis saved before fingerprints existed is redon
   assert.equal(hasCurrentAnalysis([{ output: { recommendation: 'RECOMMEND' } }], fp), false)
 })
 
+test('hasCurrentAnalysis: same pool but another template version is redone, the same version is current', () => {
+  const fp = getCandidatePoolFingerprint([{ concept_key: 'a' }])
+  const saved = version => [{ candidate_pool_fingerprint: fp, prompt_template: { key: 'match-recommend-normalized', version } }]
+  assert.equal(hasCurrentAnalysis(saved('2'), fp, { key: 'match-recommend-normalized', version: '2' }), true)
+  assert.equal(hasCurrentAnalysis(saved('1'), fp, { key: 'match-recommend-normalized', version: '2' }), false)
+})
+
+test('hasCurrentAnalysis: same pool but another template key (chat vs decision) is redone', () => {
+  const fp = getCandidatePoolFingerprint([{ concept_key: 'a' }])
+  const saved = [{ candidate_pool_fingerprint: fp, prompt_template: { key: 'match-recommend-normalized', version: '2' } }]
+  assert.equal(hasCurrentAnalysis(saved, fp, { key: 'match-recommend-decision', version: '2' }), false)
+})
+
+test('hasCurrentAnalysis: an analysis without a recorded template version, or a run without a known one, is redone', () => {
+  const fp = getCandidatePoolFingerprint([{ concept_key: 'a' }])
+  const noVersion = [{ candidate_pool_fingerprint: fp, prompt_template: { key: 'k' } }]
+  assert.equal(hasCurrentAnalysis(noVersion, fp, { key: 'k', version: '2' }), false)
+  assert.equal(hasCurrentAnalysis([{ candidate_pool_fingerprint: fp, prompt_template: { key: 'k', version: '2' } }], fp, { key: 'k', version: null }), false)
+  assert.equal(hasCurrentAnalysis([{ candidate_pool_fingerprint: fp }], fp, { key: 'k', version: '2' }), false)
+})
+
+test('hasCurrentAnalysis: without a template to compare, only the pool decides (as before)', () => {
+  const fp = getCandidatePoolFingerprint([{ concept_key: 'a' }])
+  assert.equal(hasCurrentAnalysis([{ candidate_pool_fingerprint: fp }], fp), true)
+})
+
 test('hasCurrentAnalysis: no analysis yet, or no pool to compare, is not current', () => {
   const fp = getCandidatePoolFingerprint(pool(['loinc|2336-6', 'ocl-search']))
   assert.equal(hasCurrentAnalysis([], fp), false)
