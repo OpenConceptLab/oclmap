@@ -25,8 +25,8 @@ import Header from './Header';
 import OIDLoginCallback from '../users/OIDLoginCallback';
 import { OperationsContext } from './LayoutContext';
 import Alert from '../common/Alert';
-import MapProject from '../map-projects/MapProject'
-import MapProjects from '../map-projects/MapProjects'
+import MapProjectRoute from '../map-projects/MapProjectRoute'
+import MapProjectsRedirect from '../map-projects/MapProjectsRedirect'
 import { useTranslation } from 'react-i18next';
 
 const AuthenticationRequiredRoute = ({component: Component, ...rest}) => {
@@ -164,10 +164,10 @@ const App = props => {
                 <Switch>
                   <Route exact path="/signin" component={SigninRedirect} />
                   <Route exact path="/oidc/login" component={OIDLoginCallback} />
-                  <AuthenticationRequiredRoute exact path='/' component={MapProjects} />
-                  <AuthenticationRequiredRoute exact path='/map-projects' component={MapProjects} />
-                  <AuthenticationRequiredRoute exact path='/map-projects/new' component={MapProject} />
-                  <AuthenticationRequiredRoute exact path='/:ownerType/:owner/map-projects/:projectId' component={MapProject} />
+                  <AuthenticationRequiredRoute exact path='/' component={MapProjectsRedirect} />
+                  <AuthenticationRequiredRoute exact path='/map-projects' component={MapProjectsRedirect} />
+                  <AuthenticationRequiredRoute exact path='/map-projects/new' component={MapProjectRoute} />
+                  <AuthenticationRequiredRoute exact path='/:ownerType/:owner/map-projects/:projectId' component={MapProjectRoute} />
                   <Route exact path='/403' component={Error403} />
                   <Route component={Error404} />
                 </Switch>

@@ -28,6 +28,7 @@ import {
   compactProperty,
   stripConstantClassAndDatatype,
   filterAndTrimNames,
+  dropMissingBridgeTargets,
   filterAndTrimDescriptions,
   primarySubtag,
   uniqByPrimarySubtag,
@@ -1783,4 +1784,43 @@ test('getAlgorithmStagesFromResponses: done (1) when any response succeeded, fai
     { algorithm_id: 'custom-1' },
   )), { 'ocl-semantic': 1, 'ocl-search': -2, 'custom-1': 1 })
   assert.deepEqual(getAlgorithmStagesFromResponses({}), {})
+})
+
+// ---------------------------------------------------------------------------
+// dropMissingBridgeTargets
+// ---------------------------------------------------------------------------
+
+test('dropMissingBridgeTargets drops bridge_child candidates for missing codes and their concept_rows', () => {
+  const rowState = {
+    algorithm_responses: {r1: {id: 'r1'}},
+    candidates: {
+      p: {id: 'p', type: 'bridge', concept_key: 'ciel|1'},
+      a: {id: 'a', type: 'bridge_child', concept_key: 'loinc|missing'},
+      b: {id: 'b', type: 'bridge_child', concept_key: 'loinc|present'}
+    },
+    concept_rows: {'ciel|1': {}, 'loinc|missing': {}, 'loinc|present': {}}
+  }
+  const result = dropMissingBridgeTargets(rowState, new Set(['loinc|missing']))
+  assert.deepEqual(Object.keys(result.candidates), ['p', 'b'])
+  assert.deepEqual(Object.keys(result.concept_rows), ['ciel|1', 'loinc|present'])
+  assert.equal(result.algorithm_responses, rowState.algorithm_responses)
+})
+
+test('dropMissingBridgeTargets keeps a missing key another algorithm also proposed', () => {
+  const rowState = {
+    candidates: {
+      a: {id: 'a', type: 'bridge_child', concept_key: 'loinc|x'},
+      s: {id: 's', type: 'standard', concept_key: 'loinc|x'}
+    },
+    concept_rows: {'loinc|x': {}}
+  }
+  const result = dropMissingBridgeTargets(rowState, new Set(['loinc|x']))
+  assert.deepEqual(Object.keys(result.candidates), ['s'])
+  assert.deepEqual(Object.keys(result.concept_rows), ['loinc|x'])
+})
+
+test('dropMissingBridgeTargets returns the same row when nothing is missing', () => {
+  const rowState = {candidates: {a: {id: 'a', type: 'bridge_child', concept_key: 'loinc|y'}}, concept_rows: {'loinc|y': {}}}
+  assert.equal(dropMissingBridgeTargets(rowState, new Set(['loinc|z'])), rowState)
+  assert.equal(dropMissingBridgeTargets(rowState, new Set()), rowState)
 })

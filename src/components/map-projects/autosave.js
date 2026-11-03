@@ -83,12 +83,12 @@ export const createAutosaveScheduler = ({
  * Leaving the project unmounts MapProject, often inside the autosave window,
  * and dropping the pending autosave there lost the last change — a whole Auto
  * Match run if the user left within 5s of it finishing
- * (OpenConceptLab/ocl_issues#2829). This saves it now instead. A save still in
- * flight goes first, so the older payload can't land after the newer one.
+ * (OpenConceptLab/ocl_issues#2829). This saves it now instead.
  *
- * The save always starts asynchronously: an error while building the payload
- * must not surface inside React's unmount and take down the page the user is
- * going to.
+ * save(reasons, {after}) builds the payload now, so nothing that changes once
+ * the page is gone gets into it, and sends it once after, the save still in
+ * flight, settles, so the older payload can't land after the newer one. An
+ * error building it is logged, never thrown into React's unmount.
  *
  * Returns whether a save was queued.
  */
@@ -96,10 +96,12 @@ export const saveOnLeave = ({ scheduler, inFlightSave, save }) => {
   const reasons = scheduler.takePending()
   if(!reasons)
     return false
-  const run = () => save(reasons)
-  Promise.resolve(inFlightSave)
-    .then(run, run)
-    .catch(error => console.error('Mapper: saving on leave failed', error))
+  const fail = error => console.error('Mapper: saving on leave failed', error)
+  try {
+    Promise.resolve(save(reasons, {after: inFlightSave})).catch(fail)
+  } catch(error) {
+    fail(error)
+  }
   return true
 }
 

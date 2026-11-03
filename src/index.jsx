@@ -6,7 +6,8 @@ import { ThemeProvider, StyledEngineProvider, createTheme, alpha } from '@mui/ma
 import App from './components/app/App';
 import LayoutContext from './components/app/LayoutContext';
 import './index.scss';
-import { COLORS } from './common/colors';
+import { COLORS, WHITE } from './common/colors';
+import { buttonFocusComponents } from './common/buttonFocus';
 import './i18n/config';
 import { setAppHistory, handleLinkClick, keepLinkClickBubbling, legacyHashRoute, redirectLegacyHashRoute } from './common/history';
 import { takeSigninToResume } from './common/ssoSession';
@@ -121,6 +122,9 @@ const v5Theme = createTheme(theme, {
       ]
     }
   }
+}, {
+  // Focused buttons: the two-tone ring, not MUI's focus ripple (OpenConceptLab/ocl_issues#2970)
+  components: buttonFocusComponents(WHITE, COLORS.primary['30'])
 })
 
 

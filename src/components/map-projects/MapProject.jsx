@@ -30,10 +30,8 @@ import Snackbar from '@mui/material/Snackbar';
 import { DataGrid, GRID_CHECKBOX_SELECTION_COL_DEF } from '@mui/x-data-grid';
 
 
-import DoubleArrowIcon from '@mui/icons-material/DoubleArrow';
 import DoneIcon from '@mui/icons-material/Done';
 import CloseIcon from '@mui/icons-material/Close';
-import AutoMatchIcon from '@mui/icons-material/MotionPhotosAutoOutlined';
 import ClearIcon from '@mui/icons-material/Clear';
 import AssistantIcon from '@mui/icons-material/Assistant';
 import PendingIcon from '@mui/icons-material/HourglassBottom';
@@ -86,7 +84,7 @@ import { buildPanelPayload } from './openConceptPanel'
 import LoaderDialog from '../common/LoaderDialog'
 import Error403 from '../errors/Error403'
 import { HEADERS, SEMANTIC_SEARCH_HEADERS, ROW_STATES, VIEWS, DECISION_TABS, ROW_STAGES, PROMPTS_KEY_DEFAULT, PROMPTS_DECISION_KEY_DEFAULT, PROMPTS_ACTION_TYPE_DEFAULT, SCORES_COLOR } from './constants'
-import { updateColumnState, resuggestColumns } from './columnSuggestions'
+import { updateColumnState, resuggestColumns, applyTemplateColumns } from './columnSuggestions'
 import MapProjectDeleteConfirmDialog from './MapProjectDeleteConfirmDialog';
 import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
@@ -94,6 +92,7 @@ import DataGridControls from './DataGridControls'
 import { getPreviewEligibleRowIndexes, getRowsToProcess, countAIOnlyRows, getAutoMatchAIOnOpen, takeRunRows, clearRunRowStatuses, canRunAlgorithm, spendsMatchQuota, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, AI_LOOKUP_WAIT_MS, RERANK_LOOKUP_WAIT_MS, RERANK_MAX_IN_FLIGHT, isScispacyWarmingUp } from './autoMatchRows'
 import { aiOnByDefault, getMaxRunRows, getMapperSettings } from '@openconceptlab/oclmap-extensions'
 import { createAutosaveScheduler, createLatestSender, saveOnLeave, trackSave, whenSaved, installUnloadGuard } from './autosave'
+import { blockLeaving, continueLeaving, createRunClosers, isUnsavedNewProject, shouldAskBeforeLeaving, shouldWarnBeforeUnload } from './leaveGuard'
 import MatchSummaryCard from './MatchSummaryCard'
 import MappingDecisionResult from './MappingDecisionResult'
 import DecisionSelector from './DecisionSelector'
@@ -113,15 +112,17 @@ import PreviewLimitDialog from './PreviewLimitDialog'
 import QuotaDialog from '../common/QuotaDialog'
 import { getQuotaError } from '../common/quotaErrors'
 import MapperQuotaChip from './MapperQuotaChip'
+import MapProjectBreadcrumb from './MapProjectBreadcrumb'
 import { getPreviewLimitError, isAIPreviewLimitError } from './previewLimits'
 import { formatRowNumbers, rowNumberOf, runMatchBatch, requestSingleMatch, runWithConcurrency, INTERACTIVE_WAIT_CAP_MS } from './matchBatch'
 import { getAIAssistantChoices, getModelUsed, getPromptTemplateKey, createLatestRequestGate, getDefaultPromptTemplateKey, getAIRecommendationDescription } from './aiVisibility'
 import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
 import { normalizeAlgorithmInvocation, hasSuccessfulAlgorithmResponse, getAlgorithmStagesFromResponses, lookupStatusRank, buildRecommendableConceptEntry, stripConstantClassAndDatatype, buildLookupConceptUrl, serializeCandidates, toStoredRowMatchState } from './normalizers'
+import { createLookupSession, LOOKUP_NOT_FOUND } from './lookupSession'
 import { parseConceptKey } from './conceptKey'
 import { normalizeLookupConfig } from './lookupConfigFields'
 import { getDeclaredLocales, getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getSavedTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId } from './projectTargetRepo'
-import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, findTargetRowView, formatBridgeTargetDownloadEntry, resolveAICandidateID, getScoreDetails, getAIAnalysisCandidateIDs, withCachedConcept, withCandidateNames, withOwnNames, withSavedMatch } from './viewBuilders.js'
+import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, findTargetRowView, formatBridgeTargetDownloadEntry, resolveAICandidateID, getScoreDetails, getAIAnalysisCandidateIDs, withCachedConcept, withCandidateNames, buildMatchEntries, restoredNote, withOwnNames, withSavedMatch } from './viewBuilders.js'
 import { formatClockTime, getCapacityWaitLabel, mergeCapacityWaits } from './rowProgress.js'
 
 import './MapProject.scss'
@@ -153,7 +154,7 @@ const MAPPER_QUOTA_SURFACE = {match_operations: 'auto_match', ai_assistant_calls
 
 const MapProject = () => {
   const { t } = useTranslation();
-  const { toggles, setAlert: baseSetAlert } = React.useContext(OperationsContext);
+  const { toggles, setAlert: baseSetAlert, setProjectRowSearch } = React.useContext(OperationsContext);
   const user = getCurrentUser()
   const [mapperQuotaCacheVersion, setMapperQuotaCacheVersion] = React.useState(0)
   const refreshMapperQuotaCache = React.useCallback(() => {
@@ -168,6 +169,8 @@ const MapProject = () => {
   }, [location.search])
 
   const bridgeRef = React.useRef()
+  // Column mapping of the project being copied, applied to the next upload.
+  const templateColumnsRef = React.useRef([])
   const facetsRequestsRef = React.useRef({})
   const latestFacetRequestRef = React.useRef({})
   // project state
@@ -276,10 +279,19 @@ const MapProject = () => {
   // A ref so every per-row backend call reads the run id synchronously without
   // prop-drilling or re-renders; null outside a run → 'mapper-ui-manual'.
   const automatchRunRef = React.useRef(null);
+  // Lets leaving close open run records at once.
+  const runClosersRef = React.useRef(null)
+  if(!runClosersRef.current)
+    runClosersRef.current = createRunClosers()
+  const isRunActiveRef = React.useRef(false)
+  const hasInputRef = React.useRef(false)
+  const [leaveTarget, setLeaveTarget] = React.useState(null)
+  const [isSavingToLeave, setIsSavingToLeave] = React.useState(false)
+  const ownNavigationRef = React.useRef(false)
   const refreshRowStageSnapshotRef = React.useRef({});
 
-  const [previewLimit, setPreviewLimit] = React.useState(null) // {errorCode, limit, used} or null
-  const previewLimitQuota = previewLimit ? getQuotaError({error_code: previewLimit.errorCode, limit: previewLimit.limit, used: previewLimit.used}) : null
+  const [previewLimit, setPreviewLimit] = React.useState(null) // {errorCode} or null
+  const previewLimitQuota = previewLimit ? getQuotaError({error_code: previewLimit.errorCode}) : null
 
   const [row, setRow] = React.useState(false)
   const [loadingMatches, setLoadingMatches] = React.useState(false)
@@ -289,6 +301,7 @@ const MapProject = () => {
   const [selectedRowStatus, setSelectedRowStatus] = React.useState('all')
   const [decisionTab, setDecisionTab] = React.useState('candidates')
   const [searchText, setSearchText] = React.useState('')  // csv row search
+  const [headerRowSearch, setHeaderRowSearch] = React.useState(null)  // set by the header's search
   const [selectedCandidatesScoreBucket, setSelectedCandidatesScoreBucket] = React.useState(false)
   const [scoreBucketSortBy, setScoreBucketSortBy] = React.useState('desc')
 
@@ -310,8 +323,10 @@ const MapProject = () => {
   const projectLogsLoadedRef = React.useRef(!params.projectId)
   const autoMatchAIDefaultAppliedRef = React.useRef(false)
   const configSnapshotOnOpenRef = React.useRef(null)
+  const getConfigurationSnapshotRef = React.useRef(null)
   const projectIdRef = React.useRef(null)
   const onSaveRef = React.useRef(null)
+  const projectLogRef = React.useRef(() => {})
   // A save can complete after the user has left the project
   // (OpenConceptLab/ocl_issues#2829): these track the request still in flight
   // (accurate after unmount, unlike isSaving state) and whether this page is
@@ -319,6 +334,8 @@ const MapProject = () => {
   const inFlightSaveRef = React.useRef(null)
   const isMountedRef = React.useRef(true)
   const autosaveSchedulerRef = React.useRef(null)
+  // Set when a save fails, cleared when one succeeds: the change is still unsaved.
+  const lastSaveFailedRef = React.useRef(false)
   if(!autosaveSchedulerRef.current)
     autosaveSchedulerRef.current = createAutosaveScheduler({
       getProjectId: () => projectIdRef.current,
@@ -369,36 +386,84 @@ const MapProject = () => {
   // captured when the change happened rather than what is on screen now.
   React.useEffect(() => {
     onSaveRef.current = onSave
+    projectLogRef.current = projectLog
+    getConfigurationSnapshotRef.current = getConfigurationSnapshot
   })
+
+  // Configure's edits save when it closes, so leaving with it open and changed
+  // would drop them.
+  const hasUnsavedConfiguration = () => {
+    const opened = configSnapshotOnOpenRef.current
+    return Boolean(opened && getConfigurationSnapshotRef.current) && opened !== getConfigurationSnapshotRef.current()
+  }
 
   // Leaving the project unmounts this page, often inside the autosave window:
   // save the pending change now rather than drop it
   // (OpenConceptLab/ocl_issues#2829). Nothing to save once signed out.
+  const saveNowOnLeave = () => saveOnLeave({
+    scheduler: autosaveSchedulerRef.current,
+    inFlightSave: inFlightSaveRef.current,
+    save: (reasons, {after}) => currentUserToken() && onSaveRef.current({source: 'auto', closeConfigure: false, reasons, leaving: true, after})
+  })
+
+  // Leaving stops a run at once, not gracefully: its record closes now and
+  // what it matched so far is saved. Once per run, whether or not leaving
+  // unmounts this page: a navigation to another project URL reuses it.
+  const stopRunOnLeave = () => {
+    if(!runClosersRef.current.hasOpen() && !(isRunActiveRef.current && !abortRef.current))
+      return
+    abortRef.current = true
+    projectLogRef.current({action: 'auto_match_stopped_on_leave'})
+    autosaveSchedulerRef.current.schedule('auto_match_stopped')
+    runClosersRef.current.closeAll(true)
+  }
+
   React.useEffect(() => {
     isMountedRef.current = true
     installUnloadGuard()
     return () => {
       isMountedRef.current = false
-      saveOnLeave({
-        scheduler: autosaveSchedulerRef.current,
-        inFlightSave: inFlightSaveRef.current,
-        save: reasons => currentUserToken() && onSaveRef.current({source: 'auto', closeConfigure: false, reasons, leaving: true})
-      })
+      stopRunOnLeave()
+      if(hasUnsavedConfiguration())
+        autosaveSchedulerRef.current.schedule('configuration_change')
+      saveNowOnLeave()
     }
   }, [])
 
-  // Closing or reloading the tab inside the autosave window, or while a save
-  // is in flight, would lose the change, so ask first. installUnloadGuard
-  // covers a save that outlives this page.
+  // Closing or reloading the tab, or following a link to another site, inside
+  // the autosave window, while a save is in flight, or before a new project's
+  // first save would lose work, so ask first. installUnloadGuard covers a save
+  // that outlives this page.
   React.useEffect(() => {
     const warnIfUnsaved = event => {
-      if(!autosaveSchedulerRef.current.hasPending() && !inFlightSaveRef.current)
+      const warn = shouldWarnBeforeUnload({
+        pendingAutosave: autosaveSchedulerRef.current.hasPending(),
+        saveInFlight: inFlightSaveRef.current,
+        saveFailed: lastSaveFailedRef.current,
+        configChanged: hasUnsavedConfiguration(),
+        runActive: isRunActiveRef.current,
+        projectId: projectIdRef.current,
+        hasInput: hasInputRef.current,
+      })
+      if(!warn)
         return
       event.preventDefault()
       event.returnValue = ''
     }
     window.addEventListener('beforeunload', warnIfUnsaved)
     return () => window.removeEventListener('beforeunload', warnIfUnsaved)
+  }, [])
+
+  // Closing the tab stops a run too, and closes its record.
+  React.useEffect(() => {
+    const stopRunOnPageHide = () => {
+      if(!runClosersRef.current.hasUnsettled())
+        return
+      abortRef.current = true
+      runClosersRef.current.closeAll(true, {keepalive: true})
+    }
+    window.addEventListener('pagehide', stopRunOnPageHide)
+    return () => window.removeEventListener('pagehide', stopRunOnPageHide)
   }, [])
 
   // repo state
@@ -537,7 +602,10 @@ const MapProject = () => {
         : cr
     })
 
-    rowMatchStateRef.current = { ...prevAll, [rowIndex]: nextRow }
+    // Drop bridge targets already found missing from the target version.
+    const keptRow = lookupSessionRef.current.dropMissing(rowIndex, nextRow)
+
+    rowMatchStateRef.current = { ...prevAll, [rowIndex]: keptRow }
     setRowMatchState(rowMatchStateRef.current)
 
     // Merge ConceptDefinitions into the project-wide conceptCache, keyed by
@@ -567,7 +635,7 @@ const MapProject = () => {
     // free. Forward-ref pattern because ensureLoaded is declared later.
     if(ensureLoadedRef.current) {
       const keysToLoad = concept_definitions
-        .filter(d => d && d.lookup_status !== 'full')
+        .filter(d => d && d.lookup_status !== 'full' && !lookupSessionRef.current.isMissing(d.key))
         .map(d => d.key)
       if(keysToLoad.length) {
         ensureLoadedRef.current(keysToLoad, rowIndex, isRunTraffic).then(() => {
@@ -595,15 +663,12 @@ const MapProject = () => {
   // later rows don't wait on them again (ocl_online#258).
   const stuckLookupsRef = React.useRef(new WeakSet())
 
-  // URL-level fetch dedup for ensureLoaded. Keyed by ocl_url. Stores
-  // Promise<data|null>: in-flight entries deduplicate concurrent requests for
-  // the same URL even when they arrive under different concept_keys (e.g.
-  // ocl-scispacy uses a hardcoded canonical 'http://loinc.org' while
-  // ocl-bridge cascade targets use target_repo's canonical — they produce
-  // different concept_keys but resolve to the same OCL URL). Failed/404
-  // entries are deleted so they remain retryable; successful entries persist
-  // for the session.
-  const urlFetchCacheRef = React.useRef(new Map())
+  // Per target version: URL-level fetch dedup for ensureLoaded (different
+  // concept_keys can resolve to the same OCL URL), 404s included, and the
+  // concept_keys found missing.
+  const lookupSessionRef = React.useRef(null)
+  if(!lookupSessionRef.current)
+    lookupSessionRef.current = createLookupSession()
 
   // Rerank scheduling (plans/unified-mapper-model.md "Rerank — debounce +
   // in-flight check"). Replaces the legacy "wait for every algo to
@@ -740,13 +805,6 @@ const MapProject = () => {
   }, [headersKey])
 
   React.useEffect(() => {
-    if(!isEmpty(decisions)) {
-      window.addEventListener("beforeunload", alertUser);
-      return () => window.removeEventListener("beforeunload", alertUser);
-    }
-  }, [decisions]);
-
-  React.useEffect(() => {
     fetchMapTypes()
     fetchOclLocales()
     fetchAIModels()
@@ -768,11 +826,6 @@ const MapProject = () => {
   const newProjectBlockReason = (!params.projectId && !project?.id && mapperQuotaCacheVersion > 0)
     ? getNewProjectBlockReason(getMapperPreview())
     : null
-
-  React.useEffect(() => {
-    if(newProjectBlockReason)
-      baseSetAlert({severity: 'error', message: t(`map_project.preview_limit_title_${newProjectBlockReason}`), duration: 8000})
-  }, [newProjectBlockReason])
 
   React.useEffect(() => {
     const isDefaultApplied = isRepoDefaultFilterApplied(repoVersion)
@@ -820,8 +873,12 @@ const MapProject = () => {
 
   const createProjectFromTemplate = () => {
     setLoadingProject(true)
-    APIService.new().overrideURL(templateFromProjectURL).appendToUrl('configurations/').get().then(response => {
+    // Columns are not part of the configurations; they come with the project.
+    const columnsRequest = APIService.new().overrideURL(templateFromProjectURL).get()
+      .then(response => response?.data?.columns || []).catch(() => [])
+    APIService.new().overrideURL(templateFromProjectURL).appendToUrl('configurations/').get().then(async response => {
       const copiedProject = response.data
+      templateColumnsRef.current = await columnsRequest
       setProject(null)
       setProjectPromptTemplateKey(copiedProject.prompt_template_key || '')
       setName(copiedProject.name ? t('map_project.create_similar_name', {name: copiedProject.name}) : '')
@@ -1009,11 +1066,6 @@ const MapProject = () => {
       .sort((a, b) => a.name.localeCompare(b.name, 'en'))
     setOclLocales(sorted)
   })
-
-  const alertUser = (e) => {
-    e.preventDefault();
-    e.returnValue = "";
-  };
 
   const rowIndex = row?.__index
 
@@ -1509,7 +1561,7 @@ const MapProject = () => {
         _states[state] = _states[state] || []
         _states[state].push(index)
         _decisions[index] = (data['__Decision__'] || data['__row_decision__']) === t('map_project.none') ? undefined : (data['__Decision__'] || data['__row_decision__'])
-        _notes[index] = data['__Note__']
+        _notes[index] = restoredNote(data['__Note__'], savedMatches[index])
         _mapTypes[index] = data['__Map Type__'] || data['__map_type__']
         _proposed[index] = (data['__Proposed__'] || data['__proposed__']) ? JSON.parse(data['__Proposed__'] || data['__proposed__']) : undefined
         data = omit(data, [...reservedKeys, ...optionalReservedKeys])
@@ -1555,7 +1607,7 @@ const MapProject = () => {
 
     // Uploaded columns start as suggestions (`auto`) until the user edits them.
     const cols = map(getColumns(omit(_data[0], ['__index'])), col => ({...col, auto: true}))
-    setColumns(resuggestColumns(cols, headers))
+    setColumns(resuggestColumns(applyTemplateColumns(cols, templateColumnsRef.current), headers))
   }
 
   const getReferencesForImport = (collection, scope, cascadeMethod, transformReferences) => {
@@ -1663,7 +1715,7 @@ const MapProject = () => {
     const projectLogsForSave = options.projectLogs || projectLogsRef.current
     setIsSaving(true)
     const f = getFileObjectFromRows()
-    const selected = map(mapSelected, (data, i) => {
+    const selected = buildMatchEntries(map(data, row => row.__index), mapSelected, notes, (data, i) => {
       return {
         url: data?.url,
         repoURL: data?.repo?.version_url || data?.repo?.url,
@@ -1722,13 +1774,21 @@ const MapProject = () => {
     const isUpdate = Boolean(project?.id)
     if(!isAutoSave)
       GAService.recordUpsertEvent('MapProject', isUpdate, 'map_project')
-    let service = APIService.new().overrideURL(owner).appendToUrl('map-projects/')
-    if(isUpdate)
-      service = service.appendToUrl(project.id + '/')
-        .put(formData, null, {"Content-Type": "multipart/form-data"}, undefined, true)
-    else
-      service = service.post(formData, null, {"Content-Type": "multipart/form-data"}, undefined, true)
+    const send = () => {
+      const service = APIService.new().overrideURL(owner).appendToUrl('map-projects/')
+      if(isUpdate)
+        return service.appendToUrl(project.id + '/')
+          .put(formData, null, {"Content-Type": "multipart/form-data"}, undefined, true)
+      return service.post(formData, null, {"Content-Type": "multipart/form-data"}, undefined, true)
+    }
+    // options.after: a save still in flight. This payload is built now and
+    // sent once that settles, so the older one can't land after it.
+    const service = options.after ? Promise.resolve(options.after).then(send, send) : send()
 
+    // Where the user was when saving: a save that lands once they went
+    // elsewhere mustn't pull them back.
+    const pathAtSave = history.location.pathname
+    // Resolves true once the project saved.
     const request = service.then(response => {
       setIsSaving(false)
       const status = response?.response?.status || response?.status
@@ -1760,21 +1820,31 @@ const MapProject = () => {
         setProject(response.data)
         if(!isUpdate)
           refreshMapperQuotaCache()
-        // A save that lands after the user left mustn't pull them back here.
-        if(response.data.url && isMountedRef.current)
-          history.push(response.data.url)
+        if(response.data.url && isMountedRef.current && !options.leaving && history.location.pathname === pathAtSave) {
+          ownNavigationRef.current = true
+          try {
+            history.push(response.data.url, {mapProjectFrom: pathAtSave})
+          } finally {
+            ownNavigationRef.current = false
+          }
+        }
         if(!isAutoSave)
           baseSetAlert({severity: 'success', message: t('map_project.successfully_saved'), duration: 2000})
 
         postProjectLogs(response.data.url, {row_logs: savedRowLogs, project_logs: savedProjectLogs})
-      } else if(options.leaving && status !== 401) {
+        lastSaveFailedRef.current = false
+        return true
+      }
+      lastSaveFailedRef.current = true
+      if(options.leaving && status !== 401) {
         // The user has left the project, so no dialog can show: say so once.
         baseSetAlert({severity: 'error', message: t('map_project.leave_save_failed', {name: name || project?.name, detail: errorData?.detail || t('unknown_error')}), duration: 12000})
       } else if(status === 403 && errorData?.error_code) {
-        setPreviewLimit({errorCode: errorData.error_code, limit: errorData.limit, used: errorData.used})
+        setPreviewLimit({errorCode: errorData.error_code})
       } else if(!isAutoSave && status !== 429 && status !== 401) {
         baseSetAlert({severity: 'error', message: errorData?.detail || t('unknown_error'), duration: 8000})
       }
+      return false
     }).finally(() => {
       setIsSaving(false)
       if(inFlightSaveRef.current === request)
@@ -1783,6 +1853,7 @@ const MapProject = () => {
     inFlightSaveRef.current = request
     if(isUpdate)
       trackSave(project.id, request)
+    return request
   }
 
   // onSave takes options, so it can't be bound to onClick directly — the click
@@ -1823,7 +1894,12 @@ const MapProject = () => {
     logsSendersRef.current.get(url).trigger({logs})
   }
 
-  const scheduleAutoSave = reason => autosaveSchedulerRef.current.schedule(reason)
+  // Not after unmount: frozen state plus a late run's refs would save an
+  // inconsistent project.
+  const scheduleAutoSave = reason => {
+    if(isMountedRef.current)
+      autosaveSchedulerRef.current.schedule(reason)
+  }
 
   // ── Waiting out a busy server (ocl_issues#2849) ───────────────────────────
   // The gate for a request's server, shared by every request this tab sends it.
@@ -2011,7 +2087,7 @@ const MapProject = () => {
         abortRef.current = true
         setLoadingMatches(false)
         setIsLoadingInDecisionView(false)
-        setPreviewLimit({errorCode: data.error_code, limit: data.limit, used: data.used})
+        setPreviewLimit({errorCode: data.error_code})
         return
       }
       projectLog({action: 'automatch_run_create_failed', extras: {status: status || 'no-id', ...(result.ok ? {} : {reason: result.reason, error: result.error?.message || null})}})
@@ -2029,7 +2105,7 @@ const MapProject = () => {
   // here, a newer run's record may be the current one (ocl_issues#2849).
   // An AI-only run is recorded from aiOutcomes, its own AI results, not the
   // shared row stages a manual action or a stopped run's late call can change.
-  const completeAutomatchRun = async (selectedAlgos, intendedRows, run, aborted, aiOutcomes = {}) => {
+  const completeAutomatchRun = async (selectedAlgos, intendedRows, run, aborted, aiOutcomes = {}, {keepalive = false} = {}) => {
     if(automatchRunRef.current === run)
       automatchRunRef.current = null
     if(!run?.id) return
@@ -2043,6 +2119,9 @@ const MapProject = () => {
       aborted,
       stoppedForQuota: Boolean(matchQuotaStopRef.current || (run.aiOnly && aiQuotaExhaustedRef.current)),
     })
+    // The tab is closing: one request, sent before this function yields.
+    if(keepalive)
+      return APIService.new().overrideURL('/auto-match-runs/' + run.id + '/').keepalive('PATCH', payload)
     // Closing the run is idempotent, so a busy server or a gateway error is
     // retried; Stop doesn't end it, so a stopped run is closed too
     // (ocl_issues#2849). requestWithCapacityRetry never rejects.
@@ -2572,6 +2651,7 @@ const MapProject = () => {
       // began: it changed nothing to save.
       const runStarted = !isRunStopped()
       const aiOutcomes = {}
+      const closeRun = runClosersRef.current.add((aborted, options) => completeAutomatchRun(_selectedAlgos, rowsToProcess, runRecord, aborted, aiOutcomes, options))
       try {
         bulkMatchAlgoIdsRef.current = map(_selectedAlgos, 'id')
         // Reset all algo stages to -1 for every row before starting so that
@@ -2691,7 +2771,7 @@ const MapProject = () => {
         // way (ocl_issues#2849).
         if(runStarted)
           scheduleAutoSave(isRunStopped() ? 'auto_match_stopped' : 'auto_match')
-        await completeAutomatchRun(_selectedAlgos, rowsToProcess, runRecord, isRunStopped(), aiOutcomes)
+        await closeRun(isRunStopped())
         refreshMapperQuotaCache()
       }
     }, 1000)
@@ -2859,7 +2939,82 @@ const MapProject = () => {
 
   const isRunningBulkAnalysis = bulkAIAnalysisEndedAt ? moment().isBetween(bulkAIAnalysisStartedAt, bulkAIAnalysisEndedAt) : Boolean(bulkAIAnalysisStartedAt)
   const isRunningBulkBridgeCandidates = bridgeCandidatesEndedAt ? moment().isBetween(bridgeCandidatesStartedAt, bridgeCandidatesEndedAt) : Boolean(bridgeCandidatesStartedAt)
-  const isRunningBulkScispacyCandidates = scispacyCandidatesStartedAt ? moment().isBetween(scispacyCandidatesStartedAt, scispacyCandidatesEndedAt) : Boolean(scispacyCandidatesStartedAt)
+  const isRunningBulkScispacyCandidates = scispacyCandidatesEndedAt ? moment().isBetween(scispacyCandidatesStartedAt, scispacyCandidatesEndedAt) : Boolean(scispacyCandidatesStartedAt)
+
+  // The header's search can search this project's rows once it has some.
+  const hasRows = Boolean(data?.length)
+  React.useEffect(() => {
+    if(!hasRows)
+      return
+    setProjectRowSearch({
+      search: text => {
+        setSearchText(text)
+        setHeaderRowSearch({text})
+      }
+    })
+    return () => setProjectRowSearch(null)
+  }, [hasRows])
+
+  // Leaving while a run is going, or before a new project's first save, asks first.
+  const isRunActive = Boolean(loadingMatches || isRunningBulkAnalysis || isRunningBulkBridgeCandidates || isRunningBulkScispacyCandidates)
+  isRunActiveRef.current = isRunActive
+  hasInputRef.current = Boolean(file)
+  const isUnsavedNew = isUnsavedNewProject({projectId: project?.id, hasInput: file})
+  const askBeforeLeaving = shouldAskBeforeLeaving({runActive: isRunActive, projectId: project?.id, hasInput: file})
+  const unblockLeavingRef = React.useRef(null)
+  React.useEffect(() => {
+    if(!askBeforeLeaving)
+      return
+    const unblock = blockLeaving(history, {
+      isAllowed: () => ownNavigationRef.current,
+      onBlocked: setLeaveTarget,
+    })
+    unblockLeavingRef.current = unblock
+    return () => {
+      unblockLeavingRef.current = null
+      unblock()
+    }
+  }, [askBeforeLeaving])
+
+  const onStopRunAndLeave = () => {
+    const target = leaveTarget
+    setLeaveTarget(null)
+    stopRunOnLeave()
+    saveNowOnLeave()
+    leaveTo(target)
+  }
+
+  const leaveTo = target => {
+    unblockLeavingRef.current?.()
+    unblockLeavingRef.current = null
+    if(target)
+      continueLeaving(history, target)
+  }
+
+  const onLeaveUnsaved = () => {
+    const target = leaveTarget
+    setLeaveTarget(null)
+    leaveTo(target)
+  }
+
+  // Leaves only once the first save lands; a save already in flight is
+  // awaited rather than sent again, which would create a second project.
+  const onSaveAndLeave = () => {
+    const target = leaveTarget
+    const request = inFlightSaveRef.current || onSave({source: 'manual'})
+    if(!request) {
+      setLeaveTarget(null)
+      return
+    }
+    const done = saved => {
+      setIsSavingToLeave(false)
+      setLeaveTarget(null)
+      if(saved === true)
+        leaveTo(target)
+    }
+    setIsSavingToLeave(true)
+    Promise.resolve(request).then(done, () => done(false))
+  }
 
   // Only the latest request may set the version: a slower response is for a
   // repository no longer chosen.
@@ -3492,6 +3647,7 @@ const MapProject = () => {
         setShowItem(false)
       return prev
     })
+    scheduleAutoSave('decision_change')
     return false
   }
 
@@ -3908,7 +4064,7 @@ const MapProject = () => {
       if(isNumber(rowId))
         refreshMapperQuotaCache()
     }
-    setPreviewLimit({errorCode: response.error_code, limit: response.limit, used: response.used})
+    setPreviewLimit({errorCode: response.error_code})
     return true
   }
 
@@ -4407,7 +4563,10 @@ const MapProject = () => {
     if(!isNumber(index)) return null
     // A run's rerank ends when the run stops, and a stopped run proposes no
     // more mappings; a row reranked by hand isn't stopped (ocl_issues#2849).
-    const isStopped = isRunTraffic ? getRunStopCheck() : () => false
+    const runStop = isRunTraffic ? getRunStopCheck() : () => false
+    // Nothing is sent once the page is gone.
+    const isStopped = () => !isMountedRef.current || runStop()
+    if(!isMountedRef.current) return null
     // The run this call belongs to, captured now: a newer run's stages are
     // its own (ocl_issues#2849).
     const runTicket = autoMatchRunTicketRef.current
@@ -4634,7 +4793,7 @@ const MapProject = () => {
       || (Array.isArray(def?.names) && def.names.some(n => n?.name))
     )
   const scheduleRerank = (rowIndex) => {
-    if(!isNumber(rowIndex)) return
+    if(!isNumber(rowIndex) || !isMountedRef.current) return
     const stage = rowStageRef.current[rowIndex] || {}
     // ocl_online#105 Phase 5: this debounced path does most of the reranking
     // during a bulk auto-match (candidates stream in asynchronously, so the
@@ -4682,7 +4841,7 @@ const MapProject = () => {
     const scheduledTicket = autoMatchRunTicketRef.current
     rerankDebounceRef.current[rowIndex] = setTimeout(() => {
       delete rerankDebounceRef.current[rowIndex]
-      if(isRunTraffic && scheduledTicket !== autoMatchRunTicketRef.current)
+      if(!isMountedRef.current || (isRunTraffic && scheduledTicket !== autoMatchRunTicketRef.current))
         return
       // isBulk=false (don't double the setAutoMatched side-effect the explicit
       // bulk rerank already performs); isRunTraffic carries the run attribution.
@@ -5017,6 +5176,24 @@ const MapProject = () => {
     writeConceptCachePatch(key, { ...existing, lookup_status: 'failed' })
   }, [writeConceptCachePatch])
 
+  // Drop a missing concept's bridge_child candidates from every row, unless
+  // the lookup was for an earlier target version.
+  const dropMissingConcept = React.useCallback((key, generation) => {
+    const session = lookupSessionRef.current
+    if(!session.markMissing(generation, key)) return
+    const prevAll = rowMatchStateRef.current
+    let changed = false
+    const nextAll = {}
+    Object.entries(prevAll).forEach(([idx, rowState]) => {
+      nextAll[idx] = session.dropMissing(idx, rowState)
+      if(nextAll[idx] !== rowState) changed = true
+    })
+    if(changed) {
+      rowMatchStateRef.current = nextAll
+      setRowMatchState(nextAll)
+    }
+  }, [])
+
   const ensureLoaded = React.useCallback(async (conceptKeys, logRowIndex, isRunTraffic = false) => {
     if(!Array.isArray(conceptKeys) || conceptKeys.length === 0) return
     const ctx = buildProjectContext()
@@ -5030,6 +5207,11 @@ const MapProject = () => {
     // the LookupConfig widget half-decorative. Without one, the session's user
     // token goes only to the OCL API (getLookupToken), never to another host.
     const currentToken = currentUserToken()
+    // Results from before a target version change are ignored.
+    const session = lookupSessionRef.current
+    const generation = session.generation
+    const inFlight = inFlightLookupsRef.current
+    const isCurrent = () => session.isCurrent(generation)
 
     const directFetches = []
     const toResolve = []
@@ -5040,12 +5222,12 @@ const MapProject = () => {
       if(!key) return
       const def = cache[key]
       if(def?.lookup_status === 'full') return
-      if(inFlightLookupsRef.current.has(key)) {
-        pending.push(inFlightLookupsRef.current.get(key))
+      if(inFlight.has(key)) {
+        pending.push(inFlight.get(key))
         return
       }
       const promise = new Promise(resolve => settlers.set(key, resolve))
-      inFlightLookupsRef.current.set(key, promise)
+      inFlight.set(key, promise)
       pending.push(promise)
 
       if(def?.ocl_url) {
@@ -5067,24 +5249,21 @@ const MapProject = () => {
           const reference = parseConceptKey(key)
           toResolve.push({key, reference})
         } catch (_) {
-          inFlightLookupsRef.current.delete(key)
+          inFlight.delete(key)
           settlers.get(key)()
         }
       }
     })
 
     const settle = (key) => {
-      inFlightLookupsRef.current.delete(key)
+      inFlight.delete(key)
       const fn = settlers.get(key)
       if(fn) fn()
     }
 
     const fetchConceptByOclUrl = async (key, oclUrl, source, logRowIndex) => {
-      // URL-level dedup: if a different concept_key is already fetching this
-      // same OCL URL (or fetched it successfully), reuse that promise instead
-      // of issuing a duplicate network request.
-      let dataPromise = urlFetchCacheRef.current.get(oclUrl)
-      if(!dataPromise) {
+      // URL-level dedup: reuse a fetch of the same OCL URL by another concept_key.
+      const dataPromise = session.fetchOnce(oclUrl, () => {
         const attemptFetch = async () => {
           let service = APIService.new()
           if(oclUrl.startsWith('http://') || oclUrl.startsWith('https://')) {
@@ -5101,14 +5280,12 @@ const MapProject = () => {
           if(!result.ok)
             throw result.error || new Error(result.reason)
           const data = result.response?.data
-          if(data?.id) return data
-          urlFetchCacheRef.current.delete(oclUrl)
-          return null
+          return data?.id ? data : null
         }
         // Retry on 404: the lookup repo may still be lazily building the concept.
         // Attempts happen at t=0s, t=3s, t=7s.
         const code = parseConceptKey(key).code
-        dataPromise = retryWithBackoff(attemptFetch, {
+        return retryWithBackoff(attemptFetch, {
           maxRetries: 2,
           baseDelayMs: 3000,
           backoffFactor: 4/3,
@@ -5118,15 +5295,13 @@ const MapProject = () => {
             if(err?.response?.status === 404)
               log({action: 'lookup', description: t('map_project.lookup_concept_404', {code, attempt: attempt + 1}), extras: {url: oclUrl, error: t('map_project.lookup_concept_404', {code, attempt: attempt + 1})}}, logRowIndex)
           },
-        }).catch(() => {
-          urlFetchCacheRef.current.delete(oclUrl)
-          return null
         })
-        urlFetchCacheRef.current.set(oclUrl, dataPromise)
-      }
+      })
 
       try {
         const data = await dataPromise
+        if(!isCurrent())
+          return
         if(data?.id) {
           const existing = conceptCacheRef.current[key] || {}
           writeConceptCachePatch(key, {
@@ -5139,9 +5314,12 @@ const MapProject = () => {
           })
         } else {
           writeLookupFailure(key)
+          if(data === LOOKUP_NOT_FOUND)
+            dropMissingConcept(key, generation)
         }
       } catch (_) {
-        writeLookupFailure(key)
+        if(isCurrent())
+          writeLookupFailure(key)
       } finally {
         settle(key)
       }
@@ -5179,7 +5357,8 @@ const MapProject = () => {
             const item = items[i]
             const repoUrl = lookupConfig?.url || (item?.resolved === true ? item?.result?.url : null)
             if(!repoUrl) {
-              writeLookupFailure(key)
+              if(isCurrent())
+                writeLookupFailure(key)
               settle(key)
               return
             }
@@ -5190,14 +5369,15 @@ const MapProject = () => {
         })
         .catch(() => {
           toResolve.forEach(({key}) => {
-            writeLookupFailure(key)
+            if(isCurrent())
+              writeLookupFailure(key)
             settle(key)
           })
         })
     }
 
     await Promise.all([directPromise, resolvePromise, ...pending])
-  }, [buildProjectContext, writeConceptCachePatch, writeLookupFailure, lookupConfig?.token])
+  }, [buildProjectContext, writeConceptCachePatch, writeLookupFailure, dropMissingConcept, lookupConfig?.url, lookupConfig?.token])
 
   // Wire the forward-ref consumed by mergeIntoRowMatchState. useEffect
   // so the ref always points at the latest closure (ensureLoaded captures
@@ -5206,6 +5386,28 @@ const MapProject = () => {
   React.useEffect(() => {
     ensureLoadedRef.current = ensureLoaded
   }, [ensureLoaded])
+
+  // On a target version change, redo interrupted lookups and bring back the
+  // bridge candidates dropped under the old version.
+  React.useEffect(() => {
+    const interrupted = new Set(inFlightLookupsRef.current.keys())
+    inFlightLookupsRef.current = new Map()
+    const { rowMatchState: nextState, restored } = lookupSessionRef.current.reset(rowMatchStateRef.current)
+    if(nextState !== rowMatchStateRef.current) {
+      rowMatchStateRef.current = nextState
+      setRowMatchState(nextState)
+    }
+    Object.entries(nextState || {}).forEach(([idx, rowState]) => {
+      const keysToLoad = uniq([
+        ...(restored[idx] || []),
+        ...Object.keys(rowState?.concept_rows || {}).filter(key => interrupted.has(key))
+      ])
+      if(keysToLoad.length && ensureLoadedRef.current)
+        ensureLoadedRef.current(keysToLoad, Number(idx)).then(() => {
+          if(scheduleRerankRef.current) scheduleRerankRef.current(Number(idx))
+        })
+    })
+  }, [selectedTargetRepoVersion, lookupConfig?.url])
 
   // Lazily enrich a row's saved candidates when it is opened. The persisted
   // v2 candidates payload intentionally carries sparse ConceptDefinitions
@@ -5916,7 +6118,7 @@ const MapProject = () => {
             baseDelayMs: 3000,
             backoffFactor: 4,
             jitterFactor: 0.25,
-            isCancelled: () => abortRef.current,
+            isCancelled: () => abortRef.current || !isMountedRef.current,
             isRetryable: isTransientNetworkError,
             onAttemptFailed: (err, attempt) => {
               const errorMessage = err?.response?.data?.detail || err?.message || t('unknown_error')
@@ -6076,10 +6278,9 @@ const MapProject = () => {
   const onCopyClick = event => {
     event.preventDefault()
     event.stopPropagation()
-    const preview = getMapperPreview()
-    const blockReason = getNewProjectBlockReason(preview)
+    const blockReason = getNewProjectBlockReason()
     if(blockReason) {
-      setPreviewLimit({errorCode: NEW_PROJECT_BLOCK_ERROR_CODES[blockReason], limit: preview.projects.limit, used: preview.projects.used})
+      setPreviewLimit({errorCode: NEW_PROJECT_BLOCK_ERROR_CODES[blockReason]})
       return
     }
     if(project?.url) {
@@ -6096,7 +6297,7 @@ const MapProject = () => {
     return minFactor
   }
 
-  return permissionDenied ? <Error403/> : newProjectBlockReason ? <Redirect to='/' /> : (
+  return permissionDenied ? <Error403/> : newProjectBlockReason ? <Redirect to={{pathname: '/', state: {newProjectBlock: newProjectBlockReason}}} /> : (
     <div className='col-xs-12 padding-0' style={{borderRadius: '10px', width: 'calc(100vw - 32px)'}}>
       {
         (() => {
@@ -6145,29 +6346,17 @@ const MapProject = () => {
             <div className='col-xs-12 padding-0' style={{backgroundColor: isConfigFormInline ? WHITE : SURFACE_COLORS.main, marginLeft: '-5px', paddingBottom: '0px', paddingLeft: '0px', paddingTop: '0px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start'}}>
             {
               !isConfigFormInline &&
-                <span style={{display: 'flex', alignItems: 'center'}}>
+                <span style={{display: 'flex', alignItems: 'center', flex: '1 1 0', minWidth: 0}}>
+                  <MapProjectBreadcrumb ownerType={params.ownerType} owner={params.owner} />
                   {
                     name &&
-                      <span style={{fontWeight: 'bold', fontSize: '18px', maxWidth: isSplitView ? '300px' : '500px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', marginRight: '8px'}}>
+                      <span title={name} data-shrinkable='true' style={{fontWeight: 'bold', fontSize: '18px', flex: '0 1 auto', minWidth: '40px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', marginRight: '8px'}}>
                         {name}
                       </span>
                   }
                   <span style={{marginRight: '8px'}}>
                     <MapperQuotaChip />
                   </span>
-                  <Button
-                    variant='contained'
-                    size='small'
-                    sx={{textTransform: 'none', margin: '5px'}}
-                    endIcon={<DoubleArrowIcon />}
-                    startIcon={<AutoMatchIcon />}
-                    disabled={!file}
-                    onClick={onGetCandidates}
-                    loading={loadingMatches}
-                    loadingPosition="start"
-                  >
-                    {getCandidatesButtonLabel()}
-                  </Button>
                   {
                     scispacyCandidatesStartedAt &&
                       <Button
@@ -6244,8 +6433,9 @@ const MapProject = () => {
                 </span>
             }
               {
-                file?.name &&
+                (file?.name || !isConfigFormInline) &&
                   <Controls
+                    autoMatch={isConfigFormInline ? undefined : {label: getCandidatesButtonLabel(), onClick: onGetCandidates, disabled: !file, loading: Boolean(loadingMatches)}}
                     isCoreUser={isCoreUser}
                     project={project}
                     onDownload={onDownloadClick}
@@ -6330,6 +6520,7 @@ const MapProject = () => {
                 onBulkMapTypeChange={onBulkMapTypeChange}
                 allMapTypes={allMapTypes}
                 onSearchTextChange={setSearchText}
+                searchValue={headerRowSearch}
               />
               <Snackbar
                 open={Boolean(alert?.message)}
@@ -6550,16 +6741,14 @@ const MapProject = () => {
               <QuotaDialog
                 open
                 onClose={() => setPreviewLimit(null)}
+                errorCode={previewLimitQuota.errorCode}
                 meter={previewLimitQuota.meter}
                 surface={MAPPER_QUOTA_SURFACE[previewLimitQuota.meter]}
-                usage={{...previewLimitQuota.usage, period: 'one_time'}}
               /> :
               <PreviewLimitDialog
                 open={Boolean(previewLimit)}
                 onClose={() => setPreviewLimit(null)}
                 errorCode={previewLimit?.errorCode}
-                limit={previewLimit?.limit}
-                used={previewLimit?.used}
               />
           }
       </Paper>
@@ -6607,7 +6796,10 @@ const MapProject = () => {
                 <Divider sx={{width: '100%'}} />
                 <ReviewNote
                   value={notes[rowIndex]}
-                  onChange={event => setNotes({...notes, [rowIndex]: event.target.value || ''})}
+                  onChange={event => {
+                    setNotes({...notes, [rowIndex]: event.target.value || ''})
+                    scheduleAutoSave('note_change')
+                  }}
                 />
                 <div className='col-xs-12' style={{padding: '0 0 8px 78px'}}>
                   <Button size='small' disabled={rowStatuses.reviewed.includes(rowIndex) || decisions[rowIndex] === 'none' || !decisions[rowIndex]} color='primary' onClick={() => onReviewDone(true)} variant='contained' sx={{textTransform: 'none'}}>
@@ -6741,6 +6933,41 @@ const MapProject = () => {
         }
     </Paper>
     </Split>
+      <Dialog open={Boolean(leaveTarget) && isUnsavedNew && !isRunActive} onClose={() => !isSavingToLeave && setLeaveTarget(null)} maxWidth='xs' fullWidth>
+        <DialogTitle>{t('map_project.leave_unsaved_title')}</DialogTitle>
+        <DialogContent>
+          <Typography component='p' sx={{fontSize: '14px', color: 'surface.dark'}}>
+            {t('map_project.leave_unsaved_body')}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setLeaveTarget(null)} disabled={isSavingToLeave} color='secondary' sx={{textTransform: 'none'}}>
+            {t('common.cancel')}
+          </Button>
+          <Button onClick={onLeaveUnsaved} disabled={isSavingToLeave} color='error' sx={{textTransform: 'none'}}>
+            {t('map_project.leave')}
+          </Button>
+          <Button onClick={onSaveAndLeave} disabled={isSavingToLeave} variant='contained' sx={{textTransform: 'none'}}>
+            {t('map_project.save_and_leave')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={Boolean(leaveTarget) && (isRunActive || !isUnsavedNew)} onClose={() => setLeaveTarget(null)} maxWidth='xs' fullWidth>
+        <DialogTitle>{t('map_project.leave_while_running_title')}</DialogTitle>
+        <DialogContent>
+          <Typography component='p' sx={{fontSize: '14px', color: 'surface.dark'}}>
+            {t(project?.id ? 'map_project.leave_while_running_body' : 'map_project.leave_while_running_body_unsaved')}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setLeaveTarget(null)} color='secondary' sx={{textTransform: 'none'}}>
+            {t('map_project.stay')}
+          </Button>
+          <Button onClick={onStopRunAndLeave} color='error' variant='contained' sx={{textTransform: 'none'}}>
+            {t('map_project.stop_and_leave')}
+          </Button>
+        </DialogActions>
+      </Dialog>
       {
         deleteProject && project?.id &&
           <MapProjectDeleteConfirmDialog open={deleteProject} onClose={() => setDeleteProject(false)} onDeleted={() => { autosaveSchedulerRef.current.cancel(); refreshMapperQuotaCache() }} project={project} />

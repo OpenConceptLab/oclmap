@@ -19,6 +19,8 @@ export const retryWithBackoff = async (fn, { maxRetries = 2, baseDelayMs = 3000,
       const base = baseDelayMs * Math.pow(backoffFactor, attempt);
       const delay = base * (1 - jitterFactor + Math.random() * jitterFactor * 2);
       await sleep(delay);
+      // Cancelled while waiting: don't send it again.
+      if (isCancelled()) throw err;
     }
   }
 };

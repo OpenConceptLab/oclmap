@@ -149,10 +149,10 @@ module.exports = (env) => {
         'process.env.OIDC_RP_CLIENT_ID': JSON.stringify(env.OIDC_RP_CLIENT_ID),
         'process.env.OIDC_SERVER_URL': JSON.stringify(env.OIDC_SERVER_URL || ''),
         'process.env.OIDC_REALM': JSON.stringify(env.OIDC_REALM || ''),
-        'process.env.OCL_ONLINE': JSON.stringify(env.OCL_ONLINE) || 'false',
         'process.env.BRIDGE_MATCH_URL': JSON.stringify(env.BRIDGE_MATCH_URL || '') || '',
         'process.env.AI_ASSISTANT_API_URL': JSON.stringify(env.AI_ASSISTANT_API_URL || '') || '',
         'process.env.SCISPACY_LOINC_API_URL': JSON.stringify(env.SCISPACY_LOINC_API_URL || '') || '',
+        'process.env.TERMBROWSER_URL': JSON.stringify(env.TERMBROWSER_URL || ''),
         'process.env.OCL_ONLINE_API_URL': JSON.stringify(env.OCL_ONLINE_API_URL || '') || '',
         'process.env.REPO_SUGGESTIONS': JSON.stringify(env.REPO_SUGGESTIONS || '')
       }),

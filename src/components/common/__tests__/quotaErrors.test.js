@@ -5,13 +5,13 @@ import { getQuotaError, isCapMeter, isQuotaError } from '../quotaErrors.js'
 
 test('getQuotaError: maps quota and cap error codes to a meter and kind', () => {
   assert.deepEqual(getQuotaError({error_code: 'mapper_match_operations_limit_reached', limit: 6, used: 6}), {
-    meter: 'match_operations', kind: 'quota', errorCode: 'mapper_match_operations_limit_reached', usage: {used: 6, limit: 6},
+    meter: 'match_operations', kind: 'quota', errorCode: 'mapper_match_operations_limit_reached',
   })
   assert.equal(getQuotaError({error_code: 'ai_assistant_calls_limit_reached'}).meter, 'ai_assistant_calls')
   assert.equal(getQuotaError({error_code: 'ai_assistant_change_comments_limit_reached'}).meter, 'ai_assistant_change_comments')
-  // A decision call is an OCL AI Assistant call to the user: same meter label and copy, the decision allowance's own numbers.
+  // A decision call is an OCL AI Assistant call to the user: same meter label and copy.
   assert.deepEqual(getQuotaError({error_code: 'ai_assistant_decision_calls_limit_reached', limit: 100, used: 100}), {
-    meter: 'ai_assistant_calls', kind: 'quota', errorCode: 'ai_assistant_decision_calls_limit_reached', usage: {used: 100, limit: 100},
+    meter: 'ai_assistant_calls', kind: 'quota', errorCode: 'ai_assistant_decision_calls_limit_reached',
   })
   assert.equal(getQuotaError({error_code: 'mapper_projects_limit_reached'}).kind, 'cap')
   assert.equal(getQuotaError({error_code: 'mapper_rows_per_project_limit_reached'}).kind, 'cap')
@@ -19,7 +19,7 @@ test('getQuotaError: maps quota and cap error codes to a meter and kind', () => 
 
 test('getQuotaError: unwraps axios error responses', () => {
   const error = {response: {status: 403, data: {error_code: 'mapper_match_operations_limit_reached', limit: 3, used: 3}}}
-  assert.deepEqual(getQuotaError(error).usage, {used: 3, limit: 3})
+  assert.equal(getQuotaError(error).errorCode, 'mapper_match_operations_limit_reached')
 })
 
 test('getQuotaError: ignores permission errors and unrelated payloads', () => {

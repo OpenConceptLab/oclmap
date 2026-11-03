@@ -481,6 +481,25 @@ export const withSavedMatch = (target, savedMatch) => {
 }
 
 /**
+ * The `matches` a save sends: one entry per row. `entryFor` builds the entry
+ * of each row `mapSelected` holds, a cleared one (a null) included. A row it
+ * holds no key for, with a review note, gets a note-only entry, as the note is
+ * kept only in its entry (OpenConceptLab/ocl_issues#2984).
+ */
+export const buildMatchEntries = (rowIndexes, mapSelected, notes, entryFor) => [
+  ...Object.entries(mapSelected).map(([index, target]) => entryFor(target, index)),
+  ...rowIndexes
+    .filter(index => !Object.prototype.hasOwnProperty.call(mapSelected, index) && notes[index])
+    .map(index => ({rowIndex: index, note: notes[index]}))
+]
+
+/**
+ * A row's review note on reopen: the one its CSV row holds, else the one its
+ * saved `matches` entry holds (OpenConceptLab/ocl_issues#2984).
+ */
+export const restoredNote = (csvNote, savedMatch) => csvNote || savedMatch?.note || undefined
+
+/**
  * A mapped target with its own names and match highlight put back over a
  * candidate's: the ones it was mapped with, or that a reopened project
  * restored (OpenConceptLab/ocl_issues#2916).

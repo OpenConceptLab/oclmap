@@ -43,7 +43,7 @@ import LookupConfig from './LookupConfig'
 import AdvancedSettings from './AdvancedSettings'
 import RerankerConfig from './RerankerConfig'
 import AIAssistantSelectorPanel from './AIAssistantSelectorPanel'
-import { getTargetRepoVersionBadges, getTargetRepoVersionReleaseDate, hasSelectedTargetRepoVersion } from './projectTargetRepo'
+import { getTargetRepoVersionBadges, getTargetRepoVersionReleaseDate, hasSelectedTargetRepoVersion, needsSemanticSearchWarning } from './projectTargetRepo'
 import { getPreviewAlgorithmOptions, getPreviewConfigAccessErrors } from './previewConfig'
 
 const VisuallyHiddenInput = styled('input')({
@@ -341,7 +341,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
           </Stack>
       }
       {
-        isLLMAlgoNotAllowed && repoVersion?.version_url &&
+        needsSemanticSearchWarning(repoVersion, algosSelected) &&
           <FormHelperText sx={{marginTop: '4px', marginLeft: '8px', color: 'warning.main'}}>
             {t('map_project.semantic_search_not_configured', {owner: repo?.owner, repo: repo?.short_code || repo?.id, version: repoVersion?.id || repo?.version || repo?.id})}
           </FormHelperText>

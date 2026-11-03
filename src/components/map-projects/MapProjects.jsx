@@ -99,6 +99,15 @@ const MapProjects = () => {
     fetchProjects()
   }, [])
 
+  // MapProject sends a blocked /map-projects/new here: show the same dialog once.
+  React.useEffect(() => {
+    const reason = history.location.state?.newProjectBlock
+    if(reason) {
+      setNewProjectBlock({reason})
+      history.replace({...history.location, state: undefined})
+    }
+  }, [])
+
   const onProjectDelete = (success) => {
     if(success === true) {
       setProjects(reject(projects, {id: deleteProject.id}))
@@ -109,7 +118,7 @@ const MapProjects = () => {
   const startNewProject = templateURL => {
     const goToNewProject = () => history.push(templateURL ? `/map-projects/new?templateFrom=${encodeURIComponent(templateURL)}` : '/map-projects/new')
     const reasonFromCache = () => getNewProjectBlockReason(getMapperPreview())
-    const showBlock = reason => setNewProjectBlock({reason, preview: getMapperPreview()})
+    const showBlock = reason => setNewProjectBlock({reason})
 
     const cachedReason = reasonFromCache()
     if(cachedReason) {
@@ -342,9 +351,9 @@ const MapProjects = () => {
           <QuotaDialog
             open
             onClose={() => setNewProjectBlock(null)}
+            errorCode='mapper_projects_limit_reached'
             meter='projects'
             surface='new_project'
-            usage={{used: newProjectBlock.preview.projects.used, limit: newProjectBlock.preview.projects.limit, period: 'one_time'}}
           /> :
           <PreviewLimitDialog
             open={Boolean(newProjectBlock)}

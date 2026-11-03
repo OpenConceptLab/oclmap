@@ -11,6 +11,8 @@ const LayoutContext = ({ subPages }) => {
   const [parentItem, setParentItem] = React.useState(null);
   const [toggles, setToggles] = React.useState({});
   const [alert, setAlert] = React.useState(false);
+  // Set by an open project with rows, for the header's search
+  const [projectRowSearch, setProjectRowSearch] = React.useState(null);
   return (
     <OperationsProvider
       value={{
@@ -27,7 +29,9 @@ const LayoutContext = ({ subPages }) => {
         setToggles: setToggles,
         toggles: toggles,
         alert: alert,
-        setAlert: setAlert
+        setAlert: setAlert,
+        projectRowSearch: projectRowSearch,
+        setProjectRowSearch: setProjectRowSearch
       }}>
       {subPages}
     </OperationsProvider>

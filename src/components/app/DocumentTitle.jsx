@@ -5,7 +5,7 @@ import { getSiteTitle } from '../../common/utils';
 
 const SITE_TITLE = getSiteTitle()
 
-export const getAppTitle = () => `${getSiteTitle()} Mapper`
+export const getAppTitle = () => getSiteTitle()
 
 /*eslint no-useless-escape: 0*/
 const TITLES = {

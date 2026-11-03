@@ -96,3 +96,32 @@ export const resuggestColumns = (columns, validColumns) => {
   const suggestedLabels = suggestColumnLabels(columns.map(col => col.auto ? col.original : null), validColumns, reserved)
   return columns.map((col, idx) => col.auto ? {...col, label: suggestedLabels[idx] || col.original, suggested: Boolean(suggestedLabels[idx])} : col)
 }
+
+/**
+ * Applies the column mapping of a project being copied (Create similar) to the
+ * columns of a newly uploaded sheet. Columns are matched on their sheet header
+ * (`original`); a match takes the template's mapping as the user's own choice,
+ * and the other columns stay suggestions.
+ */
+export const applyTemplateColumns = (columns, templateColumns) => {
+  if(!templateColumns?.length)
+    return columns
+  const byOriginal = {}
+  templateColumns.forEach(col => {
+    const header = col?.original ?? col?.dataKey
+    if(header !== undefined && !(header in byOriginal))
+      byOriginal[header] = col
+  })
+  return columns.map(col => {
+    const template = byOriginal[col.original]
+    if(!template)
+      return col
+    return {
+      ...col,
+      label: template.label ?? col.label,
+      unmapped: Boolean(template.unmapped),
+      auto: false,
+      suggested: false
+    }
+  })
+}

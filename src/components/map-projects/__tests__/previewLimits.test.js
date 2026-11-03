@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 
 import {
   getPreviewLimitError,
@@ -57,5 +58,17 @@ test('decision call quota errors are AI preview limits and reuse the AI Assistan
   for (const error_code of ['ai_assistant_decision_calls_limit_reached', 'ai_assistant_decision_calls_not_entitled']) {
     assert.equal(isAIPreviewLimitError(error_code), true, error_code)
     assert.equal(PREVIEW_LIMIT_COPY_KEY[error_code], 'ai_assistant', error_code)
+  }
+})
+
+// Limits reached go to QuotaDialog; PreviewLimitDialog shows the rest.
+test('every refusal PreviewLimitDialog shows has its own message in each language', () => {
+  for (const locale of ['en', 'es', 'pt-BR', 'zh']) {
+    const catalog = JSON.parse(readFileSync(new URL(`../../../i18n/locales/${locale}/translations.json`, import.meta.url), 'utf8')).map_project
+    const missing = Object.entries(PREVIEW_LIMIT_COPY_KEY)
+      .filter(([errorCode]) => !errorCode.endsWith('_limit_reached'))
+      .map(([, kind]) => `limit_unavailable_body_${kind}`)
+      .filter(key => !catalog[key])
+    assert.deepEqual(missing, [], locale)
   }
 })
