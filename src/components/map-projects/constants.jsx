@@ -75,4 +75,7 @@ export const ROW_STAGES = {
   '1': 'completed'
 }
 export const PROMPTS_KEY_DEFAULT = 'match-recommend-normalized'
+// Default for users entitled to decision calls and not to generative ones; the
+// template itself is created on the AI Assistant (inference_type='decision').
+export const PROMPTS_DECISION_KEY_DEFAULT = 'match-recommend-decision'
 export const PROMPTS_ACTION_TYPE_DEFAULT = 'match-recommend'

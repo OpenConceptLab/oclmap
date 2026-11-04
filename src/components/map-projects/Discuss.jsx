@@ -60,8 +60,10 @@ const Discuss = ({ logs, onAdd }) => {
       const newMapType = log.extras?.new_map_type || log.extras?.newMapType || log.extras?.map_type || log.extras?.mapType || '-'
       return t('map_project.bulk_log_map_type_changed', {oldMapType, newMapType})
     }
-    if(['AIRecommendation'].includes(log.action))
-      return `${log.action}: ${log.description?.narrative || log.description}`
+    if(['AIRecommendation'].includes(log.action)) {
+      const text = log.description?.narrative || log.description
+      return text ? `${log.action}: ${text}` : log.action
+    }
     if(['commented'].includes(log.action)) {
       return <b>{log.description}</b>
     }

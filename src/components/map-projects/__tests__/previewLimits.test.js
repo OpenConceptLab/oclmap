@@ -16,6 +16,8 @@ test('isPreviewLimitError: recognizes mapper match, rerank access, and AI previe
     'mapper_access_denied',
     'ai_assistant_calls_limit_reached',
     'ai_assistant_calls_not_entitled',
+    'ai_assistant_decision_calls_limit_reached',
+    'ai_assistant_decision_calls_not_entitled',
     'mapper_ai_assistant_denied',
     'mapper_scispacy_denied',
   ]
@@ -50,6 +52,13 @@ test('AI preview errors use AI Assistant dialog copy', () => {
   assert.equal(PREVIEW_LIMIT_COPY_KEY.mapper_scispacy_denied, 'scispacy')
   assert.equal(isAIPreviewLimitError('ai_assistant_calls_limit_reached'), true)
   assert.equal(isAIPreviewLimitError('mapper_match_operations_limit_reached'), false)
+})
+
+test('decision call quota errors are AI preview limits and reuse the AI Assistant copy', () => {
+  for (const error_code of ['ai_assistant_decision_calls_limit_reached', 'ai_assistant_decision_calls_not_entitled']) {
+    assert.equal(isAIPreviewLimitError(error_code), true, error_code)
+    assert.equal(PREVIEW_LIMIT_COPY_KEY[error_code], 'ai_assistant', error_code)
+  }
 })
 
 // Limits reached go to QuotaDialog; PreviewLimitDialog shows the rest.

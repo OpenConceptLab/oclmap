@@ -9,6 +9,10 @@ test('getQuotaError: maps quota and cap error codes to a meter and kind', () => 
   })
   assert.equal(getQuotaError({error_code: 'ai_assistant_calls_limit_reached'}).meter, 'ai_assistant_calls')
   assert.equal(getQuotaError({error_code: 'ai_assistant_change_comments_limit_reached'}).meter, 'ai_assistant_change_comments')
+  // A decision call is an OCL AI Assistant call to the user: same meter label and copy.
+  assert.deepEqual(getQuotaError({error_code: 'ai_assistant_decision_calls_limit_reached', limit: 100, used: 100}), {
+    meter: 'ai_assistant_calls', kind: 'quota', errorCode: 'ai_assistant_decision_calls_limit_reached',
+  })
   assert.equal(getQuotaError({error_code: 'mapper_projects_limit_reached'}).kind, 'cap')
   assert.equal(getQuotaError({error_code: 'mapper_rows_per_project_limit_reached'}).kind, 'cap')
 })
@@ -19,7 +23,7 @@ test('getQuotaError: unwraps axios error responses', () => {
 })
 
 test('getQuotaError: ignores permission errors and unrelated payloads', () => {
-  for (const error_code of ['mapper_access_denied', 'mapper_projects_not_entitled', 'ai_assistant_calls_not_entitled', 'validation_error'])
+  for (const error_code of ['mapper_access_denied', 'mapper_projects_not_entitled', 'ai_assistant_calls_not_entitled', 'ai_assistant_decision_calls_not_entitled', 'validation_error'])
     assert.equal(isQuotaError({error_code}), false, error_code)
   assert.equal(getQuotaError(null), null)
   assert.equal(getQuotaError({detail: 'Nope'}), null)

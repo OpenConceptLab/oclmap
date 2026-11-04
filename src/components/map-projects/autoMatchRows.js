@@ -177,9 +177,20 @@ export const getCandidatePoolFingerprint = recommendableConcepts => {
 // Whether a row's latest AI analysis saw this same candidate pool, so an Auto
 // Match run can skip its AI step. An analysis saved before fingerprints
 // existed can't be compared, so it's redone.
-export const hasCurrentAnalysis = (analyses, fingerprint) => {
+//
+// With a template ({key, version}), the analysis must also come from that
+// template version: a chat and a decision template (or two versions of one)
+// answer the same pool differently. An analysis with no recorded version, or a
+// run whose version isn't known, can't be compared and is redone. Without a
+// template, only the pool decides.
+export const hasCurrentAnalysis = (analyses, fingerprint, template) => {
   const latest = Array.isArray(analyses) && analyses.length ? analyses[analyses.length - 1] : null
-  return Boolean(fingerprint && latest?.candidate_pool_fingerprint === fingerprint)
+  if(!fingerprint || latest?.candidate_pool_fingerprint !== fingerprint)
+    return false
+  if(!template)
+    return true
+  const saved = latest.prompt_template
+  return Boolean(template.version && saved?.version && saved.key === template.key && saved.version === template.version)
 }
 
 // The ScispaCy service keys each row's results by the itemid sent, which is

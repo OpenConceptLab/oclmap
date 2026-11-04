@@ -83,7 +83,7 @@ import ConceptDetailsPanel from './ConceptDetailsPanel'
 import { buildPanelPayload } from './openConceptPanel'
 import LoaderDialog from '../common/LoaderDialog'
 import Error403 from '../errors/Error403'
-import { HEADERS, SEMANTIC_SEARCH_HEADERS, ROW_STATES, VIEWS, DECISION_TABS, ROW_STAGES, PROMPTS_KEY_DEFAULT, PROMPTS_ACTION_TYPE_DEFAULT, SCORES_COLOR } from './constants'
+import { HEADERS, SEMANTIC_SEARCH_HEADERS, ROW_STATES, VIEWS, DECISION_TABS, ROW_STAGES, PROMPTS_KEY_DEFAULT, PROMPTS_DECISION_KEY_DEFAULT, PROMPTS_ACTION_TYPE_DEFAULT, SCORES_COLOR } from './constants'
 import { updateColumnState, resuggestColumns, applyTemplateColumns } from './columnSuggestions'
 import MapProjectDeleteConfirmDialog from './MapProjectDeleteConfirmDialog';
 import ConfigurationForm from './ConfigurationForm'
@@ -115,7 +115,7 @@ import MapperQuotaChip from './MapperQuotaChip'
 import MapProjectBreadcrumb from './MapProjectBreadcrumb'
 import { getPreviewLimitError, isAIPreviewLimitError } from './previewLimits'
 import { formatRowNumbers, rowNumberOf, runMatchBatch, requestSingleMatch, runWithConcurrency, INTERACTIVE_WAIT_CAP_MS } from './matchBatch'
-import { getAIAssistantChoices, getModelUsed, getPromptTemplateKey, createLatestRequestGate } from './aiVisibility'
+import { getAIAssistantChoices, getModelUsed, getPromptTemplateKey, createLatestRequestGate, getDefaultPromptTemplateKey, getAIRecommendationDescription } from './aiVisibility'
 import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
 import { normalizeAlgorithmInvocation, hasSuccessfulAlgorithmResponse, getAlgorithmStagesFromResponses, lookupStatusRank, buildRecommendableConceptEntry, stripConstantClassAndDatatype, buildLookupConceptUrl, serializeCandidates, toStoredRowMatchState } from './normalizers'
 import { createLookupSession, LOOKUP_NOT_FOUND } from './lookupSession'
@@ -5692,9 +5692,12 @@ const MapProject = () => {
     return /^https?:\/\//.test(invokeURI) ? invokeURI : new URL(invokeURI, AI_ASSISTANT_API_URL).toString()
   }, [AI_ASSISTANT_API_URL, getResolvedPromptTemplateURI])
 
+  // A project that names no template runs the default its user is entitled to.
+  const defaultPromptTemplateKey = getDefaultPromptTemplateKey({user, chatKey: PROMPTS_KEY_DEFAULT, decisionKey: PROMPTS_DECISION_KEY_DEFAULT})
+
   const getConfiguredPromptTemplateKey = React.useCallback(() => (
-    projectPromptTemplateKey || PROMPTS_KEY_DEFAULT
-  ), [projectPromptTemplateKey])
+    projectPromptTemplateKey || defaultPromptTemplateKey
+  ), [projectPromptTemplateKey, defaultPromptTemplateKey])
 
   const fetchAIModels = () => {
     if(!AIModels.length) {
@@ -5719,7 +5722,7 @@ const MapProject = () => {
 
   const getPromptTemplateRef = React.useCallback((template = promptTemplate) => {
     const key = getPromptTemplateKey({
-      canSelect: canSelectAIModel, selectedKey: template?.key, configuredKey: projectPromptTemplateKey, fallbackKey: template?.key || PROMPTS_KEY_DEFAULT
+      canSelect: canSelectAIModel, selectedKey: template?.key, configuredKey: projectPromptTemplateKey, fallbackKey: template?.key || defaultPromptTemplateKey
     })
     if(!key)
       return undefined
@@ -5733,7 +5736,7 @@ const MapProject = () => {
       version: runTemplate?.version || getPromptTemplateVersionFromURL(uri) || null,
       uri: uri || null
     }
-  }, [canSelectAIModel, getPromptTemplateVersionFromURL, projectPromptTemplateKey, promptTemplate])
+  }, [canSelectAIModel, defaultPromptTemplateKey, getPromptTemplateVersionFromURL, projectPromptTemplateKey, promptTemplate])
 
   const getSelectedAIModel = React.useCallback((modelId = AIModel) => (
     find(AIModels, {id: modelId})
@@ -5812,17 +5815,17 @@ const MapProject = () => {
       return
 
     const configuredKey = getConfiguredPromptTemplateKey()
-    const nextTemplate = find(promptTemplates, {key: configuredKey}) || find(promptTemplates, {key: PROMPTS_KEY_DEFAULT}) || promptTemplates[0]
+    const nextTemplate = find(promptTemplates, {key: configuredKey}) || find(promptTemplates, {key: defaultPromptTemplateKey}) || promptTemplates[0]
     if(!nextTemplate)
       return
 
     setPromptTemplate(nextTemplate)
     setAIModel(getDefaultAIModelId(nextTemplate))
-  }, [getConfiguredPromptTemplateKey, getDefaultAIModelId, canSelectAIModel, promptTemplates])
+  }, [getConfiguredPromptTemplateKey, getDefaultAIModelId, canSelectAIModel, promptTemplates, defaultPromptTemplateKey])
 
   const resolvePromptTemplateForInvocation = React.useCallback(async (template = promptTemplate) => {
     const key = getPromptTemplateKey({
-      canSelect: canSelectAIModel, selectedKey: template?.key, configuredKey: projectPromptTemplateKey, fallbackKey: PROMPTS_KEY_DEFAULT
+      canSelect: canSelectAIModel, selectedKey: template?.key, configuredKey: projectPromptTemplateKey, fallbackKey: defaultPromptTemplateKey
     })
     if(!key || !AI_ASSISTANT_API_URL)
       throw new Error(t('map_project.ai_prompt_template_unavailable'))
@@ -5841,7 +5844,7 @@ const MapProject = () => {
       uri: getResolvedPromptTemplateURI(resolvedTemplate, key),
       version: resolvedTemplate?.version || getPromptTemplateVersionFromURL(getResolvedPromptTemplateURI(resolvedTemplate, key)) || null
     }
-  }, [AI_ASSISTANT_API_URL, canSelectAIModel, getPromptTemplateVersionFromURL, getResolvedPromptTemplateURI, projectPromptTemplateKey, promptTemplate, t])
+  }, [AI_ASSISTANT_API_URL, canSelectAIModel, defaultPromptTemplateKey, getPromptTemplateVersionFromURL, getResolvedPromptTemplateURI, projectPromptTemplateKey, promptTemplate, t])
 
 
   const getProjectMetadata = () => {
@@ -5981,7 +5984,7 @@ const MapProject = () => {
   // Rows with candidates and no analysis of them yet; fetchRecommendation skips the rest.
   const getAIAnalysableRows = _rows => filter(_rows, _row => {
     const concepts = isNumber(_row?.__index) ? buildV2RecommendationPayload(_row.__index)?.recommendable_concepts : null
-    return Boolean(concepts?.length) && !hasCurrentAnalysis(analysis[_row.__index], getCandidatePoolFingerprint(concepts))
+    return Boolean(concepts?.length) && !hasCurrentAnalysis(analysis[_row.__index], getCandidatePoolFingerprint(concepts), getPromptTemplateRef())
   })
 
   // Counted only while the dialog shows it, over the scope's rows, and again
@@ -6037,7 +6040,7 @@ const MapProject = () => {
     }
     const v2 = isNumber(__index) ? buildV2RecommendationPayload(__index) : null
     const candidatePoolFingerprint = getCandidatePoolFingerprint(v2?.recommendable_concepts)
-    const alreadyAnalyzed = isAutoMatch && hasCurrentAnalysis(existingAnalyses, candidatePoolFingerprint)
+    const alreadyAnalyzed = isAutoMatch && hasCurrentAnalysis(existingAnalyses, candidatePoolFingerprint, resolvedPromptTemplate)
     if(isNumber(__index) && repoVersion && !alreadyAnalyzed && (v2?.recommendable_concepts?.length || 0) > 0) {
       if(!isBulk)
         GAService.recordActionEvent('MapProject', 'ai_assistant_run', undefined, { mode: 'single' })
@@ -6146,7 +6149,7 @@ const MapProject = () => {
         // Assistant runs the template's default for everyone but staff.
         const modelUsed = getModelUsed(response.data) || requestedModel?.id || null
         const modelUsedRef = modelUsed ? (find(AIModels, {id: modelUsed}) || {id: modelUsed, name: modelUsed}) : null
-        log({created_at: timestamp, action: 'AIRecommendation', description: get(response.data, 'output.rationale') || get(response.data, 'rationale'), extras: {...response.data, model: modelUsedRef, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}}, __index)
+        log({created_at: timestamp, action: 'AIRecommendation', description: getAIRecommendationDescription(response.data), extras: {...response.data, model: modelUsedRef, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}}, __index)
         const resolvedTemplate = response.data?.template || {}
         const resolvedVersion = resolvedTemplate.version || promptTemplateRef?.version || null
         const resolvedPromptRef = {

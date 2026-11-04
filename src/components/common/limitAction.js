@@ -13,6 +13,8 @@ const LIMIT_SUBJECTS = {
   mapper_projects_not_entitled: {capability: 'mapper.projects'},
   ai_assistant_calls_limit_reached: {capability: 'ai_assistant.calls'},
   ai_assistant_calls_not_entitled: {capability: 'ai_assistant.calls'},
+  ai_assistant_decision_calls_limit_reached: {capability: 'ai_assistant.decision_calls'},
+  ai_assistant_decision_calls_not_entitled: {capability: 'ai_assistant.decision_calls'},
   ai_assistant_change_comments_limit_reached: {capability: 'ai_assistant.change_comments'},
   mapper_access_denied: {permission: 'users.mapper_use'},
   mapper_org_projects_denied: {permission: 'users.mapper_org_projects'},
