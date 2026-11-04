@@ -5662,7 +5662,7 @@ const MapProject = () => {
       return ''
     const match = url.match(/\/prompts\/[^/]+\/([^/]+)\//)
     const version = match?.[1] || ''
-    return version && version !== 'invoke' ? version : ''
+    return version && version !== 'invoke' && version !== '$invoke' ? version : ''
   }, [])
 
   // Staff's pick wins; for everyone else the project's configured template does,
@@ -5688,7 +5688,7 @@ const MapProject = () => {
     const resolvedURI = getResolvedPromptTemplateURI(template, key)
     if(!resolvedURI)
       return ''
-    const invokeURI = `${resolvedURI}invoke/`
+    const invokeURI = `${resolvedURI}$invoke/`
     return /^https?:\/\//.test(invokeURI) ? invokeURI : new URL(invokeURI, AI_ASSISTANT_API_URL).toString()
   }, [AI_ASSISTANT_API_URL, getResolvedPromptTemplateURI])
 
@@ -5739,7 +5739,7 @@ const MapProject = () => {
     find(AIModels, {id: modelId})
   ), [AIModel, AIModels])
 
-  // The model to request on /invoke/: the staff user's choice. Nobody else can
+  // The model to request on $invoke/: the staff user's choice. Nobody else can
   // override the template's default model, so their calls name no model.
   const getRequestedAIModel = React.useCallback(() => (
     canSelectAIModel ? getSelectedAIModel() : undefined
@@ -6059,7 +6059,7 @@ const MapProject = () => {
         // template is captured once at the start and reused for every row so
         // a mid-run template publish can't shift behavior). For single-row
         // there's no such consistency requirement; pinning made the invoke
-        // URL '/prompts/<key>/<version>/invoke/' which 404s when the server
+        // URL '/prompts/<key>/<version>/$invoke/' which 404s when the server
         // doesn't host that specific version path. Clear `version` and the
         // already-version-bearing `uri`/`url`/`prompt_template_uri` so
         // getResolvedPromptTemplateURI falls through to '/prompts/<key>/'.
