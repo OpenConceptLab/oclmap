@@ -13,8 +13,8 @@ import sortBy from 'lodash/sortBy'
 import toPairs from 'lodash/toPairs'
 import isBoolean from 'lodash/isBoolean'
 import compact from 'lodash/compact'
-import keys from 'lodash/keys'
 import find from 'lodash/find'
+import { getPropertyLabel, getPropertyValue } from './propertyValue'
 
 const ConceptProperties = ({ concept }) => {
   const { t } = useTranslation()
@@ -24,11 +24,8 @@ const ConceptProperties = ({ concept }) => {
     if(isPropertiesDefined) {
       let property = find(concept.property, {code: prop})
       if(property?.code) {
-        let label = prop
-        if(['concept_class', 'datatype'].includes(prop)) {
-          label = t(`concept.${prop}`)
-        }
-        return {label: label, value: property[keys(property).filter(key => key!== 'code')[0]]}
+        const label = getPropertyLabel(property, ['concept_class', 'datatype'].includes(prop) ? t(`concept.${prop}`) : undefined)
+        return {label: label, value: getPropertyValue(property)}
       }
     }
     return {label: t(`concept.${prop}`), value: get(concept, prop)}

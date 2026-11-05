@@ -83,12 +83,12 @@ export const createAutosaveScheduler = ({
  * Leaving the project unmounts MapProject, often inside the autosave window,
  * and dropping the pending autosave there lost the last change — a whole Auto
  * Match run if the user left within 5s of it finishing
- * (OpenConceptLab/ocl_issues#2829). This saves it now instead. A save still in
- * flight goes first, so the older payload can't land after the newer one.
+ * (OpenConceptLab/ocl_issues#2829). This saves it now instead.
  *
- * The save always starts asynchronously: an error while building the payload
- * must not surface inside React's unmount and take down the page the user is
- * going to.
+ * save(reasons, {after}) builds the payload now, so nothing that changes once
+ * the page is gone gets into it, and sends it once after, the save still in
+ * flight, settles, so the older payload can't land after the newer one. An
+ * error building it is logged, never thrown into React's unmount.
  *
  * Returns whether a save was queued.
  */
@@ -96,10 +96,12 @@ export const saveOnLeave = ({ scheduler, inFlightSave, save }) => {
   const reasons = scheduler.takePending()
   if(!reasons)
     return false
-  const run = () => save(reasons)
-  Promise.resolve(inFlightSave)
-    .then(run, run)
-    .catch(error => console.error('Mapper: saving on leave failed', error))
+  const fail = error => console.error('Mapper: saving on leave failed', error)
+  try {
+    Promise.resolve(save(reasons, {after: inFlightSave})).catch(fail)
+  } catch(error) {
+    fail(error)
+  }
   return true
 }
 
@@ -140,4 +142,41 @@ export const installUnloadGuard = () => {
     event.preventDefault()
     event.returnValue = ''
   })
+}
+
+/**
+ * One send at a time; triggers that arrive during it coalesce into one more
+ * send (ocl_issues#2849). For the project logs POST, which sends the whole
+ * log: once it waits out a 429, an older POST could otherwise land after a
+ * newer one and overwrite it. send(getPayload) reads the latest payload
+ * triggered on this sender, on each attempt; keep one sender per project, so
+ * a retry for one project never sends another's. trigger(payload) resolves,
+ * never rejects, once nothing is left to send.
+ */
+export const createLatestSender = send => {
+  let chain = null
+  let pending = false
+  let latest
+  const getPayload = () => latest
+  const loop = async () => {
+    do {
+      pending = false
+      try {
+        await send(getPayload)
+      } catch (_) {
+        // Best effort: the next change sends the whole log again.
+      }
+    } while(pending)
+    chain = null
+  }
+  return {
+    trigger: payload => {
+      latest = payload
+      if(chain)
+        pending = true
+      else
+        chain = loop()
+      return chain
+    },
+  }
 }

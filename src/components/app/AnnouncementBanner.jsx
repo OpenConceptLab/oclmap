@@ -6,41 +6,31 @@ import Link from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
 import CampaignOutlinedIcon from '@mui/icons-material/CampaignOutlined';
 import CloseIcon from '@mui/icons-material/Close';
-import { MAPPER_ANNOUNCEMENT_URL } from '../../common/constants';
+import { getAnnouncement, isDismissed, msUntilExpiry, rememberDismissal } from '../../common/announcement';
 
-// OCL Online-wide announcement strip, fixed above the app bar and styled like
-// the community site's AnnouncementBanner, so it reads as sitting above the
-// tool rather than inside it. Same component in TBv3 and TBv2. Update
-// announcement.* in the locale bundles (and bump ANNOUNCEMENT_ID) to re-show a
-// new announcement to visitors who dismissed a previous one.
-const ANNOUNCEMENT_ID = 'mapper-public-preview-2026-09-v2';
-
-const DISMISSED_KEY = 'announcementDismissed';
+// This deployment's announcement (common/announcement.js; README, "Announcement
+// banner"), fixed above the app bar. Same component in TBv3 and TBv2.
 
 // The banner's height while it shows. Header moves the app bar and the content
 // down by it, and --app-height in index.scss subtracts it from 100vh.
 const HEIGHT_VAR = '--announcement-height';
 
-const isDismissed = () => {
-  try {
-    return localStorage.getItem(DISMISSED_KEY) === ANNOUNCEMENT_ID;
-  } catch {
-    return false;
-  }
-};
-
-const rememberDismissal = () => {
-  try {
-    localStorage.setItem(DISMISSED_KEY, ANNOUNCEMENT_ID);
-  } catch {
-    // storage unavailable (private mode, blocked cookies); the banner simply reappears
-  }
-};
-
 const AnnouncementBanner = () => {
-  const { t } = useTranslation();
-  const [open, setOpen] = React.useState(!isDismissed());
+  const { t, i18n } = useTranslation();
+  const [now, setNow] = React.useState(Date.now);
+  const announcement = getAnnouncement(window.ANNOUNCEMENT, i18n.language, now);
+  const [dismissed, setDismissed] = React.useState(() => Boolean(announcement) && isDismissed(announcement.id));
+  const open = Boolean(announcement) && !dismissed;
   const ref = React.useRef(null);
+
+  // Check again when until arrives, so the banner hides on a page left open.
+  const delay = open ? msUntilExpiry(announcement, now) : null;
+  React.useEffect(() => {
+    if (delay === null)
+      return;
+    const timer = setTimeout(() => setNow(Date.now()), delay);
+    return () => clearTimeout(timer);
+  }, [delay, now]);
 
   // Publish the banner's height (it wraps on narrow screens and in longer
   // translations) and clear it once dismissed.
@@ -60,8 +50,8 @@ const AnnouncementBanner = () => {
   }, [open]);
 
   const onClose = () => {
-    rememberDismissal();
-    setOpen(false);
+    rememberDismissal(announcement.id);
+    setDismissed(true);
   };
 
   if (!open)
@@ -89,19 +79,26 @@ const AnnouncementBanner = () => {
         pr: 2,
       }}
     >
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap', flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>
         <CampaignOutlinedIcon color='primary' fontSize='small' />
         <Typography variant='body2' sx={{ fontWeight: 600, color: 'surface.dark' }}>
-          {t('announcement.title')}
+          {announcement.text}
         </Typography>
-        <Typography variant='body2' sx={{ color: 'surface.contrastText' }}>
-          {t('announcement.text')}{' '}
-          <Link href={MAPPER_ANNOUNCEMENT_URL} target='_blank' rel='noopener noreferrer' sx={{ fontWeight: 600, '&:hover, &:focus': { color: 'primary.main' } }}>
-            {t('announcement.link_label')}
-          </Link>
-        </Typography>
+        {
+          announcement.links.length > 0 &&
+            <Typography variant='body2' sx={{ color: 'surface.contrastText' }}>
+              {announcement.links.map(({ label, url }, i) => (
+                <React.Fragment key={i}>
+                  {i ? ' · ' : ''}
+                  <Link href={url} target='_blank' rel='noopener noreferrer' sx={{ fontWeight: 600, '&:hover, &:focus': { color: 'primary.main' } }}>
+                    {label}
+                  </Link>
+                </React.Fragment>
+              ))}
+            </Typography>
+        }
       </Box>
-      <IconButton size='small' aria-label={t('announcement.dismiss')} onClick={onClose}>
+      <IconButton size='small' aria-label={t('common.close')} onClick={onClose} sx={{ flexShrink: 0 }}>
         <CloseIcon fontSize='small' />
       </IconButton>
     </Box>

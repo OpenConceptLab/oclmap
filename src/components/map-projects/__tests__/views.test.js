@@ -23,7 +23,14 @@ import {
   buildQualityRowViews,
   candidateToRowView,
   conceptForMapping,
-  sortRowViews
+  sortRowViews,
+  findTargetRowView,
+  withCachedConcept,
+  withCandidateNames,
+  withOwnNames,
+  withSavedMatch,
+  buildMatchEntries,
+  restoredNote
 } from '../viewBuilders.js'
 
 // ---------- Helpers ----------
@@ -648,6 +655,15 @@ test('sortRowViews: display_name asc', () => {
   assert.deepEqual(out.map(v => v.conceptDefinition.display_name), ['Alpha', 'Beta', 'Gamma'])
 })
 
+test('sortRowViews: display_name sorts on the name shown in the input language (OpenConceptLab/ocl_issues#2909)', () => {
+  const views = [
+    { conceptDefinition: {id: 'glucose', display_name: 'Blood glucose', names: [{name: 'Glucosa en sangre', locale: 'es', locale_preferred: true}]} },
+    { conceptDefinition: {id: 'diabetes', display_name: 'Diabetes mellitus', names: [{name: 'Diabetes mellitus', locale: 'es'}]} }
+  ]
+  assert.deepEqual(sortRowViews(views, 'display_name', 'asc', 'es').map(v => v.conceptDefinition.id), ['diabetes', 'glucose'])
+  assert.deepEqual(sortRowViews(views, 'display_name', 'asc').map(v => v.conceptDefinition.id), ['glucose', 'diabetes'])
+})
+
 test('sortRowViews: undefined scores sort to the bottom in desc order', () => {
   const views = [
     { candidate: {}, conceptDefinition: {display_name: 'x'}, conceptRow: {} },
@@ -664,4 +680,183 @@ test('sortRowViews: id falls back to reference.code when id is absent', () => {
   ]
   const out = sortRowViews(views, 'id', 'asc')
   assert.equal(out[0].conceptDefinition.reference.code, 'a-1')
+})
+
+// ---------- findTargetRowView / withCandidateNames (OpenConceptLab/ocl_issues#2909) ----------
+
+const glucoseNames = [
+  { name: 'Glucose [Mass/volume] in Blood', locale: 'en', locale_preferred: true },
+  { name: 'Glucosa en sangre', locale: 'es', locale_preferred: true }
+]
+const namedCache = {
+  [KEY_LOINC_GLUCOSE]: { ...defLOINCGlucose, names: glucoseNames },
+  [KEY_LOINC_CHOL]: defLOINCChol
+}
+const namedRowState = {
+  candidates: {
+    c1: { id: 'c1', algorithm_id: 'ocl-search', concept_key: KEY_LOINC_GLUCOSE, type: 'standard', score: 0.85, highlights: { synonyms: ['<em>Glucosa</em> en sangre'] } },
+    c2: { id: 'c2', algorithm_id: 'ocl-search', concept_key: KEY_LOINC_CHOL, type: 'standard', score: 0.6 }
+  },
+  concept_rows: {
+    [KEY_LOINC_GLUCOSE]: { concept_key: KEY_LOINC_GLUCOSE, rerank_score: 87 },
+    [KEY_LOINC_CHOL]: { concept_key: KEY_LOINC_CHOL, rerank_score: 55 }
+  }
+}
+// A mapped target as a reopened project restores it from its CSV: id, name,
+// URL and scores, without names or highlights.
+const restoredTarget = {
+  id: '49494-3',
+  display_name: 'Glucose [Mass/volume] in Blood',
+  url: '/orgs/Regenstrief/sources/LOINC/concepts/49494-3/',
+  search_meta: { search_normalized_score: '87', algorithm: 'ocl-search' },
+  repo: { id: 'LOINC' }
+}
+
+test('findTargetRowView: matches a target on its OCL URL, or on its id when either lacks one', () => {
+  const views = buildQualityRowViews(namedRowState, namedCache)
+  assert.equal(findTargetRowView(views, restoredTarget)?.conceptDefinition.id, '49494-3')
+  assert.equal(findTargetRowView(views, { id: '2093-3' })?.conceptDefinition.id, '2093-3')
+  assert.equal(findTargetRowView(views, { id: '49494-3', url: '/orgs/Other/sources/X/concepts/49494-3/' }), undefined)
+})
+
+test('withCandidateNames: a restored target gets the names and highlights its row\'s candidates hold for it', () => {
+  const out = withCandidateNames(restoredTarget, namedRowState, namedCache)
+  assert.deepEqual(out.names, glucoseNames)
+  assert.deepEqual(out.search_meta, {
+    search_normalized_score: '87',
+    algorithm: 'ocl-search',
+    search_highlight: { synonyms: ['<em>Glucosa</em> en sangre'] }
+  })
+  assert.equal(out.display_name, restoredTarget.display_name)
+  assert.equal(out.repo, restoredTarget.repo)
+})
+
+test('withCandidateNames: keeps a target\'s own names and highlights, and a target no candidate holds', () => {
+  const own = { ...restoredTarget, names: [{ name: 'own', locale: 'es' }], search_meta: { search_highlight: { name: ['own'] } } }
+  assert.equal(withCandidateNames(own, namedRowState, namedCache).names, own.names)
+  assert.deepEqual(withCandidateNames(own, namedRowState, namedCache).search_meta.search_highlight, { name: ['own'] })
+  const searched = { id: '718-7', url: '/orgs/Regenstrief/sources/LOINC/concepts/718-7/' }
+  assert.equal(withCandidateNames(searched, namedRowState, namedCache), searched)
+  assert.equal(withCandidateNames(restoredTarget, undefined, namedCache), restoredTarget)
+})
+
+// ---------- withSavedMatch (OpenConceptLab/ocl_issues#2916) ----------
+
+// A target mapped from the Search tab: none of the row's candidates holds it.
+const searchedNames = [
+  { name: 'Hemoglobin [Mass/volume] in Blood', locale: 'en', locale_preferred: true },
+  { name: 'Hemoglobina en sangre', locale: 'es', locale_preferred: true }
+]
+const searchedHighlight = { synonyms: ['<em>Hemoglobina</em> en sangre'] }
+const searchedTarget = {
+  id: '718-7',
+  display_name: 'Hemoglobin [Mass/volume] in Blood',
+  url: '/orgs/Regenstrief/sources/LOINC/concepts/718-7/',
+  search_meta: { search_normalized_score: '', search_score: '', algorithm: '' },
+  repo: { id: 'LOINC' }
+}
+// Its `matches` entry, as a save sends it: the concept the project held.
+const savedEntry = {
+  url: searchedTarget.url,
+  rowIndex: '3',
+  concept: { ...searchedTarget, names: searchedNames, search_meta: { search_score: 12.5, search_highlight: searchedHighlight } }
+}
+
+test('withSavedMatch: a restored target gets the names and highlight its saved entry holds', () => {
+  const out = withSavedMatch(searchedTarget, savedEntry)
+  assert.deepEqual(out.names, searchedNames)
+  assert.deepEqual(out.search_meta, { ...searchedTarget.search_meta, search_highlight: searchedHighlight })
+  assert.equal(out.display_name, searchedTarget.display_name)
+  assert.equal(out.repo, searchedTarget.repo)
+})
+
+test('withSavedMatch: keeps only well-formed names and highlights from a saved entry', () => {
+  const malformed = { ...savedEntry, concept: {
+    names: [{ name: 'Hemoglobina en sangre', locale: 'es' }, { name: { es: 'x' }, locale: 'es' }, { name: 'Hb', locale: 7 }, 'Hb', null],
+    search_meta: { search_highlight: { synonyms: ['<em>Hemoglobina</em> en sangre', 42, null], name: 'Hemoglobin', descriptions: [{}] } }
+  } }
+  const out = withSavedMatch(searchedTarget, malformed)
+  assert.deepEqual(out.names, [{ name: 'Hemoglobina en sangre', locale: 'es' }])
+  assert.deepEqual(out.search_meta.search_highlight, { synonyms: ['<em>Hemoglobina</em> en sangre'], descriptions: [] })
+  const unusable = { ...savedEntry, concept: { names: [{ name: 3 }], search_meta: { search_highlight: ['<em>x</em>'] } } }
+  assert.deepEqual(withSavedMatch(searchedTarget, unusable), searchedTarget)
+})
+
+test('withSavedMatch: an entry for another concept, or none, leaves the target as its CSV restored it', () => {
+  const other = { ...savedEntry, url: '/orgs/Regenstrief/sources/LOINC/concepts/2093-3/' }
+  assert.deepEqual(withSavedMatch(searchedTarget, other), searchedTarget)
+  assert.deepEqual(withSavedMatch(searchedTarget, undefined), searchedTarget)
+  assert.deepEqual(withSavedMatch(searchedTarget, { url: searchedTarget.url, rowIndex: '3' }), searchedTarget)
+})
+
+// Two rows mapped to the same concept, each with its own match. The save sends
+// each row's concept as getConcept gives it: withCachedConcept over the
+// concept a row panel cached, or the target itself.
+const otherHighlight = { synonyms: ['<em>Hemoglobin</em> [Mass/volume] in Blood'] }
+const otherEntry = { ...savedEntry, rowIndex: '4', concept: { ...savedEntry.concept, search_meta: { search_highlight: otherHighlight } } }
+const saveEntries = (targets, cached) => targets.map(([rowIndex, target]) =>
+  ({ url: target.url, rowIndex, concept: withCachedConcept(target, cached) || target }))
+
+test('withSavedMatch: what the next save sends restores each row again, cached or not', () => {
+  const rows = [['3', withSavedMatch(searchedTarget, savedEntry)], ['4', withSavedMatch(searchedTarget, otherEntry)]]
+  const cached = { ...searchedTarget, names: searchedNames, search_meta: { search_score: 1 } }
+  for(const cache of [undefined, cached]) {
+    const [first, second] = JSON.parse(JSON.stringify(saveEntries(rows, cache)))
+    assert.deepEqual(withSavedMatch(searchedTarget, first).names, searchedNames)
+    assert.deepEqual(withSavedMatch(searchedTarget, first).search_meta.search_highlight, searchedHighlight)
+    assert.deepEqual(withSavedMatch(searchedTarget, second).search_meta.search_highlight, otherHighlight)
+  }
+  assert.deepEqual(cached.search_meta, { search_score: 1 })
+})
+
+test('withCachedConcept: each row gets its own copy of the cached concept, with its own match', () => {
+  const cached = { id: '718-7', url: searchedTarget.url, names: searchedNames, search_meta: { search_score: 1 } }
+  const first = withCachedConcept({ search_meta: { search_highlight: searchedHighlight }, source: 'LOINC' }, cached)
+  const second = withCachedConcept({ search_meta: { search_highlight: otherHighlight } }, cached)
+  assert.deepEqual(first.search_meta.search_highlight, searchedHighlight)
+  assert.equal(first.source, 'LOINC')
+  assert.deepEqual(second.search_meta.search_highlight, otherHighlight)
+  assert.equal(second.names, searchedNames)
+  assert.equal(withCachedConcept({ names: glucoseNames }, cached).names, glucoseNames)
+  assert.deepEqual(cached, { id: '718-7', url: searchedTarget.url, names: searchedNames, search_meta: { search_score: 1 } })
+  assert.equal(withCachedConcept(searchedTarget, false), false)
+})
+
+test('withOwnNames: a mapped target keeps its own names and highlight over a candidate\'s, and takes the candidate\'s when it has none', () => {
+  const own = withSavedMatch(searchedTarget, savedEntry)
+  // A semantic candidate for the same concept: no names in its definition, no highlight.
+  const fromCandidate = { ...searchedTarget, names: undefined, search_meta: { algorithm: 'ocl-semantic', search_normalized_score: 91 } }
+  const out = withOwnNames(fromCandidate, own)
+  assert.deepEqual(out.names, searchedNames)
+  assert.deepEqual(out.search_meta, { algorithm: 'ocl-semantic', search_normalized_score: 91, search_highlight: searchedHighlight })
+  const withNames = { ...fromCandidate, names: glucoseNames, search_meta: { search_highlight: { name: ['x'] } } }
+  assert.equal(withOwnNames(withNames, searchedTarget).names, glucoseNames)
+  assert.deepEqual(withOwnNames(withNames, searchedTarget).search_meta.search_highlight, { name: ['x'] })
+})
+
+// ---------- unmapped row notes (OpenConceptLab/ocl_issues#2984) ----------
+
+// The save's entry for a row `mapSelected` holds, as onSave builds it.
+const entryFor = (target, index) => ({rowIndex: index, url: target?.url, note: notesFixture[index] || undefined})
+let notesFixture = {}
+
+// Save, serialise, reopen: what MapProject sends and what it restores.
+const roundTrip = (mapSelected, notes, rows) => {
+  notesFixture = notes
+  const sent = JSON.parse(JSON.stringify(buildMatchEntries(rows, mapSelected, notes, entryFor)))
+  const saved = Object.fromEntries(sent.map(entry => [entry.rowIndex, entry]))
+  return {sent, restored: Object.fromEntries(rows.map(index => [index, restoredNote(undefined, saved[index])]))}
+}
+
+test('a note on an unmapped row survives save and reopen', () => {
+  const { sent, restored } = roundTrip({0: searchedTarget}, {0: 'mapped note', 1: 'needs a clinician', 2: ''}, [0, 1, 2])
+  assert.deepEqual(sent.map(entry => entry.rowIndex), ['0', 1])
+  assert.deepEqual(restored, {0: 'mapped note', 1: 'needs a clinician', 2: undefined})
+  assert.equal(restoredNote('csv note', sent[1]), 'csv note')
+})
+
+test('a cleared row (null in mapSelected) with a note is sent once and keeps its note', () => {
+  const { sent, restored } = roundTrip({0: null}, {0: 'rejected: wrong unit'}, [0])
+  assert.equal(sent.length, 1)
+  assert.equal(restored[0], 'rejected: wrong unit')
 })

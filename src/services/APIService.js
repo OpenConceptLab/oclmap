@@ -1,8 +1,9 @@
 /*eslint no-process-env: 0*/
 import axios from 'axios';
 import {get, omit, isPlainObject, isString, defaults } from 'lodash';
-import { currentUserToken, getAPIURL, logoutUser } from '../common/utils';
+import { currentUserToken, getAPIURL, renewOrSignOut } from '../common/utils';
 import { OCL_CLIENT } from '../common/constants';
+import { joinAPIPath } from './tokenScope.js';
 
 
 const APIServiceProvider = {};
@@ -64,7 +65,7 @@ const createPendingRequest = () => new Promise(() => {})
 
 const handleAPIError = (error, raw=false) => {
   if(error?.response?.status === 401 && error?.response?.config?.url?.startsWith(getAPIURL())) {
-    logoutUser(true, true)
+    renewOrSignOut()
     return { handled: true, result: undefined };
   }
 
@@ -105,7 +106,7 @@ class APIService {
   }
 
   overrideURL(url) {
-    this.URL = `${getAPIURL()}${url}`;
+    this.URL = joinAPIPath(getAPIURL(), url);
     return this;
   }
 
@@ -156,6 +157,9 @@ class APIService {
     };
   }
 
+  // config.handlesThrottle: the caller waits out a 429 itself
+  // (services/capacity.js), so the full-screen "Too many requests" countdown,
+  // which would also cover the Stop button, stays closed (ocl_issues#2849).
   request(method, data, token, config) {
     let headers = {};
     let query = {};
@@ -164,12 +168,20 @@ class APIService {
       query = get(config, 'query', {});
     }
     let request = this.getRequest(method, data, token, headers, query);
-    request = {...request, ...omit(config, ['headers', 'query'])};
+    request = {...request, ...omit(config, ['headers', 'query', 'handlesThrottle'])};
     return axios(request).catch(error => {
-      handleAPIError(error);
+      if(!(config?.handlesThrottle && error?.response?.status === 429))
+        handleAPIError(error);
       return Promise.reject(error);
     });
   };
+
+  // For a request sent as the page closes: fetch's keepalive outlives the page,
+  // axios's XHR doesn't. Best effort, never rejects.
+  keepalive(method, data, token) {
+    const { url, headers } = this.getRequest(method, data, token, {});
+    return fetch(url, {method, headers, body: JSON.stringify(data), keepalive: true}).catch(() => null);
+  }
 
   getHeaders(token, headers) {
     token = token || (token !== false ? currentUserToken() : token);

@@ -82,6 +82,7 @@ const fetchBridgeVersions = (url) => {
  *     provider?: string,
  *     order?: number,
  *     disabled?: boolean,         // disable picking this algo
+ *     extras?: {badge?: string},  // chip label the API sends, shown as-is
  *     batch_size?: number,
  *     concurrent_requests?: number,
  *   }>
@@ -111,12 +112,11 @@ export default function MultiAlgoSelector({
   maxAlgos=5,
   repo,
   isCoreUser,
-  fullRequestLimits=false,
+  requestLimits=getRequestLimits(null),
 }) {
   const { t } = useTranslation()
-  // Non-core users get at most 10 rows per batch and 5 concurrent requests
-  // (ocl_online#274).
-  const requestLimits = getRequestLimits(fullRequestLimits)
+  // Non-core users get at most 10 rows per batch, and early-access users 5
+  // concurrent requests, preview users 2 (ocl_online#274, ocl_issues#2849).
   const { setAlert } = React.useContext(OperationsContext)
   const [expanded, setExpanded] = useState(() => new Map());
   const [errors, setErrors] = React.useState({})
@@ -124,16 +124,12 @@ export default function MultiAlgoSelector({
   const [bridgeVersionsByUrl, setBridgeVersionsByUrl] = React.useState({})
   const [bridgeVersionsLoadedByUrl, setBridgeVersionsLoadedByUrl] = React.useState({})
 
-  const normalizedValue = useMemo(() => {
-    let changed = false;
-    const next = value.map(v => {
-      if (v.__key) return v;
-      changed = true;
-      return { ...v, __key: Math.random(100).toString() };
-    });
-    if (changed) onChange(next);
-    return next;
-  }, [value]);
+  const normalizedValue = useMemo(() => value.map(v => v.__key ? v : { ...v, __key: Math.random(100).toString() }), [value]);
+
+  // Persist generated keys after render; calling the parent's setter during render triggers a React warning.
+  React.useEffect(() => {
+    if (normalizedValue.some((v, i) => v !== value[i])) onChange(normalizedValue);
+  }, [normalizedValue]);
 
   const algosById = useMemo(() => {
     const m = new Map();
@@ -186,8 +182,8 @@ export default function MultiAlgoSelector({
   const getRequestFieldsSettings = (sel, algo) => getRequestSettings({
     batch_size: sel.batch_size ?? algo?.batch_size,
     concurrent_requests: sel.concurrent_requests ?? algo?.concurrent_requests,
-  }, fullRequestLimits)
-  const getLimitHelperText = max => fullRequestLimits ? undefined : t('map_project.request_limit_up_to', {max})
+  }, requestLimits)
+  const getLimitHelperText = max => requestLimits.capped ? t('map_project.request_limit_up_to', {max}) : undefined
   const getBatchSizeProps = (sel, algo) => ({
     value: getRequestFieldsSettings(sel, algo).batchSize,
     onChange: e => updateSelected(sel.__key, { batch_size: clampInt(e.target.value, 1, requestLimits.batchSize) }),
@@ -302,7 +298,7 @@ export default function MultiAlgoSelector({
     let name = algo.name
     if(!isString(name)) {
       if(name?.props?.i18nKey) {
-        name = t(algo.name?.props?.i18nKey).replace('<0>Premium</0>', '')
+        name = t(algo.name?.props?.i18nKey)
       } else
         name = algo.id
     }
@@ -314,8 +310,8 @@ export default function MultiAlgoSelector({
       ...omit(algo, ['getIcon', 'disabled', 'description', 'url']),
       id: id,
       name: name,
-      batch_size: getRequestSettings(algo, fullRequestLimits).batchSize,
-      concurrent_requests: getRequestSettings(algo, fullRequestLimits).concurrentRequests,
+      batch_size: getRequestSettings(algo, requestLimits).batchSize,
+      concurrent_requests: getRequestSettings(algo, requestLimits).concurrentRequests,
       __key: Math.random(100).toString()
     };
 
@@ -623,7 +619,7 @@ export default function MultiAlgoSelector({
                             />
                           </Stack>
 
-                          <Stack direction="row" spacing={1} justifyContent="flex-end">
+                          <Stack direction="row" spacing={1} sx={{justifyContent: 'flex-end'}}>
                             <Button size='small' color='error' variant="outlined" onClick={() => toggleExpanded(sel.__key)} sx={{textTransform: 'none'}}>
                               {t('common.close')}
                             </Button>
@@ -761,7 +757,7 @@ export default function MultiAlgoSelector({
             opacity: canAddMore ? 1 : 0.6,
           }}
         >
-          <Stack direction="row" spacing={1} alignItems="center">
+          <Stack direction="row" spacing={1} sx={{alignItems: 'center'}}>
             <Box sx={{ display: "grid", placeItems: "center", width: 34, height: 34 }}>
               <AddRoundedIcon />
             </Box>
@@ -771,7 +767,7 @@ export default function MultiAlgoSelector({
                 displayEmpty
                 value=""
                 renderValue={(v) => (v ? v : t('map_project.select_an_algo'))}
-                MenuProps={{PaperProps: {style: {maxWidth: '350px'}}}}
+                MenuProps={{slotProps: {paper: {style: {maxWidth: '350px'}}}}}
               >
                 {
                   addableOptions.map((a, index) => {
@@ -780,7 +776,14 @@ export default function MultiAlgoSelector({
                       <ListItemIcon sx={{minWidth: 'auto', marginRight: '16px'}}>
                         {renderAlgoIcon(a)}
                       </ListItemIcon>
-                      <ListItemText primary={a.name} secondary={a.description} />
+                      <ListItemText
+                        primary={
+                          a.extras?.badge ?
+                            <>{a.name}<Chip size='small' color='primary' label={a.extras.badge} sx={{marginLeft: '8px', height: '20px'}} /></> :
+                            a.name
+                        }
+                        secondary={a.description}
+                      />
                       {
                         a.provider === 'ocl' &&
                           <Tooltip title="OCL's own match algorithm">

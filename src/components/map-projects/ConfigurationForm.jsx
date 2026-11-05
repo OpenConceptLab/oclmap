@@ -8,7 +8,6 @@ import Button from '@mui/material/Button'
 import IconButton from '@mui/material/IconButton'
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Checkbox from '@mui/material/Checkbox';
-import CircularProgress from '@mui/material/CircularProgress';
 
 import { styled } from '@mui/material/styles';
 
@@ -27,8 +26,9 @@ import isEmpty from 'lodash/isEmpty'
 import omit from 'lodash/omit'
 import filter from 'lodash/filter'
 
-import { getCurrentUser, toV3URL } from '../../common/utils'
-import { MATCHING_ALGORITHMS_DOC_LINK } from '../../common/constants'
+import { formatDate, getCurrentUser, toV3URL } from '../../common/utils'
+import { MATCHING_ALGORITHMS_DOC_LINK, MAPPER_DOCS_LINK } from '../../common/constants'
+import { COLORS } from '../../common/colors'
 import { getProjectConfigErrors } from './algorithms'
 import NamespaceDropdown from '../common/NamespaceDropdown'
 import RepoSearchAutocomplete from '../repos/RepoSearchAutocomplete'
@@ -43,7 +43,7 @@ import LookupConfig from './LookupConfig'
 import AdvancedSettings from './AdvancedSettings'
 import RerankerConfig from './RerankerConfig'
 import AIAssistantSelectorPanel from './AIAssistantSelectorPanel'
-import { hasSelectedTargetRepoVersion } from './projectTargetRepo'
+import { getTargetRepoVersionBadges, getTargetRepoVersionReleaseDate, hasSelectedTargetRepoVersion, needsSemanticSearchWarning } from './projectTargetRepo'
 import { getPreviewAlgorithmOptions, getPreviewConfigAccessErrors } from './previewConfig'
 
 const VisuallyHiddenInput = styled('input')({
@@ -61,11 +61,23 @@ const VisuallyHiddenInput = styled('input')({
 
 const deriveCanonicalUrl = relativeUrl => relativeUrl ? `https://ns.openconceptlab.org${relativeUrl}` : ''
 
-const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, name, setName, description, setDescription, repo, onRepoChange, repoVersion, setRepoVersion, versions, mappedSources, targetSourcesFromRows, algosSelected, setAlgosSelected, sx, algos, validColumns, columns, isValidColumnValue, updateColumn, configure, setConfigure, columnVisibilityModel, setColumnVisibilityModel, onSave, isSaving, candidatesScore, onScoreChange, includeDefaultFilter, setIncludeDefaultFilter, filters, setFilters, locales, isLoadingLocales, setAIAssistantColumns, AIAssistantColumns, inAIAssistantGroup, lookupConfig, setLookupConfig, encoderModel, setEncoderModel, isCoreUser, fullRequestLimits, canSelectAIModel, canSetAIOutputLocale, canBridge, canScispacy, canUseOrgProjects=true, canUseCustomAlgorithms=true, promptTemplates, promptTemplate, onPromptTemplateChange, AIModels, AIModel, setAIModel, namespace, setNamespace, promptOutputLocale, setPromptOutputLocale, inputLocale, setInputLocale, oclLocales, useLexicalVariants, setUseLexicalVariants }) => {
+// REPO_SUGGESTIONS is a comma-separated list of owner/source pairs from env config,
+// e.g. "CIEL/CIEL,MSF/MSF". Each becomes a brief repo object for the target-repository picker.
+/*eslint no-process-env: 0*/
+/*eslint no-undef: 0*/
+const getSuggestedRepos = () => (window.REPO_SUGGESTIONS || process.env.REPO_SUGGESTIONS || '')
+  .split(',')
+  .map(pair => pair.trim().split('/'))
+  .filter(([owner, id]) => owner && id)
+  .map(([owner, id]) => ({id, short_code: id, name: id, owner, ownerType: 'Organization', type: 'Source', url: `/orgs/${owner}/sources/${id}/`}))
+
+const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, name, setName, description, setDescription, repo, onRepoChange, repoVersion, setRepoVersion, showTargetRepoVersionError, versions, mappedSources, targetSourcesFromRows, algosSelected, setAlgosSelected, sx, algos, validColumns, columns, isValidColumnValue, updateColumn, configure, setConfigure, columnVisibilityModel, setColumnVisibilityModel, onSave, isSaving, candidatesScore, onScoreChange, includeDefaultFilter, setIncludeDefaultFilter, filters, setFilters, locales, setAIAssistantColumns, AIAssistantColumns, inAIAssistantGroup, lookupConfig, setLookupConfig, encoderModel, setEncoderModel, isCoreUser, requestLimits, canSelectAIModel, canSetAIOutputLocale, canBridge, canScispacy, canUseOrgProjects=true, canUseCustomAlgorithms=true, promptTemplates, promptTemplate, onPromptTemplateChange, AIModels, AIModel, setAIModel, namespace, setNamespace, promptOutputLocale, setPromptOutputLocale, inputLocale, setInputLocale, oclLocales, useLexicalVariants, setUseLexicalVariants }) => {
   const { t } = useTranslation();
   const user = getCurrentUser()
   const isLLMAlgoNotAllowed = !repoVersion?.match_algorithms?.includes('llm')
   const appliedLocales = filters?.locale ? filters?.locale?.split(',') : []
+  // A saved selection stays listed even when the target doesn't declare it.
+  const nameLocaleOptions = [...new Set([...locales, ...appliedLocales])]
   // PR3-H: effective set of name locales the AI Assistant will receive.
   // Union of (input_locale, filters.locale) deduped on primary subtag.
   // Empty = no filter (backwards-compatible for old projects with neither set).
@@ -112,6 +124,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
   const configErrors = getProjectConfigErrors(algosSelected)
   const hasConfigErrors = configErrors.length > 0
   const hasTargetRepoVersion = hasSelectedTargetRepoVersion(repoVersion)
+  const isTargetRepoVersionInError = Boolean(showTargetRepoVersionError && !hasTargetRepoVersion)
   const getAlgos = () => getPreviewAlgorithmOptions({
     algos,
     algosSelected,
@@ -160,9 +173,10 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
       <TextField
         fullWidth
         sx={{marginTop: '12px'}}
-        label={t('common.description')}
+        label={t('map_project.context')}
         value={description}
         onChange={event => setDescription(event.target.value || '')}
+        helperText={t('map_project.context_helper')}
         multiline
         maxRows={3}
       />
@@ -216,7 +230,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
             {...params}
             size='small'
             label={t('map_project.input_language', 'Input Language')}
-            helperText={t('map_project.input_language_helper', 'Language of the input data. Determines which target-repo name locales are sent to the AI Assistant.')}
+            helperText={t('map_project.input_language_helper', 'Language of the input data. Candidates lead with their name in this language, and it determines which target-repo name locales are sent to the OCL AI Assistant.')}
           />
         )}
       />
@@ -234,7 +248,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
         {t('map_project.target_repository_description')}
       </FormHelperText>
 
-      <RepoSearchAutocomplete label={t('map_project.repository')} size='small' onChange={(id, item) => onRepoChange(item)} value={repo}  sx={{marginTop: '12px'}}/>
+      <RepoSearchAutocomplete label={t('map_project.repository')} size='small' onChange={(id, item) => onRepoChange(item)} value={repo} suggested={getSuggestedRepos()} sx={{marginTop: '12px'}}/>
       <RepoVersionSearchAutocomplete
         versions={versions}
         label={t('common.version')}
@@ -242,15 +256,20 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
         onChange={(id, item) => setRepoVersion(item)}
         value={repoVersion}
         sx={{marginTop: '12px'}}
-        error={Boolean(repo?.url && !hasTargetRepoVersion)}
-        helperText={repo?.url && !hasTargetRepoVersion ? t(
+        error={isTargetRepoVersionInError}
+        helperText={isTargetRepoVersionInError ? t(
           'map_project.target_repo_version_required',
           'Select a target repository version before saving.'
         ) : ''}
+        getOptionBadges={option => getTargetRepoVersionBadges(option, versions).map(key => t(key))}
+        getOptionRightText={option => {
+          const releaseDate = getTargetRepoVersionReleaseDate(option)
+          return releaseDate ? t('map_project.version_released_on', {date: formatDate(releaseDate)}) : ''
+        }}
       />
       {
         effectiveTargetCanonical &&
-          <Stack direction='row' spacing={0.75} alignItems='center' sx={{marginTop: '6px', marginLeft: '8px', minWidth: 0}}>
+          <Stack direction='row' spacing={0.75} sx={{alignItems: 'center', marginTop: '6px', marginLeft: '8px', minWidth: 0}}>
             <InfoOutlinedIcon sx={{fontSize: '14px', color: 'text.secondary', flexShrink: 0}} />
             <Typography component='span' sx={{fontSize: '12px', color: 'text.secondary', flexShrink: 0}}>
               {t('map_project.target_canonical_url', 'Canonical:')}
@@ -288,7 +307,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
                 const isDerived = !b?.bridge_repo?.canonical_url
                 const tooltipText = `${b.target_repo_url || ''} → ${bridgeCanonical || ''}`
                 return (
-                  <Stack key={b.__key || b.id} direction='row' spacing={0.75} alignItems='center' sx={{minWidth: 0}}>
+                  <Stack key={b.__key || b.id} direction='row' spacing={0.75} sx={{alignItems: 'center', minWidth: 0}}>
                     <InfoOutlinedIcon sx={{fontSize: '14px', color: 'text.secondary', flexShrink: 0}} />
                     <Typography component='span' sx={{fontSize: '12px', color: 'text.secondary', flexShrink: 0}}>
                       {t('map_project.bridge_canonical_short', 'Bridge:')}
@@ -322,7 +341,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
           </Stack>
       }
       {
-        isLLMAlgoNotAllowed && repoVersion?.version_url &&
+        needsSemanticSearchWarning(repoVersion, algosSelected) &&
           <FormHelperText sx={{marginTop: '4px', marginLeft: '8px', color: 'warning.main'}}>
             {t('map_project.semantic_search_not_configured', {owner: repo?.owner, repo: repo?.short_code || repo?.id, version: repoVersion?.id || repo?.version || repo?.id})}
           </FormHelperText>
@@ -331,8 +350,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
             multiple
             size='small'
             id="locale"
-            disabled={isLoadingLocales}
-            options={locales}
+            options={nameLocaleOptions}
             getOptionLabel={(option) => option}
             value={appliedLocales}
             onChange={(event, values) => {
@@ -343,18 +361,19 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
               <TextField
                 {...params}
                 size='small'
-                label={
-                  isLoadingLocales ?
-                    <span style={{display: 'flex'}}>
-                      {t('map_project.loading_name_locales')}
-                      <CircularProgress sx={{marginLeft: '16px', width: '20px !important', height: '20px !important'}} />
-                    </span> :
-                    t('map_project.filter_name_locales')
-                }
+                label={t('map_project.filter_name_locales')}
                 helperText={t('map_project.filter_name_locales_helper')}
               />
             )}
           />
+      {
+        repoVersion?.version_url && locales.length <= 1 &&
+          <FormHelperText sx={{marginLeft: '14px'}}>
+            {t('map_project.filter_name_locales_default_only')}
+            {' '}
+            <a href={toV3URL(repo?.url || repoVersion.url)} target='_blank' rel='noopener noreferrer' style={{color: COLORS.primary.main}}>{t('map_project.filter_name_locales_open_settings')}</a>
+          </FormHelperText>
+      }
       {
         !isEmpty(repoVersion?.meta?.display?.default_filter) && repoVersion?.meta?.display?.default_filter &&
           <>
@@ -438,7 +457,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
         onChange={setAlgosSelected}
         repo={repoVersion}
         isCoreUser={isCoreUser}
-        fullRequestLimits={fullRequestLimits}
+        requestLimits={requestLimits}
       />
       {
         isCoreUser &&
@@ -471,7 +490,12 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
               {t('map_project.field_configuration')}
             </Typography>
             <FormHelperText sx={{marginTop: 0}}>
-              {t('map_project.field_configuration_description')}
+              <Trans
+                i18nKey='map_project.field_configuration_description'
+                components={[
+                  <a key='learn-more' className='link' href={MAPPER_DOCS_LINK} target='_blank' rel='noopener noreferrer' />
+                ]}
+              />
             </FormHelperText>
             <ColumnMapTable
               sx={{marginTop: '12px'}}
@@ -537,7 +561,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
         sx={{textTransform: 'none', margin: '20px 5px 5px 0px'}}
         startIcon={<SaveIcon />}
         onClick={onSave}
-        disabled={!name || !file?.name || !owner || hasConfigErrors || hasAccessErrors || !hasTargetRepoVersion}
+        disabled={!name || !file?.name || !owner || hasConfigErrors || hasAccessErrors}
         loading={isSaving}
         loadingPosition="start"
       >

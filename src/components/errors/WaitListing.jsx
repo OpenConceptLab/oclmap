@@ -29,6 +29,10 @@ const WaitListing = () => {
     <Box
       sx={{
         minHeight: { xs: 'auto', sm: 'calc(100dvh - var(--announcement-height, 0px) - 100px)' },
+        // On phones the page is taller than main.content, which clips it, so
+        // it scrolls itself: otherwise the banner and the footer's extra rows
+        // leave its buttons out of reach on a short screen.
+        maxHeight: { xs: '100%', sm: 'none' },
         display: 'flex',
         alignItems: { xs: 'stretch', sm: 'center' },
         justifyContent: 'center',
@@ -65,7 +69,7 @@ const WaitListing = () => {
           <Box sx={{ mb: { xs: 3, sm: 4 } }}>
             <Box
               component="img"
-              src="FullLogo-BlackText.png"
+              src="/FullLogo-BlackText.png"
               alt="OCL"
               sx={{ width: { xs: 160, sm: 240, md: 300, lg: 380 }, height: 'auto' }}
             />
@@ -145,7 +149,7 @@ const WaitListing = () => {
           </Box>
           <Box
             component="img"
-            src="mapper_landing_placeholder.png"
+            src="/mapper_landing_placeholder.png"
             alt="OCL Mapper preview"
             loading="lazy"
             sx={{

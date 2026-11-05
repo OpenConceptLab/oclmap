@@ -20,8 +20,8 @@ const SortMenu = ({anchorEl, labelId, onClose, order, orderBy, onChange, fields}
       anchorEl={anchorEl}
       open={Boolean(anchorEl)}
       onClose={onClose}
-      MenuListProps={{
-        'aria-labelledby': labelId,
+      slotProps={{
+        list: {'aria-labelledby': labelId},
       }}
       sx={{
         '& .MuiList-root': {minWidth: '225px'}

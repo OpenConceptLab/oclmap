@@ -2,9 +2,11 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
-  getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep,
-  getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, RERANK_LOOKUP_WAIT_MS, AI_LOOKUP_WAIT_MS
+  getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, takeRunRows, clearRunRowStatuses, shouldStopAIStep,
+  getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, RERANK_LOOKUP_WAIT_MS, AI_LOOKUP_WAIT_MS, isScispacyWarmingUp, RERANK_MAX_IN_FLIGHT,
+  countAIOnlyRows, getAutoMatchBlocker, getAutoMatchAIDefault, getAutoMatchAIOnOpen, canRunAlgorithm
 } from '../autoMatchRows.js'
+import { createLimiter } from '../../../services/capacity.js'
 
 const rows = [
   { __index: 0, label: 'zero' },
@@ -128,12 +130,25 @@ test('spendsMatchQuota: only algorithms that call $match spend match quota', () 
   assert.equal(spendsMatchQuota(null), false)
 })
 
-test('getRowCapByMatchOperations: divides remaining operations by $match algorithms', () => {
-  assert.equal(getRowCapByMatchOperations({ remaining: 50 }, 2), 25)
-  assert.equal(getRowCapByMatchOperations({ remaining: 5 }, 2), 2)
-  assert.equal(getRowCapByMatchOperations({ remaining: 0 }, 1), 0)
-  assert.equal(getRowCapByMatchOperations({ unlimited: true }, 2), null)
-  assert.equal(getRowCapByMatchOperations({ remaining: 10 }, 0), null)
+test('takeRunRows: takes the first maxRows rows, or all of them when maxRows is null', () => {
+  const scope = [{ __index: 3 }, { __index: 5 }, { __index: 8 }]
+  assert.deepEqual(takeRunRows(scope, null), scope)
+  assert.deepEqual(takeRunRows(scope, 5), scope)
+  assert.deepEqual(takeRunRows(scope, 2).map(row => row.__index), [3, 5])
+  assert.deepEqual(takeRunRows(scope, 0), [])
+  assert.deepEqual(takeRunRows(null, 2), [])
+})
+
+test('clearRunRowStatuses: only the rows the run includes lose their statuses', () => {
+  const statuses = { unmapped: [0], readyForReview: [1, 2, 3], reviewed: [4, 5] }
+  assert.deepEqual(clearRunRowStatuses(statuses, [1, 4]), { unmapped: [0], readyForReview: [2, 3], reviewed: [5] })
+  assert.deepEqual(clearRunRowStatuses(statuses, []), statuses)
+})
+
+test('clearRunRowStatuses: a run cut to its first rows keeps the proposals on the rest', () => {
+  const scope = [{ __index: 1 }, { __index: 2 }, { __index: 3 }]
+  const statuses = { unmapped: [], readyForReview: [1, 2, 3], reviewed: [] }
+  assert.deepEqual(clearRunRowStatuses(statuses, takeRunRows(scope, 1).map(row => row.__index)).readyForReview, [2, 3])
 })
 
 test('shouldStopAIStep: keeps going with no failures', () => {
@@ -288,4 +303,134 @@ test('waitForLookups: a lookup that timed out is not waited on again', async () 
 test('RERANK_LOOKUP_WAIT_MS: a hang guard, longer than the AI step\'s wait', () => {
   assert.ok(RERANK_LOOKUP_WAIT_MS >= 30000)
   assert.ok(RERANK_LOOKUP_WAIT_MS > AI_LOOKUP_WAIT_MS)
+})
+
+// ocl_issues#2849: ScispaCy now goes through service.request, which rejects on
+// a non-2xx. Its warm-up answers must still read as "wait", not as a failure.
+test('isScispacyWarmingUp: a 503 warming_up body means the service is starting', () => {
+  const err = {response: {status: 503, data: {status: 'warming_up', message: 'Starting'}}}
+  assert.equal(isScispacyWarmingUp(err), true)
+})
+
+test('isScispacyWarmingUp: a 502 while the host boots counts only once warm-up was seen', () => {
+  const err = {response: {status: 502, data: {error: 'Bad gateway'}}}
+  assert.equal(isScispacyWarmingUp(err), false)
+  assert.equal(isScispacyWarmingUp(err, true), true)
+})
+
+test('isScispacyWarmingUp: other errors are not warm-up', () => {
+  assert.equal(isScispacyWarmingUp({response: {status: 500, data: {detail: 'boom'}}}, true), false)
+  assert.equal(isScispacyWarmingUp({response: {status: 429, data: {}}}, true), false)
+  assert.equal(isScispacyWarmingUp(new Error('Network Error'), true), false)
+  assert.equal(isScispacyWarmingUp(undefined), false)
+})
+
+// ocl_issues#2849: every $rerank goes through one limiter per tab. A finished
+// 10-row batch used to fire 10 at once, on top of the rerank sweep's 2.
+test('RERANK_MAX_IN_FLIGHT: a batch\'s reranks and the sweep\'s together keep at most 2 in flight', async () => {
+  assert.equal(RERANK_MAX_IN_FLIGHT, 2)
+  const limiter = createLimiter(RERANK_MAX_IN_FLIGHT)
+  let inFlight = 0
+  let maxInFlight = 0
+  const rerank = async () => {
+    const release = await limiter.acquire()
+    inFlight += 1
+    maxInFlight = Math.max(maxInFlight, inFlight)
+    await new Promise(resolve => setTimeout(resolve, 2))
+    inFlight -= 1
+    release()
+  }
+  // ten per-row reranks as one batch finishes, and the sweep's two
+  await Promise.all([...Array(10).keys(), 'sweep-a', 'sweep-b'].map(rerank))
+  assert.equal(maxInFlight, 2)
+})
+
+test('countAIOnlyRows: rows in scope the AI analyses, and the rest it skips', () => {
+  assert.deepEqual(countAIOnlyRows([0, 1, 2, 3], [1, 3, 7]), { analyse: 2, skip: 2 })
+  assert.deepEqual(countAIOnlyRows([0, 1], []), { analyse: 0, skip: 2 })
+  assert.deepEqual(countAIOnlyRows([], [1]), { analyse: 0, skip: 0 })
+})
+
+test('countAIOnlyRows: compares row indexes as strings', () => {
+  assert.deepEqual(countAIOnlyRows([0, 1], ['1']), { analyse: 1, skip: 1 })
+})
+
+test('getAutoMatchBlocker: a run that retrieves candidates for some rows does something', () => {
+  assert.equal(getAutoMatchBlocker({ rowsInScope: 3, hasAlgorithms: true, retrieveCandidates: true }), null)
+  assert.equal(getAutoMatchBlocker({ rowsInScope: 3, hasAlgorithms: true, retrieveCandidates: true, runAI: true }), null)
+})
+
+test('getAutoMatchBlocker: no rows in scope', () => {
+  assert.equal(getAutoMatchBlocker({ rowsInScope: 0, hasAlgorithms: true, retrieveCandidates: true }), 'no_rows')
+})
+
+test('getAutoMatchBlocker: no algorithm and no AI step', () => {
+  assert.equal(getAutoMatchBlocker({ rowsInScope: 3 }), 'no_algorithms')
+  assert.equal(getAutoMatchBlocker({ rowsInScope: 3, hasAlgorithms: true }), 'no_step')
+})
+
+test('getAutoMatchBlocker: an AI-only run needs a row to analyse', () => {
+  assert.equal(getAutoMatchBlocker({ rowsInScope: 3, runAI: true, aiRowsToAnalyse: 2 }), null)
+  assert.equal(getAutoMatchBlocker({ rowsInScope: 3, runAI: true, aiRowsToAnalyse: 0 }), 'no_ai_rows')
+})
+
+test('getAutoMatchBlocker: AI rows don\'t matter to a run that retrieves candidates', () => {
+  assert.equal(getAutoMatchBlocker({ rowsInScope: 3, hasAlgorithms: true, retrieveCandidates: true, runAI: true, aiRowsToAnalyse: 0 }), null)
+})
+
+test('getAutoMatchAIDefault: a project that was never auto-matched takes the first-run default', () => {
+  assert.equal(getAutoMatchAIDefault([], true), true)
+  assert.equal(getAutoMatchAIDefault(undefined, true), true)
+  assert.equal(getAutoMatchAIDefault([{ action: 'Opened' }], false), false)
+})
+
+test('getAutoMatchAIDefault: later runs keep the choice of the last run', () => {
+  const withAI = { action: 'auto_match_started', extras: { sub_actions: ['ocl-semantic', 'with_ai_analysis'] } }
+  const withoutAI = { action: 'auto_match_started', extras: { sub_actions: ['ocl-semantic'] } }
+  assert.equal(getAutoMatchAIDefault([withAI], false), true)
+  assert.equal(getAutoMatchAIDefault([withoutAI], true), false)
+  assert.equal(getAutoMatchAIDefault([{ action: 'Opened' }, { action: 'auto_match_finished' }, withoutAI, withAI], true), false)
+  assert.equal(getAutoMatchAIDefault([{ action: 'auto_match_started' }], true), false)
+})
+
+test('canRunAlgorithm: search, semantic and custom algorithms always run', () => {
+  ['ocl-search', 'ocl-semantic', 'custom'].forEach(type => assert.equal(canRunAlgorithm({ type }), true))
+})
+
+test('canRunAlgorithm: a bridge runs only for a user who can bridge', () => {
+  ['ocl-bridge', 'ocl-ciel-bridge'].forEach(type => {
+    assert.equal(canRunAlgorithm({ type }), false)
+    assert.equal(canRunAlgorithm({ type }, { canBridge: true }), true)
+  })
+})
+
+test('canRunAlgorithm: ScispaCy runs only for a user who can run it', () => {
+  assert.equal(canRunAlgorithm({ type: 'ocl-scispacy' }, { canBridge: true }), false)
+  assert.equal(canRunAlgorithm({ type: 'ocl-scispacy' }, { canScispacy: true }), true)
+})
+
+test('canRunAlgorithm: an unknown or missing type doesn\'t run', () => {
+  assert.equal(canRunAlgorithm({ type: 'something-else' }), false)
+  assert.equal(canRunAlgorithm(null), false)
+})
+
+test('getAutoMatchAIOnOpen: the first open after the logs load takes the project\'s default', () => {
+  const lastRunWithoutAI = [{ action: 'auto_match_started', extras: { sub_actions: ['reranker'] } }]
+  assert.deepEqual(getAutoMatchAIOnOpen({ current: false, logsLoaded: true, projectLogs: [] }), { runAI: true, applied: true })
+  assert.deepEqual(getAutoMatchAIOnOpen({ current: true, logsLoaded: true, projectLogs: lastRunWithoutAI }), { runAI: false, applied: true })
+})
+
+test('getAutoMatchAIOnOpen: before the logs load, the box is left as it is', () => {
+  assert.deepEqual(getAutoMatchAIOnOpen({ current: false, logsLoaded: false, projectLogs: [] }), { runAI: false, applied: false })
+  assert.deepEqual(getAutoMatchAIOnOpen({ current: true, logsLoaded: false }), { runAI: true, applied: false })
+})
+
+test('getAutoMatchAIOnOpen: later opens keep what the user left', () => {
+  assert.deepEqual(getAutoMatchAIOnOpen({ current: false, applied: true, logsLoaded: true, projectLogs: [] }), { runAI: false, applied: true })
+  assert.deepEqual(getAutoMatchAIOnOpen({ current: true, applied: true, logsLoaded: true, projectLogs: [] }), { runAI: true, applied: true })
+})
+
+test('getAutoMatchAIOnOpen: aiOnByDefault false opens it unticked every time', () => {
+  assert.deepEqual(getAutoMatchAIOnOpen({ current: false, logsLoaded: true, projectLogs: [], aiOnByDefault: false }), { runAI: false, applied: true })
+  assert.deepEqual(getAutoMatchAIOnOpen({ current: true, applied: true, logsLoaded: true, aiOnByDefault: false }), { runAI: false, applied: true })
 })

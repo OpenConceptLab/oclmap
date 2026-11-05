@@ -14,6 +14,7 @@ import { visuallyHidden } from '@mui/utils';
 import { filter, reject, get, sortBy, without, startCase, find, keys, map, times } from 'lodash'
 import { SECONDARY_COLORS } from '../../common/colors';
 import { ALL_COLUMNS } from './ResultConstants';
+import { withExtraColumns } from './tableColumns.js';
 
 const EnhancedTableHead = props => {
   const { t } = useTranslation()
@@ -33,8 +34,8 @@ const EnhancedTableHead = props => {
                 indeterminate={numSelected > 0 && numSelected < rowCount}
                 checked={rowCount > 0 && numSelected === rowCount}
                 onChange={onSelectAllClick}
-                inputProps={{
-                  'aria-label': t('search.select_all_rows'),
+                slotProps={{
+                  input: {'aria-label': t('search.select_all_rows')},
                 }}
               />
             </TableCell>
@@ -96,8 +97,7 @@ const TableResults = ({selected, bgColor, handleClick, handleRowClick, handleSel
     ALL_COLUMNS[resource] || [],
     column => nested ? column.nested !== false : column.global !== false
   );
-  if(extraColumns?.length)
-    columns = [...columns, ...extraColumns]
+  columns = withExtraColumns(columns, extraColumns)
 
   columns = excludedColumns?.length ? reject(columns, column => excludedColumns?.includes(column.id)) : columns
 
@@ -218,8 +218,8 @@ const TableResults = ({selected, bgColor, handleClick, handleRowClick, handleSel
                               size={size || 'medium'}
                               color="primary"
                               checked={isItemSelected}
-                              inputProps={{
-                                'aria-labelledby': labelId,
+                              slotProps={{
+                                input: {'aria-labelledby': labelId},
                               }}
                             />
                           </TableCell>

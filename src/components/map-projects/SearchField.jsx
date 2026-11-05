@@ -5,9 +5,15 @@ import SearchIcon from '@mui/icons-material/Search';
 import ClearIcon from '@mui/icons-material/Clear';
 import { useFormControl } from '@mui/material/FormControl';
 
-const SearchField = ({onChange}) => {
+const SearchField = ({onChange, value}) => {
   const [input, setInput] = React.useState('')
   const { focused } = useFormControl() || {};
+
+  // Text set from outside, such as the header's search: {text}
+  React.useEffect(() => {
+    if(value)
+      setInput(value.text)
+  }, [value])
   const _onChange = event => {
     const value = event.target.value
     setInput(value)

@@ -7,6 +7,7 @@ services:
       context: .
       args:
         NODE_ENV: production
+        PRIVATE_PACKAGES_GIT:
     ports:
       - "4004:4004"
     restart: on-failure
@@ -18,8 +19,10 @@ services:
       - ERRBIT_URL
       - ERRBIT_KEY
       - HOTJAR_ID
-      - OCL_ONLINE=${OCL_ONLINE-false}
+      - ANNOUNCEMENT
       - BRIDGE_MATCH_URL
       - AI_ASSISTANT_API_URL
       - SCISPACY_LOINC_API_URL
       - OCL_ONLINE_API_URL
+      - TERMBROWSER_URL=${TERMBROWSER_URL-}
+      - REPO_SUGGESTIONS=${REPO_SUGGESTIONS}

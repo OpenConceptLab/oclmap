@@ -172,7 +172,7 @@ const BaseEntityChip = ({ entity, icon, hideType, primary, size, sx, noLink, isV
       onClick={noLink ? undefined : event => {
         event.stopPropagation()
       }}
-      href={noLink ? undefined : '#' + (toV3URL(entity?.version_url || entity?.url))}
+      href={noLink ? undefined : toV3URL(entity?.version_url || entity?.url)}
       component='a'
       target='_blank'
       rel='noreferrer noopener'

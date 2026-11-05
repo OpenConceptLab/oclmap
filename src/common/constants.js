@@ -73,4 +73,7 @@ export const DEFAULT_CASCADE_PARAMS = {
 export const ALL = '*';
 export const URL_REGISTRY_DOC_LINK = 'https://docs.openconceptlab.org/en/latest/oclapi/apireference/urlregistry.html'
 export const MATCHING_ALGORITHMS_DOC_LINK = 'https://docs.openconceptlab.org/en/latest/oclmap/matching-algorithms.html'
-export const MAPPER_ANNOUNCEMENT_URL = 'https://openconceptlab.org/blog/letter-to-the-ocl-community?utm_source=oclmap&utm_medium=banner&utm_campaign=preview_launch'
+export const MAPPER_DOCS_LINK = 'https://docs.openconceptlab.org/en/latest/oclmap/overview.html'
+export const TERMS_OF_USE_URL = 'https://openconceptlab.org/terms-of-use'
+export const PRIVACY_POLICY_URL = 'https://openconceptlab.org/privacy-policy'
+export const COMMUNITY_SITE_URL = 'https://openconceptlab.org'

@@ -11,12 +11,13 @@ import map from 'lodash/map'
 import startCase from 'lodash/startCase'
 
 import { getScoreDetails, ScoreValueChip } from './Score'
+import { highlightHtml } from './conceptNames.js'
 
 // Per-algorithm score chip rendered inline. Used both for the legacy single-
 // algorithm case (raw_score = candidate.score) and the multi-algo aggregated
 // case (one row per contributingAlgorithm).
 const RawScoreRow = ({algorithm, score}) => (
-  <Stack direction='row' spacing={0.75} alignItems='center' sx={{flexWrap: 'nowrap', width: 'fit-content'}}>
+  <Stack direction='row' spacing={0.75} sx={{alignItems: 'center', flexWrap: 'nowrap', width: 'fit-content'}}>
     <Chip size='small' label={algorithm} variant='outlined' color='warning' />
     <ScoreValueChip
       size='small'
@@ -97,9 +98,7 @@ const MatchDetailsPanel = ({concept, contributingAlgorithms, candidatesScore}) =
             <Stack
               direction='row'
               spacing={1.5}
-              alignItems='center'
-              justifyContent='space-between'
-              sx={{ minWidth: { sm: '260px' } }}
+              sx={{alignItems: 'center', justifyContent: 'space-between', minWidth: { sm: '260px' } }}
             >
               <Typography sx={{fontSize: '12px', color: 'surface.light', fontWeight: 600, whiteSpace: 'nowrap'}}>
                 {t('search.search_score')}
@@ -112,16 +111,14 @@ const MatchDetailsPanel = ({concept, contributingAlgorithms, candidatesScore}) =
           <Stack
             direction='row'
             spacing={1.5}
-            alignItems='flex-start'
-            justifyContent='space-between'
-            sx={{ minWidth: { sm: '260px' } }}
+            sx={{alignItems: 'flex-start', justifyContent: 'space-between', minWidth: { sm: '260px' } }}
           >
             <Typography sx={{fontSize: '12px', color: 'surface.light', fontWeight: 600, whiteSpace: 'nowrap', paddingTop: '4px'}}>
               {t('search.search_raw_score')}
             </Typography>
             {
               rawScores.length ? (
-                <Stack spacing={0.75} alignItems='flex-end'>
+                <Stack spacing={0.75} sx={{alignItems: 'flex-end'}}>
                   {map(rawScores, (rawScore, index) => (
                     <RawScoreRow
                       key={`${rawScore.algorithm}-${rawScore.score}-${index}`}
@@ -163,7 +160,7 @@ const MatchDetailsPanel = ({concept, contributingAlgorithms, candidatesScore}) =
                     >
                       {
                         map(values, value => {
-                          const highlightedValue = value.replaceAll('<em>', '<b>').replaceAll('</em>', '</b>')
+                          const highlightedValue = highlightHtml(value)
                           return (
                             // Match the Concept Details Names/Descriptions typography
                             // (Locales.jsx LocalePrimary): 0.875rem, primary text,

@@ -15,6 +15,8 @@
 // imports, so the module is loadable by Node's native ESM resolver under
 // node:test.
 
+import { localizedDisplayName } from './conceptNames.js'
+
 const compact = arr => (arr || []).filter(x => x != null && x !== false)
 const values = obj => Object.values(obj || {})
 const isNumber = v => typeof v === 'number' && !Number.isNaN(v)
@@ -336,16 +338,17 @@ export const buildQualityRowViews = (rowState, conceptCache) => {
 
 /**
  * Sort RowViews by the chosen key. `rerank_score` and `algo_score` are
- * numeric; `id` and `display_name` are alphabetical. Missing scores sort
- * to the bottom in `desc` order via a -1 sentinel.
+ * numeric; `id` and `display_name` are alphabetical, `display_name` on the
+ * name shown in `inputLocale` (the project's input language). Missing scores
+ * sort to the bottom in `desc` order via a -1 sentinel.
  */
-export const sortRowViews = (views, sortBy, order) => {
+export const sortRowViews = (views, sortBy, order, inputLocale) => {
   const valueFor = view => {
     switch(sortBy) {
       case 'rerank_score': return view.conceptRow?.rerank_score ?? -1
       case 'algo_score':   return view.candidate?.score ?? -1
       case 'id':           return view.conceptDefinition?.id || view.conceptDefinition?.reference?.code || ''
-      case 'display_name': return view.conceptDefinition?.display_name || ''
+      case 'display_name': return localizedDisplayName(view.conceptDefinition, inputLocale) || ''
       default:             return 0
     }
   }
@@ -409,6 +412,114 @@ export const conceptForMapping = (rowView) => {
     contributingAlgorithms,
     contributingAlgorithmIds
   }
+}
+
+/**
+ * The row view of a mapped target: the one whose concept has the target's
+ * OCL URL or, when either lacks one, its id.
+ */
+export const findTargetRowView = (views, target) => {
+  return views.find(view => {
+    const mapped = conceptForMapping(view)
+    if(!mapped) return false
+    if(target.url && mapped.url)
+      return mapped.url === target.url
+    return mapped.id === target.id
+  })
+}
+
+/**
+ * A mapped target with the `names` and the match highlights its row's
+ * candidates hold for it, so it can be named in the project's input language
+ * with the name it matched on (OpenConceptLab/ocl_issues#2909). A target
+ * restored from a saved project has only its id, name and URL. What the
+ * target has of its own is kept; a target no candidate holds is returned as
+ * it is.
+ */
+export const withCandidateNames = (target, rowState, conceptCache) => {
+  const view = findTargetRowView(buildQualityRowViews(rowState, conceptCache), target)
+  if(!view) return target
+  return {
+    ...target,
+    names: target.names || view.conceptDefinition.names,
+    search_meta: {
+      ...target.search_meta,
+      search_highlight: target.search_meta?.search_highlight || view.candidate?.highlights
+    }
+  }
+}
+
+// A saved entry is data a client wrote, so only the shapes the names and
+// highlights are rendered from are kept: names with a string name (and a
+// string locale and type, if any), and highlights as lists of strings.
+const isText = value => typeof value === 'string'
+const savedNames = names => (Array.isArray(names) ? names : []).filter(name =>
+  isText(name?.name) && (name.locale == null || isText(name.locale)) && (name.name_type == null || isText(name.name_type)))
+const savedHighlight = highlight => {
+  if(!highlight || typeof highlight !== 'object' || Array.isArray(highlight)) return undefined
+  const kept = Object.entries(highlight).filter(([, values]) => Array.isArray(values)).map(([key, values]) => [key, values.filter(isText)])
+  return kept.length ? Object.fromEntries(kept) : undefined
+}
+
+/**
+ * A mapped target restored from a saved project's CSV, with the `names` and
+ * the match highlight its row's `matches` entry saved for it
+ * (OpenConceptLab/ocl_issues#2916). The CSV keeps only the target's id, name
+ * and URL, but every save also sends each mapped target's concept in
+ * `matches`. A target mapped from the Search tab has no candidate to take them
+ * from. An entry for another concept is ignored.
+ */
+export const withSavedMatch = (target, savedMatch) => {
+  const saved = savedMatch?.url && savedMatch.url === target?.url ? savedMatch.concept : undefined
+  const names = savedNames(saved?.names)
+  const highlight = savedHighlight(saved?.search_meta?.search_highlight)
+  return {
+    ...target,
+    ...(names.length ? {names} : {}),
+    ...(highlight ? {search_meta: {...target?.search_meta, search_highlight: highlight}} : {})
+  }
+}
+
+/**
+ * The `matches` a save sends: one entry per row. `entryFor` builds the entry
+ * of each row `mapSelected` holds, a cleared one (a null) included. A row it
+ * holds no key for, with a review note, gets a note-only entry, as the note is
+ * kept only in its entry (OpenConceptLab/ocl_issues#2984).
+ */
+export const buildMatchEntries = (rowIndexes, mapSelected, notes, entryFor) => [
+  ...Object.entries(mapSelected).map(([index, target]) => entryFor(target, index)),
+  ...rowIndexes
+    .filter(index => !Object.prototype.hasOwnProperty.call(mapSelected, index) && notes[index])
+    .map(index => ({rowIndex: index, note: notes[index]}))
+]
+
+/**
+ * A row's review note on reopen: the one its CSV row holds, else the one its
+ * saved `matches` entry holds (OpenConceptLab/ocl_issues#2984).
+ */
+export const restoredNote = (csvNote, savedMatch) => csvNote || savedMatch?.note || undefined
+
+/**
+ * A mapped target with its own names and match highlight put back over a
+ * candidate's: the ones it was mapped with, or that a reopened project
+ * restored (OpenConceptLab/ocl_issues#2916).
+ */
+export const withOwnNames = (target, own) => ({
+  ...target,
+  names: own?.names || target.names,
+  search_meta: {...target.search_meta, search_highlight: own?.search_meta?.search_highlight || target.search_meta?.search_highlight}
+})
+
+const ROW_OWN_FIELDS = ['names', 'search_meta', 'source', 'contributingAlgorithms', 'contributingAlgorithmIds']
+
+/**
+ * The cached concept a mapped target names, with the target's own names,
+ * `search_meta`, source and contributing algorithms, as `withOwnNames` keeps
+ * them. A copy: every row mapped to the concept shares the cache entry.
+ */
+export const withCachedConcept = (target, cached) => cached && {
+  ...cached,
+  ...Object.fromEntries(ROW_OWN_FIELDS.filter(field => target?.[field]).map(field => [field, target[field]]))
 }
 
 /**

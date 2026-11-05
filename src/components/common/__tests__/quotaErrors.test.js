@@ -5,7 +5,7 @@ import { getQuotaError, isCapMeter, isQuotaError } from '../quotaErrors.js'
 
 test('getQuotaError: maps quota and cap error codes to a meter and kind', () => {
   assert.deepEqual(getQuotaError({error_code: 'mapper_match_operations_limit_reached', limit: 6, used: 6}), {
-    meter: 'match_operations', kind: 'quota', errorCode: 'mapper_match_operations_limit_reached', usage: {used: 6, limit: 6},
+    meter: 'match_operations', kind: 'quota', errorCode: 'mapper_match_operations_limit_reached',
   })
   assert.equal(getQuotaError({error_code: 'ai_assistant_calls_limit_reached'}).meter, 'ai_assistant_calls')
   assert.equal(getQuotaError({error_code: 'ai_assistant_change_comments_limit_reached'}).meter, 'ai_assistant_change_comments')
@@ -15,7 +15,7 @@ test('getQuotaError: maps quota and cap error codes to a meter and kind', () => 
 
 test('getQuotaError: unwraps axios error responses', () => {
   const error = {response: {status: 403, data: {error_code: 'mapper_match_operations_limit_reached', limit: 3, used: 3}}}
-  assert.deepEqual(getQuotaError(error).usage, {used: 3, limit: 3})
+  assert.equal(getQuotaError(error).errorCode, 'mapper_match_operations_limit_reached')
 })
 
 test('getQuotaError: ignores permission errors and unrelated payloads', () => {

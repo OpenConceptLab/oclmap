@@ -1,6 +1,7 @@
 /*eslint no-process-env: 0*/
 import 'core-js/features/url-search-params';
 import React from 'react';
+import Mark from 'mark.js';
 import moment from 'moment';
 import { Tooltip } from '@mui/material';
 import {
@@ -14,37 +15,20 @@ import {
 } from './constants';
 import APIService from '../services/APIService';
 import GAService from '../services/GAService';
+import { ensureIdToken, prepareSignOut, settleForcedSignOut, renewSessionSilently } from './ssoSession';
 import { SERVER_CONFIGS } from './serverConfigs';
+import { legacyHashRoute, isSameSitePath } from './history';
+import { resolveV3URL, resolveIntegratedV3URL } from './appUrls';
 
-export const currentPath = () => window.location.hash.split('?')[0];
+export const currentPath = () => window.location.pathname;
 
-export const isAtGlobalSearch = () => window.location.hash.includes('#/search') || isAtRoot();
+export const isAtGlobalSearch = () => currentPath().startsWith('/search') || isAtRoot();
 
-export const isAtRoot = () => currentPath() === '#/';
+export const isAtRoot = () => currentPath() === '/';
 
 export const formatDate = date => moment(date).format(DATE_FORMAT);
 export const formatTime = date => moment(date).format(TIME_FORMAT);
 export const formatDateTime = date => moment(date).format(DATETIME_FORMAT);
-
-export const formatWebsiteLink = (value, style, text) => {
-  if(value && value.trim()) {
-    let href = value.trim();
-    if(!href.startsWith('http://') && !href.startsWith('https://'))
-      href = 'https://' + href;
-
-    return (
-      <a
-        target='_blank'
-        rel="noopener noreferrer"
-        href={href}
-        className="ellipsis-text"
-        style={merge({maxWidth: '100px'}, (style || {}))}>
-        {text || value.trim()}
-      </a>
-    );
-  }
-  return '';
-}
 
 export const formatWebsiteLinkTruncated = (value, style, text) => {
   if(value && value.trim()) {
@@ -118,8 +102,6 @@ export const getAPIURL = () => {
   /*eslint no-undef: 0*/
   return get(savedConfigs, 'url') || window.API_URL || process.env.API_URL;
 }
-
-export const toFullURL = uri => window.location.origin + '/#' + uri;
 
 export const toFullAPIURL = uri => getAPIURL() + uri;
 
@@ -210,7 +192,7 @@ export const arrayToObject = arr => {
   }, {});
 }
 
-export const currentUserHasAccess = () => hasAccessToURL(window.location.hash.replace('#/', ''))
+export const currentUserHasAccess = () => hasAccessToURL(window.location.pathname)
 
 export const hasAccessToURL = url => {
   if(!isLoggedIn())
@@ -263,12 +245,13 @@ export const arrayToCSV = objArray => {
   }, str);
 }
 
-export const refreshCurrentUserCache = callback => {
-  APIService.user().get(null, null, {includeAuthGroups: true, includeSubscribedOrgs: true, includeCapabilities: true}).then(response => {
-    if(response.status === 200) {
+export const refreshCurrentUserCache = (callback, onFailure) => {
+  APIService.user().get(null, null, {includeAuthGroups: true, includeSubscribedOrgs: true, includeFollowing: true, includeCapabilities: true}).then(response => {
+    if(response?.status === 200) {
       localStorage.setItem('user', JSON.stringify(response.data));
       if(callback) callback(response);
-    }
+    } else if(onFailure)
+      onFailure(response);
   });
 }
 
@@ -453,17 +436,9 @@ export const getFHIRServerConfigFromCurrentContext = () => {
     return getLocalFHIRServerConfig() || getDefaultFHIRServerConfig();
 }
 
-export const canSwitchServer = () => {
-  const user = getCurrentUser();
-
-  return Boolean(
-    getSelectedServerConfig() ||
-    get(user, 'is_superuser') ||
-      hasAuthGroup(user, 'server')
-  );
-}
-
-export const hasAuthGroup = (user, groupName) => Boolean(find(user?.auth_groups, group => group.includes(groupName)))
+// Matches the group's exact name, never a group whose name contains it
+// (OpenConceptLab/ocl_online#517).
+export const hasAuthGroup = (user, groupName) => Boolean(user?.auth_groups?.includes(groupName))
 
 export const canViewOperationsPanel = () => {
   const user = getCurrentUser()
@@ -649,7 +624,36 @@ export const getSiteTitle = () => get(getAppliedServerConfig(), 'info.site.title
 
 export const getRandomColor = () => `#${Math.floor(Math.random()*16777215).toString(16)}`;
 
-export const logoutUser = (redirectToLogin, forced) => {
+const exchangeSilentCode = body => APIService.users().appendToUrl('oidc/code-exchange/').post(body, false).then(res => res.data);
+
+// Several requests can be turned down at once; the first one decides, so later ones can't undo its sign-out.
+let signingOut = null
+export const logoutUser = (...args) => {
+  signingOut = signingOut || ensureIdToken(exchangeSilentCode).then(() => signOutUser(...args)).catch(error => {
+    signingOut = null
+    throw error
+  })
+  return signingOut
+}
+
+// The API turned the token down: renew it silently while the Keycloak session lives on, and sign out only if
+// that fails. The reload sends every request again with the new token.
+let renewing = null
+export const renewOrSignOut = () => {
+  renewing = renewing || renewSessionSilently(exchangeSilentCode).then(tokens => {
+    if(!tokens?.id_token)
+      return logoutUser(true, true)
+    localStorage.removeItem('server_configs')
+    localStorage.setItem('token', tokens.access_token)
+    localStorage.setItem('id_token', tokens.id_token)
+    settleForcedSignOut()
+    const reload = () => window.location.reload()
+    refreshCurrentUserCache(reload, reload)
+  })
+  return renewing
+}
+
+const signOutUser = (redirectToLogin, forced) => {
   const clearTokens = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('id_token');
@@ -657,24 +661,24 @@ export const logoutUser = (redirectToLogin, forced) => {
     localStorage.removeItem('visits');
   }
 
-  const returnTo = window.location.origin + '/' + window.location.hash
-  if(forced)
-    sessionStorage.setItem('session_expired', 'true')
-
-  const redirectURL = forced ?
-    window.location.origin + '/#/signin?returnTo=' + encodeURIComponent(returnTo) :
-    undefined
-  const logoutURL = getSSOLogoutURL(redirectURL)
+  const returnTo = window.location.origin + window.location.pathname + window.location.search
+  const { logoutURL, signInAgain } = prepareSignOut({
+    forced,
+    returnTo,
+    apiURL: getAPIURL(),
+    idToken: localStorage.id_token,
+    loginRedirectURL: window.LOGIN_REDIRECT_URL || process.env.LOGIN_REDIRECT_URL,
+  })
 
   clearTokens()
   if(logoutURL)
     window.location = logoutURL
+  else if(forced && !signInAgain)
+    return // turned down again right after signing back in: stay signed out here rather than reload in a loop
   else if(redirectToLogin)
     getLoginURL(forced ? returnTo : undefined).then(url => { window.location.href = url })
-  else {
-    window.location.hash = '#/';
-    window.location.reload();
-  }
+  else
+    window.location.assign('/');
 }
 
 
@@ -877,12 +881,25 @@ const routePath = route => {
 
 // Keycloak only redeems a code when the token request repeats the sign-in's redirect_uri exactly, and the
 // callback can't rebuild a page's query string (e.g. ?referrer= on links from openconceptlab.org). So sign-in
-// always goes through LOGIN_REDIRECT_URL, and the page to come back to (its hash route) waits here, in this tab.
+// always goes through LOGIN_REDIRECT_URL, and the page to come back to (its route) waits here, in this tab.
+const returnToRoute = returnTo => {
+  if(!returnTo)
+    return null
+  try {
+    const url = new URL(returnTo, window.location.origin)
+    if(url.origin !== window.location.origin)
+      return null
+    return legacyHashRoute(url) || url.pathname + url.search + url.hash
+  } catch {
+    return null
+  }
+}
+
 const prepareOAuthReturnTo = returnTo => {
-  const route = returnTo?.includes('#') ? returnTo.slice(returnTo.indexOf('#') + 1) : null
+  const route = returnToRoute(returnTo)
   const path = route && routePath(route)
   // The router matches paths case-insensitively, so /SIGNUP would start a sign-up too.
-  if(path?.startsWith('/') && !/^\/(oidc\/login|signin|signup)(\/|$)/i.test(path))
+  if(isSameSitePath(path) && !/^\/(oidc\/login|signin|signup)(\/|$)/i.test(path))
     sessionStorage.setItem(OAUTH_RETURN_TO_KEY, route)
   else
     sessionStorage.removeItem(OAUTH_RETURN_TO_KEY)
@@ -933,14 +950,6 @@ export const getRegisterURL = async returnTo => {
   GAService.recordSignupStart()
 
   return `${getAPIURL()}/users/signup/?client_id=${oidClientID}&state=${state}&nonce=${nonce}&redirect_uri=${redirectURL}&code_challenge=${codeChallenge}&code_challenge_method=S256`
-}
-
-
-export const getSSOLogoutURL = returnTo => {
-  const redirectURL = returnTo || window.LOGIN_REDIRECT_URL || process.env.LOGIN_REDIRECT_URL
-  const idToken = localStorage.id_token
-  if(redirectURL && idToken)
-    return `${getAPIURL()}/users/logout/?id_token_hint=${idToken}&post_logout_redirect_uri=${redirectURL}`
 }
 
 
@@ -1085,20 +1094,16 @@ export const highlightTexts = (items, texts, unmark=false, additionalTexts) => {
 
 export const pluralize = (count, singular, plural) => `${count?.toLocaleString()} ${count === 1 ? singular : plural}`;
 
-export const toV3URL = path => {
-  let url = 'https://app.v3.openconceptlab.org'
-  if(window.location.host?.includes('localhost'))
-    url = 'http://localhost:4002'
-  if(['map.dev.openconceptlab.org', 'map.demo.openconceptlab.org'].includes(window.location.host))
-    url = 'https://app.v3.qa.openconceptlab.org'
-  if(window.location.host.match('map.*.openconceptlab.org'))
-    url = window.location.origin.replace('//map.', '//app.v3.')
+export const getV3URL = () => resolveV3URL(window.TERMBROWSER_URL || process.env.TERMBROWSER_URL, window.location.origin, window.location.host)
 
+export const hasTermBrowser = () => Boolean(resolveIntegratedV3URL(window.TERMBROWSER_URL || process.env.TERMBROWSER_URL, window.location.origin, window.location.host))
+
+export const toV3URL = path => {
   let referrerParams = `referrer=${window.location.href}`
   if(isLoggedIn())
     referrerParams += '?auth=true'
 
-  return `${url}/#${path || '/'}?${referrerParams}`
+  return `${getV3URL()}/#${path || '/'}?${referrerParams}`
 }
 
 export const isV3URL = url => {

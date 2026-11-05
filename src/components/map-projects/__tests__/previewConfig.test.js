@@ -32,6 +32,12 @@ test('getPreviewAlgorithmOptions keeps a selected custom algorithm visible but d
   assert.equal(custom?.disabled, true)
 })
 
+test('getPreviewAlgorithmOptions shows the OCL Semantic Algorithm unavailable on a version without Semantic Search', () => {
+  const semantic = options => options.find(algo => algo.type === 'ocl-semantic')
+  assert.equal(semantic(getPreviewAlgorithmOptions({ algos, isLLMAlgoNotAllowed: true }))?.disabled, true)
+  assert.equal(semantic(getPreviewAlgorithmOptions({ algos, isLLMAlgoNotAllowed: false }))?.disabled, false)
+})
+
 test('getPreviewConfigAccessErrors blocks org owners without org-project access', () => {
   assert.deepEqual(
     getPreviewConfigAccessErrors({

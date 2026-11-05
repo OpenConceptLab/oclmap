@@ -1,4 +1,6 @@
 # oclmap
+
+[![DPG Badge](https://img.shields.io/badge/Verified-DPG-3333AB?logo=data:image/svg%2bxml;base64,PHN2ZyB3aWR0aD0iMzEiIGhlaWdodD0iMzMiIHZpZXdCb3g9IjAgMCAzMSAzMyIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTE0LjIwMDggMjEuMzY3OEwxMC4xNzM2IDE4LjAxMjRMMTEuNTIxOSAxNi40MDAzTDEzLjk5MjggMTguNDU5TDE5LjYyNjkgMTIuMjExMUwyMS4xOTA5IDEzLjYxNkwxNC4yMDA4IDIxLjM2NzhaTTI0LjYyNDEgOS4zNTEyN0wyNC44MDcxIDMuMDcyOTdMMTguODgxIDUuMTg2NjJMMTUuMzMxNCAtMi4zMzA4MmUtMDVMMTEuNzgyMSA1LjE4NjYyTDUuODU2MDEgMy4wNzI5N0w2LjAzOTA2IDkuMzUxMjdMMCAxMS4xMTc3TDMuODQ1MjEgMTYuMDg5NUwwIDIxLjA2MTJMNi4wMzkwNiAyMi44Mjc3TDUuODU2MDEgMjkuMTA2TDExLjc4MjEgMjYuOTkyM0wxNS4zMzE0IDMyLjE3OUwxOC44ODEgMjYuOTkyM0wyNC44MDcxIDI5LjEwNkwyNC42MjQxIDIyLjgyNzdMMzAuNjYzMSAyMS4wNjEyTDI2LjgxNzYgMTYuMDg5NUwzMC42NjMxIDExLjExNzdMMjQuNjI0MSA5LjM1MTI3WiIgZmlsbD0id2hpdGUiLz4KPC9zdmc+Cg==)](https://digitalpublicgoods.net/r/open-concept-lab)
 OCL Mapper (beta) user interface. This open-source web application implements a collaborative terminology workflow that helps users to map spreadsheet-based input data to a target terminology stored in a OCL Terminology Server, such as LOINC, CIEL, ICD-10, or any custom data dictionary. The Mapper UI uses a AI-supported matching algorithm exposed by the OCL Terminology Server to generate candidates for mapping. Mapping healthcare data to standard terminologies is often the first step in an interoperability project, and it can be incredibly time consuming and costly, especially in resource-constrained environments that may have limited access to terminologists. Early tests of the matching algorithm (using vector embeddings and nearest neighbor search for candidate generation) demonstrated a ~60% improvement in the top-5 metric mapping our test datasets to the Columbia International eHealth Laboratory (hashtag#CIEL) interface terminology as compared to standard string matching approaches.
 
 Development is being coordinated by the OCL Mapper Squad, consisting of team members from Madiro, LOINC, Regenstrief, and CIEL. Please reach out to learn more and to get involved.
@@ -14,6 +16,25 @@ Development is being coordinated by the OCL Mapper Squad, consisting of team mem
 ### Run Production (do check CORS origin policy with API_URL)
 1. `docker-compose -f docker-compose.yml up -d`
 2. Visit http://localhost:4004
+
+### Announcement banner
+To show a banner above the app, for example for planned maintenance, set the optional `ANNOUNCEMENT` environment variable to JSON:
+
+```json
+{
+  "id": "maintenance-2026-11",
+  "text": {"en": "Planned maintenance on Saturday, 02:00-04:00 UTC.", "es": "Mantenimiento programado el sábado, de 02:00 a 04:00 UTC."},
+  "links": [{"label": {"en": "Details", "es": "Detalles"}, "url": "https://status.example.org/"}],
+  "until": "2026-11-09T00:00:00Z"
+}
+```
+
+- `id`: dismissing the banner hides it in that browser until `id` changes.
+- `text` and each link's `label`: plain text for each language code (`en`, `es`, `pt-BR`, `zh`). `en` is required, and shows for any language that has no entry.
+- `links`: `https:` URLs, shown after the text. Use `[]` for none.
+- `until` (optional): an ISO 8601 time with `Z` or an offset, such as `2026-11-09T00:00:00Z`. The banner stops showing after it, without a restart.
+
+`start-prod.sh` writes the setting into `env-config.js` when the container starts, so a change shows after a restart. When it's unset, or isn't valid (bad JSON, a missing field, a link that isn't `https:`), no banner shows. With `npm start`, put `var ANNOUNCEMENT = <the JSON as a JavaScript string>;` in `public/env-config.js` instead (`node -p 'JSON.stringify(process.argv[1])' '<the JSON>'` prints one), and don't commit it.
 
 
 ### Eslint
@@ -47,3 +68,7 @@ Example:
 ```
 python3 mapeval.py -t=[your-api-token] -r=/orgs/CIEL/sources/CIEL/v2023-09-11/ -e=https://api.qa.openconceptlab.org -f=./samples/NMRS\ Concept\ Request\ from\ CCFN\ 22012025\ final\ mappings.xlsx --correct=Correct\ Map\ CIEL\ Concept\ ID
 ```
+
+## License
+
+This repository is part of the [OCL Digital Public Good](https://github.com/OpenConceptLab/.github/blob/main/DIGITAL-PUBLIC-GOOD.md). It is licensed under the [Mozilla Public License 2.0](LICENSE) with the [OCL Healthcare Disclaimer](HEALTHCARE-DISCLAIMER.md).

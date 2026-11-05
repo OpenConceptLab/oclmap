@@ -454,6 +454,48 @@ export const normalizeAlgorithmInvocation = (rawPayload, ctx = {}) => {
   }
 }
 
+/**
+ * Drop bridge_child candidates for concept_keys missing from the target
+ * version, and the concept_rows left unreferenced. Returns the same rowState
+ * when nothing is dropped.
+ */
+export const dropMissingBridgeTargets = (rowState, missingKeys) => {
+  if (!rowState?.candidates || !missingKeys?.size) return rowState
+  const candidates = {}
+  let dropped = false
+  Object.entries(rowState.candidates).forEach(([id, c]) => {
+    if (c?.type === 'bridge_child' && missingKeys.has(c.concept_key)) dropped = true
+    else candidates[id] = c
+  })
+  if (!dropped) return rowState
+  const referencedKeys = new Set(Object.values(candidates).map(c => c?.concept_key))
+  const conceptRows = {}
+  Object.entries(rowState.concept_rows || {}).forEach(([key, cr]) => {
+    if (referencedKeys.has(key)) conceptRows[key] = cr
+  })
+  return { ...rowState, candidates, concept_rows: conceptRows }
+}
+
+/**
+ * Put back candidates dropMissingBridgeTargets removed, unless their bridge
+ * parent is gone. Returns the same rowState when nothing is restored.
+ */
+export const restoreBridgeTargets = (rowState, dropped) => {
+  if (!rowState?.candidates || !dropped?.candidates) return rowState
+  const candidates = { ...rowState.candidates }
+  const conceptRows = { ...(rowState.concept_rows || {}) }
+  let restored = false
+  Object.entries(dropped.candidates).forEach(([id, c]) => {
+    if (candidates[id] || !candidates[c?.parent_candidate_id]) return
+    candidates[id] = c
+    if (!conceptRows[c.concept_key])
+      conceptRows[c.concept_key] = dropped.concept_rows?.[c.concept_key] || { concept_key: c.concept_key, rerank_score: undefined }
+    restored = true
+  })
+  if (!restored) return rowState
+  return { ...rowState, candidates, concept_rows: conceptRows }
+}
+
 const LOOKUP_RANK = { pending: 0, failed: 0, partial: 1, full: 2 }
 export const lookupStatusRank = (status) => LOOKUP_RANK[status] ?? 0
 

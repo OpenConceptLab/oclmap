@@ -66,6 +66,8 @@ export const ES_BATCH_SIZE = 50
 export const CANDIDATES_LIMIT = 30
 
 export const ROW_STAGES = {
+  // the server stayed too busy: not run, retry (ocl_issues#2849)
+  '-4': 'throttled',
   '-3': 'na',
   '-2': 'failed',
   '-1': 'not_started',

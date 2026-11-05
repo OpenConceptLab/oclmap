@@ -46,12 +46,76 @@ export const spendsMatchQuota = (algo, { canBridge = false } = {}) => {
   return true
 }
 
-// Rows a run can match before it runs out of match operations: each row costs
-// one operation per $match-spending algorithm. null when there is no cap.
-export const getRowCapByMatchOperations = (matchOperations, matchAlgorithmCount) => {
-  if(!matchOperations || matchOperations.unlimited || !matchAlgorithmCount)
-    return null
-  return Math.floor(Math.max(matchOperations.remaining || 0, 0) / matchAlgorithmCount)
+// Whether getRowsResults runs this algorithm for this user (ocl_issues#2872).
+export const canRunAlgorithm = (algo, { canBridge = false, canScispacy = false } = {}) => {
+  if(['ocl-bridge', 'ocl-ciel-bridge'].includes(algo?.type))
+    return Boolean(canBridge)
+  if(algo?.type === 'ocl-scispacy')
+    return Boolean(canScispacy)
+  return ['custom', 'ocl-search', 'ocl-semantic'].includes(algo?.type)
+}
+
+// The rows a run includes: the first maxRows of them, or all of them when
+// maxRows is null.
+export const takeRunRows = (rows, maxRows) => {
+  if(!Array.isArray(rows))
+    return []
+  if(!Number.isInteger(maxRows) || rows.length <= maxRows)
+    return rows
+  return rows.slice(0, Math.max(maxRows, 0))
+}
+
+// Row statuses once a run starts matching runRowIndexes: those rows lose their
+// proposed and approved statuses, and every other row keeps its own.
+export const clearRunRowStatuses = (rowStatuses, runRowIndexes) => {
+  const runRows = new Set((runRowIndexes || []).map(index => index?.toString()))
+  const keep = indexes => (indexes || []).filter(index => !runRows.has(index?.toString()))
+  return {...rowStatuses, readyForReview: keep(rowStatuses?.readyForReview), reviewed: keep(rowStatuses?.reviewed)}
+}
+
+export const countAIOnlyRows = (rowIndexes, analysableRowIndexes) => {
+  const analysable = new Set((analysableRowIndexes || []).map(index => index?.toString()))
+  const all = rowIndexes || []
+  const analyse = all.filter(index => analysable.has(index?.toString())).length
+  return { analyse, skip: all.length - analyse }
+}
+
+// Why an Auto Match run would do nothing, or null (ocl_issues#2872).
+export const getAutoMatchBlocker = ({
+  rowsInScope = 0,
+  hasAlgorithms = false,
+  retrieveCandidates = false,
+  runAI = false,
+  aiRowsToAnalyse = 0,
+} = {}) => {
+  if(!rowsInScope)
+    return 'no_rows'
+  if(!retrieveCandidates && !runAI)
+    return hasAlgorithms ? 'no_step' : 'no_algorithms'
+  if(!retrieveCandidates && !aiRowsToAnalyse)
+    return 'no_ai_rows'
+  return null
+}
+
+// Whether the OCL AI Assistant starts ticked on the project's AutoMatch
+// (OpenConceptLab/ocl_online#465): as on the project's last run, or
+// firstRunDefault when it has never been auto-matched. projectLogs is newest
+// first.
+export const getAutoMatchAIDefault = (projectLogs, firstRunDefault) => {
+  const lastRun = (projectLogs || []).find(log => log?.action === 'auto_match_started')
+  if(!lastRun)
+    return Boolean(firstRunDefault)
+  return (lastRun.extras?.sub_actions || []).includes('with_ai_analysis')
+}
+
+// The OCL AI Assistant box when the AutoMatch dialog opens. Once the project's
+// logs have loaded, the first open takes the project's default; later opens
+// keep what the user left. aiOnByDefault false always opens it unticked.
+// Returns {runAI, applied}; applied says the project's default has been used.
+export const getAutoMatchAIOnOpen = ({ current = false, applied = false, logsLoaded = false, projectLogs = [], aiOnByDefault = true } = {}) => {
+  const useDefault = logsLoaded && !applied
+  const runAI = useDefault ? getAutoMatchAIDefault(projectLogs, true) : Boolean(current)
+  return {runAI: Boolean(aiOnByDefault) && runAI, applied: applied || useDefault}
 }
 
 // How many consecutive rows may fail, for a reason other than AI quota, before
@@ -122,6 +186,16 @@ export const hasCurrentAnalysis = (analyses, fingerprint) => {
 // the row's index, not its position in the run (ocl_online#258).
 export const getScispacyRowResults = (responseData, rowIndex) => responseData?.[rowIndex] || []
 
+// Whether a failed ScispaCy call means the service is still starting: it
+// answers 503 {status: 'warming_up'} while its host boots, then a 502 until
+// the app is up. The row waits for it rather than failing.
+export const isScispacyWarmingUp = (err, seenWarmingUp = false) => {
+  const data = err?.response?.data
+  if(data?.status === 'warming_up')
+    return true
+  return Boolean(seenWarmingUp && err?.response?.status === 502)
+}
+
 // The in-flight $lookups for a row's concepts. Rerank waits for them, and so
 // does a bulk run's AI step, which can reach a row whose rerank was skipped
 // (after a rerank quota stop), so the AI sees the looked-up concepts.
@@ -132,6 +206,11 @@ export const getPendingRowLookups = (rowState, inFlightLookups) =>
 
 // How long a bulk run's AI step waits for a row's lookups before going ahead.
 export const AI_LOOKUP_WAIT_MS = 15000
+
+// $rerank calls in flight at once, per tab, whatever fired them: the rerank
+// sweep, or the per-row reranks as batches finish (ocl_issues#2849). Each ties
+// up an API worker for seconds, and a finished 10-row batch used to fire ten.
+export const RERANK_MAX_IN_FLIGHT = 2
 
 // How long rerank waits for a row's lookups before going ahead without them
 // (ocl_online#283). A guard against a lookup that never settles, longer than

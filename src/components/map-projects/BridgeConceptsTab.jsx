@@ -80,10 +80,8 @@ const BridgeAccordionSummary = ({entry, candidatesScore, allowMapping, onMap, is
     <Box sx={{width: '100%'}}>
       <Stack
         direction='row'
-        alignItems='center'
-        justifyContent='space-between'
         spacing={1}
-        sx={{width: '100%', flexWrap: 'wrap'}}
+        sx={{alignItems: 'center', justifyContent: 'space-between', width: '100%', flexWrap: 'wrap'}}
       >
         <Box sx={{flexGrow: 1, minWidth: 0, overflow: 'hidden'}}>
           <Breadcrumbs
@@ -95,7 +93,7 @@ const BridgeAccordionSummary = ({entry, candidatesScore, allowMapping, onMap, is
             concept={conceptStub}
           />
         </Box>
-        <Stack direction='row' alignItems='center' spacing={0.5} sx={{flexShrink: 0}}>
+        <Stack direction='row' spacing={0.5} sx={{alignItems: 'center', flexShrink: 0}}>
           {
             entry.map_type &&
               <Chip size='small' label={entry.map_type} sx={MAP_TYPE_CHIP_SX} />
@@ -143,10 +141,8 @@ const BridgeAccordionSummary = ({entry, candidatesScore, allowMapping, onMap, is
         (def.display_name || conceptToMap) && (
           <Stack
             direction='row'
-            alignItems='flex-start'
-            justifyContent='space-between'
             spacing={1}
-            sx={{marginTop: '4px', width: '100%'}}
+            sx={{alignItems: 'flex-start', justifyContent: 'space-between', marginTop: '4px', width: '100%'}}
           >
             <Typography sx={{fontSize: '22px', color: BLACK, flexGrow: 1, minWidth: 0}} className='searchable'>
               {def.display_name}

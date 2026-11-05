@@ -2,10 +2,11 @@
 import React from 'react';
 import { Route, Switch, withRouter } from 'react-router-dom';
 import {
-  isLoggedIn, getLoginURL, isOtherOCLClientURL, isRedirectingToLoginViaReferrer,
+  isLoggedIn, refreshCurrentUserCache, getLoginURL, isOtherOCLClientURL, isRedirectingToLoginViaReferrer,
   getEnv
 } from '../../common/utils';
 import GAService from '../../services/GAService';
+import { silentSignIn, isSSOSessionEnabled, settleForcedSignOut } from '../../common/ssoSession';
 import Error404 from '../errors/Error404';
 import Error403 from '../errors/Error403';
 import Error401 from '../errors/Error401';
@@ -24,8 +25,8 @@ import Header from './Header';
 import OIDLoginCallback from '../users/OIDLoginCallback';
 import { OperationsContext } from './LayoutContext';
 import Alert from '../common/Alert';
-import MapProject from '../map-projects/MapProject'
-import MapProjects from '../map-projects/MapProjects'
+import MapProjectRoute from '../map-projects/MapProjectRoute'
+import MapProjectsRedirect from '../map-projects/MapProjectsRedirect'
 import { useTranslation } from 'react-i18next';
 
 const AuthenticationRequiredRoute = ({component: Component, ...rest}) => {
@@ -51,6 +52,8 @@ const App = props => {
   const [startupError, setStartupError] = React.useState(null)
   const [throttlingError, setThrottlingError] = React.useState(null)
   const { alert, setAlert, setToggles } = React.useContext(OperationsContext);
+  const [authVersion, setAuthVersion] = React.useState(0)
+  const silentCheckRunning = React.useRef(false)
   const setupHotJar = () => {
     /*eslint no-undef: 0*/
     const HID = window.HOTJAR_ID || process.env.HOTJAR_ID
@@ -87,17 +90,43 @@ const App = props => {
     const queryParams = new URLSearchParams(search)
     const referrer = queryParams.get('referrer')
     if(isLoggedIn()) {
-      // OIDLoginCallback navigates away itself; resetting the hash here would undo that.
-      if(!pathname.startsWith('/oidc/login'))
-        window.location.hash = '#'  + pathname
+      if(hash?.startsWith('#/') && !pathname.startsWith('/oidc/login'))
+        props.history.replace(pathname + search)
     } else if(isOtherOCLClientURL(referrer) && !isLoggedIn()) {
       const parts = hash ? hash.split('?') : referrer.split('?')
       let params = new URLSearchParams(parts[1])
       if(params.get('auth') === 'true') {
-        getLoginURL(window.location.origin + '/#' + pathname).then(url => { window.location.href = url })
+        getLoginURL(window.location.origin + pathname).then(url => { window.location.href = url })
       }
     }
   }
+
+  const trySilentSignIn = () => {
+    if(silentCheckRunning.current || isLoggedIn() || !isSSOSessionEnabled())
+      return
+    if(/^\/(oidc\/login|signin|signup)(\/|$)/i.test(window.location.pathname))
+      return
+    silentCheckRunning.current = true
+    silentSignIn(body => APIService.users().appendToUrl('oidc/code-exchange/').post(body).then(res => res.data)).then(tokens => {
+      if(!tokens || isLoggedIn())
+        return
+      localStorage.removeItem('server_configs')
+      localStorage.setItem('token', tokens.access_token)
+      localStorage.setItem('id_token', tokens.id_token)
+      settleForcedSignOut()
+      refreshCurrentUserCache(() => setAuthVersion(version => version + 1))
+    }).finally(() => { silentCheckRunning.current = false })
+  }
+
+  React.useEffect(() => {
+    trySilentSignIn()
+    const onVisible = () => {
+      if(document.visibilityState === 'visible')
+        trySilentSignIn()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [])
 
   React.useEffect(() => {
     const unsubscribe = APIService.onThrottle(details => {
@@ -123,7 +152,7 @@ const App = props => {
   }, [setAlert, t])
 
   return (
-    <div>
+    <div key={authVersion}>
       <DocumentTitle/>
       <Header>
         <ErrorBoundary>
@@ -135,10 +164,10 @@ const App = props => {
                 <Switch>
                   <Route exact path="/signin" component={SigninRedirect} />
                   <Route exact path="/oidc/login" component={OIDLoginCallback} />
-                  <AuthenticationRequiredRoute exact path='/' component={MapProjects} />
-                  <AuthenticationRequiredRoute exact path='/map-projects' component={MapProjects} />
-                  <AuthenticationRequiredRoute exact path='/map-projects/new' component={MapProject} />
-                  <AuthenticationRequiredRoute exact path='/:ownerType/:owner/map-projects/:projectId' component={MapProject} />
+                  <AuthenticationRequiredRoute exact path='/' component={MapProjectsRedirect} />
+                  <AuthenticationRequiredRoute exact path='/map-projects' component={MapProjectsRedirect} />
+                  <AuthenticationRequiredRoute exact path='/map-projects/new' component={MapProjectRoute} />
+                  <AuthenticationRequiredRoute exact path='/:ownerType/:owner/map-projects/:projectId' component={MapProjectRoute} />
                   <Route exact path='/403' component={Error403} />
                   <Route component={Error404} />
                 </Switch>

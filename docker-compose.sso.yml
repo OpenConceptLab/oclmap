@@ -8,6 +8,7 @@ services:
       target: build
       args:
         NODE_ENV: development
+        PRIVATE_PACKAGES_GIT:
     ports:
       - "4004:4004"
       - "4005:35729"
@@ -18,3 +19,6 @@ services:
     environment:
       - LOGIN_REDIRECT_URL=${LOGIN_REDIRECT_URL-http://localhost:4004}
       - OIDC_RP_CLIENT_ID=${OIDC_RP_CLIENT_ID-oclmaplocal}
+      - OIDC_SERVER_URL=${OIDC_SERVER_URL:-http://localhost:8080}
+      - OIDC_REALM=${OIDC_REALM:-ocl}
+      - REPO_SUGGESTIONS=${REPO_SUGGESTIONS}

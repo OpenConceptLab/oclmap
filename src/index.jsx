@@ -1,13 +1,17 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import Fade from '@mui/material/Fade';
-import { HashRouter } from 'react-router-dom';
+import { BrowserRouter, useHistory } from 'react-router-dom';
 import { ThemeProvider, StyledEngineProvider, createTheme, alpha } from '@mui/material/styles';
 import App from './components/app/App';
 import LayoutContext from './components/app/LayoutContext';
 import './index.scss';
-import { COLORS } from './common/colors';
+import { COLORS, WHITE } from './common/colors';
+import { buttonFocusComponents } from './common/buttonFocus';
 import './i18n/config';
+import { setAppHistory, handleLinkClick, keepLinkClickBubbling, legacyHashRoute, redirectLegacyHashRoute } from './common/history';
+import { takeSigninToResume } from './common/ssoSession';
+import { isLoggedIn, getLoginURL } from './common/utils';
 
 const theme = createTheme();
 const v5Theme = createTheme(theme, {
@@ -118,17 +122,47 @@ const v5Theme = createTheme(theme, {
       ]
     }
   }
+}, {
+  // Focused buttons: the two-tone ring, not MUI's focus ripple (OpenConceptLab/ocl_issues#2970)
+  components: buttonFocusComponents(WHITE, COLORS.primary['30'])
 })
 
 
-const container = document.getElementById('root');
-const root = createRoot(container);
-root.render(
-  <HashRouter>
+const HistoryBridge = () => {
+  setAppHistory(useHistory())
+  return null
+}
+
+const legacyRoute = legacyHashRoute()
+if(legacyRoute)
+  window.history.replaceState(null, '', legacyRoute)
+
+window.addEventListener('click', keepLinkClickBubbling, true)
+document.addEventListener('click', handleLinkClick)
+window.addEventListener('hashchange', redirectLegacyHashRoute)
+
+const renderApp = () => createRoot(document.getElementById('root')).render(
+  <BrowserRouter>
+    <HistoryBridge />
     <StyledEngineProvider injectFirst>
       <ThemeProvider theme={v5Theme}>
           <LayoutContext subPages ={(<App />)} />
       </ThemeProvider>
     </StyledEngineProvider>
-  </HashRouter>
+  </BrowserRouter>
 );
+
+// Back from Keycloak's logout after a forced sign-out: sign in again, then return to the page the user was on.
+const signinToResume = () => {
+  try {
+    return isLoggedIn() ? null : takeSigninToResume(window.location)
+  } catch {
+    return null
+  }
+}
+
+const returnTo = signinToResume()
+if(returnTo)
+  getLoginURL(returnTo).then(url => { window.location.replace(url) }).catch(renderApp)
+else
+  renderApp()

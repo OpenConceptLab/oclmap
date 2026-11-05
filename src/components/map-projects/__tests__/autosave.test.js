@@ -13,7 +13,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { createAutosaveScheduler, saveOnLeave, trackSave, whenSaved, hasSaveInFlight, AUTOSAVE_DELAY_MS } from '../autosave.js'
+import { createAutosaveScheduler, createLatestSender, saveOnLeave, trackSave, whenSaved, hasSaveInFlight, AUTOSAVE_DELAY_MS } from '../autosave.js'
 
 // Virtual clock standing in for setTimeout/clearTimeout. Timers scheduled
 // while the clock is being advanced land in a later window, as real timers
@@ -233,33 +233,55 @@ test('saveOnLeave: nothing pending, nothing saved', () => {
   assert.deepEqual(leaveSaves, [])
 })
 
-test('saveOnLeave: waits for a save in flight, so the newer payload lands last', async () => {
+test('saveOnLeave: builds the payload at once, to send after the save in flight', () => {
   const { scheduler } = setup()
-  const order = []
-  let finish
-  const inFlightSave = new Promise(resolve => { finish = resolve }).then(() => order.push('in-flight save'))
+  const inFlightSave = new Promise(() => {})
+  const leaveSaves = []
 
   scheduler.schedule('decision_change')
-  saveOnLeave({ scheduler, inFlightSave, save: reasons => order.push(`leave save: ${reasons}`) })
-  assert.deepEqual(order, [], 'must not save on top of the in-flight save')
+  saveOnLeave({ scheduler, inFlightSave, save: (reasons, {after}) => leaveSaves.push({reasons, after}) })
 
-  finish()
-  await inFlightSave
-  await nextTick()
-  assert.deepEqual(order, ['in-flight save', 'leave save: decision_change'])
+  // Called now, before anything after leaving can change what it saves.
+  assert.equal(leaveSaves.length, 1)
+  assert.deepEqual(leaveSaves[0].reasons, ['decision_change'])
+  assert.equal(leaveSaves[0].after, inFlightSave)
 })
 
-test('saveOnLeave: still saves when the in-flight save fails', async () => {
+test('saveOnLeave: a rejected leave save is logged', async () => {
   const { scheduler } = setup()
-  const leaveSaves = []
-  const inFlightSave = Promise.reject(new Error('network'))
+  const logged = []
+  const originalError = console.error
+  console.error = (...args) => logged.push(args[0])
+  try {
+    scheduler.schedule('decision_change')
+    saveOnLeave({ scheduler, inFlightSave: null, save: () => Promise.reject(new Error('network')) })
+    await nextTick()
+  } finally {
+    console.error = originalError
+  }
+  assert.deepEqual(logged, ['Mapper: saving on leave failed'])
+})
 
-  scheduler.schedule('decision_change')
-  saveOnLeave({ scheduler, inFlightSave, save: reasons => leaveSaves.push(reasons) })
+test('saveOnLeave: reopening the project waits for the leave save, not just the save before it', async () => {
+  const { scheduler } = setup()
+  const order = []
+  let finishFirst
+  let finishLeave
+  const first = trackSave('project-chain', new Promise(resolve => { finishFirst = resolve }).then(() => order.push('first save')))
+  const send = () => new Promise(resolve => { finishLeave = resolve }).then(() => order.push('leave save'))
 
-  await inFlightSave.catch(() => {})
+  scheduler.schedule('auto_match_stopped')
+  // As onSave does with {after}: tracked now, sent once the first settles.
+  saveOnLeave({ scheduler, inFlightSave: first, save: (reasons, {after}) => trackSave('project-chain', Promise.resolve(after).then(send, send)) })
+  const reopened = whenSaved('project-chain').then(() => order.push('reopen'))
+
+  finishFirst()
+  await first
   await nextTick()
-  assert.deepEqual(leaveSaves, [['decision_change']])
+  assert.deepEqual(order, ['first save'], 'the reopen still waits')
+  finishLeave()
+  await reopened
+  assert.deepEqual(order, ['first save', 'leave save', 'reopen'])
 })
 
 // Saves that outlive their page: reopening the project waits for them, and
@@ -303,4 +325,93 @@ test('trackSave: an older save settling does not untrack a newer one for the sam
   await newer
   await nextTick()
   assert.equal(hasSaveInFlight(), false)
+})
+
+// ── createLatestSender (ocl_issues#2849) ───────────────────────────────────
+// The logs POST sends the whole log each time. With retries, an older POST
+// that waited out a 429 could land after a newer one and overwrite it; so one
+// POST at a time, and triggers during it coalesce into one more, which reads
+// the log as it is then.
+
+const deferred = () => {
+  let resolve
+  const promise = new Promise(r => { resolve = r })
+  return {promise, resolve}
+}
+
+test('createLatestSender: one trigger sends once', async () => {
+  let sends = 0
+  const sender = createLatestSender(async () => { sends += 1 })
+  await sender.trigger()
+  assert.equal(sends, 1)
+})
+
+test('createLatestSender: triggers while a send is in flight coalesce into one more send', async () => {
+  const gates = [deferred(), deferred()]
+  let sends = 0
+  const sender = createLatestSender(() => gates[sends++].promise)
+  const first = sender.trigger()
+  sender.trigger()
+  sender.trigger()
+  const last = sender.trigger()
+  assert.equal(sends, 1)
+  gates[0].resolve()
+  await new Promise(resolve => setTimeout(resolve, 0))
+  assert.equal(sends, 2)
+  gates[1].resolve()
+  // every trigger's promise settles once the log is sent as it stood last
+  await Promise.all([first, last])
+  assert.equal(sends, 2)
+})
+
+test('createLatestSender: a failed send doesn\'t stop the pending one, and nothing rejects', async () => {
+  let sends = 0
+  const sender = createLatestSender(async () => {
+    sends += 1
+    if(sends === 1) {
+      await new Promise(resolve => setTimeout(resolve, 5))
+      throw new Error('boom')
+    }
+  })
+  const first = sender.trigger()
+  const second = sender.trigger()
+  await Promise.all([first, second])
+  assert.equal(sends, 2)
+})
+
+test('createLatestSender: after it settles, the next trigger sends again', async () => {
+  let sends = 0
+  const sender = createLatestSender(async () => { sends += 1 })
+  await sender.trigger()
+  await sender.trigger()
+  assert.equal(sends, 2)
+})
+
+// Codex review, pass 1: the payload belongs to the sender (one per project),
+// so a retry for project A can't pick up project B's log from shared state.
+test('createLatestSender: the send reads the latest payload triggered on this sender, on every attempt', async () => {
+  const gate = deferred()
+  const seen = []
+  const sender = createLatestSender(async getPayload => {
+    seen.push(getPayload())
+    if(seen.length === 1) {
+      await gate.promise
+      // a retry within the same send reads it again
+      seen.push(getPayload())
+    }
+  })
+  const first = sender.trigger({logs: 'a1'})
+  sender.trigger({logs: 'a2'})
+  sender.trigger({logs: 'a3'})
+  gate.resolve()
+  await first
+  assert.deepEqual(seen, [{logs: 'a1'}, {logs: 'a3'}, {logs: 'a3'}])
+})
+
+test('createLatestSender: two senders keep their own payloads', async () => {
+  const seen = []
+  const a = createLatestSender(async getPayload => { seen.push(['a', getPayload()]) })
+  const b = createLatestSender(async getPayload => { seen.push(['b', getPayload()]) })
+  await Promise.all([a.trigger('project A'), b.trigger('project B')])
+  assert.deepEqual(seen.sort(), [['a', 'project A'], ['b', 'project B']])
 })

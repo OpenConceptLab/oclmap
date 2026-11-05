@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 
 import {
   getPreviewLimitError,
@@ -49,4 +50,16 @@ test('AI preview errors use AI Assistant dialog copy', () => {
   assert.equal(PREVIEW_LIMIT_COPY_KEY.mapper_scispacy_denied, 'scispacy')
   assert.equal(isAIPreviewLimitError('ai_assistant_calls_limit_reached'), true)
   assert.equal(isAIPreviewLimitError('mapper_match_operations_limit_reached'), false)
+})
+
+// Limits reached go to QuotaDialog; PreviewLimitDialog shows the rest.
+test('every refusal PreviewLimitDialog shows has its own message in each language', () => {
+  for (const locale of ['en', 'es', 'pt-BR', 'zh']) {
+    const catalog = JSON.parse(readFileSync(new URL(`../../../i18n/locales/${locale}/translations.json`, import.meta.url), 'utf8')).map_project
+    const missing = Object.entries(PREVIEW_LIMIT_COPY_KEY)
+      .filter(([errorCode]) => !errorCode.endsWith('_limit_reached'))
+      .map(([, kind]) => `limit_unavailable_body_${kind}`)
+      .filter(key => !catalog[key])
+    assert.deepEqual(missing, [], locale)
+  }
 })

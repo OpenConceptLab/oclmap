@@ -9,6 +9,7 @@ import BridgeMatch from '../../services/LazyLoader'
 import GAService from '../../services/GAService'
 
 import { useParams, useHistory, useLocation, Redirect } from 'react-router-dom'
+import { getAppTitle } from '../app/DocumentTitle'
 
 import Paper from '@mui/material/Paper'
 import Button from '@mui/material/Button';
@@ -26,13 +27,11 @@ import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
 import Snackbar from '@mui/material/Snackbar';
-import { DataGrid } from '@mui/x-data-grid';
+import { DataGrid, GRID_CHECKBOX_SELECTION_COL_DEF } from '@mui/x-data-grid';
 
 
-import DoubleArrowIcon from '@mui/icons-material/DoubleArrow';
 import DoneIcon from '@mui/icons-material/Done';
 import CloseIcon from '@mui/icons-material/Close';
-import AutoMatchIcon from '@mui/icons-material/MotionPhotosAutoOutlined';
 import ClearIcon from '@mui/icons-material/Clear';
 import AssistantIcon from '@mui/icons-material/Assistant';
 import PendingIcon from '@mui/icons-material/HourglassBottom';
@@ -53,6 +52,7 @@ import omitBy from 'lodash/omitBy'
 import reject from 'lodash/reject'
 import uniq from 'lodash/uniq'
 import compact from 'lodash/compact'
+import keyBy from 'lodash/keyBy'
 import flatten from 'lodash/flatten'
 import keys from 'lodash/keys'
 import pickBy from 'lodash/pickBy'
@@ -70,8 +70,10 @@ import pick from 'lodash/pick'
 import { OperationsContext } from '../app/LayoutContext';
 
 import APIService, { isTransientNetworkError, retryWithBackoff } from '../../services/APIService';
-import { buildAttributionHeaders, buildConfigSnapshot, summarizeRunCompletion } from '../../services/attribution'
-import { highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, hasCapability, getMapperPreview, getNewProjectBlockReason, downloadObject, currentUserToken, refreshCurrentUserCapabilitiesCache } from '../../common/utils';
+import { matchToken, lookupToken } from '../../services/tokenScope'
+import { buildAttributionHeaders, buildConfigSnapshot, summarizeRunCompletion, matchesOnOCL } from '../../services/attribution'
+import { CAPACITY_LIMIT, RATE_LIMIT, CAPACITY_WAIT_CAP_MS, HEAVY_REQUEST_TIMEOUT_MS, LIGHT_REQUEST_TIMEOUT_MS, createCapacityGate, createLimiter, isRetryableError, requestWithCapacityRetry, sleepUnlessCancelled, untilCancelled } from '../../services/capacity'
+import { getAPIURL, highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, hasCapability, getMapperPreview, getNewProjectBlockReason, downloadObject, currentUserToken, refreshCurrentUserCapabilitiesCache } from '../../common/utils';
 import { WHITE, SURFACE_COLORS, TEXT_GRAY } from '../../common/colors';
 
 import { useDoubleClick } from '../common/useDoubleClick'
@@ -82,12 +84,15 @@ import { buildPanelPayload } from './openConceptPanel'
 import LoaderDialog from '../common/LoaderDialog'
 import Error403 from '../errors/Error403'
 import { HEADERS, SEMANTIC_SEARCH_HEADERS, ROW_STATES, VIEWS, DECISION_TABS, ROW_STAGES, PROMPTS_KEY_DEFAULT, PROMPTS_ACTION_TYPE_DEFAULT, SCORES_COLOR } from './constants'
+import { updateColumnState, resuggestColumns, applyTemplateColumns } from './columnSuggestions'
 import MapProjectDeleteConfirmDialog from './MapProjectDeleteConfirmDialog';
 import ConfigurationForm from './ConfigurationForm'
 import Controls from './Controls'
 import DataGridControls from './DataGridControls'
-import { getPreviewEligibleRowIndexes, getRowsToProcess, spendsMatchQuota, getRowCapByMatchOperations, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, AI_LOOKUP_WAIT_MS, RERANK_LOOKUP_WAIT_MS } from './autoMatchRows'
-import { createAutosaveScheduler, saveOnLeave, trackSave, whenSaved, installUnloadGuard } from './autosave'
+import { getPreviewEligibleRowIndexes, getRowsToProcess, countAIOnlyRows, getAutoMatchAIOnOpen, takeRunRows, clearRunRowStatuses, canRunAlgorithm, spendsMatchQuota, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, AI_LOOKUP_WAIT_MS, RERANK_LOOKUP_WAIT_MS, RERANK_MAX_IN_FLIGHT, isScispacyWarmingUp } from './autoMatchRows'
+import { aiOnByDefault, getMaxRunRows, getMapperSettings } from '@openconceptlab/oclmap-extensions'
+import { createAutosaveScheduler, createLatestSender, saveOnLeave, trackSave, whenSaved, installUnloadGuard } from './autosave'
+import { blockLeaving, continueLeaving, createRunClosers, isUnsavedNewProject, shouldAskBeforeLeaving, shouldWarnBeforeUnload } from './leaveGuard'
 import MatchSummaryCard from './MatchSummaryCard'
 import MappingDecisionResult from './MappingDecisionResult'
 import DecisionSelector from './DecisionSelector'
@@ -100,21 +105,25 @@ import Concept from './Concept'
 import ImportToCollection from './ImportToCollection'
 import ProjectLogs from './ProjectLogs';
 import { useAlgos, ensureConceptIdentity } from './algorithms'
-import { applyRequestSettings, getRequestSettings, hasFullRequestLimits } from './requestLimits'
+import { applyRequestSettings, getRequestLimits, getRequestSettings } from './requestLimits'
 import { countQualityBuckets, createBestCandidateScoreCache, filterRowsByQualityBucket, getRowQualities } from './rowQuality'
 import AutoMatchDialog from './AutoMatchDialog'
 import PreviewLimitDialog from './PreviewLimitDialog'
 import QuotaDialog from '../common/QuotaDialog'
 import { getQuotaError } from '../common/quotaErrors'
 import MapperQuotaChip from './MapperQuotaChip'
+import MapProjectBreadcrumb from './MapProjectBreadcrumb'
 import { getPreviewLimitError, isAIPreviewLimitError } from './previewLimits'
-import { formatRowNumbers, runMatchBatch, requestSingleMatch } from './matchBatch'
+import { formatRowNumbers, rowNumberOf, runMatchBatch, requestSingleMatch, runWithConcurrency, INTERACTIVE_WAIT_CAP_MS } from './matchBatch'
 import { getAIAssistantChoices, getModelUsed, getPromptTemplateKey, createLatestRequestGate } from './aiVisibility'
 import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
 import { normalizeAlgorithmInvocation, hasSuccessfulAlgorithmResponse, getAlgorithmStagesFromResponses, lookupStatusRank, buildRecommendableConceptEntry, stripConstantClassAndDatatype, buildLookupConceptUrl, serializeCandidates, toStoredRowMatchState } from './normalizers'
+import { createLookupSession, LOOKUP_NOT_FOUND } from './lookupSession'
 import { parseConceptKey } from './conceptKey'
-import { getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId } from './projectTargetRepo'
-import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, formatBridgeTargetDownloadEntry, resolveAICandidateID, getScoreDetails, getAIAnalysisCandidateIDs } from './viewBuilders.js'
+import { normalizeLookupConfig } from './lookupConfigFields'
+import { getDeclaredLocales, getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getSavedTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId } from './projectTargetRepo'
+import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, findTargetRowView, formatBridgeTargetDownloadEntry, resolveAICandidateID, getScoreDetails, getAIAnalysisCandidateIDs, withCachedConcept, withCandidateNames, buildMatchEntries, restoredNote, withOwnNames, withSavedMatch } from './viewBuilders.js'
+import { formatClockTime, getCapacityWaitLabel, mergeCapacityWaits } from './rowProgress.js'
 
 import './MapProject.scss'
 import '../common/ResizablePanel.scss'
@@ -145,7 +154,7 @@ const MAPPER_QUOTA_SURFACE = {match_operations: 'auto_match', ai_assistant_calls
 
 const MapProject = () => {
   const { t } = useTranslation();
-  const { toggles, setAlert: baseSetAlert } = React.useContext(OperationsContext);
+  const { toggles, setAlert: baseSetAlert, setProjectRowSearch } = React.useContext(OperationsContext);
   const user = getCurrentUser()
   const [mapperQuotaCacheVersion, setMapperQuotaCacheVersion] = React.useState(0)
   const refreshMapperQuotaCache = React.useCallback(() => {
@@ -160,6 +169,8 @@ const MapProject = () => {
   }, [location.search])
 
   const bridgeRef = React.useRef()
+  // Column mapping of the project being copied, applied to the next upload.
+  const templateColumnsRef = React.useRef([])
   const facetsRequestsRef = React.useRef({})
   const latestFacetRequestRef = React.useRef({})
   // project state
@@ -187,7 +198,7 @@ const MapProject = () => {
   // concept_key (makeConceptKey output). The two key namespaces don't
   // collide — opaque keys are JSON.stringify'd arrays, URLs start with '/'.
   // PR3 collapses to key-only when legacy save/load is dropped.
-  const [, setRowMatchState] = React.useState({})
+  const [rowMatchState, setRowMatchState] = React.useState({})
   const rowMatchStateRef = React.useRef({})
 
   const [searchedConcepts, setSearchedConcepts] = React.useState({});
@@ -226,6 +237,29 @@ const MapProject = () => {
   const autoMatchRunGateRef = React.useRef(null)
   if(!autoMatchRunGateRef.current)
     autoMatchRunGateRef.current = createLatestRequestGate()
+  // The latest run's ticket, for waits that must end when that run stops.
+  const autoMatchRunTicketRef = React.useRef(null)
+  // Waiting out a busy server (ocl_issues#2849). One gate per server: a 429 on
+  // any request holds back this tab's others to that server, and the Auto
+  // Match scheduler. At most RERANK_MAX_IN_FLIGHT $rerank calls at once, the
+  // per-row reranks during a run included.
+  const capacityGatesRef = React.useRef(new Map())
+  const rerankLimiterRef = React.useRef(null)
+  if(!rerankLimiterRef.current)
+    rerankLimiterRef.current = createLimiter(RERANK_MAX_IN_FLIGHT)
+  // The requests waiting for capacity now, each with its rows, for the
+  // "Waiting for capacity" notices.
+  const capacityWaitsRef = React.useRef(new Map())
+  const [capacityWaits, setCapacityWaits] = React.useState(null)
+  // A run's rows the server stayed too busy for, by algorithm id ('rerank'
+  // included), for the end-of-run notice.
+  const throttledRunRowsRef = React.useRef({})
+  const rowThrottlesRef = React.useRef({})
+  // One logs POST at a time per project URL (see createLatestSender).
+  const logsSendersRef = React.useRef(new Map())
+  // The row a bridge $match is for, set around the call into the Bridge Match
+  // component (see getBridgeMatchService).
+  const bridgeCallContextRef = React.useRef(null)
   // ai_assistant.calls is a one-time allowance (no reset, R2) - once exhausted it
   // stays exhausted for the rest of the session, so this is never reset per-run.
   const aiQuotaExhaustedRef = React.useRef(false);
@@ -245,10 +279,19 @@ const MapProject = () => {
   // A ref so every per-row backend call reads the run id synchronously without
   // prop-drilling or re-renders; null outside a run → 'mapper-ui-manual'.
   const automatchRunRef = React.useRef(null);
+  // Lets leaving close open run records at once.
+  const runClosersRef = React.useRef(null)
+  if(!runClosersRef.current)
+    runClosersRef.current = createRunClosers()
+  const isRunActiveRef = React.useRef(false)
+  const hasInputRef = React.useRef(false)
+  const [leaveTarget, setLeaveTarget] = React.useState(null)
+  const [isSavingToLeave, setIsSavingToLeave] = React.useState(false)
+  const ownNavigationRef = React.useRef(false)
   const refreshRowStageSnapshotRef = React.useRef({});
 
-  const [previewLimit, setPreviewLimit] = React.useState(null) // {errorCode, limit, used} or null
-  const previewLimitQuota = previewLimit ? getQuotaError({error_code: previewLimit.errorCode, limit: previewLimit.limit, used: previewLimit.used}) : null
+  const [previewLimit, setPreviewLimit] = React.useState(null) // {errorCode} or null
+  const previewLimitQuota = previewLimit ? getQuotaError({error_code: previewLimit.errorCode}) : null
 
   const [row, setRow] = React.useState(false)
   const [loadingMatches, setLoadingMatches] = React.useState(false)
@@ -258,10 +301,12 @@ const MapProject = () => {
   const [selectedRowStatus, setSelectedRowStatus] = React.useState('all')
   const [decisionTab, setDecisionTab] = React.useState('candidates')
   const [searchText, setSearchText] = React.useState('')  // csv row search
+  const [headerRowSearch, setHeaderRowSearch] = React.useState(null)  // set by the header's search
   const [selectedCandidatesScoreBucket, setSelectedCandidatesScoreBucket] = React.useState(false)
   const [scoreBucketSortBy, setScoreBucketSortBy] = React.useState('desc')
 
   const [matchDialog, setMatchDialog] = React.useState(false)
+  const [autoRetrieveCandidates, setAutoRetrieveCandidates] = React.useState(true)
   const [showItem, setShowItem] = React.useState(false)
   const [autoMatchScope, setAutoMatchScope] = React.useState('unmapped')
   const [autoRunAIAnalysis, setAutoRunAIAnalysis] = React.useState(false)
@@ -273,9 +318,15 @@ const MapProject = () => {
   const [projectLogs, setProjectLogs] = React.useState([])
   const logsRef = React.useRef({})
   const projectLogsRef = React.useRef([])
+  // A saved project's logs load after it opens. Until they have, AutoMatch
+  // can't tell a project's first run from a later one.
+  const projectLogsLoadedRef = React.useRef(!params.projectId)
+  const autoMatchAIDefaultAppliedRef = React.useRef(false)
   const configSnapshotOnOpenRef = React.useRef(null)
+  const getConfigurationSnapshotRef = React.useRef(null)
   const projectIdRef = React.useRef(null)
   const onSaveRef = React.useRef(null)
+  const projectLogRef = React.useRef(() => {})
   // A save can complete after the user has left the project
   // (OpenConceptLab/ocl_issues#2829): these track the request still in flight
   // (accurate after unmount, unlike isSaving state) and whether this page is
@@ -283,6 +334,8 @@ const MapProject = () => {
   const inFlightSaveRef = React.useRef(null)
   const isMountedRef = React.useRef(true)
   const autosaveSchedulerRef = React.useRef(null)
+  // Set when a save fails, cleared when one succeeds: the change is still unsaved.
+  const lastSaveFailedRef = React.useRef(false)
   if(!autosaveSchedulerRef.current)
     autosaveSchedulerRef.current = createAutosaveScheduler({
       getProjectId: () => projectIdRef.current,
@@ -315,6 +368,12 @@ const MapProject = () => {
   }, [logs])
 
   React.useEffect(() => {
+    const appTitle = getAppTitle()
+    document.title = name ? `${name} - ${appTitle}` : appTitle
+    return () => document.title = appTitle
+  }, [name, location.pathname])
+
+  React.useEffect(() => {
     projectLogsRef.current = projectLogs
   }, [projectLogs])
 
@@ -327,30 +386,66 @@ const MapProject = () => {
   // captured when the change happened rather than what is on screen now.
   React.useEffect(() => {
     onSaveRef.current = onSave
+    projectLogRef.current = projectLog
+    getConfigurationSnapshotRef.current = getConfigurationSnapshot
   })
+
+  // Configure's edits save when it closes, so leaving with it open and changed
+  // would drop them.
+  const hasUnsavedConfiguration = () => {
+    const opened = configSnapshotOnOpenRef.current
+    return Boolean(opened && getConfigurationSnapshotRef.current) && opened !== getConfigurationSnapshotRef.current()
+  }
 
   // Leaving the project unmounts this page, often inside the autosave window:
   // save the pending change now rather than drop it
   // (OpenConceptLab/ocl_issues#2829). Nothing to save once signed out.
+  const saveNowOnLeave = () => saveOnLeave({
+    scheduler: autosaveSchedulerRef.current,
+    inFlightSave: inFlightSaveRef.current,
+    save: (reasons, {after}) => currentUserToken() && onSaveRef.current({source: 'auto', closeConfigure: false, reasons, leaving: true, after})
+  })
+
+  // Leaving stops a run at once, not gracefully: its record closes now and
+  // what it matched so far is saved. Once per run, whether or not leaving
+  // unmounts this page: a navigation to another project URL reuses it.
+  const stopRunOnLeave = () => {
+    if(!runClosersRef.current.hasOpen() && !(isRunActiveRef.current && !abortRef.current))
+      return
+    abortRef.current = true
+    projectLogRef.current({action: 'auto_match_stopped_on_leave'})
+    autosaveSchedulerRef.current.schedule('auto_match_stopped')
+    runClosersRef.current.closeAll(true)
+  }
+
   React.useEffect(() => {
     isMountedRef.current = true
     installUnloadGuard()
     return () => {
       isMountedRef.current = false
-      saveOnLeave({
-        scheduler: autosaveSchedulerRef.current,
-        inFlightSave: inFlightSaveRef.current,
-        save: reasons => currentUserToken() && onSaveRef.current({source: 'auto', closeConfigure: false, reasons, leaving: true})
-      })
+      stopRunOnLeave()
+      if(hasUnsavedConfiguration())
+        autosaveSchedulerRef.current.schedule('configuration_change')
+      saveNowOnLeave()
     }
   }, [])
 
-  // Closing or reloading the tab inside the autosave window, or while a save
-  // is in flight, would lose the change, so ask first. installUnloadGuard
-  // covers a save that outlives this page.
+  // Closing or reloading the tab, or following a link to another site, inside
+  // the autosave window, while a save is in flight, or before a new project's
+  // first save would lose work, so ask first. installUnloadGuard covers a save
+  // that outlives this page.
   React.useEffect(() => {
     const warnIfUnsaved = event => {
-      if(!autosaveSchedulerRef.current.hasPending() && !inFlightSaveRef.current)
+      const warn = shouldWarnBeforeUnload({
+        pendingAutosave: autosaveSchedulerRef.current.hasPending(),
+        saveInFlight: inFlightSaveRef.current,
+        saveFailed: lastSaveFailedRef.current,
+        configChanged: hasUnsavedConfiguration(),
+        runActive: isRunActiveRef.current,
+        projectId: projectIdRef.current,
+        hasInput: hasInputRef.current,
+      })
+      if(!warn)
         return
       event.preventDefault()
       event.returnValue = ''
@@ -359,13 +454,26 @@ const MapProject = () => {
     return () => window.removeEventListener('beforeunload', warnIfUnsaved)
   }, [])
 
+  // Closing the tab stops a run too, and closes its record.
+  React.useEffect(() => {
+    const stopRunOnPageHide = () => {
+      if(!runClosersRef.current.hasUnsettled())
+        return
+      abortRef.current = true
+      runClosersRef.current.closeAll(true, {keepalive: true})
+    }
+    window.addEventListener('pagehide', stopRunOnPageHide)
+    return () => window.removeEventListener('pagehide', stopRunOnPageHide)
+  }, [])
+
   // repo state
   const [repo, setRepo] = React.useState(false)
   const [repoVersion, setRepoVersion] = React.useState(false)
+  // Version shows its error only after a save without one.
+  const [showTargetRepoVersionError, setShowTargetRepoVersionError] = React.useState(false)
   const [mappedSources, setMappedSources] = React.useState([])
   const [bridgeMappedSources, setBridgeMappedSources] = React.useState({})
   const [locales, setLocales] = React.useState([])
-  const [isLoadingLocales, setIsLoadingLocales] = React.useState(false)
   const [versions, setVersions] = React.useState([])
   const [conceptCache, setConceptCache] = React.useState({})
   const [allMapTypes, setAllMapTypes] = React.useState([])
@@ -494,7 +602,10 @@ const MapProject = () => {
         : cr
     })
 
-    rowMatchStateRef.current = { ...prevAll, [rowIndex]: nextRow }
+    // Drop bridge targets already found missing from the target version.
+    const keptRow = lookupSessionRef.current.dropMissing(rowIndex, nextRow)
+
+    rowMatchStateRef.current = { ...prevAll, [rowIndex]: keptRow }
     setRowMatchState(rowMatchStateRef.current)
 
     // Merge ConceptDefinitions into the project-wide conceptCache, keyed by
@@ -524,7 +635,7 @@ const MapProject = () => {
     // free. Forward-ref pattern because ensureLoaded is declared later.
     if(ensureLoadedRef.current) {
       const keysToLoad = concept_definitions
-        .filter(d => d && d.lookup_status !== 'full')
+        .filter(d => d && d.lookup_status !== 'full' && !lookupSessionRef.current.isMissing(d.key))
         .map(d => d.key)
       if(keysToLoad.length) {
         ensureLoadedRef.current(keysToLoad, rowIndex, isRunTraffic).then(() => {
@@ -552,22 +663,20 @@ const MapProject = () => {
   // later rows don't wait on them again (ocl_online#258).
   const stuckLookupsRef = React.useRef(new WeakSet())
 
-  // URL-level fetch dedup for ensureLoaded. Keyed by ocl_url. Stores
-  // Promise<data|null>: in-flight entries deduplicate concurrent requests for
-  // the same URL even when they arrive under different concept_keys (e.g.
-  // ocl-scispacy uses a hardcoded canonical 'http://loinc.org' while
-  // ocl-bridge cascade targets use target_repo's canonical — they produce
-  // different concept_keys but resolve to the same OCL URL). Failed/404
-  // entries are deleted so they remain retryable; successful entries persist
-  // for the session.
-  const urlFetchCacheRef = React.useRef(new Map())
+  // Per target version: URL-level fetch dedup for ensureLoaded (different
+  // concept_keys can resolve to the same OCL URL), 404s included, and the
+  // concept_keys found missing.
+  const lookupSessionRef = React.useRef(null)
+  if(!lookupSessionRef.current)
+    lookupSessionRef.current = createLookupSession()
 
   // Rerank scheduling (plans/unified-mapper-model.md "Rerank — debounce +
   // in-flight check"). Replaces the legacy "wait for every algo to
   // complete" trigger with: any ConceptRow with rerank_score === undefined
   // makes its row eligible; debounce coalesces rapid algo completions;
-  // in-flight set prevents double-firing.
-  const inFlightRerankRef = React.useRef(new Set())
+  // in-flight map (row -> a promise that settles when its rerank ends)
+  // prevents double-firing.
+  const inFlightRerankRef = React.useRef(new Map())
   const rerankDebounceRef = React.useRef({})
   const rerankRerunNeededRef = React.useRef(new Set())
   // Forward-ref pointer for mergeIntoRowMatchState (declared earlier in
@@ -585,20 +694,20 @@ const MapProject = () => {
   const OCL_ONLINE_API_URL = window.OCL_ONLINE_API_URL || process.env.OCL_ONLINE_API_URL
   const inAIAssistantGroup = Boolean(hasCapability(user, 'users.mapper_ai_assistant') && AI_ASSISTANT_API_URL)
   const isCoreUser = hasAuthGroup(user, 'core_user')
-  // Batch size and concurrent requests per algorithm (ocl_online#274)
-  const fullRequestLimits = hasFullRequestLimits(user)
+  // Batch size and concurrent requests per algorithm the user can set
+  // (ocl_online#274, ocl_issues#2849, ocl_online#517)
+  const requestLimits = getRequestLimits(getMapperSettings(user))
   const mapperPreview = getMapperPreview()
   // Only staff choose the AI model and prompt template (canSelectAIModel gates
-  // both pickers). Core, early-access and unlimited-AI users keep the output
-  // language; preview users get the project's template and its default model.
-  const { canSelectAIModel, canSetAIOutputLocale } = getAIAssistantChoices(
-    user, {unlimitedAICalls: mapperPreview.aiAssistantCalls.unlimited}
-  )
+  // both pickers). Users granted it keep the output language; everyone else
+  // gets the project's template and its default model.
+  const { canSelectAIModel, canSetAIOutputLocale } = getAIAssistantChoices(user)
   const CANDIDATES_LIMIT = 15
   const canBridge = bridgeRef?.current?.canBridge()
   const canScispacy = Boolean(
     hasCapability(user, 'users.mapper_scispacy') && canBridge && SCISPACY_API_URL && toggles.SCISPACY_LOINC_TOGGLE === true
   )
+  const runnableAlgos = filter(algosSelected, algo => canRunAlgorithm(algo, {canBridge, canScispacy}))
   const matchAlgorithmIds = map(filter(algosSelected, algo => spendsMatchQuota(algo, {canBridge})), 'id')
   const isMultiAlgo = algosSelected.length > 1
   const scispacyEnabled = find(algosSelected, {type: 'ocl-scispacy'})
@@ -643,6 +752,10 @@ const MapProject = () => {
 
   const baseAlgos = useAlgos(t)
   const [apiAlgos, setApiAlgos] = React.useState([]);
+  // canBridge comes from the BridgeMatch component, which only mounts once it has a
+  // bridge repo. Before any bridge algo is selected (new project) fall back to the
+  // one the API offers, otherwise the option can never be enabled to select it.
+  const bridgeProbeAlgo = bridgeAlgo || find(apiAlgos, a => ['ocl-bridge', 'ocl-ciel-bridge'].includes(a.type))
   React.useEffect(() => {
     if (!OCL_ONLINE_API_URL) return;
 
@@ -684,12 +797,12 @@ const MapProject = () => {
         return {id: `property__${_filter.code}`, label: `Property: ${_filter.code}`, description: _filter.description || ''}
     }))]
 
+  // The target repo can load after the file (and so its properties), so
+  // re-suggest columns the user has not edited yet (ocl_issues#2907).
+  const headersKey = map(headers, 'label').join('|')
   React.useEffect(() => {
-    if(!isEmpty(decisions)) {
-      window.addEventListener("beforeunload", alertUser);
-      return () => window.removeEventListener("beforeunload", alertUser);
-    }
-  }, [decisions]);
+    setColumns(prev => resuggestColumns(prev, headers))
+  }, [headersKey])
 
   React.useEffect(() => {
     fetchMapTypes()
@@ -715,11 +828,6 @@ const MapProject = () => {
     : null
 
   React.useEffect(() => {
-    if(newProjectBlockReason)
-      baseSetAlert({severity: 'error', message: t(`map_project.preview_limit_title_${newProjectBlockReason}`), duration: 8000})
-  }, [newProjectBlockReason])
-
-  React.useEffect(() => {
     const isDefaultApplied = isRepoDefaultFilterApplied(repoVersion)
     if(project?.id)
       setIncludeDefaultFilter(Boolean(isDefaultApplied))
@@ -730,15 +838,15 @@ const MapProject = () => {
   }, [repoVersion, project])
 
   React.useEffect(() => {
-    if(!bridgeEnabled || !bridgeAlgo?.id)
+    if(!bridgeProbeAlgo?.id)
       return
 
-    const bridgeUrl = bridgeAlgo?.target_repo_url
+    const bridgeUrl = bridgeProbeAlgo?.target_repo_url
     if(!bridgeUrl)
       return
 
-    if(bridgeAlgo.target_repo_version) {
-      fetchMappedSources(bridgeUrl + bridgeAlgo.target_repo_version + '/', sources =>
+    if(bridgeProbeAlgo.target_repo_version) {
+      fetchMappedSources(bridgeUrl + bridgeProbeAlgo.target_repo_version + '/', sources =>
         setBridgeMappedSources(prev => ({...prev, [bridgeUrl]: sources})))
       return
     }
@@ -752,25 +860,30 @@ const MapProject = () => {
         if(!resolvedVersion)
           return
 
-        setAlgosSelected(prev => prev.map(algo =>
-          algo?.id === bridgeAlgo.id ? {...algo, target_repo_version: resolvedVersion} : algo
-        ))
+        if(bridgeEnabled)
+          setAlgosSelected(prev => prev.map(algo =>
+            algo?.id === bridgeProbeAlgo.id ? {...algo, target_repo_version: resolvedVersion} : algo
+          ))
         fetchMappedSources(bridgeUrl + resolvedVersion + '/', sources =>
           setBridgeMappedSources(prev => ({...prev, [bridgeUrl]: sources})))
       })
       .catch(() => {})
-  }, [bridgeEnabled, bridgeAlgo?.id, bridgeAlgo?.target_repo_url, bridgeAlgo?.target_repo_version, namespace, project, owner])
+  }, [bridgeProbeAlgo?.id, bridgeProbeAlgo?.target_repo_url, bridgeProbeAlgo?.target_repo_version, bridgeEnabled, namespace, project, owner])
 
 
   const createProjectFromTemplate = () => {
     setLoadingProject(true)
-    APIService.new().overrideURL(templateFromProjectURL).appendToUrl('configurations/').get().then(response => {
+    // Columns are not part of the configurations; they come with the project.
+    const columnsRequest = APIService.new().overrideURL(templateFromProjectURL).get()
+      .then(response => response?.data?.columns || []).catch(() => [])
+    APIService.new().overrideURL(templateFromProjectURL).appendToUrl('configurations/').get().then(async response => {
       const copiedProject = response.data
+      templateColumnsRef.current = await columnsRequest
       setProject(null)
       setProjectPromptTemplateKey(copiedProject.prompt_template_key || '')
       setName(copiedProject.name ? t('map_project.create_similar_name', {name: copiedProject.name}) : '')
       setFilters(copiedProject.filters || {})
-      setLookupConfig(copiedProject.lookup_config || {})
+      setLookupConfig(normalizeLookupConfig(copiedProject.lookup_config || {}))
       setNamespace(copiedProject.namespace || '')
       setCandidatesScore(copiedProject.score_configuration || {recommended: 99, available: 70})
       setRetired(Boolean(copiedProject.include_retired || false))
@@ -809,6 +922,7 @@ const MapProject = () => {
           projectLogsRef.current = savedProjectLogs
           setLogs(rowLogs)
           setProjectLogs(savedProjectLogs)
+          projectLogsLoadedRef.current = true
           projectLog({action: 'Opened'})
         })
       }
@@ -821,7 +935,8 @@ const MapProject = () => {
           setProjectFromData(data, response.data)
           setAlgosSelected(response?.data?.algorithms || [])
           if (response?.data.columns?.length > 0) {
-            const _columns = response.data.columns.map(col => ({...omit(col, ['hidden'])}))
+            // Saved mappings are the user's, so they are never re-suggested.
+            const _columns = response.data.columns.map(col => ({...omit(col, ['hidden', 'auto', 'suggested'])}))
             setColumns(_columns)
             setTargetSourcesFromRows(getTargetSourcesFromRows(_columns, data))
             let AIAssistantColVisibility = {}
@@ -834,7 +949,7 @@ const MapProject = () => {
                 AIAssistantColVisibility[col.dataKey] = false
               if(col.width) {
                 if(isString(col.width)) {
-                  let _width = parseInt(col.width.replace('px'))
+                  let _width = parseInt(col.width.replace('px', ''))
                   if(!isNaN(_width))
                     col.width = _width
                 }
@@ -907,7 +1022,7 @@ const MapProject = () => {
       setOwner(response.data?.owner_url)
       setRetired(Boolean(response.data?.include_retired))
       setCandidatesScore(response.data?.score_configuration)
-      setLookupConfig(response.data?.lookup_config)
+      setLookupConfig(normalizeLookupConfig(response.data?.lookup_config))
       setNamespace(response.data?.namespace || '')
       setEncoderModel(response.data?.encoder_model || DEFAULT_ENCODER_MODEL)
       setProjectPromptTemplateKey(response.data?.prompt_template_key || '')
@@ -934,24 +1049,23 @@ const MapProject = () => {
 
   // PR3-H: fetch the canonical locale catalog from /orgs/OCL/sources/Locales/.
   // ~486 concepts, each mapping a 3-letter ISO 639-3 id to a 2-letter BCP-47
-  // `locale` and human-readable `display_name`. Concepts missing a `locale`
+  // `locale` and human-readable `display_name`. Like fetchMapTypes, this reads
+  // the lookup endpoint, which returns only those fields and which the API
+  // caches for 24 hours, instead of listing full concepts on every project
+  // open (OpenConceptLab/ocl_issues#2902). The lookup has no `retired` field;
+  // the source has no retired concepts. Concepts missing a `locale`
   // (e.g. macro-language groupings like "Creoles and pidgins") are filtered
   // out so the dropdown only offers usable filter values. The list is
   // sorted alphabetically by display name (English collation) to match the
   // convention used by browser/OS language pickers. On fetch failure the
   // state keeps the initial fallback list.
-  const fetchOclLocales = () => APIService.orgs('OCL').sources('Locales').appendToUrl('concepts/').get(null, null, {limit: 500}).then(response => {
-    const valid = (response?.data || []).filter(c => c?.locale && !c?.retired)
+  const fetchOclLocales = () => APIService.orgs('OCL').sources('Locales').appendToUrl('concepts/lookup/').get(null, null, {verbose: true}).then(response => {
+    const valid = (response?.data || []).filter(c => c?.locale)
     if (valid.length === 0) return
     const sorted = valid.map(c => ({id: c.locale, name: c.display_name}))
       .sort((a, b) => a.name.localeCompare(b.name, 'en'))
     setOclLocales(sorted)
   })
-
-  const alertUser = (e) => {
-    e.preventDefault();
-    e.returnValue = "";
-  };
 
   const rowIndex = row?.__index
 
@@ -998,12 +1112,14 @@ const MapProject = () => {
       let headerClass = 'header-valid'
       if(!isValidColumn)
         headerClass = 'header-invalid'
-      let widthParams = {}
+      const isTextColumn = ['name', 'description', 'synonyms'].some(key => `${column.label} ${column.original}`.toLowerCase().includes(key))
+      // first column also carries the row state icon
+      let widthParams = {minWidth: isTextColumn ? 150 : (parseInt(idx) === 0 ? 100 : 60)}
       if(columns.length < 2)
         widthParams.flex = 1
       if (columnWidth[column.dataKey])
-        widthParams.width = columnWidth[column.dataKey]
-      else if(column.label.toLowerCase().includes('name') || column.label.toLowerCase().includes('description') || column.label.toLowerCase().includes('synonyms'))
+        widthParams.width = Math.max(Number(columnWidth[column.dataKey]) || 0, widthParams.minWidth)
+      else if(isTextColumn)
         widthParams.width = 300
       else if(column.label.toLowerCase().includes('uuid') || column.label.toLowerCase().includes('external'))
         widthParams.width = 300
@@ -1095,7 +1211,7 @@ const MapProject = () => {
                 null
               }
               <span style={{minWidth: 0, flex: 1}}>
-                <Concept key={`${params.row.__index}-${targetConcept.id}`} sx={{padding: 0}} repoVersion={repoVersion} notClickable firstChild concept={targetConcept} noScore onCardClick={false} noSynonymPrefix asTarget />
+                <Concept key={`${params.row.__index}-${targetConcept.id}`} sx={{padding: 0}} repoVersion={repoVersion} notClickable firstChild concept={withCandidateNames(targetConcept, rowMatchStateRef.current?.[params.row.__index], conceptCacheRef.current)} noScore onCardClick={false} inputLocale={inputLocale} locales={filters.locale || ''} asTarget />
               </span>
             </span>
           )
@@ -1236,7 +1352,38 @@ const MapProject = () => {
         )
       }
     })
-    return cols
+    // Row number from the uploaded file, as a gutter ahead of the checkboxes.
+    // Tied to __index, so it holds under sorting, filtering and search.
+    const rowNumberDigits = String(rowNumberOf(Math.max((data?.length || 1) - 1, 0))).length
+    const rowNumberWidth = Math.max(35, rowNumberDigits * 7 + 8)
+    return [
+      {
+        field: '__rowNumber__',
+        headerName: '',
+        type: 'number',
+        width: rowNumberWidth,
+        minWidth: rowNumberWidth,
+        resizable: false,
+        hideable: false,
+        filterable: false,
+        disableColumnMenu: true,
+        align: 'center',
+        headerAlign: 'center',
+        headerClassName: 'row-number-header',
+        cellClassName: 'row-number-cell',
+        valueGetter: (_, row) => rowNumberOf(row.__index),
+      },
+      {
+        ...GRID_CHECKBOX_SELECTION_COL_DEF,
+        renderHeader: () => (
+          <DataGridPageSelectionHeaderCheckbox
+            selectedRowIds={selectedRowIds}
+            onSelectionChange={handleRowSelectionModelChange}
+          />
+        ),
+      },
+      ...cols
+    ]
   }
 
   const getTargetSourcesFromRows = (cols, _data) => {
@@ -1271,11 +1418,16 @@ const MapProject = () => {
   }
 
   const updateColumn = (position, newValue, key) => {
-    let cols = {...columns}
-    cols[position][key || 'label'] = newValue || ''
+    if(key === 'targetSource') {
+      // Each source picker sets its value on mount, often several in one render,
+      // so merge into the latest state; this render's copy would keep only the last.
+      setColumns(prev => updateColumnState(prev, position, {...prev[position]?.targetSource, ...newValue}, key))
+      return
+    }
+    // A manual choice takes its field back from any suggestion holding it.
+    const cols = resuggestColumns(updateColumnState(columns, position, newValue, key), headers)
     setColumns(cols)
-    if(key !== 'targetSource')
-      setTargetSourcesFromRows(getTargetSourcesFromRows(cols))
+    setTargetSourcesFromRows(getTargetSourcesFromRows(cols))
   }
 
   const resetState = () => {
@@ -1316,6 +1468,7 @@ const MapProject = () => {
     setAlert(false)
     setSelectedCandidatesScoreBucket(false)
     setScoreBucketSortBy('desc')
+    rowThrottlesRef.current = {}
     setRowStage({})
   }
 
@@ -1375,6 +1528,7 @@ const MapProject = () => {
     let _proposed = {}
     let _repo = null
     let _states = {...rowStatuses}
+    const savedMatches = keyBy(compact(projectData?.matches), 'rowIndex')
     const repoVersionURL = data['__Repo URL__'] || data['__map_repo_url__']
     const repoURL = dropVersion(repoVersionURL)
     const repoVersion = data['__Repo Version__'] || getTargetRepoVersionFromUrl(repoVersionURL)
@@ -1399,7 +1553,7 @@ const MapProject = () => {
           repo: repo
         }
         if(concept?.id) {
-          _mapSelected[index] = concept
+          _mapSelected[index] = withSavedMatch(concept, savedMatches[index])
           _repo = repo
         }
         let rowStateLabel = data['__State__'] || data['__row_status__'] || data['__row_map_status__']
@@ -1407,7 +1561,7 @@ const MapProject = () => {
         _states[state] = _states[state] || []
         _states[state].push(index)
         _decisions[index] = (data['__Decision__'] || data['__row_decision__']) === t('map_project.none') ? undefined : (data['__Decision__'] || data['__row_decision__'])
-        _notes[index] = data['__Note__']
+        _notes[index] = restoredNote(data['__Note__'], savedMatches[index])
         _mapTypes[index] = data['__Map Type__'] || data['__map_type__']
         _proposed[index] = (data['__Proposed__'] || data['__proposed__']) ? JSON.parse(data['__Proposed__'] || data['__proposed__']) : undefined
         data = omit(data, [...reservedKeys, ...optionalReservedKeys])
@@ -1451,8 +1605,9 @@ const MapProject = () => {
         return prev
       })
 
-    let cols = getColumns(omit(_data[0], ['__index']))
-    setColumns(cols)
+    // Uploaded columns start as suggestions (`auto`) until the user edits them.
+    const cols = map(getColumns(omit(_data[0], ['__index'])), col => ({...col, auto: true}))
+    setColumns(resuggestColumns(applyTemplateColumns(cols, templateColumnsRef.current), headers))
   }
 
   const getReferencesForImport = (collection, scope, cascadeMethod, transformReferences) => {
@@ -1545,6 +1700,7 @@ const MapProject = () => {
       autosaveSchedulerRef.current.cancel()
     if(!repoVersion?.version_url || !selectedTargetRepoVersion) {
       setConfigure(true)
+      setShowTargetRepoVersionError(true)
       setAlert({
         message: t(
           'map_project.target_repo_version_required',
@@ -1559,7 +1715,7 @@ const MapProject = () => {
     const projectLogsForSave = options.projectLogs || projectLogsRef.current
     setIsSaving(true)
     const f = getFileObjectFromRows()
-    const selected = map(mapSelected, (data, i) => {
+    const selected = buildMatchEntries(map(data, row => row.__index), mapSelected, notes, (data, i) => {
       return {
         url: data?.url,
         repoURL: data?.repo?.version_url || data?.repo?.url,
@@ -1618,13 +1774,21 @@ const MapProject = () => {
     const isUpdate = Boolean(project?.id)
     if(!isAutoSave)
       GAService.recordUpsertEvent('MapProject', isUpdate, 'map_project')
-    let service = APIService.new().overrideURL(owner).appendToUrl('map-projects/')
-    if(isUpdate)
-      service = service.appendToUrl(project.id + '/')
-        .put(formData, null, {"Content-Type": "multipart/form-data"}, undefined, true)
-    else
-      service = service.post(formData, null, {"Content-Type": "multipart/form-data"}, undefined, true)
+    const send = () => {
+      const service = APIService.new().overrideURL(owner).appendToUrl('map-projects/')
+      if(isUpdate)
+        return service.appendToUrl(project.id + '/')
+          .put(formData, null, {"Content-Type": "multipart/form-data"}, undefined, true)
+      return service.post(formData, null, {"Content-Type": "multipart/form-data"}, undefined, true)
+    }
+    // options.after: a save still in flight. This payload is built now and
+    // sent once that settles, so the older one can't land after it.
+    const service = options.after ? Promise.resolve(options.after).then(send, send) : send()
 
+    // Where the user was when saving: a save that lands once they went
+    // elsewhere mustn't pull them back.
+    const pathAtSave = history.location.pathname
+    // Resolves true once the project saved.
     const request = service.then(response => {
       setIsSaving(false)
       const status = response?.response?.status || response?.status
@@ -1637,9 +1801,17 @@ const MapProject = () => {
           user: user.username || user.id,
           extras: isAutoSave ? {reasons: options.reasons || []} : (isUpdate ? undefined : {project: response.data})
         }
-        const savedProjectLogs = [saveLog, ...projectLogsForSave]
-        projectLogsRef.current = savedProjectLogs
-        setProjectLogs(savedProjectLogs)
+        // Entries logged while the save was in flight are kept. A save that
+        // lands after the user opened another project uses the logs as they
+        // were when it started, and leaves the open project's alone
+        // (ocl_issues#2849).
+        const isOtherProjectOpen = isUpdate && String(projectIdRef.current) !== String(response.data.id)
+        const savedProjectLogs = [saveLog, ...(isOtherProjectOpen ? projectLogsForSave : projectLogsRef.current)]
+        const savedRowLogs = isOtherProjectOpen ? rowLogsForSave : logsRef.current
+        if(!isOtherProjectOpen) {
+          projectLogsRef.current = savedProjectLogs
+          setProjectLogs(savedProjectLogs)
+        }
         if(options.closeConfigure !== false) {
           configSnapshotOnOpenRef.current = null
           setConfigure(false)
@@ -1648,21 +1820,31 @@ const MapProject = () => {
         setProject(response.data)
         if(!isUpdate)
           refreshMapperQuotaCache()
-        // A save that lands after the user left mustn't pull them back here.
-        if(response.data.url && isMountedRef.current)
-          history.push(response.data.url)
+        if(response.data.url && isMountedRef.current && !options.leaving && history.location.pathname === pathAtSave) {
+          ownNavigationRef.current = true
+          try {
+            history.push(response.data.url, {mapProjectFrom: pathAtSave})
+          } finally {
+            ownNavigationRef.current = false
+          }
+        }
         if(!isAutoSave)
           baseSetAlert({severity: 'success', message: t('map_project.successfully_saved'), duration: 2000})
 
-        APIService.new().overrideURL(response.data.url).appendToUrl('logs/').post({logs: {row_logs: rowLogsForSave, project_logs: savedProjectLogs}}).then(() => {})
-      } else if(options.leaving && status !== 401) {
+        postProjectLogs(response.data.url, {row_logs: savedRowLogs, project_logs: savedProjectLogs})
+        lastSaveFailedRef.current = false
+        return true
+      }
+      lastSaveFailedRef.current = true
+      if(options.leaving && status !== 401) {
         // The user has left the project, so no dialog can show: say so once.
         baseSetAlert({severity: 'error', message: t('map_project.leave_save_failed', {name: name || project?.name, detail: errorData?.detail || t('unknown_error')}), duration: 12000})
       } else if(status === 403 && errorData?.error_code) {
-        setPreviewLimit({errorCode: errorData.error_code, limit: errorData.limit, used: errorData.used})
+        setPreviewLimit({errorCode: errorData.error_code})
       } else if(!isAutoSave && status !== 429 && status !== 401) {
         baseSetAlert({severity: 'error', message: errorData?.detail || t('unknown_error'), duration: 8000})
       }
+      return false
     }).finally(() => {
       setIsSaving(false)
       if(inFlightSaveRef.current === request)
@@ -1671,12 +1853,15 @@ const MapProject = () => {
     inFlightSaveRef.current = request
     if(isUpdate)
       trackSave(project.id, request)
+    return request
   }
 
   // onSave takes options, so it can't be bound to onClick directly — the click
   // event would arrive where the options object is expected.
   const onManualSave = () => onSave({source: 'manual'})
 
+  // Work on a row other than the one open in the side panel (a run's, a grid
+  // button's) must pass its index (OpenConceptLab/ocl_issues#2887).
   const log = (data, index) => {
     let idx = index === undefined ? rowIndex : index
     const nextLogs = {...logsRef.current, [idx]: [{created_at: moment().toDate(), user: user.username || user.id, ...data}, ...(logsRef.current[idx] || [])]}
@@ -1690,10 +1875,136 @@ const MapProject = () => {
     projectLogsRef.current = newLogs
     setProjectLogs(newLogs)
     if(project?.url)
-      APIService.new().overrideURL(project.url).appendToUrl('logs/').post({logs: {row_logs: logsRef.current, project_logs: newLogs}}).then(() => {})
+      postProjectLogs(project.url, {row_logs: logsRef.current, project_logs: newLogs})
   }
 
-  const scheduleAutoSave = reason => autosaveSchedulerRef.current.schedule(reason)
+  // POSTs the project's logs, waiting out a busy server. One POST at a time
+  // per project: each sends the whole log, so an older one that waited out a
+  // 429 mustn't land after a newer one, and a retry sends the latest log
+  // triggered for that project, never another project's (ocl_issues#2849).
+  // Best effort, like before.
+  const postProjectLogs = (url, logs) => {
+    if(!url)
+      return
+    if(!logsSendersRef.current.has(url))
+      logsSendersRef.current.set(url, createLatestSender(getPayload => requestWithCapacityRetry(
+        () => APIService.new().overrideURL(url).appendToUrl('logs/').request('POST', getPayload(), null, {handlesThrottle: true, timeout: LIGHT_REQUEST_TIMEOUT_MS}),
+        {maxWaitMs: INTERACTIVE_WAIT_CAP_MS}
+      )))
+    logsSendersRef.current.get(url).trigger({logs})
+  }
+
+  // Not after unmount: frozen state plus a late run's refs would save an
+  // inconsistent project.
+  const scheduleAutoSave = reason => {
+    if(isMountedRef.current)
+      autosaveSchedulerRef.current.schedule(reason)
+  }
+
+  // ── Waiting out a busy server (ocl_issues#2849) ───────────────────────────
+  // The gate for a request's server, shared by every request this tab sends it.
+  const getCapacityGate = url => {
+    let origin
+    try {
+      origin = new URL(url, window.location.href).origin
+    } catch (_) {
+      origin = String(url)
+    }
+    if(!capacityGatesRef.current.has(origin))
+      capacityGatesRef.current.set(origin, createCapacityGate())
+    return capacityGatesRef.current.get(origin)
+  }
+
+  const syncCapacityWaits = () => {
+    if(!capacityWaitsRef.current.size)
+      return setCapacityWaits(null)
+    const rows = {}
+    let all = null
+    capacityWaitsRef.current.forEach(({rowIndexes, wait}) => {
+      rowIndexes.forEach(index => { rows[index] = mergeCapacityWaits(rows[index], wait) })
+      all = mergeCapacityWaits(all, wait)
+    })
+    setCapacityWaits({rows, wait: all})
+  }
+
+  // onWait/onWaitEnd for one request on these rows. While it waits out a busy
+  // server (a 429, or a pause another request's 429 started; not an error
+  // backoff), its rows show why (ocl_issues#2865), and its first wait goes in
+  // each row's log with the server's capacity headers.
+  const trackCapacityWait = (rowIndexes, logExtras = {}) => {
+    const waitId = {}
+    let logged = false
+    return {
+      onWait: ({reason, delayMs, retryAfterMs, capacity, limit}) => {
+        if(reason === 'error')
+          return
+        const wait = {limit, retryAt: Date.now() + delayMs}
+        capacityWaitsRef.current.set(waitId, {rowIndexes, wait})
+        syncCapacityWaits()
+        if(logged)
+          return
+        logged = true
+        rowIndexes.forEach(index => log({
+          action: 'capacity_wait',
+          description: t(limit === RATE_LIMIT ? 'map_project.rate_limited_short' : 'map_project.waiting_for_capacity'),
+          extras: {...logExtras, reason, limit, retry_after_ms: retryAfterMs ?? null, ...(capacity ? {capacity} : {})}
+        }, index))
+      },
+      onWaitEnd: () => {
+        if(capacityWaitsRef.current.delete(waitId))
+          syncCapacityWaits()
+      },
+    }
+  }
+
+  // The server's X-OCL-Capacity-* headers are only logged for now; adapting to
+  // them is OpenConceptLab/ocl_online#340.
+  const noteCapacity = capacity => console.debug('OCL capacity', capacity)
+
+  // Stop for the run in progress: true once the user stops it, or a newer run
+  // starts. Waits in a run poll it.
+  const getRunStopCheck = () => {
+    const ticket = autoMatchRunTicketRef.current
+    return () => Boolean(abortRef.current || ticket !== autoMatchRunTicketRef.current)
+  }
+
+  // A result that lands after the user stopped its run is kept (a graceful
+  // stop), so save it too: the stopped run's own autosave may have gone
+  // already (ocl_issues#2849).
+  const saveLateRunResult = () => {
+    if(abortRef.current)
+      scheduleAutoSave('auto_match_stopped')
+  }
+
+  // Refusals retain the latest rate limit, even without a wait (ocl_issues#2865).
+  const mergeThrottles = (a, b) => a?.limit === RATE_LIMIT && (b?.limit !== RATE_LIMIT || a.retryAt > b.retryAt) ? a : b
+  const getThrottleExtras = throttle => ({
+    limit: throttle?.limit || CAPACITY_LIMIT,
+    ...(throttle?.limit === RATE_LIMIT ? {retry_at: throttle.retryAt} : {}),
+  })
+  const getThrottledRowDescription = throttle => t(throttle?.limit === RATE_LIMIT ? 'map_project.row_rate_limited_log' : 'map_project.row_throttled')
+  const getThrottledAlgorithmMessage = throttle => throttle?.limit === RATE_LIMIT ?
+    t('map_project.algorithm_rate_limited', {time: formatClockTime(throttle.retryAt)}) : t('map_project.algorithm_throttled')
+
+  const noteThrottledRunRow = (algoId, index, throttle) => {
+    throttledRunRowsRef.current = {
+      ...throttledRunRowsRef.current,
+      [algoId]: {
+        ...mergeThrottles(throttledRunRowsRef.current[algoId], {limit: throttle?.limit, retryAt: throttle?.retryAt}),
+        rows: uniq([...(throttledRunRowsRef.current[algoId]?.rows || []), index]),
+      },
+    }
+  }
+
+  // Once a request for an algorithm (or rerank) stayed refused for the whole
+  // cap, the run stops asking for it: the rest of its rows end throttled at
+  // once, "not run, retry", instead of each waiting out the cap again.
+  const isRunThrottled = algoId => Boolean(throttledRunRowsRef.current[algoId]?.rows.length)
+  const markRowsThrottled = (indexes, algoId, logExtras = {}, throttle = throttledRunRowsRef.current[algoId]) => indexes.forEach(index => {
+    markAlgo(index, algoId, -4, throttle)
+    log({action: algoId === 'rerank' ? 'rerank_throttled' : 'algo_throttled', description: getThrottledRowDescription(throttle), extras: {...logExtras, ...getThrottleExtras(throttle), skipped: true}}, index)
+    noteThrottledRunRow(algoId, index, throttle)
+  })
 
   // ── ocl_online#105 Phase 5: AutomatchRun attribution ──────────────────────
   // Build the X-OCL-Request-Source + X-OCL-Event-Metadata headers for a single
@@ -1702,11 +2013,13 @@ const MapProject = () => {
   // call (panel open, single rerun, per-row AI) that overlaps a running
   // auto-match is correctly stamped 'mapper-ui-manual' — the active-run ref
   // alone can't distinguish concurrent manual traffic from run traffic.
-  const attrHeaders = ({rowIndex, rowIndices, batchSize, algorithmId, clientAttemptN, isRunTraffic = false} = {}) =>
+  // capacityAware: the call waits out a capacity 429 (OpenConceptLab/ocl_online#275). Set it on OCL's gated calls
+  // (semantic or reranked $match, $rerank), never on a custom algorithm's own server.
+  const attrHeaders = ({rowIndex, rowIndices, batchSize, algorithmId, clientAttemptN, isRunTraffic = false, capacityAware = false} = {}) =>
     buildAttributionHeaders({
       runId: isRunTraffic ? (automatchRunRef.current?.id ?? null) : null,
       projectId: params.projectId,
-      rowIndex, rowIndices, batchSize, algorithmId, clientAttemptN,
+      rowIndex, rowIndices, batchSize, algorithmId, clientAttemptN, capacityAware,
     })
 
   // Create the AutomatchRun system-of-record at run start (oclapi2#876), which
@@ -1737,48 +2050,85 @@ const MapProject = () => {
       }),
     }
     try {
-      const response = await APIService.new().overrideURL(project.url).appendToUrl('auto-match-runs/')
-        .post(body, null, {}, undefined, true)
-      const status = response?.response?.status || response?.status
-      const data = response?.response?.data || response?.data
+      // A busy server's 429 is waited out, and Stop ends the wait, and the
+      // wait for an answer. Nothing else is retried: after a 502 or a timeout
+      // the run may exist already, and a retry would open a second one
+      // (ocl_issues#2849).
+      const isStopped = getRunStopCheck()
+      const request = requestWithCapacityRetry(
+        () => APIService.new().overrideURL(project.url).appendToUrl('auto-match-runs/').request('POST', body, null, {handlesThrottle: true, timeout: LIGHT_REQUEST_TIMEOUT_MS}),
+        {maxWaitMs: INTERACTIVE_WAIT_CAP_MS, isCancelled: isStopped, isRetryable: () => false, onCapacity: noteCapacity}
+      )
+      const outcome = await untilCancelled(request, isStopped)
+      if(!outcome.settled) {
+        // Stopped before the server answered: close a run it opens anyway.
+        // Idempotent, so retried like the normal close; never rejects.
+        request.then(late => {
+          const lateId = late.ok && late.response?.data?.id
+          if(lateId)
+            requestWithCapacityRetry(
+              () => APIService.new().overrideURL('/auto-match-runs/' + lateId + '/')
+                .request('PATCH', {completed_rows: 0, failed_rows: 0, completion_status: 'cancelled'}, null, {handlesThrottle: true, timeout: LIGHT_REQUEST_TIMEOUT_MS}),
+              {maxWaitMs: INTERACTIVE_WAIT_CAP_MS}
+            )
+        })
+        return
+      }
+      const result = outcome.value
+      const response = result.ok ? result.response : result.error?.response
+      const status = response?.status
+      const data = response?.data
       const id = data?.id
       if(id) {
-        automatchRunRef.current = {id, algoIds: map(selectedAlgos, 'id')}
-        return
+        automatchRunRef.current = {id, algoIds: map(selectedAlgos, 'id'), aiOnly: !selectedAlgos?.length && withAI}
+        return automatchRunRef.current
       }
       if(status === 403 && data?.error_code) {
         abortRef.current = true
         setLoadingMatches(false)
         setIsLoadingInDecisionView(false)
-        setPreviewLimit({errorCode: data.error_code, limit: data.limit, used: data.used})
+        setPreviewLimit({errorCode: data.error_code})
         return
       }
-      projectLog({action: 'automatch_run_create_failed', extras: {status: status || 'no-id'}})
+      projectLog({action: 'automatch_run_create_failed', extras: {status: status || 'no-id', ...(result.ok ? {} : {reason: result.reason, error: result.error?.message || null})}})
     } catch (err) {
       projectLog({action: 'automatch_run_create_failed', extras: {error: err?.message || 'unknown'}})
     }
   }
 
   // PATCH the run to a terminal status at run end. completed/failed are derived
-  // from the per-row algo stages (rowStageRef: -2 failed, 1 done, -1 not run)
+  // from the per-row algo stages (rowStageRef: -4 throttled, -2 failed, 1 done, -1 not run)
   // over the rows we set out to process; a row counts as failed only when EVERY
   // attempted algo failed for it. Never throws — a failed PATCH (or a run that
   // was never created) must not surface to the user.
-  const completeAutomatchRun = async (selectedAlgos, intendedRows) => {
-    const run = automatchRunRef.current
-    automatchRunRef.current = null
+  // Each run closes its own record, passed in: by the time a stopped run gets
+  // here, a newer run's record may be the current one (ocl_issues#2849).
+  // An AI-only run is recorded from aiOutcomes, its own AI results, not the
+  // shared row stages a manual action or a stopped run's late call can change.
+  const completeAutomatchRun = async (selectedAlgos, intendedRows, run, aborted, aiOutcomes = {}, {keepalive = false} = {}) => {
+    if(automatchRunRef.current === run)
+      automatchRunRef.current = null
     if(!run?.id) return
+    const aiStages = {}
+    forEach(aiOutcomes, (stage, index) => { aiStages[index] = {recommend: stage} })
     const payload = summarizeRunCompletion({
-      rowStages: rowStageRef.current || [],
+      rowStages: run.aiOnly ? aiStages : (rowStageRef.current || []),
       rowIndices: map(intendedRows, '__index'),
       algoIds: run.algoIds?.length ? run.algoIds : map(selectedAlgos, 'id'),
-      aborted: abortRef.current,
-      stoppedForQuota: Boolean(matchQuotaStopRef.current),
+      aiOnly: Boolean(run.aiOnly),
+      aborted,
+      stoppedForQuota: Boolean(matchQuotaStopRef.current || (run.aiOnly && aiQuotaExhaustedRef.current)),
     })
-    try {
-      await APIService.new().overrideURL('/auto-match-runs/' + run.id + '/')
-        .request('PATCH', payload)
-    } catch (_) { /* attribution is best-effort; never block on the PATCH */ }
+    // The tab is closing: one request, sent before this function yields.
+    if(keepalive)
+      return APIService.new().overrideURL('/auto-match-runs/' + run.id + '/').keepalive('PATCH', payload)
+    // Closing the run is idempotent, so a busy server or a gateway error is
+    // retried; Stop doesn't end it, so a stopped run is closed too
+    // (ocl_issues#2849). requestWithCapacityRetry never rejects.
+    await requestWithCapacityRetry(
+      () => APIService.new().overrideURL('/auto-match-runs/' + run.id + '/').request('PATCH', payload, null, {handlesThrottle: true, timeout: LIGHT_REQUEST_TIMEOUT_MS}),
+      {maxWaitMs: INTERACTIVE_WAIT_CAP_MS}
+    )
   }
 
   const fetchRepo = (url, _repo) => APIService.new().overrideURL(url).get().then(response => setRepo(response.data?.id ? response.data : _repo))
@@ -1805,16 +2155,6 @@ const MapProject = () => {
     recurse(0, 1, 0, [])
   }
 
-  const fetchLocaleDistribution = url => {
-    if(!url)
-      return
-    setIsLoadingLocales(true)
-    APIService.new().overrideURL(url).appendToUrl('summary/').get(null, null, {verbose: true, distribution: 'name_locale_list'}).then(response => {
-      setLocales(response?.data?.distribution?.name_locale_list || [])
-      setIsLoadingLocales(false)
-    })
-  }
-
   const _fetchMappedSources = (
     url, limit, offset, page, callback
   ) => {
@@ -1823,8 +2163,9 @@ const MapProject = () => {
 
   const onRepoVersionChange = version => {
     setRepoVersion(version || false)
+    setShowTargetRepoVersionError(false)
     if(version?.version_url) {
-      fetchLocaleDistribution(version.version_url)
+      setLocales(getDeclaredLocales(version))
       fetchMappedSources(version.version_url, setMappedSources)
       updateAlgosByRepoVersion(version)
     } else {
@@ -1919,6 +2260,42 @@ const MapProject = () => {
       service.URL = algo.url
     } else {
       service = APIService.concepts().appendToUrl('$match/')
+    }
+    return service
+  }
+
+  // The service handed to the Bridge Match component (react-bridge-match),
+  // which sends the bridge $match through its post(). APIService.post never
+  // settled on a 429, which froze a run's bridge step, and resolved a 5xx as
+  // its body. This post() waits out 429s, retries transient failures, and
+  // always settles with what the component reads: the response, or a body
+  // with a detail (ocl_issues#2849). A new instance each render, as before:
+  // the component points it at its own URL for a GET.
+  const getBridgeMatchService = () => {
+    const service = getMatchAPIService()
+    service.post = (body, token, headers, query) => {
+      const context = bridgeCallContextRef.current || {}
+      context.posted = true
+      return requestWithCapacityRetry(() => service.request('POST', body, token, {headers: headers || {}, query, handlesThrottle: true, timeout: HEAVY_REQUEST_TIMEOUT_MS}), {
+        gate: getCapacityGate(service.URL),
+        isCancelled: context.isCancelled || (() => false),
+        maxWaitMs: context.isBulk ? CAPACITY_WAIT_CAP_MS : INTERACTIVE_WAIT_CAP_MS,
+        onCapacity: noteCapacity,
+        ...(isNumber(context.rowIndex) ? trackCapacityWait([context.rowIndex], getAlgoLogExtras(bridgeAlgo)) : {}),
+      }).then(result => {
+        if(result.ok)
+          return result.response
+        if(result.reason === 'throttled')
+          return {detail: getThrottledAlgorithmMessage(result), status: 429, throttled: true, limit: result.limit, retryAt: result.retryAt}
+        if(result.reason === 'cancelled')
+          return {detail: 'cancelled', cancelled: true}
+        const data = result.error?.response?.data
+        const hasServerBody = data && typeof data === 'object' && !Array.isArray(data) && (data.detail || data.error_code)
+        return hasServerBody ? data : {
+          detail: t('map_project.match_request_failed', {error: result.error?.response?.data?.detail || result.error?.message || t('unknown_error')}),
+          status: result.error?.response?.status || null,
+        }
+      })
     }
     return service
   }
@@ -2033,14 +2410,13 @@ const MapProject = () => {
   }
 
 
-  const getRowsResults = async (rows, selectedAlgos) => {
+  const getRowsResults = async (rows, selectedAlgos, { runRows, requested, maxRows }) => {
     abortRef.current = false;
     matchQuotaStopRef.current = null;
     rerankQuotaStopRef.current = null;
     runPreviewLimitShownRef.current = false;
     const selectedRowIndexes = getSelectedRowIndexes(rows)
     const isAutoMatchUnmappedOnly = autoMatchScope === 'unmapped'
-    const isAutoMatchAllRows = autoMatchScope === 'all'
     const isAutoMatchAllIncludingApproved = autoMatchScope === 'allIncludingApproved'
     const isAutoMatchSelectedRows = autoMatchScope === 'selected'
     const selectedRowsLogExtras = isAutoMatchSelectedRows ? {
@@ -2057,12 +2433,19 @@ const MapProject = () => {
     // reported at the end of the run so the user knows which rows to re-run.
     const failedMatchRows = {}
     const runTicket = autoMatchRunGateRef.current.next()
+    autoMatchRunTicketRef.current = runTicket
     const isCurrentRun = () => autoMatchRunGateRef.current.isCurrent(runTicket)
+    // This run's Stop: the user stopped it, or a newer run started (which
+    // resets abortRef). Every phase checks this, not abortRef alone, so a
+    // stopped run can't carry on once the next one starts (ocl_issues#2849).
+    const isRunStopped = () => Boolean(abortRef.current || !isCurrentRun())
+    throttledRunRowsRef.current = {}
 
     // Function to process a single batch
     const processBatch = async (_repo, rowBatch, algo) => {
-      if (abortRef.current) {
-        setLoadingMatches(false)
+      if (isRunStopped()) {
+        if(isCurrentRun())
+          setLoadingMatches(false)
         return []
       };
       if (matchQuotaStopRef.current && spendsMatchQuota(algo, {canBridge}))
@@ -2091,26 +2474,31 @@ const MapProject = () => {
       const logExtras = getAlgoLogExtras(algo)
       // service.request rejects on a network error or a non-2xx; service.post
       // would resolve, and the failed batch would pass as a success with no
-      // candidates (ocl_online#257). runMatchBatch retries transient failures.
+      // candidates (ocl_online#257). runMatchBatch retries transient failures,
+      // and waits out a busy server's 429s (ocl_issues#2849).
       return runMatchBatch({
         rowIndexes,
         send: attempt => service.request(
           'POST',
           payload,
-          (algo.type === 'custom' && algo.url && algo.token) ? algo.token : null,
+          matchToken(algo),
           {
-            headers: attrHeaders({rowIndices: rowIndexes, batchSize: rowBatch.length, algorithmId: algo.id, clientAttemptN: attempt + 1, isRunTraffic: true}),
+            headers: attrHeaders({rowIndices: rowIndexes, batchSize: rowBatch.length, algorithmId: algo.id, clientAttemptN: attempt + 1, isRunTraffic: true, capacityAware: matchesOnOCL(algo)}),
             query: {
               includeSearchMeta: true,
               ...(algo.query_params || {}),
               ...extraParams
-            }
+            },
+            handlesThrottle: true,
+            timeout: HEAVY_REQUEST_TIMEOUT_MS,
           }
         ),
+        retryOptions: {gate: getCapacityGate(service.URL), onCapacity: noteCapacity},
+        ...trackCapacityWait(rowIndexes, logExtras),
         // A batch that outlives its run must not touch the next run's stages.
-        setStage: (index, stage) => {
+        setStage: (index, stage, throttle) => {
           if(isCurrentRun())
-            markAlgo(index, algo.id, stage)
+            markAlgo(index, algo.id, stage, throttle)
         },
         onRowFinished: index => log({action: 'algo_finished', extras: logExtras}, index),
         onRowFailed: (index, {error, status, attempts, previewLimit}) => {
@@ -2118,9 +2506,19 @@ const MapProject = () => {
           if(!previewLimit)
             failedMatchRows[algo.id] = [...(failedMatchRows[algo.id] || []), index]
         },
+        // Still refused after the long cap: not run, and not a failure.
+        onRowThrottled: (index, result) => {
+          log({action: 'algo_throttled', description: getThrottledRowDescription(result), extras: {...logExtras, ...getThrottleExtras(result), attempts: result.attempts, waited_ms: result.waitedMs}}, index)
+          if(isCurrentRun())
+            noteThrottledRunRow(algo.id, index, result)
+        },
         // Sets matchQuotaStopRef, which stops the rest of the $match requests
         // but lets the run finish with what it has.
-        onPreviewLimit: err => handlePreviewLimitError(err),
+        // Not once a newer run started: its quota state is its own.
+        onPreviewLimit: err => {
+          if(isCurrentRun())
+            handlePreviewLimitError(err)
+        },
         // A batch waiting to retry stops on a cancel, once another batch has
         // hit the match quota, or once a newer run has started.
         shouldStop: () => Boolean(
@@ -2132,101 +2530,84 @@ const MapProject = () => {
     // Function to handle concurrency
     const processWithConcurrency = async (_repo, algo, _rows) => {
       // A project's saved settings run within this user's limits.
-      const { batchSize, concurrentRequests } = getRequestSettings(algo, fullRequestLimits)
-      const CHUNK_SIZE = batchSize // Number of rows per batch
-      const MAX_CONCURRENT_REQUESTS = concurrentRequests; // Number of parallel API requests allowed
-      const rowChunks = chunk(_rows, CHUNK_SIZE);
-
-      const queue = rowChunks.slice(); // Copy of all chunks to be processed
-      const activeRequests = new Set();
-
-      while (queue.length > 0 || activeRequests.size > 0) {
-        // Fill activeRequests up to MAX_CONCURRENT_REQUESTS
-        while (queue.length > 0 && activeRequests.size < MAX_CONCURRENT_REQUESTS) {
-          if (abortRef.current) {
-            setLoadingMatches(false)
+      const { batchSize, concurrentRequests } = getRequestSettings(algo, requestLimits)
+      // While a 429 holds the server's gate, no new batch goes out: the queue
+      // waits instead of draining into refusals (ocl_issues#2849).
+      const isQuotaStopped = () => Boolean(matchQuotaStopRef.current && spendsMatchQuota(algo, {canBridge}))
+      const finished = await runWithConcurrency(chunk(_rows, batchSize), {
+        concurrency: concurrentRequests,
+        gate: getCapacityGate(getMatchAPIService(algo).URL),
+        maxHoldMs: CAPACITY_WAIT_CAP_MS,
+        shouldAbort: isRunStopped,
+        shouldSkipRest: () => isQuotaStopped() || isRunThrottled(algo.id),
+        // A quota stop leaves the rest not run, as before; a server that
+        // stayed too busy leaves them throttled.
+        onSkipped: rowBatches => {
+          if(!isQuotaStopped())
+            markRowsThrottled(map(flatten(rowBatches), '__index'), algo.id, getAlgoLogExtras(algo))
+        },
+        run: rowBatch => processBatch(_repo, rowBatch, algo).then((data) => {
+          // A batch that answers after a newer run started belongs to no run.
+          if(!isCurrentRun())
             return
-          };
-          if (matchQuotaStopRef.current && spendsMatchQuota(algo, {canBridge})) {
-            queue.length = 0
-            break
-          }
-          const rowBatch = queue.shift();
-          const promise = processBatch(_repo, rowBatch, algo).then((data) => {
-            // Populate rowMatchState before any consumer (setStateViews /
-            // setAutoMatched) tries to read it. The per-row fetch flow
-            // routes through `onResponse` which already calls
-            // mergeIntoRowMatchState; bulk processBatch doesn't, so we
-            // run the normalizer here.
-            if(Array.isArray(data) && data.length) {
-              const projectCtx = buildProjectContext()
-              if(projectCtx) {
-                const algoCfg = ensureConceptIdentity(algo)
-                if(algoCfg) {
-                  data.forEach(rowEntry => {
-                    const idx = rowEntry?.row?.__index
-                    if(!isNumber(idx)) return
-                    mergeIntoRowMatchState(idx, normalizeAlgorithmInvocation(rowEntry, {
-                      algorithmId: algo.id,
-                      algorithmConfig: algoCfg,
-                      projectContext: projectCtx,
-                      rowIndex: idx,
-                      // Bulk auto-match's $match request sends reranker=!isMultiAlgo
-                      // (line 1433). Trust the server's normalized score only when
-                      // that flag was true — otherwise it's a per-algo native score
-                      // (e.g. FAISS similarity × 100) masquerading as a rerank.
-                      trustServerRerank: !isMultiAlgo
-                    }), {isRunTraffic: true})
-                  })
-                }
+          // Populate rowMatchState before any consumer (setStateViews /
+          // setAutoMatched) tries to read it. The per-row fetch flow
+          // routes through `onResponse` which already calls
+          // mergeIntoRowMatchState; bulk processBatch doesn't, so we
+          // run the normalizer here.
+          if(Array.isArray(data) && data.length) {
+            const projectCtx = buildProjectContext()
+            if(projectCtx) {
+              const algoCfg = ensureConceptIdentity(algo)
+              if(algoCfg) {
+                data.forEach(rowEntry => {
+                  const idx = rowEntry?.row?.__index
+                  if(!isNumber(idx)) return
+                  mergeIntoRowMatchState(idx, normalizeAlgorithmInvocation(rowEntry, {
+                    algorithmId: algo.id,
+                    algorithmConfig: algoCfg,
+                    projectContext: projectCtx,
+                    rowIndex: idx,
+                    // Bulk auto-match's $match request sends reranker=!isMultiAlgo
+                    // (line 1433). Trust the server's normalized score only when
+                    // that flag was true — otherwise it's a per-algo native score
+                    // (e.g. FAISS similarity × 100) masquerading as a rerank.
+                    trustServerRerank: !isMultiAlgo
+                  }), {isRunTraffic: true})
+                })
               }
             }
-            if(!isMultiAlgo)
-              setStateViews(data, _repo)
-            setMatchedConcepts(prev => [...prev, ...data]);
-            activeRequests.delete(promise); // Remove from active set after completion
-          });
-          activeRequests.add(promise);
-        }
-
-        // Wait for at least one request to complete before continuing
-        if (activeRequests.size > 0)
-          await Promise.race(activeRequests);
-      }
+          }
+          if(!isMultiAlgo)
+            setStateViews(data, _repo)
+          setMatchedConcepts(prev => [...prev, ...data]);
+          if(Array.isArray(data) && data.length)
+            saveLateRunResult()
+        }),
+      })
+      if(!finished && isCurrentRun())
+        setLoadingMatches(false)
     };
 
+    // Reranks the run's rows, at most maxConcurrent at once, through the same
+    // limiter as every other rerank. Stop returns at once.
     const processRerankWithConcurrency = async (_rows, maxConcurrent = 2) => {
-      const queue = _rows.slice();
-      const activeRequests = new Set();
-
-      while (queue.length > 0 || activeRequests.size > 0) {
-        while (queue.length > 0 && activeRequests.size < maxConcurrent) {
-          if (abortRef.current) {
-            setLoadingMatches(false)
-            return
-          }
-          if(rerankQuotaStopRef.current) {
-            queue.length = 0
-            break
-          }
-
-          const row = queue.shift();
-          const promise = rerank(row.__index, true)
-            .catch(() => null)
-            .finally(() => activeRequests.delete(promise));
-          activeRequests.add(promise);
-        }
-
-        if(activeRequests.size > 0)
-          await Promise.race(activeRequests);
-      }
+      const finished = await runWithConcurrency(_rows, {
+        concurrency: maxConcurrent,
+        shouldAbort: isRunStopped,
+        shouldSkipRest: () => Boolean(rerankQuotaStopRef.current),
+        run: row => rerank(row.__index, true).catch(() => null),
+      })
+      if(!finished && isCurrentRun())
+        setLoadingMatches(false)
     };
     // Capped users' algorithms carry the settings they run with, so the
     // AutomatchRun's config snapshot records what ran (ocl_online#274).
     let _selectedAlgos = map(
-      filter(algosSelected, algo => selectedAlgos.includes(algo.id)),
-      algo => applyRequestSettings(algo, fullRequestLimits)
+      filter(runnableAlgos, algo => selectedAlgos.includes(algo.id)),
+      algo => applyRequestSettings(algo, requestLimits)
     )
+    const isAIOnly = !_selectedAlgos.length && Boolean(inAIAssistantGroup && autoRunAIAnalysis)
     let subActions = [...map(_selectedAlgos, algo => algo.name || algo.id)]
     subActions.push('reranker')
     if(isAutoMatchUnmappedOnly)
@@ -2252,48 +2633,40 @@ const MapProject = () => {
       }
     })
 
-    if(isAutoMatchAllRows)
-      setRowStatuses(prev => ({...prev, readyForReview: []}))
-    if(isAutoMatchAllIncludingApproved)
-      setRowStatuses(prev => ({...prev, readyForReview: [], reviewed: []}))
-    if(isAutoMatchSelectedRows)
-      setRowStatuses(prev => ({
-        ...prev,
-        readyForReview: without(prev.readyForReview, ...selectedRowIndexes),
-        reviewed: without(prev.reviewed, ...selectedRowIndexes)
-      }))
+    // Only the rows this run matches lose their statuses: the run sets them
+    // again. An AI-only run doesn't match, so it changes none.
+    if(!isAIOnly)
+      setRowStatuses(prev => clearRunRowStatuses(prev, map(runRows, '__index')))
+    if(maxRows !== null)
+      projectLog({action: 'auto_match_pre_truncated', extras: {requested, allowed: maxRows}})
 
     setTimeout(async () => {
-      const preview = getMapperPreview()
-      const previewEligibleRowIndexes = getPreviewEligibleRowIndexes(rows, preview)
-      let rowsToProcess = getRowsToProcess(rows, rowStatuses, autoMatchScope, selectedRowIndexes, previewEligibleRowIndexes)
-
-      // Rows per project is already applied by previewEligibleRowIndexes; the
-      // only spendable cap is match operations, counted over the algorithms
-      // that actually call $match.
-      const matchAlgorithmCount = filter(_selectedAlgos, algo => spendsMatchQuota(algo, {canBridge})).length
-      const rowCap = getRowCapByMatchOperations(preview.matchOperations, matchAlgorithmCount)
-      if(rowCap !== null && rowsToProcess.length > rowCap) {
-        const requested = rowsToProcess.length
-        rowsToProcess = rowsToProcess.slice(0, rowCap)
-        projectLog({action: 'auto_match_pre_truncated', extras: {requested, allowed: rowCap}})
-      }
+      const rowsToProcess = runRows
 
       // ocl_online#105 Phase 5: open the run record, then guarantee it is
       // closed out (completed / partial / failed / cancelled) via the finally,
       // even on cancel or an unexpected throw mid-pipeline.
-      await createAutomatchRun(_selectedAlgos, rowsToProcess)
+      const runRecord = await createAutomatchRun(_selectedAlgos, rowsToProcess)
+      // False when the run was refused (a preview limit) or stopped before it
+      // began: it changed nothing to save.
+      const runStarted = !isRunStopped()
+      const aiOutcomes = {}
+      const closeRun = runClosersRef.current.add((aborted, options) => completeAutomatchRun(_selectedAlgos, rowsToProcess, runRecord, aborted, aiOutcomes, options))
       try {
         bulkMatchAlgoIdsRef.current = map(_selectedAlgos, 'id')
         // Reset all algo stages to -1 for every row before starting so that
         // stages from a previous run don't make the "all algos done" check
         // pass prematurely when only the first algo has finished.
+        rowsToProcess.forEach(row => { delete rowThrottlesRef.current[row.__index] })
         setRowStage(prev => {
           const next = { ...prev }
           rowsToProcess.forEach(row => {
             const rowId = row.__index
             const rowState = { ...(next[rowId] || {}) }
             _selectedAlgos.forEach(algo => { rowState[algo.id] = -1 })
+            // A rerank an earlier run left throttled is this run's to retry.
+            if(rowState.rerank === -4)
+              rowState.rerank = -1
             next[rowId] = rowState
           })
           rowStageRef.current = next
@@ -2302,14 +2675,14 @@ const MapProject = () => {
         isBulkMatchRunningRef.current = true
         try {
           for(const algo of _selectedAlgos) {
-            if(abortRef.current) break
+            if(isRunStopped()) break
             if(matchQuotaStopRef.current && spendsMatchQuota(algo, {canBridge})) continue
             if(['custom', 'ocl-search', 'ocl-semantic'].includes(algo.type))
               await processWithConcurrency(repo, algo, rowsToProcess)
             else if(['ocl-bridge', 'ocl-ciel-bridge'].includes(algo.type) && canBridge)
-              await fetchBulkBridgeCandidates(rowsToProcess, algo)
+              await fetchBulkBridgeCandidates(rowsToProcess, algo, isRunStopped)
             else if(algo.type === 'ocl-scispacy' && canScispacy)
-              await fetchBulkScispacyCandidates(rowsToProcess, algo)
+              await fetchBulkScispacyCandidates(rowsToProcess, algo, isRunStopped)
           }
         } finally {
           isBulkMatchRunningRef.current = false
@@ -2322,37 +2695,63 @@ const MapProject = () => {
           rowsToProcess
         if(_selectedAlgos.length)
           await processRerankWithConcurrency(finishedRows, 2)
-        if(inAIAssistantGroup && autoRunAIAnalysis) {
+        const runAIStep = Boolean(inAIAssistantGroup && autoRunAIAnalysis && !isRunStopped())
+        if(runAIStep)
           await new Promise(resolve => setTimeout(resolve, 1000))
-          await runBulkAIAnalysis(finishedRows)
-        } else {
+        if(runAIStep && !isRunStopped()) {
+          await runBulkAIAnalysis(finishedRows, {isStopped: isRunStopped, isCurrent: isCurrentRun, outcomes: aiOutcomes})
+        } else if(isCurrentRun()) {
+          // A newer run's loading state is its own.
           setIsLoadingInDecisionView(false)
           setLoadingMatches(false)
           setEndMatchingAt(moment())
         }
-        const failedAlgoIds = keys(failedMatchRows)
-        if(!abortRef.current && failedAlgoIds.length) {
-          const rowsByAlgo = {}
-          failedAlgoIds.forEach(algoId => { rowsByAlgo[algoId] = uniq(failedMatchRows[algoId]).sort((a, b) => a - b) })
-          const getAlgoLabel = algoId => {
-            const name = find(_selectedAlgos, {id: algoId})?.name
-            return isString(name) && name ? name : algoId
-          }
-          projectLog({action: 'auto_match_rows_failed', extras: {row_indexes_by_algorithm: rowsByAlgo}})
-          setAlert({
-            severity: 'warning',
-            message: t('map_project.auto_match_rows_failed', {
-              count: uniq(flatten(values(rowsByAlgo))).length,
-              details: failedAlgoIds.map(algoId => t('map_project.auto_match_rows_failed_algorithm', {
-                algorithm: getAlgoLabel(algoId),
-                rows: formatRowNumbers(rowsByAlgo[algoId]),
-              })).join('; '),
-            }),
-          })
+        const getAlgoLabel = algoId => {
+          if(algoId === 'rerank')
+            return t('map_project.rerank_step')
+          const name = find(_selectedAlgos, {id: algoId})?.name
+          return isString(name) && name ? name : algoId
         }
-        if(!abortRef.current && matchQuotaStopRef.current)
+        const getRowsByAlgo = rowsPerAlgo => {
+          const rowsByAlgo = {}
+          keys(rowsPerAlgo).forEach(algoId => { rowsByAlgo[algoId] = uniq(rowsPerAlgo[algoId]).sort((a, b) => a - b) })
+          return rowsByAlgo
+        }
+        const describeRows = rowsByAlgo => keys(rowsByAlgo).map(algoId => t('map_project.auto_match_rows_failed_algorithm', {
+          algorithm: getAlgoLabel(algoId),
+          rows: formatRowNumbers(rowsByAlgo[algoId]),
+        })).join('; ')
+        const endOfRunNotices = []
+        const failedAlgoIds = keys(failedMatchRows)
+        if(!isRunStopped() && failedAlgoIds.length) {
+          const rowsByAlgo = getRowsByAlgo(failedMatchRows)
+          projectLog({action: 'auto_match_rows_failed', extras: {row_indexes_by_algorithm: rowsByAlgo}})
+          endOfRunNotices.push(t('map_project.auto_match_rows_failed', {
+            count: uniq(flatten(values(rowsByAlgo))).length,
+            details: describeRows(rowsByAlgo),
+          }))
+        }
+        // Rows the server stayed too busy for weren't run: say so apart from
+        // the failures (ocl_issues#2849).
+        if(!isRunStopped() && keys(throttledRunRowsRef.current).length) {
+          const rowsByAlgo = getRowsByAlgo(Object.fromEntries(Object.entries(throttledRunRowsRef.current).map(([algoId, info]) => [algoId, info.rows])))
+          const throttle = values(throttledRunRowsRef.current).reduce(mergeThrottles, null)
+          const rateLimited = throttle.limit === RATE_LIMIT
+          const details = {count: uniq(flatten(values(rowsByAlgo))).length, details: describeRows(rowsByAlgo)}
+          projectLog({
+            action: 'auto_match_rows_throttled',
+            description: t(rateLimited ? 'map_project.auto_match_rows_rate_limited_log' : 'map_project.auto_match_rows_throttled', details),
+            extras: {row_indexes_by_algorithm: rowsByAlgo, ...getThrottleExtras(throttle)},
+          })
+          endOfRunNotices.push(t(rateLimited ? 'map_project.auto_match_rows_rate_limited' : 'map_project.auto_match_rows_throttled', {
+            ...details, ...(rateLimited ? {time: formatClockTime(throttle.retryAt)} : {}),
+          }))
+        }
+        if(endOfRunNotices.length)
+          setAlert({severity: 'warning', message: endOfRunNotices.join(' ')})
+        if(!isRunStopped() && matchQuotaStopRef.current)
           projectLog({action: 'auto_match_stopped_for_quota', extras: {reason: matchQuotaStopRef.current}})
-        if(!abortRef.current)
+        if(!isRunStopped())
           projectLog({
             action: 'auto_match_finished',
             extras: {
@@ -2367,10 +2766,12 @@ const MapProject = () => {
               } : {})
             }
           })
-        if(!abortRef.current)
-          scheduleAutoSave('auto_match')
       } finally {
-        await completeAutomatchRun(_selectedAlgos, rowsToProcess)
+        // Save what the run matched, also when it was stopped or failed part
+        // way (ocl_issues#2849).
+        if(runStarted)
+          scheduleAutoSave(isRunStopped() ? 'auto_match_stopped' : 'auto_match')
+        await closeRun(isRunStopped())
         refreshMapperQuotaCache()
       }
     }, 1000)
@@ -2380,7 +2781,10 @@ const MapProject = () => {
     conceptCacheRef.current = conceptCache;
   }, [conceptCache]);
 
-  const runBulkAIAnalysis = async (_rows) => {
+  // isStopped: the run's Stop; isCurrent: false once a newer run started, whose
+  // loading state is its own (ocl_issues#2849). outcomes collects each row's
+  // AI result (fetchRecommendation's return) for the run's record.
+  const runBulkAIAnalysis = async (_rows, {isStopped = () => abortRef.current, isCurrent = () => true, outcomes = null} = {}) => {
     GAService.recordActionEvent('MapProject', 'ai_assistant_run', undefined, {
       mode: 'bulk',
       row_count: _rows.length
@@ -2389,7 +2793,20 @@ const MapProject = () => {
     setBulkAIAnalysisStartedAt(moment())
     let resolvedPromptTemplate
     try {
-      resolvedPromptTemplate = await resolvePromptTemplateForInvocation()
+      // Stop doesn't wait on a call that never answers (ocl_issues#2849); the
+      // AI Assistant calls' own retries are OpenConceptLab/ocl_online#206.
+      const outcome = await untilCancelled(resolvePromptTemplateForInvocation(), isStopped)
+      if(!outcome.settled) {
+        if(isCurrent()) {
+          const now = moment()
+          setBulkAIAnalysisEndedAt(now)
+          setEndMatchingAt(now)
+          setLoadingMatches(false)
+          setIsLoadingInDecisionView(false)
+        }
+        return
+      }
+      resolvedPromptTemplate = outcome.value
     } catch (err) {
       const now = moment()
       setBulkAIAnalysisEndedAt(now)
@@ -2401,14 +2818,19 @@ const MapProject = () => {
     }
     aiFailuresInARowRef.current = 0
     for (let index = 0; index < _rows.length; index++) {
-      if (abortRef.current) break;
+      if (isStopped()) break;
       // AI quota exhausted, or the AI service failing row after row: stop calling
       // the AI step only. Matching itself already finished before this loop
       // starts, so nothing else aborts.
       if (shouldStopAIStep({quotaExhausted: aiQuotaExhaustedRef.current, failuresInARow: aiFailuresInARowRef.current})) break;
 
-      await fetchRecommendation(_rows[index], resolvedPromptTemplate, true);
+      // A stopped run moves on; the row's call finishes in the background.
+      const result = await untilCancelled(fetchRecommendation(_rows[index], resolvedPromptTemplate, true), isStopped);
+      if(outcomes && result.settled && isNumber(result.value))
+        outcomes[_rows[index].__index] = result.value
     }
+    if(!isCurrent())
+      return
     const now = moment()
     setBulkAIAnalysisEndedAt(now)
     setEndMatchingAt(now)
@@ -2416,18 +2838,31 @@ const MapProject = () => {
     setIsLoadingInDecisionView(false)
   }
 
-  const fetchBulkBridgeCandidates = async (_rows, algo) => {
+  // isStopped: the run's Stop, which stays true once a newer run starts.
+  const fetchBulkBridgeCandidates = async (_rows, algo, isStopped = () => abortRef.current) => {
+    // A row answered after a newer run started belongs to no run.
+    const runTicket = autoMatchRunTicketRef.current
     setLoadingMatches(true)
     setBridgeCandidatesStartedAt(moment())
     for (let index = 0; index < _rows.length; index++) {
-      if (abortRef.current) {
-        setLoadingMatches(false)
+      if (isStopped()) {
+        // A newer run's loading state is its own.
+        if(runTicket === autoMatchRunTicketRef.current)
+          setLoadingMatches(false)
         break;
       };
       if (matchQuotaStopRef.current) break;
+      if(isRunThrottled(algo.id)) {
+        markRowsThrottled(map(_rows.slice(index), '__index'), algo.id, getAlgoLogExtras(algo))
+        break
+      }
       markAlgo(_rows[index].__index, algo.id, 0)
 
-      await fetchBridgeCandidates(_rows[index], 0, undefined, undefined, undefined, false, true, ((response, payload) => {
+      // Stop doesn't wait on a request that never answers (ocl_issues#2849).
+      await untilCancelled(fetchBridgeCandidates(_rows[index], 0, undefined, undefined, undefined, false, true, ((response, payload) => {
+        if(runTicket !== autoMatchRunTicketRef.current)
+          return
+        saveLateRunResult()
         const index = payload.rows[0].__index
         const results = (isArray(response) ? response : response?.data)
         log({action: 'algo_finished', extras: getAlgoLogExtras(algo)}, index)
@@ -2445,26 +2880,39 @@ const MapProject = () => {
             rawResponse: response
           }), {isRunTraffic: true})
         }
-      })); // wait for completion
+      })), isStopped); // wait for completion
       await new Promise(resolve => setTimeout(resolve, 200)); // 1s delay
     }
     const now = moment()
     setBridgeCandidatesEndedAt(now)
   }
 
-  const fetchBulkScispacyCandidates = async (_rows, algo) => {
+  // isStopped: the run's Stop, which stays true once a newer run starts.
+  const fetchBulkScispacyCandidates = async (_rows, algo, isStopped = () => abortRef.current) => {
+    // A row answered after a newer run started belongs to no run.
+    const runTicket = autoMatchRunTicketRef.current
     setLoadingMatches(true)
     setScispacyCandidatesStartedAt(moment())
     for (let index = 0; index < _rows.length; index++) {
-      if (abortRef.current) {
-        setLoadingMatches(false)
+      if (isStopped()) {
+        // A newer run's loading state is its own.
+        if(runTicket === autoMatchRunTicketRef.current)
+          setLoadingMatches(false)
         break;
       };
 
+      if(isRunThrottled(algo.id) || isRunThrottled('ocl-scispacy-loinc')) {
+        markRowsThrottled(map(_rows.slice(index), '__index'), algo.id, getAlgoLogExtras(algo), throttledRunRowsRef.current[isRunThrottled(algo.id) ? algo.id : 'ocl-scispacy-loinc'])
+        break
+      }
       markAlgo(_rows[index].__index, algo.id, 0)
 
       setLoadingMatches(true)
-      await fetchScispacyCandidates(_rows[index], false, false, true, (response => {
+      // Stop doesn't wait on a request that never answers (ocl_issues#2849).
+      await untilCancelled(fetchScispacyCandidates(_rows[index], false, false, true, (response => {
+        if(runTicket !== autoMatchRunTicketRef.current)
+          return
+        saveLateRunResult()
         const _index = _rows[index].__index
         const results = [{row: _rows[index], results: fromScispacyResultsToConcepts(getScispacyRowResults(response.data, _index))}]
         log({action: 'algo_finished', extras: getAlgoLogExtras(algo)}, _index)
@@ -2482,7 +2930,7 @@ const MapProject = () => {
             rawResponse: response
           }), {isRunTraffic: true})
         }
-      })); // wait for completion
+      })), isStopped); // wait for completion
       await new Promise(resolve => setTimeout(resolve, 500)); // 1s delay
     }
     const now = moment()
@@ -2491,18 +2939,97 @@ const MapProject = () => {
 
   const isRunningBulkAnalysis = bulkAIAnalysisEndedAt ? moment().isBetween(bulkAIAnalysisStartedAt, bulkAIAnalysisEndedAt) : Boolean(bulkAIAnalysisStartedAt)
   const isRunningBulkBridgeCandidates = bridgeCandidatesEndedAt ? moment().isBetween(bridgeCandidatesStartedAt, bridgeCandidatesEndedAt) : Boolean(bridgeCandidatesStartedAt)
-  const isRunningBulkScispacyCandidates = scispacyCandidatesStartedAt ? moment().isBetween(scispacyCandidatesStartedAt, scispacyCandidatesEndedAt) : Boolean(scispacyCandidatesStartedAt)
+  const isRunningBulkScispacyCandidates = scispacyCandidatesEndedAt ? moment().isBetween(scispacyCandidatesStartedAt, scispacyCandidatesEndedAt) : Boolean(scispacyCandidatesStartedAt)
 
-  const fetchVersions = (url, _selectedVersion) => {
+  // The header's search can search this project's rows once it has some.
+  const hasRows = Boolean(data?.length)
+  React.useEffect(() => {
+    if(!hasRows)
+      return
+    setProjectRowSearch({
+      search: text => {
+        setSearchText(text)
+        setHeaderRowSearch({text})
+      }
+    })
+    return () => setProjectRowSearch(null)
+  }, [hasRows])
+
+  // Leaving while a run is going, or before a new project's first save, asks first.
+  const isRunActive = Boolean(loadingMatches || isRunningBulkAnalysis || isRunningBulkBridgeCandidates || isRunningBulkScispacyCandidates)
+  isRunActiveRef.current = isRunActive
+  hasInputRef.current = Boolean(file)
+  const isUnsavedNew = isUnsavedNewProject({projectId: project?.id, hasInput: file})
+  const askBeforeLeaving = shouldAskBeforeLeaving({runActive: isRunActive, projectId: project?.id, hasInput: file})
+  const unblockLeavingRef = React.useRef(null)
+  React.useEffect(() => {
+    if(!askBeforeLeaving)
+      return
+    const unblock = blockLeaving(history, {
+      isAllowed: () => ownNavigationRef.current,
+      onBlocked: setLeaveTarget,
+    })
+    unblockLeavingRef.current = unblock
+    return () => {
+      unblockLeavingRef.current = null
+      unblock()
+    }
+  }, [askBeforeLeaving])
+
+  const onStopRunAndLeave = () => {
+    const target = leaveTarget
+    setLeaveTarget(null)
+    stopRunOnLeave()
+    saveNowOnLeave()
+    leaveTo(target)
+  }
+
+  const leaveTo = target => {
+    unblockLeavingRef.current?.()
+    unblockLeavingRef.current = null
+    if(target)
+      continueLeaving(history, target)
+  }
+
+  const onLeaveUnsaved = () => {
+    const target = leaveTarget
+    setLeaveTarget(null)
+    leaveTo(target)
+  }
+
+  // Leaves only once the first save lands; a save already in flight is
+  // awaited rather than sent again, which would create a second project.
+  const onSaveAndLeave = () => {
+    const target = leaveTarget
+    const request = inFlightSaveRef.current || onSave({source: 'manual'})
+    if(!request) {
+      setLeaveTarget(null)
+      return
+    }
+    const done = saved => {
+      setIsSavingToLeave(false)
+      setLeaveTarget(null)
+      if(saved === true)
+        leaveTo(target)
+    }
+    setIsSavingToLeave(true)
+    Promise.resolve(request).then(done, () => done(false))
+  }
+
+  // Only the latest request may set the version: a slower response is for a
+  // repository no longer chosen.
+  const versionsRequestRef = React.useRef(0)
+
+  // A newly chosen repository gets the default version. A saved project
+  // passes its own version and keeps it (OpenConceptLab/ocl_issues#2906).
+  const fetchVersions = (url, savedVersion) => {
+    const request = ++versionsRequestRef.current
     APIService.new().overrideURL(dropVersion(url)).appendToUrl('versions/?verbose=true').get().then(response => {
+      if(request !== versionsRequestRef.current)
+        return
       let _versions = response.data
       setVersions(_versions)
-      if(_selectedVersion) {
-        const _version = find(_versions, {id: _selectedVersion})
-        onRepoVersionChange(_version || false)
-      } else {
-        onRepoVersionChange(getDefaultTargetRepoVersion(_versions))
-      }
+      onRepoVersionChange(savedVersion === undefined ? getDefaultTargetRepoVersion(_versions) : getSavedTargetRepoVersion(_versions, savedVersion))
     })
   }
 
@@ -2512,6 +3039,7 @@ const MapProject = () => {
     if(newRepo?.url) {
       fetchVersions(newRepo.url)
     } else {
+      versionsRequestRef.current += 1
       setVersions([])
     }
   }
@@ -2611,14 +3139,56 @@ const MapProject = () => {
     event.stopPropagation()
     event.preventDefault()
     setAutoMatchScope(getSelectedRowIndexes().length ? 'selected' : (rowStatuses.unmapped.length ? 'unmapped' : 'all'))
+    if(inAIAssistantGroup) {
+      const { runAI, applied } = getAutoMatchAIOnOpen({
+        current: autoRunAIAnalysis,
+        applied: autoMatchAIDefaultAppliedRef.current,
+        logsLoaded: projectLogsLoadedRef.current,
+        projectLogs: projectLogsRef.current,
+        aiOnByDefault: aiOnByDefault(),
+      })
+      autoMatchAIDefaultAppliedRef.current = applied
+      setAutoRunAIAnalysis(runAI)
+    }
     setMatchDialog(true)
+  }
+
+  const onAutoMatchConfigure = () => {
+    setMatchDialog(false)
+    setConfigureWithAutosave(true)
+  }
+
+  // A run that would do nothing opens no AutomatchRun (ocl_issues#2872).
+  const hasAutoMatchWork = selectedAlgos => {
+    if(filter(runnableAlgos, algo => selectedAlgos.includes(algo.id)).length)
+      return true
+    return Boolean(inAIAssistantGroup && autoRunAIAnalysis) && (aiOnlyRowCounts?.analyse || 0) > 0
+  }
+
+  // The rows a run includes, worked out before it changes anything: the
+  // scope's rows, at most getMaxRunRows of them, and for a run without
+  // algorithms the rows the OCL AI Assistant can analyse.
+  const getAutoMatchRunRows = (rows, selectedAlgos) => {
+    const algos = filter(runnableAlgos, algo => selectedAlgos.includes(algo.id))
+    const scopeRows = getRowsToProcess(rows, rowStatuses, autoMatchScope, getSelectedRowIndexes(rows), getPreviewEligibleRowIndexes(rows, getMapperPreview()))
+    const maxRows = getMaxRunRows({matchAlgorithmCount: filter(algos, algo => spendsMatchQuota(algo, {canBridge})).length})
+    const firstRows = takeRunRows(scopeRows, maxRows)
+    const isAIOnly = !algos.length && Boolean(inAIAssistantGroup && autoRunAIAnalysis)
+    return {
+      runRows: isAIOnly ? getAIAnalysableRows(firstRows) : firstRows,
+      requested: scopeRows.length,
+      maxRows: firstRows.length < scopeRows.length ? maxRows : null,
+    }
   }
 
   const onGetCandidatesSubmit = (event, selectedAlgos) => {
     event.stopPropagation()
     event.preventDefault()
     setAlert(false)
-    if(isAnyValidColumn()){
+    const run = hasAutoMatchWork(selectedAlgos) ? getAutoMatchRunRows(data, selectedAlgos) : null
+    if(!run?.runRows.length) {
+      setAlert({message: t('map_project.auto_match_nothing_to_run'), severity: 'warning'})
+    } else if(isAnyValidColumn()){
       setStartMatchingAt(moment())
       setBulkAIAnalysisStartedAt(null)
       setBulkAIAnalysisEndedAt(null)
@@ -2627,7 +3197,7 @@ const MapProject = () => {
       setScispacyCandidatesStartedAt(null)
       setScispacyCandidatesEndedAt(null)
       setLoadingMatches(true)
-      getRowsResults(data, selectedAlgos)
+      getRowsResults(data, selectedAlgos, run)
     } else {
       setAlert({message: t('map_project.no_valid_columns_for_matching')})
       setTimeout(() => setAlert(false), 10000)
@@ -3077,6 +3647,7 @@ const MapProject = () => {
         setShowItem(false)
       return prev
     })
+    scheduleAutoSave('decision_change')
     return false
   }
 
@@ -3429,7 +4000,11 @@ const MapProject = () => {
     return next;
   };
 
-  const markAlgo = (rowId, algoId, value) => {
+  const markAlgo = (rowId, algoId, value, throttle) => {
+    if(value === -4 && throttle)
+      rowThrottlesRef.current[rowId] = mergeThrottles(rowThrottlesRef.current[rowId], {limit: throttle.limit, retryAt: throttle.retryAt})
+    else if(value === 0 && !values(omit(rowStageRef.current[rowId], algoId)).includes(-4))
+      delete rowThrottlesRef.current[rowId]
     setRowStage(prev => {
       const needsRerank = isMultiAlgo || find(algosSelected, { type: "custom" }) || find(algosSelected, { type: "ocl-scispacy" });
       const row = ensureRow(prev, rowId, selectedAlgoIds, needsRerank);
@@ -3489,7 +4064,7 @@ const MapProject = () => {
       if(isNumber(rowId))
         refreshMapperQuotaCache()
     }
-    setPreviewLimit({errorCode: response.error_code, limit: response.limit, used: response.used})
+    setPreviewLimit({errorCode: response.error_code})
     return true
   }
 
@@ -3531,12 +4106,14 @@ const MapProject = () => {
     // resolved, so a failed call showed as "no candidates" (ocl_online#283).
     // requestSingleMatch retries it like a bulk batch; a call that still fails
     // reaches the callback as an error body, which shows the error and marks
-    // the algorithm failed for the row.
+    // the algorithm failed for the row. A 429 is waited out, and a server
+    // still busy at the cap marks the algorithm throttled (ocl_issues#2849).
     requestSingleMatch(() => service.request(
       'POST',
       payload,
-      (algoDef.type === 'custom' && algoDef.url) ? algoDef.token : null,
+      matchToken(algoDef),
       {
+        ...(matchesOnOCL(algoDef) ? {headers: attrHeaders({rowIndex: __row.__index, algorithmId: algoDef.id, capacityAware: true})} : {}),
         query: {
           includeSearchMeta: true,
           includeRetired: isBoolean(_retired) ? _retired : retired,
@@ -3549,11 +4126,19 @@ const MapProject = () => {
           semantic: ['ocl-semantic', 'custom'].includes(algoDef.type),
           reranker: !isMultiAlgo && algoDef.provider === 'ocl',
           encoder_model: !isMultiAlgo && encoderModel ? encoderModel : undefined
-        }
+        },
+        handlesThrottle: true,
+        timeout: HEAVY_REQUEST_TIMEOUT_MS,
       }
-    )).then(({ok, response, errorBody, previewLimit}) => {
+    ), {retryOptions: {
+      gate: getCapacityGate(service.URL),
+      onCapacity: noteCapacity,
+      ...trackCapacityWait([__row.__index], getAlgoLogExtras(algoDef)),
+    }}).then(({ok, response, errorBody, previewLimit, throttled, limit, retryAt}) => {
       if(ok)
         return callback(response, payload)
+      if(throttled)
+        return callback({detail: getThrottledAlgorithmMessage({limit, retryAt}), status: 429, throttled: true, limit, retryAt}, payload)
       // A preview limit keeps the server's body, which opens the limit dialog.
       callback(previewLimit ? errorBody : {...errorBody, detail: t('map_project.match_request_failed', {error: errorBody.detail})}, payload)
     })
@@ -3576,6 +4161,8 @@ const MapProject = () => {
       if(!algoId)
         return
       let __row = isEmpty(_row) ? row : _row
+      if(!keepAlert)
+        delete rowThrottlesRef.current[__row.__index]
 
       // Reuse when the algo has already produced an AlgorithmResponse for
       // this row, regardless of whether it returned matches. Gating on
@@ -3618,6 +4205,18 @@ const MapProject = () => {
       }
       markAlgo(__row.__index, algoId, 0)
       setIsLoadingInDecisionView(true)
+      // One algorithm failing doesn't stop the row's others, and the panel
+      // stops loading (ocl_online#283). ScispaCy and the bridge show their own
+      // failures, then go on here too (ocl_issues#2849).
+      const goOnAfterFailure = () => {
+        setIsLoadingInDecisionView(false)
+        const nextAlgoAfterFailure = getNextAlgoDef(algoId)
+        if(nextAlgoAfterFailure?.id && (offset === 0 || nextAlgoAfterFailure.type !== 'ocl-scispacy')) {
+          markAlgo(__row.__index, nextAlgoAfterFailure.id, 0)
+          fetchAllCandidatesForRow(nextAlgoAfterFailure.id, __row, offset, _retired, scrollToBottom, _filters, forceReload, true)
+        } else
+          scheduleRerank(__row.__index)
+      }
       const onResponse = (response, payload) => {
         const projectContext = buildProjectContext()
         const logExtras = getAlgoLogExtras(getAlgoDef(algoId))
@@ -3626,13 +4225,18 @@ const MapProject = () => {
             return
           clearRefreshRowStageSnapshot(__row.__index)
           refreshMapperQuotaCache()
-          log({action: 'algo_failed', extras: {...logExtras, error: response.detail, status: response.status, ...(offset ? {offset} : {})}}, __row.__index)
-          setAlert({message: response.detail, severity: 'error'})
+          // The server stayed too busy: the algorithm didn't run, it didn't
+          // fail, and no failed response is kept (ocl_issues#2849).
+          const isThrottled = Boolean(response.throttled)
+          log({action: isThrottled ? 'algo_throttled' : 'algo_failed', ...(isThrottled ? {description: getThrottledRowDescription(response)} : {}), extras: {...logExtras, ...(isThrottled ? getThrottleExtras(response) : {}), error: isThrottled ? getThrottledRowDescription(response) : response.detail, status: response.status, ...(offset ? {offset} : {})}}, __row.__index)
+          setAlert({message: response.detail, severity: isThrottled ? 'warning' : 'error'})
           if(offset) {
             // A failed "load more" keeps the pages already loaded. The
             // algorithm stays done if it loaded a page; "load more" also runs
             // algorithms that never did, and those stay failed.
-            markAlgo(__row.__index, algoId, hasSuccessfulAlgorithmResponse(rowMatchStateRef.current?.[__row.__index], algoId) ? 1 : -2)
+            markAlgo(__row.__index, algoId, hasSuccessfulAlgorithmResponse(rowMatchStateRef.current?.[__row.__index], algoId) ? 1 : (isThrottled ? -4 : -2), response)
+          } else if(isThrottled) {
+            markAlgo(__row.__index, algoId, -4, response)
           } else {
             markAlgo(__row.__index, algoId, -2)
             mergeIntoRowMatchState(__row.__index, normalizeAlgorithmInvocation(null, {
@@ -3645,15 +4249,7 @@ const MapProject = () => {
               rawResponse: response
             }))
           }
-          // One algorithm failing doesn't stop the row's others, and the
-          // panel stops loading (ocl_online#283).
-          setIsLoadingInDecisionView(false)
-          const nextAlgoAfterFailure = getNextAlgoDef(algoId)
-          if(nextAlgoAfterFailure?.id && (offset === 0 || nextAlgoAfterFailure.type !== 'ocl-scispacy')) {
-            markAlgo(__row.__index, nextAlgoAfterFailure.id, 0)
-            fetchAllCandidatesForRow(nextAlgoAfterFailure.id, __row, offset, _retired, scrollToBottom, _filters, forceReload, true)
-          } else
-            scheduleRerank(__row.__index)
+          goOnAfterFailure()
           return
         }
         log({action: 'algo_finished', extras: logExtras}, __row.__index)
@@ -3727,9 +4323,9 @@ const MapProject = () => {
       if(['ocl-semantic', 'ocl-search', 'custom'].includes(algoDef.type)) {
         fetchOCLOrCustomCandidates(algoDef, _row, offset, _retired, _filters, onResponse)
       } else if (algoDef.type === 'ocl-scispacy') {
-        fetchScispacyCandidates(__row, scrollToBottom, forceReload, false, onResponse)
+        fetchScispacyCandidates(__row, scrollToBottom, forceReload, false, onResponse, goOnAfterFailure)
       } else if (['ocl-bridge', 'ocl-ciel-bridge'].includes(algoDef.type)) {
-        fetchBridgeCandidates(__row, offset, _retired, scrollToBottom, _filters, forceReload, false, onResponse)
+        fetchBridgeCandidates(__row, offset, _retired, scrollToBottom, _filters, forceReload, false, onResponse, goOnAfterFailure)
       }
     } else {
       setAlert({message: t('map_project.no_valid_columns_for_matching')})
@@ -3737,7 +4333,9 @@ const MapProject = () => {
     }
   }
 
-  const fetchScispacyCandidates = async (_row, scrollToBottom, forceReload=false, isBulk=false, callback) => {
+  // onFailure: a row matched by hand goes on to its next algorithm after
+  // ScispaCy fails or stays throttled (ocl_issues#2849).
+  const fetchScispacyCandidates = async (_row, scrollToBottom, forceReload=false, isBulk=false, callback, onFailure) => {
     let __row = isEmpty(_row) ? row : _row
     // Gate on AlgorithmResponse presence, not candidate count: a successful
     // invocation that returned zero matches still writes an algorithm_response
@@ -3780,73 +4378,112 @@ const MapProject = () => {
     // the next row visit retries.
     const SCISPACY_WARMUP_RETRY_MS = 2 * 60 * 1000
     const SCISPACY_WARMUP_MAX_MS = 10 * 60 * 1000
+    const SCISPACY_ALGO_ID = 'ocl-scispacy-loinc'
+    const SCISPACY_ERROR_MESSAGE = "OCL's scispacy matching service is starting up. This may take a couple minutes. You can safely leave this row and come back. Click Refresh if results aren't here in a couple of minutes."
     const warmupStart = Date.now()
-    let warmingUp = true
     let seenWarmingUp = false
+    // A run's waits end when it stops; a row matched by hand isn't stopped.
+    // (abortRef stays set after a Stop, so it can't gate a manual call.)
+    const isCancelled = isBulk ? getRunStopCheck() : () => false
+    // A run's call that ends after a newer run started leaves its stages alone.
+    const runTicket = autoMatchRunTicketRef.current
+    const isSuperseded = () => isBulk && runTicket !== autoMatchRunTicketRef.current
+    const capacityWait = trackCapacityWait([__row.__index], {algo: SCISPACY_ALGO_ID})
+    // A newer run's stages and panel state are its own.
+    const endStopped = () => {
+      if(isSuperseded())
+        return
+      markAlgo(__row.__index, SCISPACY_ALGO_ID, -1)
+      setIsLoadingInDecisionView(false)
+    }
 
-    while(warmingUp) {
-      if(abortRef.current) { setIsLoadingInDecisionView(false); return }
-      try {
+    for(;;) {
+      // service.request rejects on a non-2xx: service.post resolved a 5xx as
+      // its body, and never settled on a 429 (ocl_issues#2849). A 429 waits
+      // for Retry-After; a network error or a gateway error is retried, but
+      // not a warm-up answer, which waits two minutes below.
+      const result = await requestWithCapacityRetry(() => service.request('POST', payload, null, {
         // ocl_online#105 Phase 5: the scispacy service records its own
         // api_transactions (ocl-scispacy-loinc) via its AnalyticsMiddleware, so
         // attribute the $match like the others. Per-row (single-row payload) →
         // scalar row_index; isBulk distinguishes a run call from a manual one.
-        const response = await service.post(payload, null, attrHeaders({rowIndex: __row.__index, algorithmId: 'ocl-scispacy-loinc', isRunTraffic: isBulk}))
+        headers: attrHeaders({rowIndex: __row.__index, algorithmId: SCISPACY_ALGO_ID, isRunTraffic: isBulk}),
+        handlesThrottle: true,
+        timeout: HEAVY_REQUEST_TIMEOUT_MS,
+      }), {
+        gate: getCapacityGate(service.URL),
+        isCancelled,
+        maxWaitMs: isBulk ? CAPACITY_WAIT_CAP_MS : INTERACTIVE_WAIT_CAP_MS,
+        isRetryable: err => !isScispacyWarmingUp(err, seenWarmingUp) && isRetryableError(err),
+        onCapacity: noteCapacity,
+        ...capacityWait,
+      })
 
-        // APIService resolves 5xx errors with error.response.data, so response
-        // is the parsed body object — not the axios response. A 503 warming_up
-        // from the lambda resolves as {status: 'warming_up', message: '...'}.
-        // A 502 (EC2 still booting) resolves as {error: '...'}.
-        const isWarmingUp = response?.status === 'warming_up' || (seenWarmingUp && response?.error)
-        if(isWarmingUp) {
-          seenWarmingUp = true
-          const elapsed = Date.now() - warmupStart
-          if(elapsed + SCISPACY_WARMUP_RETRY_MS > SCISPACY_WARMUP_MAX_MS) {
-            markAlgo(__row.__index, 'ocl-scispacy-loinc', -2)
-            log({action: 'algo_failed', extras: {algo: 'ocl-scispacy-loinc', status: 503, detail: 'warming_up_timeout'}}, __row.__index)
-            setAlert({message: "OCL's scispacy service did not come up within 10 minutes.", severity: 'error'})
-            setIsLoadingInDecisionView(false)
-            return response
-          }
-          // Don't cover an error an earlier algorithm for this row showed.
-          setAlert(prev => (prev?.severity === 'error' ? prev : {message: t('map_project.scispacy_warming_up'), severity: 'info'}))
-          await new Promise(resolve => setTimeout(resolve, SCISPACY_WARMUP_RETRY_MS))
-        } else {
-          warmingUp = false
-          const isError = response?.detail
-            || response?.status >= 400
-            || (response && response.data === undefined && response.status !== 200)
-          if(isError) {
-            if(handlePreviewLimitError(response, __row.__index, 'ocl-scispacy-loinc'))
-              return response
-            clearRefreshRowStageSnapshot(__row.__index)
-            refreshMapperQuotaCache()
-            markAlgo(__row.__index, 'ocl-scispacy-loinc', -2)
-            log({action: 'algo_failed', extras: {algo: 'ocl-scispacy-loinc', status: response?.status, detail: response?.detail}}, __row.__index)
-            setAlert({
-              message: response?.detail || "OCL's scispacy matching service is starting up. This may take a couple minutes. You can safely leave this row and come back. Click Refresh if results aren't here in a couple of minutes.",
-              severity: 'warning'
-            })
-            setIsLoadingInDecisionView(false)
-            return response
-          }
-          // Clear ScispaCy's own warming-up or starting notice, but not an
-          // error another algorithm for this row showed (ocl_online#283).
-          setAlert(prev => (prev?.severity === 'error' ? prev : false))
-          if(callback) callback(response, payload)
-          setIsLoadingInDecisionView(false)
+      if(result.ok) {
+        const response = result.response
+        if(isSuperseded())
           return response
-        }
-      } catch(err) {
-        warmingUp = false
-        markAlgo(__row.__index, 'ocl-scispacy-loinc', -2)
-        log({action: 'algo_failed', extras: {algo: 'ocl-scispacy-loinc', error: err?.message}}, __row.__index)
-        setAlert({
-          message: "OCL's scispacy matching service is starting up. This may take a couple minutes. You can safely leave this row and come back. Click Refresh if results aren't here in a couple of minutes.",
-          severity: 'warning'
-        })
+        // Clear ScispaCy's own warming-up or starting notice, but not an
+        // error another algorithm for this row showed (ocl_online#283).
+        setAlert(prev => (prev?.severity === 'error' ? prev : false))
+        if(callback) callback(response, payload)
         setIsLoadingInDecisionView(false)
+        return response
       }
+      if(result.reason === 'cancelled') {
+        endStopped()
+        return
+      }
+      if(result.reason === 'throttled') {
+        if(isSuperseded())
+          return
+        // Not run, not failed: the row can be run again.
+        markAlgo(__row.__index, SCISPACY_ALGO_ID, -4, result)
+        log({action: 'algo_throttled', description: getThrottledRowDescription(result), extras: {algo: SCISPACY_ALGO_ID, ...getThrottleExtras(result), attempts: result.attempts, waited_ms: result.waitedMs}}, __row.__index)
+        if(isBulk)
+          noteThrottledRunRow(SCISPACY_ALGO_ID, __row.__index, result)
+        setAlert(prev => (prev?.severity === 'error' ? prev : {message: getThrottledAlgorithmMessage(result), severity: 'warning'}))
+        setIsLoadingInDecisionView(false)
+        onFailure?.()
+        return
+      }
+
+      const err = result.error
+      if(isSuperseded())
+        return
+      const body = err?.response?.data
+      // The service's host is booting: it answers 503 warming_up, then 502
+      // until the app is up.
+      if(isScispacyWarmingUp(err, seenWarmingUp)) {
+        seenWarmingUp = true
+        const elapsed = Date.now() - warmupStart
+        if(elapsed + SCISPACY_WARMUP_RETRY_MS > SCISPACY_WARMUP_MAX_MS) {
+          markAlgo(__row.__index, SCISPACY_ALGO_ID, -2)
+          log({action: 'algo_failed', extras: {algo: SCISPACY_ALGO_ID, status: 503, detail: 'warming_up_timeout'}}, __row.__index)
+          setAlert({message: "OCL's scispacy service did not come up within 10 minutes.", severity: 'error'})
+          setIsLoadingInDecisionView(false)
+          onFailure?.()
+          return body
+        }
+        // Don't cover an error an earlier algorithm for this row showed.
+        setAlert(prev => (prev?.severity === 'error' ? prev : {message: t('map_project.scispacy_warming_up'), severity: 'info'}))
+        if(!(await sleepUnlessCancelled(SCISPACY_WARMUP_RETRY_MS, isCancelled))) {
+          endStopped()
+          return
+        }
+        continue
+      }
+
+      if(handlePreviewLimitError(err, __row.__index, SCISPACY_ALGO_ID))
+        return body
+      clearRefreshRowStageSnapshot(__row.__index)
+      refreshMapperQuotaCache()
+      markAlgo(__row.__index, SCISPACY_ALGO_ID, -2)
+      log({action: 'algo_failed', extras: {algo: SCISPACY_ALGO_ID, status: err?.response?.status || null, detail: body?.detail, error: err?.message}}, __row.__index)
+      setAlert({message: body?.detail || SCISPACY_ERROR_MESSAGE, severity: 'warning'})
+      setIsLoadingInDecisionView(false)
+      onFailure?.()
+      return body
     }
   }
 
@@ -3924,10 +4561,36 @@ const MapProject = () => {
   const rerank = async (_index, isBulk=false, isRunTraffic=isBulk) => {
     const index = isNumber(_index) ? _index : rowIndex
     if(!isNumber(index)) return null
-    if(inFlightRerankRef.current.has(index)) {
-      // Another rerank is in flight for this row; flag a rerun and bail.
-      rerankRerunNeededRef.current.add(index)
-      return null
+    // A run's rerank ends when the run stops, and a stopped run proposes no
+    // more mappings; a row reranked by hand isn't stopped (ocl_issues#2849).
+    const runStop = isRunTraffic ? getRunStopCheck() : () => false
+    // Nothing is sent once the page is gone.
+    const isStopped = () => !isMountedRef.current || runStop()
+    if(!isMountedRef.current) return null
+    // The run this call belongs to, captured now: a newer run's stages are
+    // its own (ocl_issues#2849).
+    const runTicket = autoMatchRunTicketRef.current
+    const isSuperseded = () => isRunTraffic && runTicket !== autoMatchRunTicketRef.current
+    // A proposal lands a second later: skip it if the run stopped meanwhile.
+    const proposeMapping = () => setTimeout(() => {
+      if(!isStopped())
+        setAutoMatched([index])
+    }, 1000)
+    const rerankInFlight = inFlightRerankRef.current.get(index)
+    if(rerankInFlight) {
+      if(!isBulk) {
+        // Another rerank is in flight, or waiting its turn, for this row:
+        // flag a rerun for the candidates that arrive meanwhile.
+        rerankRerunNeededRef.current.add(index)
+        return null
+      }
+      // The run's sweep waits for it, then runs again for any candidates
+      // that arrived meanwhile, and proposes the row's mapping, which only
+      // the sweep's own call does (ocl_issues#2849).
+      await rerankInFlight
+      if(isStopped())
+        return null
+      return rerank(index, true, isRunTraffic)
     }
     // Wait for any in-flight $lookups for this row's concepts. buildRerankRowsForRow
     // filters out nameless entries, so running before lookups complete silently
@@ -3940,6 +4603,13 @@ const MapProject = () => {
         // Bounded, so a lookup that never settles can't stall rerank, and
         // with it a run (ocl_online#283).
         await waitForLookups(pendingLookups, RERANK_LOOKUP_WAIT_MS, stuckLookupsRef.current)
+        // The run may have stopped, and another started, during the wait:
+        // touch nothing of the new run's (ocl_issues#2849).
+        if(isStopped())
+          return null
+        // Another rerank for the row may have started meanwhile: join it.
+        if(inFlightRerankRef.current.has(index))
+          return rerank(index, isBulk, isRunTraffic)
         // The settling lookups fired scheduleRerank via settle()/writeConceptCachePatch,
         // setting a 300ms debounce timer. Clear it — we're already inside rerank() and
         // about to run, so that timer would only queue a redundant rerankRerunNeeded.
@@ -3959,21 +4629,88 @@ const MapProject = () => {
       // scheduleRerank that already scored the row from algo onResponse.
       // Without the setAutoMatched trigger, auto-match would never propose
       // a mapping even for rows with a clearly-recommended top candidate.
+      // Every candidate already has a score (e.g. inline, from a
+      // single-algorithm $match): the row's rerank is done.
+      const conceptRows = Object.values(rowMatchStateRef.current[index]?.concept_rows || {})
+      if(query && conceptRows.length && conceptRows.every(cr => isNumber(cr?.rerank_score)) && rowStageRef.current[index]?.rerank !== 1 && !isSuperseded())
+        markAlgo(index, 'rerank', 1)
       if(isBulk && isNumber(index))
-        setTimeout(() => setAutoMatched([index]), 1000)
+        proposeMapping()
       return null
     }
-    inFlightRerankRef.current.add(index)
+    // A rerank in this run already stayed refused for the whole cap: don't
+    // ask again, the row's rerank is throttled ("not run, retry").
+    if(isRunTraffic && isRunThrottled('rerank')) {
+      markRowsThrottled([index], 'rerank', {algo: 'reranker'})
+      return null
+    }
+    let settleInFlight
+    const ownInFlight = new Promise(resolve => { settleInFlight = resolve })
+    inFlightRerankRef.current.set(index, ownInFlight)
     markAlgo(index, 'rerank', 0)
     const service = APIService.concepts().appendToUrl('$rerank/')
+    const isCancelled = isStopped
+    let release = null
     try {
-      const response = await service.post({
+      // At most RERANK_MAX_IN_FLIGHT $rerank calls at once, whatever fired
+      // them: every finished batch used to fire one per row (ocl_issues#2849).
+      release = await rerankLimiterRef.current.acquire({isCancelled})
+      if(!release) {
+        // Stopped before its turn; a stopped run reranks nothing more.
+        rerankRerunNeededRef.current.delete(index)
+        if(!isSuperseded())
+          markAlgo(index, 'rerank', -1)
+        return null
+      }
+      // Another of the run's reranks stayed refused for the whole cap while
+      // this one waited its turn: don't ask again.
+      if(isRunTraffic && isRunThrottled('rerank')) {
+        markRowsThrottled([index], 'rerank', {algo: 'reranker'})
+        return null
+      }
+      // Score the candidates that arrived while this call waited its turn too.
+      const latestRerankRows = buildRerankRowsForRow(index)
+      // service.request rejects on a non-2xx; service.post resolved a 5xx as if
+      // it scored nothing, and never settled on a 429. A 429 is waited out.
+      const result = await requestWithCapacityRetry(() => service.request('POST', {
         q: query,
-        rows: rerankRows,
+        rows: latestRerankRows.length ? latestRerankRows : rerankRows,
         ...(encoderModel ? { encoder_model: encoderModel } : {})
-      }, null, attrHeaders({rowIndex: index, algorithmId: 'reranker', isRunTraffic}))
-      if(handlePreviewLimitError(response, index, 'rerank', {isRun: isRunTraffic, stopPhase: 'rerank'}))
-        return response
+      }, null, {headers: attrHeaders({rowIndex: index, algorithmId: 'reranker', isRunTraffic, capacityAware: true}), handlesThrottle: true, timeout: HEAVY_REQUEST_TIMEOUT_MS}), {
+        gate: getCapacityGate(service.URL),
+        isCancelled,
+        onCapacity: noteCapacity,
+        ...trackCapacityWait([index], {algo: 'reranker'}),
+      })
+      if(result.reason === 'cancelled') {
+        rerankRerunNeededRef.current.delete(index)
+        if(!isSuperseded())
+          markAlgo(index, 'rerank', -1)
+        return null
+      }
+      if(result.reason === 'throttled') {
+        log({action: 'rerank_throttled', description: getThrottledRowDescription(result), extras: {...getThrottleExtras(result), attempts: result.attempts, waited_ms: result.waitedMs}}, index)
+        if(isSuperseded())
+          return null
+        markAlgo(index, 'rerank', -4, result)
+        if(isRunTraffic)
+          noteThrottledRunRow('rerank', index, result)
+        return null
+      }
+      if(!result.ok) {
+        if(isSuperseded())
+          return null
+        if(handlePreviewLimitError(result.error, index, 'rerank', {isRun: isRunTraffic, stopPhase: 'rerank'}))
+          return null
+        log({action: 'rerank_failed', description: `Rerank failed with ${encoderModel}`, extras: {status: result.error?.response?.status || null, error: result.error?.response?.data?.detail || result.error?.message || null}}, index)
+        markAlgo(index, 'rerank', -2)
+        return null
+      }
+      const response = result.response
+      // A newer run may rank with another encoder or input: its scores are
+      // its own (ocl_issues#2849).
+      if(isSuperseded())
+        return null
 
       // Write rerank_score into the row's ConceptRows. matchRerankResultToKey
       // throws on canonical-identity miss; surface to the alert state so a
@@ -4011,23 +4748,30 @@ const MapProject = () => {
 
       // (Removed legacy allCandidates re-stamp: rerank_score now lives on
       //  rowMatchState[idx].concept_rows[concept_key], which we updated above.)
-      markAlgo(index, 'rerank', 1)
+      // The scores stand either way; a newer run's stages are its own.
+      if(!isSuperseded())
+        markAlgo(index, 'rerank', 1)
+      if(isRunTraffic)
+        saveLateRunResult()
       log({action: 'rerank_finished', description: `Reranked with ${encoderModel}`}, index)
       if(isBulk)
-        setTimeout(() => setAutoMatched([index]), 1000)
+        proposeMapping()
       return response
     } catch (e) {
-      if(handlePreviewLimitError(e, index, 'rerank', {isRun: isRunTraffic, stopPhase: 'rerank'}))
-        return null
-      log({action: 'rerank_failed', description: `Rerank failed with ${encoderModel}`}, index)
+      log({action: 'rerank_failed', description: `Rerank failed with ${encoderModel}`, extras: {error: e?.message || null}}, index)
       markAlgo(index, 'rerank', -2)
       return null
     } finally {
-      inFlightRerankRef.current.delete(index)
-      // If new ConceptRows arrived while we were in flight, fire again.
+      release?.()
+      if(inFlightRerankRef.current.get(index) === ownInFlight)
+        inFlightRerankRef.current.delete(index)
+      settleInFlight()
+      // If new ConceptRows arrived while we were in flight, fire again,
+      // through the current render's scheduler: this call's closure may hold
+      // an older encoder or row input (ocl_issues#2849).
       if(rerankRerunNeededRef.current.has(index)) {
         rerankRerunNeededRef.current.delete(index)
-        scheduleRerank(index)
+        scheduleRerankRef.current(index)
       }
     }
   }
@@ -4049,7 +4793,7 @@ const MapProject = () => {
       || (Array.isArray(def?.names) && def.names.some(n => n?.name))
     )
   const scheduleRerank = (rowIndex) => {
-    if(!isNumber(rowIndex)) return
+    if(!isNumber(rowIndex) || !isMountedRef.current) return
     const stage = rowStageRef.current[rowIndex] || {}
     // ocl_online#105 Phase 5: this debounced path does most of the reranking
     // during a bulk auto-match (candidates stream in asynchronously, so the
@@ -4060,15 +4804,19 @@ const MapProject = () => {
     // to mapper-ui-manual. Internally consistent: if we treat this as a
     // bulk-run rerank for gating, we attribute it to the run.
     const isRunTraffic = Boolean(isBulkMatchRunningRef.current && bulkMatchAlgoIdsRef.current.length > 0)
+    // An algorithm the server stayed too busy for (-4), or that isn't
+    // available to this user (-3), is settled too: the row's other
+    // candidates still get ranked (ocl_issues#2849).
+    const isSettled = value => value === 1 || value === -2 || value === -3 || value === -4
     if(isRunTraffic) {
       // Bulk auto-match: wait until all selected algos are done (success or failed) for this row.
-      const allDone = bulkMatchAlgoIdsRef.current.every(id => stage[id] === 1 || stage[id] === -2)
+      const allDone = bulkMatchAlgoIdsRef.current.every(id => isSettled(stage[id]))
       if(!allDone) return
     } else {
       // Single-row: wait until every configured algo has either completed (1) or failed (-2).
       // Checking only === 0 (in-flight) wasn't enough — algos not yet started (-1) or
       // uninitialized (undefined) would let rerank fire before their candidates arrived.
-      if(selectedAlgoIds.some(id => stage[id] !== 1 && stage[id] !== -2)) return
+      if(selectedAlgoIds.some(id => !isSettled(stage[id]))) return
     }
     const rowState = rowMatchStateRef.current[rowIndex]
     if(!rowState) return
@@ -4087,8 +4835,14 @@ const MapProject = () => {
     if(!hasEligiblePending) return
     if(rerankDebounceRef.current[rowIndex])
       clearTimeout(rerankDebounceRef.current[rowIndex])
+    // A run's rerank belongs to that run: if a newer run started before the
+    // timer fired, drop it (the newer run reranks its own rows) rather than
+    // let it pass as the newer run's (ocl_issues#2849).
+    const scheduledTicket = autoMatchRunTicketRef.current
     rerankDebounceRef.current[rowIndex] = setTimeout(() => {
       delete rerankDebounceRef.current[rowIndex]
+      if(!isMountedRef.current || (isRunTraffic && scheduledTicket !== autoMatchRunTicketRef.current))
+        return
       // isBulk=false (don't double the setAutoMatched side-effect the explicit
       // bulk rerank already performs); isRunTraffic carries the run attribution.
       rerank(rowIndex, false, isRunTraffic)
@@ -4222,7 +4976,9 @@ const MapProject = () => {
     return formatted
   }
 
-  const fetchBridgeCandidates = (_row, offset=0, _retired, scrollToBottom, _filters, forceReload=false, isBulk=false, callback) => {
+  // onFailure: a row matched by hand goes on to its next algorithm after the
+  // bridge fails or stays throttled (ocl_issues#2849).
+  const fetchBridgeCandidates = (_row, offset=0, _retired, scrollToBottom, _filters, forceReload=false, isBulk=false, callback, onFailure) => {
     let __row = isEmpty(_row) ? row : _row
     const bridgeAlgoId = bridgeAlgo?.id || 'ocl-ciel-bridge'
     const rowEntry = rowMatchStateRef.current?.[__row.__index]
@@ -4241,46 +4997,104 @@ const MapProject = () => {
     setIsLoadingInDecisionView(true)
     const payload = getPayloadForMatching([__row], repo)
     let __offset = offset || 0
+    const failBridgeRow = message => {
+      clearRefreshRowStageSnapshot(__row.__index)
+      markAlgo(__row.__index, bridgeAlgoId, -2)
+      log({action: 'algo_failed', extras: {...getAlgoLogExtras(bridgeAlgo), error: message}}, __row.__index)
+      setAlert({message, severity: 'error'})
+      setIsLoadingInDecisionView(false)
+    }
     return new Promise(resolve => {
-      bridgeRef.current?.fetchBridgeCandidates(
-        payload,
-        __offset,
-        isBoolean(_retired) ? _retired : retired,
-        (candidates) => {
-          if(callback) {
-            const newCandidates = candidates?.map(candidate => ({
-              ...candidate,
-              results: candidate?.results?.map(result => ({
-                ...result,
-                search_meta: {
-                  ...result?.search_meta,
-                  algorithm: bridgeAlgoId
-                }
-              }))
-            }));
-            callback(newCandidates, payload)
-          }
-          resolve()
-        },
-        (response, errorMsg) => {
-          if(handlePreviewLimitError(response, __row.__index, bridgeAlgoId)) {
+      // The component calls its service's post() synchronously from here; the
+      // context tells that post() the row, and whether a Stop ends its waits
+      // (ocl_issues#2849).
+      const context = {rowIndex: __row.__index, isBulk, isCancelled: isBulk ? getRunStopCheck() : () => false, posted: false}
+      // A run's call that ends after a newer run started leaves its stages alone.
+      const runTicket = autoMatchRunTicketRef.current
+      const isSuperseded = () => isBulk && runTicket !== autoMatchRunTicketRef.current
+      bridgeCallContextRef.current = context
+      try {
+        bridgeRef.current?.fetchBridgeCandidates(
+          payload,
+          __offset,
+          isBoolean(_retired) ? _retired : retired,
+          (candidates) => {
+            if(callback) {
+              const newCandidates = candidates?.map(candidate => ({
+                ...candidate,
+                results: candidate?.results?.map(result => ({
+                  ...result,
+                  search_meta: {
+                    ...result?.search_meta,
+                    algorithm: bridgeAlgoId
+                  }
+                }))
+              }));
+              callback(newCandidates, payload)
+            }
             resolve()
-            return
-          }
-          clearRefreshRowStageSnapshot(__row.__index)
-          refreshMapperQuotaCache()
-          markAlgo(__row.__index, bridgeAlgoId, -2)
-          log({action: 'algo_failed', extras: getAlgoLogExtras(bridgeAlgo)}, __row.__index)
-          setAlert({message: response?.detail || errorMsg, severity: 'error'})
-          setIsLoadingInDecisionView(false)
-          resolve()
-        },
-        // ocl_online#105 Phase 5: attribution headers for the bridge $match,
-        // applied by the premium component (react-bridge-match). Per-row here
-        // (single-row payload) → scalar row_index. isBulk distinguishes a run
-        // call from a manual per-row bridge fetch.
-        attrHeaders({rowIndex: __row.__index, algorithmId: bridgeAlgoId, isRunTraffic: isBulk})
-      )
+          },
+          (response, errorMsg) => {
+            if(isSuperseded()) {
+              resolve()
+              return
+            }
+            if(response?.cancelled) {
+              markAlgo(__row.__index, bridgeAlgoId, -1)
+              setIsLoadingInDecisionView(false)
+              resolve()
+              return
+            }
+            // The server stayed too busy: not run, not failed.
+            if(response?.throttled) {
+              clearRefreshRowStageSnapshot(__row.__index)
+              markAlgo(__row.__index, bridgeAlgoId, -4, response)
+              log({action: 'algo_throttled', description: getThrottledRowDescription(response), extras: {...getAlgoLogExtras(bridgeAlgo), ...getThrottleExtras(response)}}, __row.__index)
+              if(isBulk)
+                noteThrottledRunRow(bridgeAlgoId, __row.__index, response)
+              setAlert(prev => (prev?.severity === 'error' ? prev : {message: response.detail, severity: 'warning'}))
+              setIsLoadingInDecisionView(false)
+              onFailure?.()
+              resolve()
+              return
+            }
+            if(handlePreviewLimitError(response, __row.__index, bridgeAlgoId)) {
+              resolve()
+              return
+            }
+            clearRefreshRowStageSnapshot(__row.__index)
+            refreshMapperQuotaCache()
+            markAlgo(__row.__index, bridgeAlgoId, -2)
+            log({action: 'algo_failed', extras: getAlgoLogExtras(bridgeAlgo)}, __row.__index)
+            setAlert({message: response?.detail || errorMsg, severity: 'error'})
+            setIsLoadingInDecisionView(false)
+            onFailure?.()
+            resolve()
+          },
+          // ocl_online#105 Phase 5: attribution headers for the bridge $match,
+          // applied by the premium component (react-bridge-match). Per-row here
+          // (single-row payload) → scalar row_index. isBulk distinguishes a run
+          // call from a manual per-row bridge fetch.
+          attrHeaders({rowIndex: __row.__index, algorithmId: bridgeAlgoId, isRunTraffic: isBulk, capacityAware: true})
+        )
+      } catch (err) {
+        failBridgeRow(err?.message || t('unknown_error'))
+        onFailure?.()
+        resolve()
+        return
+      } finally {
+        bridgeCallContextRef.current = null
+      }
+      // The component sent nothing (bridging isn't available to this user or
+      // project), so no callback will come: mark it n/a and settle, rather
+      // than leave the row "Running" and its rerank waiting for good.
+      if(!context.posted) {
+        markAlgo(__row.__index, bridgeAlgoId, -3)
+        log({action: 'algo_skipped', extras: {...getAlgoLogExtras(bridgeAlgo), reason: 'bridge_unavailable'}}, __row.__index)
+        setIsLoadingInDecisionView(false)
+        onFailure?.()
+        resolve()
+      }
     })
   }
 
@@ -4300,6 +5114,9 @@ const MapProject = () => {
     return find(keys(conceptCache), url => url === id || url.endsWith(`/concepts/${id}/`) || url.endsWith(`/concepts/${encodeURIComponent(id)}/`)) || false
   }
 
+  // Until the target version loads there's no URL to look up against
+  const hasLookupURL = () => Boolean(lookupConfig?.url || repoVersion?.version_url)
+
   const getLookupService = () => {
     let service = APIService.new()
     if(lookupConfig?.url) {
@@ -4311,6 +5128,14 @@ const MapProject = () => {
       service.overrideURL(repoVersion.version_url)
     }
     return service.appendToUrl('concepts/')
+  }
+
+  // The token a lookup request to this URL gets (see lookupToken).
+  const getLookupToken = url => lookupToken(lookupConfig?.token, url, getAPIURL(), currentUserToken())
+
+  const requestLookup = query => {
+    const service = getLookupService()
+    return service.request('GET', undefined, getLookupToken(service.URL), {query, handlesThrottle: true, timeout: LIGHT_REQUEST_TIMEOUT_MS})
   }
 
   // ensureLoaded — state-driven $lookup over $resolveReference
@@ -4351,6 +5176,24 @@ const MapProject = () => {
     writeConceptCachePatch(key, { ...existing, lookup_status: 'failed' })
   }, [writeConceptCachePatch])
 
+  // Drop a missing concept's bridge_child candidates from every row, unless
+  // the lookup was for an earlier target version.
+  const dropMissingConcept = React.useCallback((key, generation) => {
+    const session = lookupSessionRef.current
+    if(!session.markMissing(generation, key)) return
+    const prevAll = rowMatchStateRef.current
+    let changed = false
+    const nextAll = {}
+    Object.entries(prevAll).forEach(([idx, rowState]) => {
+      nextAll[idx] = session.dropMissing(idx, rowState)
+      if(nextAll[idx] !== rowState) changed = true
+    })
+    if(changed) {
+      rowMatchStateRef.current = nextAll
+      setRowMatchState(nextAll)
+    }
+  }, [])
+
   const ensureLoaded = React.useCallback(async (conceptKeys, logRowIndex, isRunTraffic = false) => {
     if(!Array.isArray(conceptKeys) || conceptKeys.length === 0) return
     const ctx = buildProjectContext()
@@ -4361,9 +5204,14 @@ const MapProject = () => {
     // for projects that don't override. Without this gate, the legacy
     // Search-tab fetches respected the user's token but the new unified
     // ensureLoaded path silently used the session token instead — leaving
-    // the LookupConfig widget half-decorative.
+    // the LookupConfig widget half-decorative. Without one, the session's user
+    // token goes only to the OCL API (getLookupToken), never to another host.
     const currentToken = currentUserToken()
-    const authToken = lookupConfig?.token || currentToken
+    // Results from before a target version change are ignored.
+    const session = lookupSessionRef.current
+    const generation = session.generation
+    const inFlight = inFlightLookupsRef.current
+    const isCurrent = () => session.isCurrent(generation)
 
     const directFetches = []
     const toResolve = []
@@ -4374,12 +5222,12 @@ const MapProject = () => {
       if(!key) return
       const def = cache[key]
       if(def?.lookup_status === 'full') return
-      if(inFlightLookupsRef.current.has(key)) {
-        pending.push(inFlightLookupsRef.current.get(key))
+      if(inFlight.has(key)) {
+        pending.push(inFlight.get(key))
         return
       }
       const promise = new Promise(resolve => settlers.set(key, resolve))
-      inFlightLookupsRef.current.set(key, promise)
+      inFlight.set(key, promise)
       pending.push(promise)
 
       if(def?.ocl_url) {
@@ -4401,24 +5249,21 @@ const MapProject = () => {
           const reference = parseConceptKey(key)
           toResolve.push({key, reference})
         } catch (_) {
-          inFlightLookupsRef.current.delete(key)
+          inFlight.delete(key)
           settlers.get(key)()
         }
       }
     })
 
     const settle = (key) => {
-      inFlightLookupsRef.current.delete(key)
+      inFlight.delete(key)
       const fn = settlers.get(key)
       if(fn) fn()
     }
 
     const fetchConceptByOclUrl = async (key, oclUrl, source, logRowIndex) => {
-      // URL-level dedup: if a different concept_key is already fetching this
-      // same OCL URL (or fetched it successfully), reuse that promise instead
-      // of issuing a duplicate network request.
-      let dataPromise = urlFetchCacheRef.current.get(oclUrl)
-      if(!dataPromise) {
+      // URL-level dedup: reuse a fetch of the same OCL URL by another concept_key.
+      const dataPromise = session.fetchOnce(oclUrl, () => {
         const attemptFetch = async () => {
           let service = APIService.new()
           if(oclUrl.startsWith('http://') || oclUrl.startsWith('https://')) {
@@ -4426,16 +5271,21 @@ const MapProject = () => {
           } else {
             service = service.overrideURL(oclUrl)
           }
-          const response = await service.request('GET', undefined, authToken, {query: {includeMappings: true, mappingBrief: true, mapTypes: 'SAME-AS,SAME AS,SAME_AS', verbose: true}, headers: attrHeaders({rowIndex: logRowIndex, isRunTraffic})})
-          const data = response?.data
-          if(data?.id) return data
-          urlFetchCacheRef.current.delete(oclUrl)
-          return null
+          // A busy server's 429 is waited out, and a gateway error retried
+          // (ocl_issues#2849); a 404 is retried below.
+          const result = await requestWithCapacityRetry(
+            () => service.request('GET', undefined, getLookupToken(service.URL), {query: {includeMappings: true, mappingBrief: true, mapTypes: 'SAME-AS,SAME AS,SAME_AS', verbose: true}, headers: attrHeaders({rowIndex: logRowIndex, isRunTraffic}), handlesThrottle: true, timeout: LIGHT_REQUEST_TIMEOUT_MS}),
+            {maxWaitMs: INTERACTIVE_WAIT_CAP_MS, onCapacity: noteCapacity}
+          )
+          if(!result.ok)
+            throw result.error || new Error(result.reason)
+          const data = result.response?.data
+          return data?.id ? data : null
         }
         // Retry on 404: the lookup repo may still be lazily building the concept.
         // Attempts happen at t=0s, t=3s, t=7s.
         const code = parseConceptKey(key).code
-        dataPromise = retryWithBackoff(attemptFetch, {
+        return retryWithBackoff(attemptFetch, {
           maxRetries: 2,
           baseDelayMs: 3000,
           backoffFactor: 4/3,
@@ -4445,15 +5295,13 @@ const MapProject = () => {
             if(err?.response?.status === 404)
               log({action: 'lookup', description: t('map_project.lookup_concept_404', {code, attempt: attempt + 1}), extras: {url: oclUrl, error: t('map_project.lookup_concept_404', {code, attempt: attempt + 1})}}, logRowIndex)
           },
-        }).catch(() => {
-          urlFetchCacheRef.current.delete(oclUrl)
-          return null
         })
-        urlFetchCacheRef.current.set(oclUrl, dataPromise)
-      }
+      })
 
       try {
         const data = await dataPromise
+        if(!isCurrent())
+          return
         if(data?.id) {
           const existing = conceptCacheRef.current[key] || {}
           writeConceptCachePatch(key, {
@@ -4466,9 +5314,12 @@ const MapProject = () => {
           })
         } else {
           writeLookupFailure(key)
+          if(data === LOOKUP_NOT_FOUND)
+            dropMissingConcept(key, generation)
         }
       } catch (_) {
-        writeLookupFailure(key)
+        if(isCurrent())
+          writeLookupFailure(key)
       } finally {
         settle(key)
       }
@@ -4481,15 +5332,24 @@ const MapProject = () => {
       const body = toResolve.map(({reference}) => reference.version
         ? {url: reference.url, version: reference.version}
         : {url: reference.url})
-      // service.request rejects on any error, a 429 included, so the catch
-      // below marks these lookups failed and settles them. APIService.post
-      // answers a 429 with a promise that never settles, which left every
-      // wait on these lookups hanging (ocl_online#283).
-      resolvePromise = APIService.new()
-        .overrideURL('/$resolveReference/')
-        .request('POST', body, currentToken, {
+      // A busy server's 429 is waited out (ocl_issues#2849); any other error,
+      // or a server still busy at the cap, lands in the catch below, which
+      // marks these lookups failed and settles them. APIService.post answers
+      // a 429 with a promise that never settles, which left every wait on
+      // these lookups hanging (ocl_online#283).
+      resolvePromise = requestWithCapacityRetry(
+        () => APIService.new().overrideURL('/$resolveReference/').request('POST', body, currentToken, {
           headers: attrHeaders({rowIndex: logRowIndex, isRunTraffic}),
           query: resolveNamespace ? {namespace: resolveNamespace} : {},
+          handlesThrottle: true,
+          timeout: LIGHT_REQUEST_TIMEOUT_MS,
+        }),
+        {maxWaitMs: INTERACTIVE_WAIT_CAP_MS, onCapacity: noteCapacity}
+      )
+        .then(result => {
+          if(!result.ok)
+            throw result.error || new Error(result.reason)
+          return result.response
         })
         .then(async response => {
           const items = Array.isArray(response?.data) ? response.data : []
@@ -4497,7 +5357,8 @@ const MapProject = () => {
             const item = items[i]
             const repoUrl = lookupConfig?.url || (item?.resolved === true ? item?.result?.url : null)
             if(!repoUrl) {
-              writeLookupFailure(key)
+              if(isCurrent())
+                writeLookupFailure(key)
               settle(key)
               return
             }
@@ -4508,14 +5369,15 @@ const MapProject = () => {
         })
         .catch(() => {
           toResolve.forEach(({key}) => {
-            writeLookupFailure(key)
+            if(isCurrent())
+              writeLookupFailure(key)
             settle(key)
           })
         })
     }
 
     await Promise.all([directPromise, resolvePromise, ...pending])
-  }, [buildProjectContext, writeConceptCachePatch, writeLookupFailure, lookupConfig?.token])
+  }, [buildProjectContext, writeConceptCachePatch, writeLookupFailure, dropMissingConcept, lookupConfig?.url, lookupConfig?.token])
 
   // Wire the forward-ref consumed by mergeIntoRowMatchState. useEffect
   // so the ref always points at the latest closure (ensureLoaded captures
@@ -4524,6 +5386,28 @@ const MapProject = () => {
   React.useEffect(() => {
     ensureLoadedRef.current = ensureLoaded
   }, [ensureLoaded])
+
+  // On a target version change, redo interrupted lookups and bring back the
+  // bridge candidates dropped under the old version.
+  React.useEffect(() => {
+    const interrupted = new Set(inFlightLookupsRef.current.keys())
+    inFlightLookupsRef.current = new Map()
+    const { rowMatchState: nextState, restored } = lookupSessionRef.current.reset(rowMatchStateRef.current)
+    if(nextState !== rowMatchStateRef.current) {
+      rowMatchStateRef.current = nextState
+      setRowMatchState(nextState)
+    }
+    Object.entries(nextState || {}).forEach(([idx, rowState]) => {
+      const keysToLoad = uniq([
+        ...(restored[idx] || []),
+        ...Object.keys(rowState?.concept_rows || {}).filter(key => interrupted.has(key))
+      ])
+      if(keysToLoad.length && ensureLoadedRef.current)
+        ensureLoadedRef.current(keysToLoad, Number(idx)).then(() => {
+          if(scheduleRerankRef.current) scheduleRerankRef.current(Number(idx))
+        })
+    })
+  }, [selectedTargetRepoVersion, lookupConfig?.url])
 
   // Lazily enrich a row's saved candidates when it is opened. The persisted
   // v2 candidates payload intentionally carries sparse ConceptDefinitions
@@ -4564,7 +5448,7 @@ const MapProject = () => {
   }
 
   const search = (event, page, pageSize, includeRetired, appliedFilters) => {
-    if(!searchStr)
+    if(!searchStr || !hasLookupURL())
       return
     GAService.recordActionEvent('MapProject Search', 'search_concepts', undefined, {
       term: searchStr,
@@ -4574,7 +5458,7 @@ const MapProject = () => {
       has_filters: !isEmpty(appliedFilters || appliedFacets[rowIndex])
     })
     setIsLoadingInDecisionView(true)
-    getLookupService().get(lookupConfig?.token, null, {
+    const query = {
       includeSearchMeta: true,
       includeMappings: true,
       mappingBrief: true,
@@ -4585,8 +5469,24 @@ const MapProject = () => {
       page: page || 1,
       includeRetired: includeRetired === undefined ? retired : includeRetired,
       ...getFacetQueryParam(appliedFilters || appliedFacets[rowIndex]),
-    }).then(response => {
-      let items = response.data
+    }
+    // service.get never settled on a 429 and resolved an error as its body,
+    // which then threw here. A 429 is waited out; an error says so
+    // (ocl_issues#2849).
+    requestWithCapacityRetry(
+      () => requestLookup(query),
+      {maxWaitMs: INTERACTIVE_WAIT_CAP_MS, onCapacity: noteCapacity, ...trackCapacityWait([])}
+    ).then(result => {
+      if(!result.ok) {
+        setIsLoadingInDecisionView(false)
+        if(result.reason === 'throttled')
+          setAlert({message: t('map_project.search_throttled'), severity: 'warning'})
+        else
+          setAlert({message: t('map_project.search_failed', {error: result.error?.response?.data?.detail || result.error?.message || t('unknown_error')}), severity: 'error'})
+        return
+      }
+      const response = result.response
+      let items = response.data || []
       setSearchedConcepts({...searchedConcepts, [row.__index]: items})
       setSearchResponse(response)
       setIsLoadingInDecisionView(false)
@@ -4603,7 +5503,7 @@ const MapProject = () => {
 
   const getFacets = (firstLoad, rowIndex) => {
     const targetRowIndex = isNumber(rowIndex) ? rowIndex : row?.__index
-    if(!isNumber(targetRowIndex))
+    if(!isNumber(targetRowIndex) || !hasLookupURL())
       return Promise.resolve()
 
     const query = {
@@ -4632,7 +5532,15 @@ const MapProject = () => {
       })
     }
 
-    const request = getLookupService().get(lookupConfig?.token, null, query).then(response => {
+    // A failed facets call isn't cached, so the next look tries again
+    // (ocl_issues#2849).
+    const request = requestWithCapacityRetry(
+      () => requestLookup(query),
+      {maxWaitMs: INTERACTIVE_WAIT_CAP_MS, onCapacity: noteCapacity, ...trackCapacityWait([])}
+    ).then(result => {
+      if(!result.ok)
+        return undefined
+      const response = result.response
       const fields = response?.data?.facets?.fields || {}
       setFetchedFacets(prev => ({...prev, [requestKey]: fields}))
       if(latestFacetRequestRef.current[targetRowIndex] === requestKey)
@@ -4695,15 +5603,7 @@ const MapProject = () => {
   }
 
   const getConcept = (concept, returnSelf=true) => {
-    let cached = (concept?.url || concept?.id) ? findConceptByIdOrURLFromCache(concept?.url || concept?.id) : false
-    if(cached && concept?.search_meta)
-      cached.search_meta = concept.search_meta
-    if(cached && concept?.source)
-      cached.source = concept.source
-    if(cached && concept?.contributingAlgorithms)
-      cached.contributingAlgorithms = concept.contributingAlgorithms
-    if(cached && concept?.contributingAlgorithmIds)
-      cached.contributingAlgorithmIds = concept.contributingAlgorithmIds
+    const cached = withCachedConcept(concept, (concept?.url || concept?.id) ? findConceptByIdOrURLFromCache(concept?.url || concept?.id) : false)
     return returnSelf ? (cached || concept) : cached
   }
 
@@ -4712,18 +5612,15 @@ const MapProject = () => {
   const doubleClickCallback = useDoubleClick(onCSVRowSelect, () => {});
 
   const isConfigureInSplitView = configure && file?.name
+  // until a file is uploaded the form sits in the header panel instead of the side panel
+  const isConfigFormInline = configure && !file?.name
   const columnsForTable = getColumnsForTable()
-  let targetConcept = mapSelected[rowIndex] ? getConcept(mapSelected[rowIndex], true) : false
+  // A copy: the code below changes it, and mapSelected holds the mapped target.
+  let targetConcept = mapSelected[rowIndex] ? {...getConcept(mapSelected[rowIndex], true)} : false
   const targetRowViews = rowMatchStateRef.current?.[rowIndex]
     ? buildQualityRowViews(rowMatchStateRef.current[rowIndex], conceptCacheRef.current)
     : []
-  const selectedTargetRowView = targetConcept ? find(targetRowViews, view => {
-    const mapped = conceptForMapping(view)
-    if(!mapped) return false
-    if(targetConcept?.url && mapped.url)
-      return mapped.url === targetConcept.url
-    return mapped.id === targetConcept?.id
-  }) : false
+  const selectedTargetRowView = targetConcept ? findTargetRowView(targetRowViews, targetConcept) : false
   if(selectedTargetRowView && targetConcept) {
     const mergedConcept = conceptForMapping(selectedTargetRowView)
     targetConcept = {
@@ -4745,6 +5642,8 @@ const MapProject = () => {
     if(meta?.search_normalized_score)
       targetConcept.search_meta = meta
   }
+  if(targetConcept)
+    targetConcept = withOwnNames(targetConcept, mapSelected[rowIndex])
 
   const labelDisplayedRows = ({ from, to, count }) => {
     return `${from.toLocaleString()}–${to.toLocaleString()} of ${count?.toLocaleString()}`;
@@ -4763,7 +5662,7 @@ const MapProject = () => {
       return ''
     const match = url.match(/\/prompts\/[^/]+\/([^/]+)\//)
     const version = match?.[1] || ''
-    return version && version !== 'invoke' ? version : ''
+    return version && version !== 'invoke' && version !== '$invoke' ? version : ''
   }, [])
 
   // Staff's pick wins; for everyone else the project's configured template does,
@@ -4789,7 +5688,7 @@ const MapProject = () => {
     const resolvedURI = getResolvedPromptTemplateURI(template, key)
     if(!resolvedURI)
       return ''
-    const invokeURI = `${resolvedURI}invoke/`
+    const invokeURI = `${resolvedURI}$invoke/`
     return /^https?:\/\//.test(invokeURI) ? invokeURI : new URL(invokeURI, AI_ASSISTANT_API_URL).toString()
   }, [AI_ASSISTANT_API_URL, getResolvedPromptTemplateURI])
 
@@ -4840,7 +5739,7 @@ const MapProject = () => {
     find(AIModels, {id: modelId})
   ), [AIModel, AIModels])
 
-  // The model to request on /invoke/: the staff user's choice. Nobody else can
+  // The model to request on $invoke/: the staff user's choice. Nobody else can
   // override the template's default model, so their calls name no model.
   const getRequestedAIModel = React.useCallback(() => (
     canSelectAIModel ? getSelectedAIModel() : undefined
@@ -4926,7 +5825,7 @@ const MapProject = () => {
       canSelect: canSelectAIModel, selectedKey: template?.key, configuredKey: projectPromptTemplateKey, fallbackKey: PROMPTS_KEY_DEFAULT
     })
     if(!key || !AI_ASSISTANT_API_URL)
-      throw new Error('AI Assistant prompt template is not available')
+      throw new Error(t('map_project.ai_prompt_template_unavailable'))
 
     const service = APIService.new()
     service.URL = AI_ASSISTANT_API_URL
@@ -4942,7 +5841,7 @@ const MapProject = () => {
       uri: getResolvedPromptTemplateURI(resolvedTemplate, key),
       version: resolvedTemplate?.version || getPromptTemplateVersionFromURL(getResolvedPromptTemplateURI(resolvedTemplate, key)) || null
     }
-  }, [AI_ASSISTANT_API_URL, canSelectAIModel, getPromptTemplateVersionFromURL, getResolvedPromptTemplateURI, projectPromptTemplateKey, promptTemplate])
+  }, [AI_ASSISTANT_API_URL, canSelectAIModel, getPromptTemplateVersionFromURL, getResolvedPromptTemplateURI, projectPromptTemplateKey, promptTemplate, t])
 
 
   const getProjectMetadata = () => {
@@ -5079,6 +5978,22 @@ const MapProject = () => {
     }
   }
 
+  // Rows with candidates and no analysis of them yet; fetchRecommendation skips the rest.
+  const getAIAnalysableRows = _rows => filter(_rows, _row => {
+    const concepts = isNumber(_row?.__index) ? buildV2RecommendationPayload(_row.__index)?.recommendable_concepts : null
+    return Boolean(concepts?.length) && !hasCurrentAnalysis(analysis[_row.__index], getCandidatePoolFingerprint(concepts))
+  })
+
+  // Counted only while the dialog shows it, over the scope's rows, and again
+  // as their candidates or analyses change.
+  const isAutoMatchAIOnly = Boolean(inAIAssistantGroup && autoRunAIAnalysis) && !(autoRetrieveCandidates && runnableAlgos.length)
+  const aiOnlyRowCounts = React.useMemo(() => {
+    if(!matchDialog || !isAutoMatchAIOnly)
+      return null
+    const scopeRows = getRowsToProcess(data, rowStatuses, autoMatchScope, getSelectedRowIndexes(data), previewEligibleRowIndexes)
+    return countAIOnlyRows(map(scopeRows, '__index'), map(getAIAnalysableRows(scopeRows), '__index'))
+  }, [matchDialog, isAutoMatchAIOnly, data, rowStatuses, autoMatchScope, selectedRowIds, previewEligibleRowIndexes, analysis, rowMatchState, conceptCache, repoVersion, buildProjectContext, filters, inputLocale])
+
   const fetchRecommendation = async (_row, resolvedPromptTemplate = null, isBulk = false) => {
     let __row = row;
     let __index = rowIndex;
@@ -5086,10 +6001,22 @@ const MapProject = () => {
       __row = _row
       __index = _row.__index
     }
+    // Returns the row's AI outcome as a stage (1 analysed, -2 failed, -3 not
+    // run), or null when the row was skipped or the run stopped. A run's call
+    // that ends after a newer run started leaves that run's stages and failure
+    // count alone (ocl_issues#2872), but still logs on its own row, like every
+    // AI entry here: the row's history records each call made for it
+    // (OpenConceptLab/ocl_issues#2887).
+    const runTicket = autoMatchRunTicketRef.current
+    const isSuperseded = () => isBulk && runTicket !== autoMatchRunTicketRef.current
+    const markRecommend = stage => {
+      if(!isSuperseded())
+        markAlgo(__index, 'recommend', stage)
+    }
     if(!AI_ASSISTANT_API_URL) {
-      markAlgo(__index, 'recommend', -3)
+      markRecommend(-3)
       console.error('AI ASSISTANT is not enabled for you.')
-      return false
+      return -3
     }
     // Auto Match (caller supplied resolvedPromptTemplate) skips a row whose
     // latest analysis saw this same candidate pool; a re-run whose candidates
@@ -5105,8 +6032,8 @@ const MapProject = () => {
     if(isBulk && isNumber(__index)) {
       await waitForLookups(getPendingRowLookups(rowMatchStateRef.current[__index], inFlightLookupsRef.current), AI_LOOKUP_WAIT_MS, stuckLookupsRef.current)
       // The user may have pressed Stop while this row waited.
-      if(abortRef.current)
-        return false
+      if(abortRef.current || isSuperseded())
+        return null
     }
     const v2 = isNumber(__index) ? buildV2RecommendationPayload(__index) : null
     const candidatePoolFingerprint = getCandidatePoolFingerprint(v2?.recommendable_concepts)
@@ -5114,7 +6041,7 @@ const MapProject = () => {
     if(isNumber(__index) && repoVersion && !alreadyAnalyzed && (v2?.recommendable_concepts?.length || 0) > 0) {
       if(!isBulk)
         GAService.recordActionEvent('MapProject', 'ai_assistant_run', undefined, { mode: 'single' })
-      markAlgo(__index, 'recommend', 0)
+      markRecommend(0)
       let rowData = prepareRow(__row, true, true)
 
       const requestedModel = getRequestedAIModel()
@@ -5122,9 +6049,9 @@ const MapProject = () => {
       try {
         activePromptTemplate = resolvedPromptTemplate || await resolvePromptTemplateForInvocation()
         if(!activePromptTemplate?.key) {
-          setAlert({message: 'AI Assistant prompt template is not available', severity: 'error'})
-          markAlgo(__index, 'recommend', -3)
-          return false
+          setAlert({message: t('map_project.ai_prompt_template_unavailable'), severity: 'error'})
+          markRecommend(-3)
+          return -3
         }
         // Single-row invocations (no caller-supplied resolvedPromptTemplate)
         // should always hit the latest prompt template, NOT a pinned version.
@@ -5132,7 +6059,7 @@ const MapProject = () => {
         // template is captured once at the start and reused for every row so
         // a mid-run template publish can't shift behavior). For single-row
         // there's no such consistency requirement; pinning made the invoke
-        // URL '/prompts/<key>/<version>/invoke/' which 404s when the server
+        // URL '/prompts/<key>/<version>/$invoke/' which 404s when the server
         // doesn't host that specific version path. Clear `version` and the
         // already-version-bearing `uri`/`url`/`prompt_template_uri` so
         // getResolvedPromptTemplateURI falls through to '/prompts/<key>/'.
@@ -5146,12 +6073,12 @@ const MapProject = () => {
           }
         }
       } catch (err) {
-        markAlgo(__index, 'recommend', -2)
+        markRecommend(-2)
         const errorMessage = err?.message || t('unknown_error')
         let timestamp = moment().toDate()
         log({created_at: timestamp, action: 'AIRecommendation', description: errorMessage, extras: {error: errorMessage, model: requestedModel, prompt_template: getPromptTemplateRef(), prompt_template_uri: getPromptTemplateRef()?.uri}}, __index)
         setAlert({message: errorMessage, severity: 'error'})
-        return false
+        return -2
       }
       const promptTemplateRef = getPromptTemplateRef(activePromptTemplate)
       const payload = {
@@ -5188,7 +6115,7 @@ const MapProject = () => {
             baseDelayMs: 3000,
             backoffFactor: 4,
             jitterFactor: 0.25,
-            isCancelled: () => abortRef.current,
+            isCancelled: () => abortRef.current || !isMountedRef.current,
             isRetryable: isTransientNetworkError,
             onAttemptFailed: (err, attempt) => {
               const errorMessage = err?.response?.data?.detail || err?.message || t('unknown_error')
@@ -5198,21 +6125,23 @@ const MapProject = () => {
           }
         )
         let timestamp = moment().toDate()
-        if(handlePreviewLimitError(response, __index, 'recommend', {isRun: isBulk, stopPhase: 'ai'})) {
-          markAlgo(__index, 'recommend', -3)
-          log({created_at: timestamp, action: 'AIRecommendationLimitReached', extras: {model: requestedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}})
-          return false
+        if(handlePreviewLimitError(response, isSuperseded() ? null : __index, 'recommend', {isRun: isBulk, stopPhase: 'ai'})) {
+          markRecommend(-3)
+          log({created_at: timestamp, action: 'AIRecommendationLimitReached', extras: {model: requestedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}}, __index)
+          return -3
         }
         if(response?.detail) {
-          markAlgo(__index, 'recommend', -2)
-          aiFailuresInARowRef.current += 1
-          log({created_at: timestamp, action: 'AIRecommendation', description: response.detail, extras: {error: response.detail, model: requestedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}})
+          markRecommend(-2)
+          if(!isSuperseded())
+            aiFailuresInARowRef.current += 1
+          log({created_at: timestamp, action: 'AIRecommendation', description: response.detail, extras: {error: response.detail, model: requestedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}}, __index)
           setAlert({message: response.detail, severity: 'error'})
-          return false
+          return -2
         }
 
-        markAlgo(__index, 'recommend', 1)
-        aiFailuresInARowRef.current = 0
+        markRecommend(1)
+        if(!isSuperseded())
+          aiFailuresInARowRef.current = 0
         // Record the model that answered, not the one the UI shows: the AI
         // Assistant runs the template's default for everyone but staff.
         const modelUsed = getModelUsed(response.data) || requestedModel?.id || null
@@ -5234,26 +6163,27 @@ const MapProject = () => {
         // state, possibly over a newer one.
         if(!isBulk && isMountedRef.current)
           scheduleAutoSave('ai_recommendation')
-        return true
+        return 1
       } catch (err) {
-        if(handlePreviewLimitError(err, __index, 'recommend', {isRun: isBulk, stopPhase: 'ai'})) {
-          markAlgo(__index, 'recommend', -3)
-          log({created_at: moment().toDate(), action: 'AIRecommendationLimitReached', extras: {model: requestedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}})
-          return false
+        if(handlePreviewLimitError(err, isSuperseded() ? null : __index, 'recommend', {isRun: isBulk, stopPhase: 'ai'})) {
+          markRecommend(-3)
+          log({created_at: moment().toDate(), action: 'AIRecommendationLimitReached', extras: {model: requestedModel, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}}, __index)
+          return -3
         }
-        markAlgo(__index, 'recommend', -2)
-        aiFailuresInARowRef.current += 1
+        markRecommend(-2)
+        if(!isSuperseded())
+          aiFailuresInARowRef.current += 1
         const errorMessage = err?.detail || err?.response?.data?.detail || err?.message || t('unknown_error')
         setAlert({message: errorMessage, severity: 'error'})
-        return false
+        return -2
       } finally {
         if(!isBulk)
           refreshMapperQuotaCache()
       }
     } else {
-      markAlgo(__index, 'recommend', analysis[__index]?.length > 0 ? 1 : -3)
+      markRecommend(analysis[__index]?.length > 0 ? 1 : -3)
     }
-    return false
+    return null
   }
 
   const getRowNameValue = _row => get(_row, find(columns, {label: 'Name'})?.dataKey)
@@ -5282,6 +6212,7 @@ const MapProject = () => {
       onRepoChange={onRepoChange}
       repoVersion={repoVersion}
       setRepoVersion={onRepoVersionChange}
+      showTargetRepoVersionError={showTargetRepoVersionError}
       mappedSources={mappedSources}
       targetSourcesFromRows={targetSourcesFromRows}
       versions={versions}
@@ -5305,11 +6236,10 @@ const MapProject = () => {
       filters={filters}
       setFilters={setFilters}
       locales={locales}
-      isLoadingLocales={isLoadingLocales}
       bridgeEnabled={bridgeEnabled}
       canBridge={canBridge}
       isCoreUser={isCoreUser}
-      fullRequestLimits={fullRequestLimits}
+      requestLimits={requestLimits}
       canSelectAIModel={canSelectAIModel}
       canSetAIOutputLocale={canSetAIOutputLocale}
       canScispacy={canScispacy}
@@ -5345,14 +6275,13 @@ const MapProject = () => {
   const onCopyClick = event => {
     event.preventDefault()
     event.stopPropagation()
-    const preview = getMapperPreview()
-    const blockReason = getNewProjectBlockReason(preview)
+    const blockReason = getNewProjectBlockReason()
     if(blockReason) {
-      setPreviewLimit({errorCode: NEW_PROJECT_BLOCK_ERROR_CODES[blockReason], limit: preview.projects.limit, used: preview.projects.used})
+      setPreviewLimit({errorCode: NEW_PROJECT_BLOCK_ERROR_CODES[blockReason]})
       return
     }
     if(project?.url) {
-      window.open(`/#/map-projects/new?templateFrom=${encodeURIComponent(project.url)}`, '_blank', 'noopener,noreferrer')
+      window.open(`/map-projects/new?templateFrom=${encodeURIComponent(project.url)}`, '_blank', 'noopener,noreferrer')
     }
   }
 
@@ -5365,18 +6294,18 @@ const MapProject = () => {
     return minFactor
   }
 
-  return permissionDenied ? <Error403/> : newProjectBlockReason ? <Redirect to='/' /> : (
+  return permissionDenied ? <Error403/> : newProjectBlockReason ? <Redirect to={{pathname: '/', state: {newProjectBlock: newProjectBlockReason}}} /> : (
     <div className='col-xs-12 padding-0' style={{borderRadius: '10px', width: 'calc(100vw - 32px)'}}>
       {
         (() => {
-          const bridgeUrl = bridgeAlgo?.target_repo_url
+          const bridgeUrl = bridgeProbeAlgo?.target_repo_url
           const mappedSrcs = bridgeMappedSources[bridgeUrl] || []
           return Boolean(repoVersion?.url) && Boolean(bridgeUrl) && mappedSrcs.length > 0 &&
             <BridgeMatch
-              service={getMatchAPIService()}
+              service={getBridgeMatchService()}
               repo={repoVersion}
               bridgeRepoURL={bridgeUrl}
-              bridgeRepoVersion={bridgeAlgo?.target_repo_version}
+              bridgeRepoVersion={bridgeProbeAlgo?.target_repo_version}
               limit={CANDIDATES_LIMIT}
               user={user}
               ref={bridgeRef}
@@ -5404,39 +6333,27 @@ const MapProject = () => {
       }}
       >
         <Paper component="div" className={isSplitView ? 'col-xs-6 split padding-0' : 'col-xs-12 split padding-0'} sx={{boxShadow: 'none', p: 0, backgroundColor: 'white', borderRadius: '10px', border: 'solid 0.3px', borderColor: 'surface.nv80', minHeight: 'calc(var(--app-height) - 100px) !important', overflow: 'auto'}}>
-          <Paper component="div" className='col-xs-12' sx={{backgroundColor: 'surface.main', boxShadow: 'none', padding: '4px 16px 8px 16px', borderRadius: '10px 10px 0 0', minWidth: '665px', ...((isConfigureInSplitView || !configure) ? {} : {height: 'calc(var(--app-height) - 125px) !important', overflow: 'auto'})}}>
+          <Paper component="div" className='col-xs-12' sx={{backgroundColor: isConfigFormInline ? WHITE : 'surface.main', boxShadow: 'none', padding: '4px 16px 8px 16px', borderRadius: '10px 10px 0 0', minWidth: '665px', ...((isConfigureInSplitView || !configure) ? {} : {height: 'calc(var(--app-height) - 125px) !important', overflow: 'auto'})}}>
             {
-              configure && !file?.name &&
+              isConfigFormInline &&
                 <div className='col-xs-8 padding-0'>
                   {getConfigurationForm()}
                 </div>
           }
-            <div className='col-xs-12 padding-0' style={{backgroundColor: SURFACE_COLORS.main, marginLeft: '-5px', paddingBottom: '0px', paddingLeft: '0px', paddingTop: '0px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start'}}>
+            <div className='col-xs-12 padding-0' style={{backgroundColor: isConfigFormInline ? WHITE : SURFACE_COLORS.main, marginLeft: '-5px', paddingBottom: '0px', paddingLeft: '0px', paddingTop: '0px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start'}}>
             {
-              !(configure && !file?.name) &&
-                <span style={{display: 'flex', alignItems: 'center'}}>
+              !isConfigFormInline &&
+                <span style={{display: 'flex', alignItems: 'center', flex: '1 1 0', minWidth: 0}}>
+                  <MapProjectBreadcrumb ownerType={params.ownerType} owner={params.owner} />
                   {
                     name &&
-                      <span style={{fontWeight: 'bold', fontSize: '18px', maxWidth: isSplitView ? '300px' : '500px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', marginRight: '8px'}}>
+                      <span title={name} data-shrinkable='true' style={{fontWeight: 'bold', fontSize: '18px', flex: '0 1 auto', minWidth: '40px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', marginRight: '8px'}}>
                         {name}
                       </span>
                   }
                   <span style={{marginRight: '8px'}}>
                     <MapperQuotaChip />
                   </span>
-                  <Button
-                    variant='contained'
-                    size='small'
-                    sx={{textTransform: 'none', margin: '5px'}}
-                    endIcon={<DoubleArrowIcon />}
-                    startIcon={<AutoMatchIcon />}
-                    disabled={!file}
-                    onClick={onGetCandidates}
-                    loading={loadingMatches}
-                    loadingPosition="start"
-                  >
-                    {getCandidatesButtonLabel()}
-                  </Button>
                   {
                     scispacyCandidatesStartedAt &&
                       <Button
@@ -5494,11 +6411,28 @@ const MapProject = () => {
                         {abortRef.current ? t('map_project.stopping_gracefully') : t('map_project.stop_processing')}
                       </Button>
                   }
+                  {
+                    // A request is waiting out a busy server: the run is
+                    // slower, not stuck (ocl_issues#2849).
+                    // Short in the split view, where the full notice would be cut off.
+                    capacityWaits &&
+                      <Tooltip title={getCapacityWaitLabel(capacityWaits.wait, {t})}>
+                        <Chip
+                          icon={<PendingIcon fontSize='small' />}
+                          color='warning'
+                          variant='outlined'
+                          size='small'
+                          label={getCapacityWaitLabel(capacityWaits.wait, {t, short: isSplitView})}
+                          sx={{margin: '5px'}}
+                        />
+                      </Tooltip>
+                  }
                 </span>
             }
               {
-                file?.name &&
+                (file?.name || !isConfigFormInline) &&
                   <Controls
+                    autoMatch={isConfigFormInline ? undefined : {label: getCandidatesButtonLabel(), onClick: onGetCandidates, disabled: !file, loading: Boolean(loadingMatches)}}
                     isCoreUser={isCoreUser}
                     project={project}
                     onDownload={onDownloadClick}
@@ -5583,6 +6517,7 @@ const MapProject = () => {
                 onBulkMapTypeChange={onBulkMapTypeChange}
                 allMapTypes={allMapTypes}
                 onSearchTextChange={setSearchText}
+                searchValue={headerRowSearch}
               />
               <Snackbar
                 open={Boolean(alert?.message)}
@@ -5622,14 +6557,6 @@ const MapProject = () => {
                   disableRowSelectionExcludeModel
                   disableRowSelectionOnClick
                   indeterminateCheckboxAction="select"
-                  checkboxColDef={{
-                    renderHeader: () => (
-                      <DataGridPageSelectionHeaderCheckbox
-                        selectedRowIds={selectedRowIds}
-                        onSelectionChange={handleRowSelectionModelChange}
-                      />
-                    ),
-                  }}
                   slotProps={{
                     panel: {
                       target: filterPanelAnchorEl,
@@ -5670,11 +6597,28 @@ const MapProject = () => {
                         padding: '4px 0 0 0'
                       }
                     },
+                    '.MuiDataGrid-row .MuiDataGrid-cell.row-number-cell': {
+                      backgroundColor: 'surface.n96',
+                      color: 'surface.nv60',
+                      fontSize: '11px',
+                      fontVariantNumeric: 'tabular-nums',
+                      justifyContent: 'center',
+                      textAlign: 'center',
+                      padding: '8px 2px 4px 6px',
+                      userSelect: 'none'
+                    },
+                    // Matches the rows' 8px match-quality border so header and cells line up
+                    '.MuiDataGrid-columnHeaders [role="row"]': {
+                      borderLeft: '8px solid transparent'
+                    },
+                    '.MuiDataGrid-columnHeader.row-number-header': {
+                      padding: '0 2px 0 6px'
+                    },
                     '.MuiDataGrid-columnHeaderCheckbox .MuiDataGrid-columnHeaderTitleContainer': {
                       justifyContent: 'center'
                     },
                     '.MuiDataGrid-columnHeaderCheckbox .MuiCheckbox-root': {
-                      marginLeft: '8px'
+                      marginLeft: 0
                     },
                     '.MuiDataGrid-columnHeaderCheckbox .MuiCheckbox-root .MuiSvgIcon-root, .MuiDataGrid-cellCheckbox .MuiCheckbox-root .MuiSvgIcon-root': {
                       fontSize: '20px'
@@ -5779,9 +6723,14 @@ const MapProject = () => {
               repoVersion,
               inAIAssistantGroup,
               algosSelected,
+              runnableAlgos,
+              retrieveCandidates: autoRetrieveCandidates,
+              setRetrieveCandidates: setAutoRetrieveCandidates,
               canSelectAIModel,
-              previewEligibleRowIndexes,
-              matchAlgorithmIds
+              eligibleRowIndexes: previewEligibleRowIndexes,
+              matchAlgorithmIds,
+              aiOnlyRowCounts,
+              onConfigure: onAutoMatchConfigure
             }}
           />
           {
@@ -5789,22 +6738,20 @@ const MapProject = () => {
               <QuotaDialog
                 open
                 onClose={() => setPreviewLimit(null)}
+                errorCode={previewLimitQuota.errorCode}
                 meter={previewLimitQuota.meter}
                 surface={MAPPER_QUOTA_SURFACE[previewLimitQuota.meter]}
-                usage={{...previewLimitQuota.usage, period: 'one_time'}}
               /> :
               <PreviewLimitDialog
                 open={Boolean(previewLimit)}
                 onClose={() => setPreviewLimit(null)}
                 errorCode={previewLimit?.errorCode}
-                limit={previewLimit?.limit}
-                used={previewLimit?.used}
               />
           }
       </Paper>
       <Paper component="div" className={isSplitView ? 'col-xs-6 split padding-0 split-appear' : 'col-xs-6 padding-0'} sx={{boxShadow: 'none', p: 0, backgroundColor: WHITE, borderRadius: '10px', border: 'solid 0.3px', borderColor: 'surface.nv80', opacity: isSplitView ? 1 : 0, height: 'calc(var(--app-height) - 100px) !important', overflow: 'auto'}}>
         {
-          configure && file?.name ?
+          isConfigureInSplitView ?
             <div className='col-xs-12'>
               {getConfigurationForm()}
             </div> :
@@ -5824,6 +6771,8 @@ const MapProject = () => {
                   candidatesScore={candidatesScore}
                   targetConcept={targetConcept}
                   repoVersion={repoVersion}
+                  inputLocale={inputLocale}
+                  locales={filters.locale || ''}
                   row={row}
                   rowIndex={rowIndex}
                   repo={repo}
@@ -5844,7 +6793,10 @@ const MapProject = () => {
                 <Divider sx={{width: '100%'}} />
                 <ReviewNote
                   value={notes[rowIndex]}
-                  onChange={event => setNotes({...notes, [rowIndex]: event.target.value || ''})}
+                  onChange={event => {
+                    setNotes({...notes, [rowIndex]: event.target.value || ''})
+                    scheduleAutoSave('note_change')
+                  }}
                 />
                 <div className='col-xs-12' style={{padding: '0 0 8px 78px'}}>
                   <Button size='small' disabled={rowStatuses.reviewed.includes(rowIndex) || decisions[rowIndex] === 'none' || !decisions[rowIndex]} color='primary' onClick={() => onReviewDone(true)} variant='contained' sx={{textTransform: 'none'}}>
@@ -5899,6 +6851,8 @@ const MapProject = () => {
                       candidatesScore={candidatesScore}
                       rowIndex={rowIndex}
                       rowStage={rowStageRef.current[rowIndex]}
+                      capacityWait={capacityWaits?.rows?.[rowIndex] || false}
+                      throttle={rowThrottlesRef.current[rowIndex]}
                       rowState={rowMatchStateRef.current[rowIndex]}
                       conceptCache={conceptCache}
                       targetCanonical={buildProjectContext()?.target_repo?.canonical_url}
@@ -5921,6 +6875,7 @@ const MapProject = () => {
                         setAppliedFacets(() => ({...appliedFacets, [rowIndex]: filters}))
                         fetchAllCandidatesForRow(null, 0, false, false, filters, true)
                       }}
+                      inputLocale={inputLocale}
                       locales={filters.locale || ''}
                       models={AIModels}
                       selectedModel={AIModel}
@@ -5960,6 +6915,7 @@ const MapProject = () => {
                         setAppliedFacets({...appliedFacets, [rowIndex]: filters})
                         search(null, null, null, null, filters)
                       }}
+                      inputLocale={inputLocale}
                       locales={filters.locale || ''}
                     />
                 }
@@ -5974,6 +6930,41 @@ const MapProject = () => {
         }
     </Paper>
     </Split>
+      <Dialog open={Boolean(leaveTarget) && isUnsavedNew && !isRunActive} onClose={() => !isSavingToLeave && setLeaveTarget(null)} maxWidth='xs' fullWidth>
+        <DialogTitle>{t('map_project.leave_unsaved_title')}</DialogTitle>
+        <DialogContent>
+          <Typography component='p' sx={{fontSize: '14px', color: 'surface.dark'}}>
+            {t('map_project.leave_unsaved_body')}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setLeaveTarget(null)} disabled={isSavingToLeave} color='secondary' sx={{textTransform: 'none'}}>
+            {t('common.cancel')}
+          </Button>
+          <Button onClick={onLeaveUnsaved} disabled={isSavingToLeave} color='error' sx={{textTransform: 'none'}}>
+            {t('map_project.leave')}
+          </Button>
+          <Button onClick={onSaveAndLeave} disabled={isSavingToLeave} variant='contained' sx={{textTransform: 'none'}}>
+            {t('map_project.save_and_leave')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={Boolean(leaveTarget) && (isRunActive || !isUnsavedNew)} onClose={() => setLeaveTarget(null)} maxWidth='xs' fullWidth>
+        <DialogTitle>{t('map_project.leave_while_running_title')}</DialogTitle>
+        <DialogContent>
+          <Typography component='p' sx={{fontSize: '14px', color: 'surface.dark'}}>
+            {t(project?.id ? 'map_project.leave_while_running_body' : 'map_project.leave_while_running_body_unsaved')}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setLeaveTarget(null)} color='secondary' sx={{textTransform: 'none'}}>
+            {t('map_project.stay')}
+          </Button>
+          <Button onClick={onStopRunAndLeave} color='error' variant='contained' sx={{textTransform: 'none'}}>
+            {t('map_project.stop_and_leave')}
+          </Button>
+        </DialogActions>
+      </Dialog>
       {
         deleteProject && project?.id &&
           <MapProjectDeleteConfirmDialog open={deleteProject} onClose={() => setDeleteProject(false)} onDeleted={() => { autosaveSchedulerRef.current.cancel(); refreshMapperQuotaCache() }} project={project} />

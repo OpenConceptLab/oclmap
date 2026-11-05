@@ -1,14 +1,25 @@
+const fs = require('fs');
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
 const { ProvidePlugin, DefinePlugin, IgnorePlugin } = require('webpack');
 
+// Checkpoints a private package can fill in at build time
+// (OpenConceptLab/ocl_online#465). The Dockerfile installs the package when
+// PRIVATE_PACKAGES_GIT is set; without it, the open stub is used.
+const PRIVATE_PACKAGE = '@openconceptlab/oclmap-extensions';
+const privatePackagePath = path.resolve(__dirname, 'node_modules', ...PRIVATE_PACKAGE.split('/'));
+const privatePackageAlias = fs.existsSync(privatePackagePath) ?
+  privatePackagePath :
+  path.resolve(__dirname, 'src/components/map-projects/autoMatchCheck.js');
+
 module.exports = (env) => {
   const isProduction = env.NODE_ENV === 'production';
   return {
     mode: env.NODE_ENV,
     output: {
+      publicPath: '/',
       // Production names carry a content hash (OpenConceptLab/ocl_issues#2824),
       // so a changed bundle gets a new URL. nginx caches these files for a year
       // and revalidates index.html on every load, so a returning browser never
@@ -24,6 +35,13 @@ module.exports = (env) => {
           test: /\.(js|jsx)$/,
           use: ['babel-loader'],
           exclude: /node_modules/,
+        },
+        {
+          // The private package ships JSX source. A .babelrc doesn't reach
+          // files in another package, so this rule extends ours.
+          test: /\.(js|jsx)$/,
+          include: new RegExp(`node_modules[\\\\/]${PRIVATE_PACKAGE.replace('/', '[\\\\/]')}[\\\\/]`),
+          use: [{loader: 'babel-loader', options: {extends: path.resolve(__dirname, '.babelrc')}}],
         },
         {
           test: /\.(png|jpg|woff|woff2|eot|ttf|svg)$/,
@@ -101,10 +119,11 @@ module.exports = (env) => {
         directory: path.join(__dirname, 'public')
       },
       historyApiFallback: {
-        index: 'index.html',
+        index: '/index.html',
+        disableDotRule: true,
       }
     },
-    devtool: env.NODE_ENV == 'production' ? "source-map" : undefined,
+    devtool: env.NODE_ENV == 'production' ? "nosources-source-map" : undefined,
     plugins: [
       new HtmlWebpackPlugin({
         template: './public/index.html',
@@ -128,16 +147,22 @@ module.exports = (env) => {
         'process.env.ERRBIT_KEY': JSON.stringify(env.ERRBIT_KEY),
         'process.env.LOGIN_REDIRECT_URL': JSON.stringify(env.LOGIN_REDIRECT_URL),
         'process.env.OIDC_RP_CLIENT_ID': JSON.stringify(env.OIDC_RP_CLIENT_ID),
-        'process.env.OCL_ONLINE': JSON.stringify(env.OCL_ONLINE) || 'false',
+        'process.env.OIDC_SERVER_URL': JSON.stringify(env.OIDC_SERVER_URL || ''),
+        'process.env.OIDC_REALM': JSON.stringify(env.OIDC_REALM || ''),
         'process.env.BRIDGE_MATCH_URL': JSON.stringify(env.BRIDGE_MATCH_URL || '') || '',
         'process.env.AI_ASSISTANT_API_URL': JSON.stringify(env.AI_ASSISTANT_API_URL || '') || '',
         'process.env.SCISPACY_LOINC_API_URL': JSON.stringify(env.SCISPACY_LOINC_API_URL || '') || '',
-        'process.env.OCL_ONLINE_API_URL': JSON.stringify(env.OCL_ONLINE_API_URL || '') || ''
+        'process.env.TERMBROWSER_URL': JSON.stringify(env.TERMBROWSER_URL || ''),
+        'process.env.OCL_ONLINE_API_URL': JSON.stringify(env.OCL_ONLINE_API_URL || '') || '',
+        'process.env.REPO_SUGGESTIONS': JSON.stringify(env.REPO_SUGGESTIONS || '')
       }),
       new IgnorePlugin({ resourceRegExp: /moment\/locale\// })
     ],
     resolve: {
       extensions: ['.js', '.jsx'],
+      alias: {
+        [`${PRIVATE_PACKAGE}$`]: privatePackageAlias,
+      },
     },
   };
 };

@@ -6,6 +6,8 @@ import {
   refreshCurrentUserCache, consumeStoredPKCECodeVerifier, consumeAndValidateOAuthState, consumeOAuthReturnTo,
   isSignupOAuthState, isLoggedIn, getLoginURL
 } from '../../common/utils';
+import { navigate } from '../../common/history';
+import { settleForcedSignOut } from '../../common/ssoSession';
 import APIService from '../../services/APIService'
 import GAService from '../../services/GAService'
 import { OperationsContext } from '../app/LayoutContext';
@@ -50,7 +52,7 @@ class OIDLoginCallback extends React.Component {
             localStorage.removeItem('server_configs')
             localStorage.setItem('token', res.data.access_token)
             localStorage.setItem('id_token', res.data.id_token)
-            sessionStorage.removeItem('session_expired')
+            settleForcedSignOut()
             setAlert({
               duration: 2000,
               severity: 'success',
@@ -84,15 +86,15 @@ class OIDLoginCallback extends React.Component {
           </Button>
         )
       })
-    window.location.hash = '#' + (next || '/')
+    navigate(next || '/', true)
   }
 
   cacheUserData() {
     refreshCurrentUserCache(() => {
       if(this.state.returnTo)
-        window.location.hash = '#' + this.state.returnTo
+        navigate(this.state.returnTo, true)
       else if(this.state.next)
-        window.location.hash = '#' + this.state.next
+        navigate(this.state.next, true)
       else {
         let returnToURL = '/'
         if(this.props?.location?.search) {
@@ -100,7 +102,7 @@ class OIDLoginCallback extends React.Component {
           if(queryParams && queryParams.get('returnTo'))
             returnToURL = queryParams.get('returnTo')
         }
-        window.location.hash  = '#' + returnToURL
+        navigate(returnToURL, true)
       }
     })
   }

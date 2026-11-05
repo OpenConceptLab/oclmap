@@ -1,14 +1,10 @@
 import React from 'react';
-import {
-  formatDate,
-  formatWebsiteLink,
-} from '../../common/utils';
 import Retired from '../common/Retired';
 import OwnerIcon from '../common/OwnerIcon';
 import RepoVersionButton from '../repos/RepoVersionButton';
-import FromAndTargetSource from '../mappings/FromAndTargetSource'
-import ConceptCell from '../mappings/ConceptCell'
 
+// The Mapper lists only concepts, so they are the only resource with table
+// columns (OpenConceptLab/ocl_issues#2917).
 export const ALL_COLUMNS = {
   concepts: [
     {id: 'id', labelKey: 'common.id', value: 'id', sortOn: 'id_lowercase', className: 'searchable', permanent: true},
@@ -25,38 +21,6 @@ export const ALL_COLUMNS = {
     {id: 'owner', labelKey: 'common.owner', value: 'owner', sortOn: 'owner', nested: false, renderer: item => (<span style={{display: 'flex', whiteSpace: 'nowrap'}}><OwnerIcon noTooltip ownerType={item.owner_type} fontSize='small' sx={{marginRight: '4px'}}/>{item.owner}</span>)},
     {id: 'parent', labelKey: 'repo.repo', value: 'source', sortOn: 'source', nested: false, renderer: item => <RepoVersionButton repoType='Source' repo={item.source} version={item.latest_source_version} vertical />},
   ],
-  mappings: [
-    {id: 'fromAndTargetSource', labelKey: 'mapping.fromAndTargetSource', sortable: false, className: 'searchable', renderer: item => <FromAndTargetSource mapping={item} />},
-    {id: 'fromConcept', labelKey: 'mapping.fromConcept', value: 'fromConceptCode', className: 'searchable', sortable: false, renderer: item => <ConceptCell mapping={item} direction='from' />},
-    {id: 'mapType', labelKey: 'mapping.map_type', value: 'map_type', sortable: true},
-    {id: 'toConcept', labelKey: 'mapping.toConcept', value: 'toConceptCode', className: 'searchable', sortable: false, renderer: item => <ConceptCell mapping={item} direction='to' />},
-  ],
-  repos: [
-    {id: 'id', labelKey: 'common.id', value: 'id', sortOn: 'id', className: 'searchable'},
-    {id: 'name', labelKey: 'common.name', value: 'name', sortOn: 'name', className: 'searchable'},
-    {id: 'type', labelKey: 'repo.repo_type', value: 'type', sortable: false},
-    {id: 'owner', labelKey: 'common.owner', value: 'owner', sortOn: 'owner', renderer: item => (<span style={{display: 'flex', alignItems: 'center'}}><OwnerIcon noTooltip ownerType={item.owner_type} fontSize='small' sx={{marginRight: '4px'}}/>{item.owner}</span>)}
-  ],
-  orgs: [
-    {id: 'id', labelKey: 'common.id', value: 'id', sortOn: '_mnemonic', className: 'searchable'},
-    {id: 'name', labelKey: 'common.name', value: 'name', sortOn: '_name', sortBy: 'asc', className: 'searchable'},
-    {id: 'createdOn', labelKey: 'common.created_on', value: 'created_on', formatter: formatDate, sortOn: 'created_on', sortable: false},
-  ],
-  users: [
-    {id: 'username', labelKey: 'user.username', value: 'username', sortOn: '_username', sortBy: 'asc', className: 'searchable'},
-    {id: 'name', labelKey: 'common.name', value: 'name', sortOn: '_name', sortBy: 'asc', className: 'searchable'},
-    {id: 'email', labelKey: 'user.email', value: 'email', sortable: false},
-    {id: 'company', labelKey: 'user.company', value: 'company'},
-    {id: 'location', labelKey: 'user.location', value: 'location'},
-    {id: 'website', labelKey: 'user.website', value: 'website', sortable: false, formatter: formatWebsiteLink},
-    {id: 'date_joined', labelKey: 'user.joined_on', value: 'date_joined', formatter: formatDate, sortOn: 'date_joined'},
-  ],
-  url_registry: [
-    {id: 'url', labelKey: 'url_registry.canonical_url', value: 'url', className: 'searchable'},
-    {id: 'target_owner', labelKey: 'url_registry.target_owner', value: 'repo.owner_url', className: 'searchable'},
-    {id: 'repo_id', labelKey: 'repo.repo_id', value: 'repo.id', className: 'searchable'},
-    {id: 'repo_type', labelKey: 'repo.repo_type', value: 'repo.type', className: 'searchable'},
-  ]
 };
 
 

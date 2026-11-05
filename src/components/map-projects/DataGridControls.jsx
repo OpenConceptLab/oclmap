@@ -55,7 +55,8 @@ const DataGridControls = ({
   bulkMapType,
   onBulkMapTypeChange,
   allMapTypes,
-  onSearchTextChange
+  onSearchTextChange,
+  searchValue
 }) => {
   const { t } = useTranslation();
   const raisedBulkSelectSx = {
@@ -100,7 +101,7 @@ const DataGridControls = ({
     <>
       <div className='col-xs-12' style={{padding: '12px 14px 8px 14px', display: 'flex', alignItems: 'center', backgroundColor: SURFACE_COLORS.main}}>
         <FormControl sx={{minWidth: '16px'}}>
-          <SearchField onChange={debouncedSearchChange} />
+          <SearchField onChange={debouncedSearchChange} value={searchValue} />
         </FormControl>
         <ScoreBucketButton
           selected={selectedCandidatesScoreBucket}
@@ -211,7 +212,7 @@ const DataGridControls = ({
                         </ListItemIcon>
                         <ListItemText
                           primary={meta.label}
-                          primaryTypographyProps={{sx: {fontSize: '1rem', fontWeight: 400, lineHeight: 1.5}}}
+                          slotProps={{primary: {sx: {fontSize: '1rem', fontWeight: 400, lineHeight: 1.5}}}}
                         />
                       </MenuItem>
                     )

@@ -48,7 +48,7 @@ const DataGridPageSelectionHeaderCheckbox = React.memo(({ selectedRowIds, onSele
       indeterminate={isIndeterminate}
       checked={isChecked}
       onChange={handleChange}
-      inputProps={{ 'aria-label': 'Select current page rows' }}
+      slotProps={{ input: { 'aria-label': 'Select current page rows' } }}
     />
   )
 })

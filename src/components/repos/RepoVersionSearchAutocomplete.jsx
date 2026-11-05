@@ -2,6 +2,7 @@ import React from 'react';
 import TextField from '@mui/material/TextField';
 import Autocomplete from '@mui/material/Autocomplete';
 import Box from '@mui/material/Box';
+import Chip from '@mui/material/Chip';
 
 
 const RepoVersionSearchAutocomplete = ({
@@ -16,7 +17,8 @@ const RepoVersionSearchAutocomplete = ({
   error,
   helperText,
   getOptionDisabled,
-  getOptionRightText
+  getOptionRightText,
+  getOptionBadges
 }) => {
   const [open, setOpen] = React.useState(false)
 
@@ -51,14 +53,20 @@ const RepoVersionSearchAutocomplete = ({
       renderOption={(props, option) => {
         const labelContent = getLabel(option)
         const rightText = getOptionRightText ? getOptionRightText(option) : ''
+        const badges = getOptionBadges ? getOptionBadges(option) : []
 
         return (
           <li {...props} key={option?.version_url || option?.id || getLabel(option)}>
             <Box sx={{display: 'flex', alignItems: 'center', width: '100%', gap: 1, minWidth: 0}}>
-              <Box sx={{display: 'flex', alignItems: 'center', minWidth: 0, flex: 1, gap: 1}}>
+              <Box sx={{display: 'flex', alignItems: 'center', flexWrap: 'wrap', minWidth: 0, flex: 1, gap: 1}}>
                 <Box sx={{minWidth: 0}}>
                   {labelContent}
                 </Box>
+                {
+                  badges.map(badge => (
+                    <Chip key={badge} label={badge} size='small' variant='outlined' color='primary' sx={{height: '20px', fontSize: '11px'}} />
+                  ))
+                }
               </Box>
               <Box sx={{display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0}}>
                 {
