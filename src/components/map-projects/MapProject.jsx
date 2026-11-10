@@ -122,7 +122,7 @@ import { createLookupSession, LOOKUP_NOT_FOUND } from './lookupSession'
 import { parseConceptKey } from './conceptKey'
 import { normalizeLookupConfig } from './lookupConfigFields'
 import { getDeclaredLocales, getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getSavedTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId } from './projectTargetRepo'
-import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, findTargetRowView, formatBridgeTargetDownloadEntry, resolveAICandidateID, getScoreDetails, getAIAnalysisCandidateIDs, withCachedConcept, withCandidateNames, buildMatchEntries, restoredNote, withOwnNames, withSavedMatch } from './viewBuilders.js'
+import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, findTargetRowView, formatBridgeTargetDownloadEntry, resolveAICandidateID, getScoreDetails, getAIAnalysisCandidateIDs, getAIIndicatorTooltip, withCachedConcept, withCandidateNames, buildMatchEntries, restoredNote, withOwnNames, withSavedMatch } from './viewBuilders.js'
 import { formatClockTime, getCapacityWaitLabel, mergeCapacityWaits } from './rowProgress.js'
 
 import './MapProject.scss'
@@ -1100,6 +1100,7 @@ const MapProject = () => {
     return {
       status,
       latestAnalysis,
+      primaryCandidateId,
       isPrimaryMatch: Boolean(targetCode && primaryCandidateId && targetCode === primaryCandidateId),
       isAlternateMatch: Boolean(targetCode && alternateCandidateIds.includes(targetCode)),
     }
@@ -1203,7 +1204,7 @@ const MapProject = () => {
                     </IconButton>
                   </Tooltip> :
                 aiMeta?.latestAnalysis ?
-                  <Tooltip title={aiMeta.isPrimaryMatch ? t('map_project.ai_recommended') : (aiMeta.isAlternateMatch ? t('map_project.ai_alternate') : t('map_project.ai_analysis'))}>
+                  <Tooltip title={getAIIndicatorTooltip(aiMeta, t)}>
                     <span style={{display: 'inline-flex', paddingTop: '7px'}}>
                       <AssistantIcon color={aiMeta.isPrimaryMatch ? 'primary' : 'warning'} fontSize='small' />
                     </span>

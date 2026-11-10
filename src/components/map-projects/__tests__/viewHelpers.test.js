@@ -4,12 +4,15 @@
  *   - conceptForMapping (the tuple -> legacy concept projection at the
  *     onMap / isSelectedForMap boundary)
  *   - resolveAICandidateID (AI Assistant response resolution chain)
+ *   - getAIIndicatorTooltip (the AI icon's tooltip in the Target Code cell)
  *
  * Run with: npm test
  */
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import i18next from 'i18next'
 
 import {
   conceptBelongsToTargetRepo,
@@ -17,7 +20,8 @@ import {
   conceptForMapping,
   resolveAICandidateID,
   getLatestAnalysisEntry,
-  getAIAnalysisCandidateIDs
+  getAIAnalysisCandidateIDs,
+  getAIIndicatorTooltip
 } from '../viewBuilders.js'
 
 const candidatesScore = { recommended: 80, available: 60 }
@@ -257,4 +261,54 @@ test('getAIAnalysisCandidateIDs: resolves primary + alternate ids from latest an
   assert.equal(out.primaryCandidateId, 'PRIMARY')
   assert.deepEqual(out.alternateCandidateIds, ['ALT-1', 'ALT-2'])
   assert.equal(out.latestAnalysis, analysis[1])
+})
+
+// ---------- getAIIndicatorTooltip (OpenConceptLab/ocl_issues#2934) ----------
+
+const translator = async locale => {
+  const catalog = JSON.parse(readFileSync(new URL(`../../../i18n/locales/${locale}/translations.json`, import.meta.url), 'utf8'))
+  const i18n = i18next.createInstance()
+  await i18n.init({lng: locale, resources: {[locale]: {translations: catalog}}, ns: ['translations'], defaultNS: 'translations', interpolation: {escapeValue: false}})
+  return i18n.t
+}
+
+test('getAIIndicatorTooltip: the orange icon names the code the AI recommends instead', async () => {
+  const t = await translator('en')
+  assert.equal(
+    getAIIndicatorTooltip({isPrimaryMatch: false, isAlternateMatch: false, primaryCandidateId: 'BA00.Z'}, t),
+    'The AI recommends BA00.Z'
+  )
+})
+
+test('getAIIndicatorTooltip: a mapped alternate keeps its own wording', async () => {
+  const t = await translator('en')
+  assert.equal(
+    getAIIndicatorTooltip({isPrimaryMatch: false, isAlternateMatch: true, primaryCandidateId: 'BA00.Z'}, t),
+    'AI Alternate Candidate Suggestion'
+  )
+})
+
+test('getAIIndicatorTooltip: the purple icon still says AI Recommended', async () => {
+  const t = await translator('en')
+  assert.equal(
+    getAIIndicatorTooltip({isPrimaryMatch: true, isAlternateMatch: false, primaryCandidateId: 'BA00.Z'}, t),
+    'AI Recommended'
+  )
+})
+
+test('getAIIndicatorTooltip: with no recommended code it falls back to AI Analysis', async () => {
+  const t = await translator('en')
+  assert.equal(
+    getAIIndicatorTooltip({isPrimaryMatch: false, isAlternateMatch: false, primaryCandidateId: null}, t),
+    'AI Analysis'
+  )
+})
+
+test('getAIIndicatorTooltip: every catalog names the recommended code', async () => {
+  for (const locale of ['en', 'es', 'pt-BR', 'zh']) {
+    const t = await translator(locale)
+    const tooltip = getAIIndicatorTooltip({isPrimaryMatch: false, isAlternateMatch: false, primaryCandidateId: 'BA00.Z'}, t)
+    assert.ok(tooltip.includes('BA00.Z'), `${locale}: ${tooltip}`)
+    assert.notEqual(tooltip, t('map_project.ai_analysis'), locale)
+  }
 })
