@@ -272,36 +272,13 @@ const translator = async locale => {
   return i18n.t
 }
 
-test('getAIIndicatorTooltip: the orange icon names the code the AI recommends instead', async () => {
+test('getAIIndicatorTooltip: orange names the AI\'s pick; the alternate, purple and no-pick cases keep their wording', async () => {
   const t = await translator('en')
-  assert.equal(
-    getAIIndicatorTooltip({isPrimaryMatch: false, isAlternateMatch: false, primaryCandidateId: 'BA00.Z'}, t),
-    'The AI recommends BA00.Z'
-  )
-})
-
-test('getAIIndicatorTooltip: a mapped alternate keeps its own wording', async () => {
-  const t = await translator('en')
-  assert.equal(
-    getAIIndicatorTooltip({isPrimaryMatch: false, isAlternateMatch: true, primaryCandidateId: 'BA00.Z'}, t),
-    'AI Alternate Candidate Suggestion'
-  )
-})
-
-test('getAIIndicatorTooltip: the purple icon still says AI Recommended', async () => {
-  const t = await translator('en')
-  assert.equal(
-    getAIIndicatorTooltip({isPrimaryMatch: true, isAlternateMatch: false, primaryCandidateId: 'BA00.Z'}, t),
-    'AI Recommended'
-  )
-})
-
-test('getAIIndicatorTooltip: with no recommended code it falls back to AI Analysis', async () => {
-  const t = await translator('en')
-  assert.equal(
-    getAIIndicatorTooltip({isPrimaryMatch: false, isAlternateMatch: false, primaryCandidateId: null}, t),
-    'AI Analysis'
-  )
+  const tooltip = meta => getAIIndicatorTooltip({isPrimaryMatch: false, isAlternateMatch: false, primaryCandidateId: 'BA00.Z', ...meta}, t)
+  assert.equal(tooltip({}), 'The AI recommends BA00.Z')
+  assert.equal(tooltip({isAlternateMatch: true}), 'AI Alternate Candidate Suggestion')
+  assert.equal(tooltip({isPrimaryMatch: true}), 'AI Recommended')
+  assert.equal(tooltip({primaryCandidateId: null}), 'AI Analysis')
 })
 
 test('getAIIndicatorTooltip: every catalog names the recommended code', async () => {
@@ -309,6 +286,5 @@ test('getAIIndicatorTooltip: every catalog names the recommended code', async ()
     const t = await translator(locale)
     const tooltip = getAIIndicatorTooltip({isPrimaryMatch: false, isAlternateMatch: false, primaryCandidateId: 'BA00.Z'}, t)
     assert.ok(tooltip.includes('BA00.Z'), `${locale}: ${tooltip}`)
-    assert.notEqual(tooltip, t('map_project.ai_analysis'), locale)
   }
 })

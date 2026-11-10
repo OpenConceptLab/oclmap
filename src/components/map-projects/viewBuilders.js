@@ -619,12 +619,7 @@ export const getAIAnalysisCandidateIDs = (analysisProp, conceptCache) => {
   }
 }
 
-/**
- * Tooltip for the AI icon in the grid's Target Code cell: purple when the
- * mapped code is the OCL AI Assistant's pick, orange otherwise. The orange
- * one names the code the AI recommends instead, so a reviewer needn't open
- * the row to find it (OpenConceptLab/ocl_issues#2934).
- */
+// The AI icon's tooltip in the grid's Target Code cell; the orange one names the AI's pick (OpenConceptLab/ocl_issues#2934).
 export const getAIIndicatorTooltip = ({isPrimaryMatch, isAlternateMatch, primaryCandidateId}, t) => {
   if(isPrimaryMatch) return t('map_project.ai_recommended')
   if(isAlternateMatch) return t('map_project.ai_alternate')
