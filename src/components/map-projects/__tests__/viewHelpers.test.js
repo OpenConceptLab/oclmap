@@ -4,12 +4,15 @@
  *   - conceptForMapping (the tuple -> legacy concept projection at the
  *     onMap / isSelectedForMap boundary)
  *   - resolveAICandidateID (AI Assistant response resolution chain)
+ *   - getAIIndicatorTooltip (the AI icon's tooltip in the Target Code cell)
  *
  * Run with: npm test
  */
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import i18next from 'i18next'
 
 import {
   conceptBelongsToTargetRepo,
@@ -17,7 +20,8 @@ import {
   conceptForMapping,
   resolveAICandidateID,
   getLatestAnalysisEntry,
-  getAIAnalysisCandidateIDs
+  getAIAnalysisCandidateIDs,
+  getAIIndicatorTooltip
 } from '../viewBuilders.js'
 
 const candidatesScore = { recommended: 80, available: 60 }
@@ -257,4 +261,30 @@ test('getAIAnalysisCandidateIDs: resolves primary + alternate ids from latest an
   assert.equal(out.primaryCandidateId, 'PRIMARY')
   assert.deepEqual(out.alternateCandidateIds, ['ALT-1', 'ALT-2'])
   assert.equal(out.latestAnalysis, analysis[1])
+})
+
+// ---------- getAIIndicatorTooltip (OpenConceptLab/ocl_issues#2934) ----------
+
+const translator = async locale => {
+  const catalog = JSON.parse(readFileSync(new URL(`../../../i18n/locales/${locale}/translations.json`, import.meta.url), 'utf8'))
+  const i18n = i18next.createInstance()
+  await i18n.init({lng: locale, resources: {[locale]: {translations: catalog}}, ns: ['translations'], defaultNS: 'translations', interpolation: {escapeValue: false}})
+  return i18n.t
+}
+
+test('getAIIndicatorTooltip: orange names the AI\'s pick; the alternate, purple and no-pick cases keep their wording', async () => {
+  const t = await translator('en')
+  const tooltip = meta => getAIIndicatorTooltip({isPrimaryMatch: false, isAlternateMatch: false, primaryCandidateId: 'BA00.Z', ...meta}, t)
+  assert.equal(tooltip({}), 'The AI recommends BA00.Z')
+  assert.equal(tooltip({isAlternateMatch: true}), 'AI Alternate Candidate Suggestion')
+  assert.equal(tooltip({isPrimaryMatch: true}), 'AI Recommended')
+  assert.equal(tooltip({primaryCandidateId: null}), 'AI Analysis')
+})
+
+test('getAIIndicatorTooltip: every catalog names the recommended code', async () => {
+  for (const locale of ['en', 'es', 'pt-BR', 'zh']) {
+    const t = await translator(locale)
+    const tooltip = getAIIndicatorTooltip({isPrimaryMatch: false, isAlternateMatch: false, primaryCandidateId: 'BA00.Z'}, t)
+    assert.ok(tooltip.includes('BA00.Z'), `${locale}: ${tooltip}`)
+  }
 })

@@ -618,3 +618,11 @@ export const getAIAnalysisCandidateIDs = (analysisProp, conceptCache) => {
     alternateCandidateIds
   }
 }
+
+// The AI icon's tooltip in the grid's Target Code cell; the orange one names the AI's pick (OpenConceptLab/ocl_issues#2934).
+export const getAIIndicatorTooltip = ({isPrimaryMatch, isAlternateMatch, primaryCandidateId}, t) => {
+  if(isPrimaryMatch) return t('map_project.ai_recommended')
+  if(isAlternateMatch) return t('map_project.ai_alternate')
+  if(primaryCandidateId) return t('map_project.ai_recommends_code', {code: primaryCandidateId})
+  return t('map_project.ai_analysis')
+}
