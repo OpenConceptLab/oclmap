@@ -520,7 +520,11 @@ export default function MultiAlgoSelector({
                                 });
                               }
                             }}
-                            onBlur={() => verifyCustomAlgorithm(sel.__key)}
+                            onBlur={() => {
+                              // Without its saved key this session, a check would only get a 401.
+                              if(!needsSessionToken(sel))
+                                verifyCustomAlgorithm(sel.__key)
+                            }}
                             placeholder="https://example.com/match"
                             error={Boolean(customMeta.requestError)}
                             helperText={customMeta.requestError || customMeta.requestSuccess || ''}
@@ -548,15 +552,16 @@ export default function MultiAlgoSelector({
                             placeholder="••••••••"
                             error={Boolean(customMeta.tokenRequired && !sel.token)}
                             helperText={
-                              customMeta.tokenRequired && !sel.token ? 'Authentication is required for this algorithm.' :
-                                (needsSessionToken(sel) ? (
-                                  <>
-                                    {t('map_project.api_token_saved')}
+                              (customMeta.tokenRequired && !sel.token) || needsSessionToken(sel) ? (
+                                <>
+                                  {customMeta.tokenRequired && !sel.token ? 'Authentication is required for this algorithm.' : t('map_project.api_token_saved')}
+                                  {needsSessionToken(sel) && (
                                     <Button size='small' variant='text' sx={{textTransform: 'none', minWidth: 0, padding: '0 4px'}} onClick={() => updateSelected(sel.__key, removeSavedToken(sel))}>
                                       {t('map_project.remove_saved_token')}
                                     </Button>
-                                  </>
-                                ) : '')
+                                  )}
+                                </>
+                              ) : ''
                             }
                           />
                           <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
