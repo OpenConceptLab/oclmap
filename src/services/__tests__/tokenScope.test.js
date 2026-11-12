@@ -6,7 +6,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { isAPIHost, matchToken, lookupToken, joinAPIPath, isOCLAPILookupURL, needsSessionToken, withoutTokens } from '../tokenScope.js'
+import {
+  isAPIHost, matchToken, lookupToken, joinAPIPath, isOCLAPILookupURL, needsSessionToken, withoutTokens,
+  isAbsoluteURL, needsSessionLookupToken, withSavedTokenURL, getTokenFlag, tokenInputValue, removeSavedToken,
+  withoutLocalKeys, TOKEN_URL_KEY,
+} from '../tokenScope.js'
 
 const API = 'https://api.example.org'
 const USER = 'USER-TOKEN'
@@ -70,6 +74,47 @@ test('isOCLAPILookupURL: no URL, a path, or the API origin', () => {
   assert.equal(isOCLAPILookupURL('/orgs/CIEL/sources/CIEL/', API), true)
   assert.equal(isOCLAPILookupURL(`${API}/orgs/CIEL/`, API), true)
   assert.equal(isOCLAPILookupURL('https://terms.example.com/orgs/X/', API), false)
+  assert.equal(isOCLAPILookupURL('HTTPS://terms.example.com/orgs/X/', API), false)
+  assert.equal(isOCLAPILookupURL('//terms.example.com/orgs/X/', API), true)
+})
+
+test('isAbsoluteURL: only http(s)://, in any case', () => {
+  assert.equal(isAbsoluteURL('HTTPS://x.org/'), true)
+  assert.equal(isAbsoluteURL('http://x.org/'), true)
+  assert.equal(isAbsoluteURL('//x.org/'), false)
+  assert.equal(isAbsoluteURL('/orgs/X/'), false)
+  assert.equal(isAbsoluteURL(undefined), false)
+})
+
+test('needsSessionLookupToken: a saved token on another host, not entered this session', () => {
+  const url = 'https://terms.example.com/orgs/X/'
+  assert.equal(needsSessionLookupToken({url, has_token: true}, API), true)
+  assert.equal(needsSessionLookupToken({url, has_token: true, token: 'T'}, API), false)
+  assert.equal(needsSessionLookupToken({url: '/orgs/X/', has_token: true}, API), false)
+  assert.equal(needsSessionLookupToken({url}, API), false)
+})
+
+test('saved token URL: has_token comes back on the original URL, and is never sent', () => {
+  const url = 'https://match.example.com/'
+  const loaded = withSavedTokenURL({__key: 'k', url, has_token: true})
+  assert.equal(getTokenFlag(loaded, 'https://other.example.com/'), undefined)
+  assert.equal(getTokenFlag(loaded, url), true)
+  assert.equal(getTokenFlag({url}, url), undefined)
+  assert.deepEqual(withoutLocalKeys(loaded), {url, has_token: true})
+  assert.deepEqual(withSavedTokenURL({url}), {url})
+  assert.equal(withoutTokens(loaded)[TOKEN_URL_KEY], undefined)
+})
+
+test('an emptied token field keeps a saved token; removing it clears it', () => {
+  const loaded = withSavedTokenURL({url: 'u', has_token: true})
+  assert.equal(tokenInputValue(loaded, ''), undefined)
+  assert.equal(tokenInputValue(loaded, 'T'), 'T')
+  assert.equal(tokenInputValue({url: 'u'}, ''), '')
+  const removed = removeSavedToken(loaded)
+  assert.equal(removed.token, '')
+  assert.equal(removed.has_token, undefined)
+  assert.equal(tokenInputValue(removed, ''), '')
+  assert.equal(JSON.parse(JSON.stringify(withoutLocalKeys(removed))).token, '')
 })
 
 test('needsSessionToken: a custom algorithm with a saved key not entered this session', () => {

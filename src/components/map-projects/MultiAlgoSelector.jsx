@@ -37,7 +37,7 @@ import { OperationsContext } from '../app/LayoutContext'
 import { isLikelyCanonicalUrl } from './algorithms'
 import RepoVersionSearchAutocomplete from '../repos/RepoVersionSearchAutocomplete'
 import APIService from '../../services/APIService';
-import { needsSessionToken } from '../../services/tokenScope';
+import { needsSessionToken, getTokenFlag, tokenInputValue, removeSavedToken } from '../../services/tokenScope';
 import { getRequestLimits, getRequestSettings } from './requestLimits'
 import { dropVersion } from '../../common/utils'
 import {
@@ -511,7 +511,7 @@ export default function MultiAlgoSelector({
                             value={sel.url || ""}
                             onChange={(e) => {
                               // A saved key belongs to the URL it was saved with.
-                              updateSelected(sel.__key, { url: e.target.value, has_token: undefined });
+                              updateSelected(sel.__key, { url: e.target.value, has_token: getTokenFlag(sel, e.target.value) });
                               if(customMeta.requestError || customMeta.requestSuccess || customMeta.tokenRequired) {
                                 setCustomAlgoState(sel.__key, {
                                   requestError: '',
@@ -532,7 +532,7 @@ export default function MultiAlgoSelector({
                             label={t('map_project.api_token')}
                             value={sel.token || ""}
                             onChange={(e) => {
-                              updateSelected(sel.__key, { token: e.target.value });
+                              updateSelected(sel.__key, { token: tokenInputValue(sel, e.target.value) });
                               if(customMeta.requestError || customMeta.requestSuccess) {
                                 setCustomAlgoState(sel.__key, {
                                   requestError: '',
@@ -549,7 +549,14 @@ export default function MultiAlgoSelector({
                             error={Boolean(customMeta.tokenRequired && !sel.token)}
                             helperText={
                               customMeta.tokenRequired && !sel.token ? 'Authentication is required for this algorithm.' :
-                                (needsSessionToken(sel) ? t('map_project.api_token_saved') : '')
+                                (needsSessionToken(sel) ? (
+                                  <>
+                                    {t('map_project.api_token_saved')}
+                                    <Button size='small' variant='text' sx={{textTransform: 'none', minWidth: 0, padding: '0 4px'}} onClick={() => updateSelected(sel.__key, removeSavedToken(sel))}>
+                                      {t('map_project.remove_saved_token')}
+                                    </Button>
+                                  </>
+                                ) : '')
                             }
                           />
                           <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>

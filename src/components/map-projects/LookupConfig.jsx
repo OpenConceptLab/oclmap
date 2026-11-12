@@ -11,7 +11,7 @@ import DownIcon from '@mui/icons-material/ArrowDropDown';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import { lookupTokenHasSpaces, normalizeLookupConfig } from './lookupConfigFields'
-import { isOCLAPILookupURL } from '../../services/tokenScope'
+import { isOCLAPILookupURL, getTokenFlag, tokenInputValue, removeSavedToken } from '../../services/tokenScope'
 import { getAPIURL } from '../../common/utils'
 
 const LookupConfig = ({value, onChange}) => {
@@ -25,7 +25,16 @@ const LookupConfig = ({value, onChange}) => {
       return t('map_project.lookup_configuration_token_has_spaces')
     if(isOCLAPI)
       return t('map_project.lookup_configuration_token_ocl')
-    return value?.has_token && !value?.token ? t('map_project.lookup_configuration_token_saved') : ''
+    if(!value?.has_token || value?.token)
+      return ''
+    return (
+      <>
+        {t('map_project.lookup_configuration_token_saved')}
+        <Button size='small' variant='text' sx={{textTransform: 'none', minWidth: 0, padding: '0 4px'}} onClick={() => onChange(removeSavedToken(value))}>
+          {t('map_project.remove_saved_token')}
+        </Button>
+      </>
+    )
   }
 
   return (
@@ -44,7 +53,10 @@ const LookupConfig = ({value, onChange}) => {
               fullWidth
               required
               value={value?.url || ''}
-              onChange={event => onChange({...value, url: event.target.value.trim(), has_token: undefined})}
+              onChange={event => {
+                const url = event.target.value.trim()
+                onChange({...value, url, has_token: getTokenFlag(value, url)})
+              }}
             />
           </div>
           <div className='col-xs-6' style={{padding: '0 0 0 4px'}}>
@@ -53,7 +65,7 @@ const LookupConfig = ({value, onChange}) => {
               label={t('map_project.lookup_configuration_token')}
               fullWidth
               value={value?.token || ''}
-              onChange={event => onChange({...value, token: event.target.value || ''})}
+              onChange={event => onChange({...value, token: tokenInputValue(value, event.target.value)})}
               onBlur={() => onChange(normalizeLookupConfig(value))}
               color={tokenHasSpaces ? 'warning' : 'primary'}
               helperText={getTokenHelperText()}
