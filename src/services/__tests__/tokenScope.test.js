@@ -6,7 +6,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { isAPIHost, matchToken, lookupToken, joinAPIPath } from '../tokenScope.js'
+import { isAPIHost, matchToken, lookupToken, joinAPIPath, isOCLAPILookupURL, needsSessionToken, withoutTokens } from '../tokenScope.js'
 
 const API = 'https://api.example.org'
 const USER = 'USER-TOKEN'
@@ -62,4 +62,31 @@ test('overrideURL cannot change the host', () => {
   assert.equal(new URL(joinAPIPath(API, '@evil.example.com/orgs/')).host, 'api.example.org')
   assert.equal(new URL(joinAPIPath(API, ':80@evil.com/')).host, 'api.example.org')
   assert.equal(joinAPIPath(API, '/orgs/x/'), `${API}/orgs/x/`)
+})
+
+test('isOCLAPILookupURL: no URL, a path, or the API origin', () => {
+  assert.equal(isOCLAPILookupURL(undefined, API), true)
+  assert.equal(isOCLAPILookupURL('', API), true)
+  assert.equal(isOCLAPILookupURL('/orgs/CIEL/sources/CIEL/', API), true)
+  assert.equal(isOCLAPILookupURL(`${API}/orgs/CIEL/`, API), true)
+  assert.equal(isOCLAPILookupURL('https://terms.example.com/orgs/X/', API), false)
+})
+
+test('needsSessionToken: a custom algorithm with a saved key not entered this session', () => {
+  const url = 'https://match.example.com/'
+  assert.equal(needsSessionToken({type: 'custom', url, has_token: true}), true)
+  assert.equal(needsSessionToken({type: 'custom', url, has_token: true, token: 'T'}), false)
+  assert.equal(needsSessionToken({type: 'custom', url}), false)
+  assert.equal(needsSessionToken({type: 'custom', has_token: true}), false)
+  assert.equal(needsSessionToken({type: 'ocl-semantic', url, has_token: true}), false)
+  assert.equal(needsSessionToken(undefined), false)
+})
+
+test('withoutTokens: removes token and has_token at any depth', () => {
+  assert.deepEqual(
+    withoutTokens([{url: 'u', token: 'T', has_token: true, nested: {token: 'N', keep: 1}}, 'x']),
+    [{url: 'u', nested: {keep: 1}}, 'x']
+  )
+  assert.deepEqual(withoutTokens({url: 'u', has_token: true}), {url: 'u'})
+  assert.equal(withoutTokens(null), null)
 })

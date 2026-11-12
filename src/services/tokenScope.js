@@ -32,3 +32,24 @@ export const joinAPIPath = (apiURL, path) => {
   const value = String(path ?? '')
   return `${apiURL}${value.startsWith('/') ? '' : '/'}${value}`
 }
+
+// A lookup the Mapper sends to the OCL API: none (the target repo), a path, or
+// a URL on the API's origin. The API doesn't save a token for one.
+export const isOCLAPILookupURL = (url, apiURL) =>
+  !url || !String(url).startsWith('http') || isAPIHost(url, apiURL)
+
+// The API never returns a saved token, only has_token. A custom algorithm with
+// a saved key needs it entered again before it can run in this session.
+export const needsSessionToken = algo =>
+  Boolean(algo?.type === 'custom' && algo?.url && algo?.has_token && !algo?.token)
+
+// Removes token and has_token, at any depth: for copies and run snapshots.
+export const withoutTokens = value => {
+  if(Array.isArray(value))
+    return value.map(withoutTokens)
+  if(value && typeof value === 'object')
+    return Object.fromEntries(
+      Object.entries(value).filter(([key]) => key !== 'token' && key !== 'has_token').map(([key, val]) => [key, withoutTokens(val)])
+    )
+  return value
+}

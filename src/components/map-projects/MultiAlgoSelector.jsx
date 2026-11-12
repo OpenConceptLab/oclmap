@@ -37,6 +37,7 @@ import { OperationsContext } from '../app/LayoutContext'
 import { isLikelyCanonicalUrl } from './algorithms'
 import RepoVersionSearchAutocomplete from '../repos/RepoVersionSearchAutocomplete'
 import APIService from '../../services/APIService';
+import { needsSessionToken } from '../../services/tokenScope';
 import { getRequestLimits, getRequestSettings } from './requestLimits'
 import { dropVersion } from '../../common/utils'
 import {
@@ -509,7 +510,8 @@ export default function MultiAlgoSelector({
                             label={t('map_project.api_url')}
                             value={sel.url || ""}
                             onChange={(e) => {
-                              updateSelected(sel.__key, { url: e.target.value });
+                              // A saved key belongs to the URL it was saved with.
+                              updateSelected(sel.__key, { url: e.target.value, has_token: undefined });
                               if(customMeta.requestError || customMeta.requestSuccess || customMeta.tokenRequired) {
                                 setCustomAlgoState(sel.__key, {
                                   requestError: '',
@@ -525,7 +527,7 @@ export default function MultiAlgoSelector({
                           />
                           <TextField
                             fullWidth
-                            required={Boolean(customMeta.tokenRequired)}
+                            required={Boolean(customMeta.tokenRequired || needsSessionToken(sel))}
                             type='password'
                             label={t('map_project.api_token')}
                             value={sel.token || ""}
@@ -545,7 +547,10 @@ export default function MultiAlgoSelector({
                             }}
                             placeholder="••••••••"
                             error={Boolean(customMeta.tokenRequired && !sel.token)}
-                            helperText={customMeta.tokenRequired && !sel.token ? 'Authentication is required for this algorithm.' : ''}
+                            helperText={
+                              customMeta.tokenRequired && !sel.token ? 'Authentication is required for this algorithm.' :
+                                (needsSessionToken(sel) ? t('map_project.api_token_saved') : '')
+                            }
                           />
                           <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
                             <TextField

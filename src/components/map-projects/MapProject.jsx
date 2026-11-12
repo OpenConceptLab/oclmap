@@ -70,7 +70,7 @@ import pick from 'lodash/pick'
 import { OperationsContext } from '../app/LayoutContext';
 
 import APIService, { isTransientNetworkError, retryWithBackoff } from '../../services/APIService';
-import { matchToken, lookupToken } from '../../services/tokenScope'
+import { matchToken, lookupToken, needsSessionToken, withoutTokens } from '../../services/tokenScope'
 import { buildAttributionHeaders, buildConfigSnapshot, summarizeRunCompletion, matchesOnOCL } from '../../services/attribution'
 import { CAPACITY_LIMIT, RATE_LIMIT, CAPACITY_WAIT_CAP_MS, HEAVY_REQUEST_TIMEOUT_MS, LIGHT_REQUEST_TIMEOUT_MS, createCapacityGate, createLimiter, isRetryableError, requestWithCapacityRetry, sleepUnlessCancelled, untilCancelled } from '../../services/capacity'
 import { getAPIURL, highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, hasCapability, getMapperPreview, getNewProjectBlockReason, downloadObject, currentUserToken, refreshCurrentUserCapabilitiesCache } from '../../common/utils';
@@ -883,11 +883,12 @@ const MapProject = () => {
       setProjectPromptTemplateKey(copiedProject.prompt_template_key || '')
       setName(copiedProject.name ? t('map_project.create_similar_name', {name: copiedProject.name}) : '')
       setFilters(copiedProject.filters || {})
-      setLookupConfig(normalizeLookupConfig(copiedProject.lookup_config || {}))
+      // A copy starts without the original's saved tokens.
+      setLookupConfig(normalizeLookupConfig(withoutTokens(copiedProject.lookup_config || {})))
       setNamespace(copiedProject.namespace || '')
       setCandidatesScore(copiedProject.score_configuration || {recommended: 99, available: 70})
       setRetired(Boolean(copiedProject.include_retired || false))
-      setAlgosSelected(copiedProject.algorithms || [])
+      setAlgosSelected(withoutTokens(copiedProject.algorithms || []))
       setEncoderModel(copiedProject.encoder_model || DEFAULT_ENCODER_MODEL)
       setUseLexicalVariants(Boolean(copiedProject.use_lexical_variants))
       setInputLocale((copiedProject.input_locales || [])[0] || '')
@@ -3186,8 +3187,11 @@ const MapProject = () => {
     event.stopPropagation()
     event.preventDefault()
     setAlert(false)
+    const algoWithoutKey = find(algosSelected, algo => selectedAlgos.includes(algo.id) && needsSessionToken(algo))
     const run = hasAutoMatchWork(selectedAlgos) ? getAutoMatchRunRows(data, selectedAlgos) : null
-    if(!run?.runRows.length) {
+    if(algoWithoutKey) {
+      setAlert({message: t('map_project.api_token_needed', {name: algoWithoutKey.name || algoWithoutKey.id}), severity: 'warning'})
+    } else if(!run?.runRows.length) {
       setAlert({message: t('map_project.auto_match_nothing_to_run'), severity: 'warning'})
     } else if(isAnyValidColumn()){
       setStartMatchingAt(moment())
@@ -4095,6 +4099,10 @@ const MapProject = () => {
   const fetchOCLOrCustomCandidates = (algoDef, _row, offset=0, _retired, _filters, callback) => {
     // can be algo=ocl-search | ocl-semantic | custom
     let __row = isEmpty(_row) ? row : _row
+    if(needsSessionToken(algoDef)) {
+      setAlert({message: t('map_project.api_token_needed', {name: algoDef.name || algoDef.id}), severity: 'warning'})
+      return
+    }
     const payload = getPayloadForMatching([__row], repo, _filters)
 
     if(!values(omit(payload.rows[0], '__index')).length){

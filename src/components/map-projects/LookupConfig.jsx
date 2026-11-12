@@ -11,12 +11,22 @@ import DownIcon from '@mui/icons-material/ArrowDropDown';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import { lookupTokenHasSpaces, normalizeLookupConfig } from './lookupConfigFields'
+import { isOCLAPILookupURL } from '../../services/tokenScope'
+import { getAPIURL } from '../../common/utils'
 
 const LookupConfig = ({value, onChange}) => {
   const { t } = useTranslation()
   const [open, setOpen] = React.useState(false)
   const [showToken, setShowToken] = React.useState(false)
   const tokenHasSpaces = lookupTokenHasSpaces(value?.token)
+  const isOCLAPI = isOCLAPILookupURL(value?.url, getAPIURL())
+  const getTokenHelperText = () => {
+    if(tokenHasSpaces)
+      return t('map_project.lookup_configuration_token_has_spaces')
+    if(isOCLAPI)
+      return t('map_project.lookup_configuration_token_ocl')
+    return value?.has_token && !value?.token ? t('map_project.lookup_configuration_token_saved') : ''
+  }
 
   return (
     <div className='col-xs-12 padding-0' style={{marginBottom: '16px', marginTop: '4px'}}>
@@ -34,7 +44,7 @@ const LookupConfig = ({value, onChange}) => {
               fullWidth
               required
               value={value?.url || ''}
-              onChange={event => onChange({...value, url: event.target.value.trim()})}
+              onChange={event => onChange({...value, url: event.target.value.trim(), has_token: undefined})}
             />
           </div>
           <div className='col-xs-6' style={{padding: '0 0 0 4px'}}>
@@ -46,7 +56,7 @@ const LookupConfig = ({value, onChange}) => {
               onChange={event => onChange({...value, token: event.target.value || ''})}
               onBlur={() => onChange(normalizeLookupConfig(value))}
               color={tokenHasSpaces ? 'warning' : 'primary'}
-              helperText={tokenHasSpaces ? t('map_project.lookup_configuration_token_has_spaces') : ''}
+              helperText={getTokenHelperText()}
               slotProps={{
                 input: {
                   endAdornment: (
@@ -57,7 +67,7 @@ const LookupConfig = ({value, onChange}) => {
                     </InputAdornment>
                   ),
                 },
-                formHelperText: {sx: {color: 'warning.main'}},
+                formHelperText: tokenHasSpaces ? {sx: {color: 'warning.main'}} : {},
               }}
             />
           </div>
