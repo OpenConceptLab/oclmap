@@ -70,7 +70,7 @@ import pick from 'lodash/pick'
 import { OperationsContext } from '../app/LayoutContext';
 
 import APIService, { isTransientNetworkError, retryWithBackoff } from '../../services/APIService';
-import { matchToken, lookupToken, needsSessionToken, needsSessionLookupToken, withoutTokens, withSavedTokenURL, withoutLocalKeys, isAbsoluteURL } from '../../services/tokenScope'
+import { matchToken, lookupTokenFor, needsSessionToken, needsSessionLookupToken, withoutTokens, withSavedTokenURL, withoutLocalKeys, isAbsoluteURL } from '../../services/tokenScope'
 import { buildAttributionHeaders, buildConfigSnapshot, summarizeRunCompletion, matchesOnOCL } from '../../services/attribution'
 import { CAPACITY_LIMIT, RATE_LIMIT, CAPACITY_WAIT_CAP_MS, HEAVY_REQUEST_TIMEOUT_MS, LIGHT_REQUEST_TIMEOUT_MS, createCapacityGate, createLimiter, isRetryableError, requestWithCapacityRetry, sleepUnlessCancelled, untilCancelled } from '../../services/capacity'
 import { getAPIURL, highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, hasCapability, getMapperPreview, getNewProjectBlockReason, downloadObject, currentUserToken, refreshCurrentUserCapabilitiesCache } from '../../common/utils';
@@ -1803,7 +1803,7 @@ const MapProject = () => {
           description: isAutoSave ? t('map_project.auto_saved_changes') : undefined,
           created_at: moment().toDate(),
           user: user.username || user.id,
-          extras: isAutoSave ? {reasons: options.reasons || []} : (isUpdate ? undefined : {project: response.data})
+          extras: isAutoSave ? {reasons: options.reasons || []} : (isUpdate ? undefined : {project: withoutTokens(response.data)})
         }
         // Entries logged while the save was in flight are kept. A save that
         // lands after the user opened another project uses the logs as they
@@ -5144,8 +5144,8 @@ const MapProject = () => {
     return service.appendToUrl('concepts/')
   }
 
-  // The token a lookup request to this URL gets (see lookupToken).
-  const getLookupToken = url => lookupToken(lookupConfig?.token, url, getAPIURL(), currentUserToken())
+  // The token a lookup request to this URL gets (see lookupTokenFor).
+  const getLookupToken = url => lookupTokenFor(lookupConfig, url, getAPIURL(), currentUserToken())
 
   const requestLookup = query => {
     // Lookups still go out without the saved token, so say once why they may fail.
@@ -5285,7 +5285,7 @@ const MapProject = () => {
       const dataPromise = session.fetchOnce(oclUrl, () => {
         const attemptFetch = async () => {
           let service = APIService.new()
-          if(oclUrl.startsWith('http://') || oclUrl.startsWith('https://')) {
+          if(isAbsoluteURL(oclUrl)) {
             service.URL = oclUrl
           } else {
             service = service.overrideURL(oclUrl)

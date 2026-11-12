@@ -27,6 +27,12 @@ export const matchToken = algo =>
 export const lookupToken = (configToken, url, apiURL, userToken) =>
   configToken || (isAPIHost(url, apiURL) ? userToken : false)
 
+// The configured lookup token goes only to the lookup's own origin: its URL's, or
+// the API's for a path. Elsewhere, such as an OCL concept's own URL, lookupToken
+// decides without it.
+export const lookupTokenFor = (config, url, apiURL, userToken) =>
+  lookupToken(isAPIHost(url, isAbsoluteURL(config?.url) ? config.url : apiURL) ? config?.token : undefined, url, apiURL, userToken)
+
 // Without a leading '/', a value like '@host/x' would change the request's host.
 export const joinAPIPath = (apiURL, path) => {
   const value = String(path ?? '')
@@ -63,7 +69,7 @@ export const getTokenFlag = (entry, url) =>
 // An emptied field keeps a saved token (the key is left out); '' clears one
 // only once removeSavedToken has been used.
 export const tokenInputValue = (entry, value) =>
-  value || (entry?.[TOKEN_URL_KEY] ? undefined : '')
+  value?.trim() ? value : (entry?.[TOKEN_URL_KEY] ? undefined : '')
 
 export const removeSavedToken = entry =>
   ({...entry, token: '', has_token: undefined, [TOKEN_URL_KEY]: undefined})

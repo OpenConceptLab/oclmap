@@ -9,7 +9,7 @@ import assert from 'node:assert/strict'
 import {
   isAPIHost, matchToken, lookupToken, joinAPIPath, isOCLAPILookupURL, needsSessionToken, withoutTokens,
   isAbsoluteURL, needsSessionLookupToken, withSavedTokenURL, getTokenFlag, tokenInputValue, removeSavedToken,
-  withoutLocalKeys, TOKEN_URL_KEY,
+  withoutLocalKeys, TOKEN_URL_KEY, lookupTokenFor,
 } from '../tokenScope.js'
 
 const API = 'https://api.example.org'
@@ -110,6 +110,7 @@ test('an emptied token field keeps a saved token; removing it clears it', () => 
   assert.equal(tokenInputValue(loaded, ''), undefined)
   assert.equal(tokenInputValue(loaded, 'T'), 'T')
   assert.equal(tokenInputValue({url: 'u'}, ''), '')
+  assert.equal(tokenInputValue(loaded, '   '), undefined)
   const removed = removeSavedToken(loaded)
   assert.equal(removed.token, '')
   assert.equal(removed.has_token, undefined)
@@ -134,4 +135,14 @@ test('withoutTokens: removes token and has_token at any depth', () => {
   )
   assert.deepEqual(withoutTokens({url: 'u', has_token: true}), {url: 'u'})
   assert.equal(withoutTokens(null), null)
+})
+
+test('lookupTokenFor: the configured token goes only to the lookup origin', () => {
+  const external = {url: 'https://terms.example.com/orgs/X/', token: 'LOOKUP'}
+  assert.equal(lookupTokenFor(external, 'https://terms.example.com/orgs/X/concepts/', API, USER), 'LOOKUP')
+  assert.equal(lookupTokenFor(external, `${API}/orgs/CIEL/concepts/1/`, API, USER), USER)
+  assert.equal(lookupTokenFor(external, 'https://evil.example/x/', API, USER), false)
+  const onOCL = {url: '/orgs/X/sources/Y/', token: 'OWN'}
+  assert.equal(lookupTokenFor(onOCL, `${API}/orgs/X/sources/Y/concepts/`, API, USER), 'OWN')
+  assert.equal(lookupTokenFor({}, `${API}/orgs/X/`, API, USER), USER)
 })
