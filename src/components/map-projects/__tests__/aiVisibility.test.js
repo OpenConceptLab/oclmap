@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { AI_OUTPUT_LOCALE_PERMISSION, canSeeAIInternals, getAIAssistantChoices, getModelUsed, getPromptTemplateKey, createLatestRequestGate } from '../aiVisibility.js'
+import { AI_OUTPUT_LOCALE_PERMISSION, canSeeAIInternals, getAIAssistantChoices, getModelUsed, getPromptTemplateKey, createLatestRequestGate, getDefaultPromptTemplateKey, getAIRecommendationDescription } from '../aiVisibility.js'
 
 test('canSeeAIInternals: staff and superusers see the model, prompt template, URI and raw JSON', () => {
   assert.equal(canSeeAIInternals({ is_staff: true }), true)
@@ -95,4 +95,38 @@ test('regression: AI models load before the project, and the late default respon
 
   assert.deepEqual(loaded, { key: 'custom' }, 'the stale default response must not replace the project template')
   assert.equal(keyFor('custom'), 'custom')
+})
+
+const KEYS = { chatKey: 'chat-key', decisionKey: 'decision-key' }
+const withCapabilities = capabilities => ({ capabilities })
+
+test('getDefaultPromptTemplateKey: a user with generative calls runs the chat template', () => {
+  assert.equal(getDefaultPromptTemplateKey({ user: withCapabilities([{ name: 'ai_assistant.calls', limit: 6, used: 0 }, { name: 'ai_assistant.decision_calls', limit: 100, used: 0 }]), ...KEYS }), 'chat-key')
+})
+
+test('getDefaultPromptTemplateKey: decision calls without generative calls runs the decision template', () => {
+  assert.equal(getDefaultPromptTemplateKey({ user: withCapabilities([{ name: 'ai_assistant.decision_calls', limit: 100, used: 0 }]), ...KEYS }), 'decision-key')
+})
+
+test('getDefaultPromptTemplateKey: a blocked (-1) or missing allowance does not count as entitled', () => {
+  assert.equal(getDefaultPromptTemplateKey({ user: withCapabilities([{ name: 'ai_assistant.calls', limit: -1, used: 0 }, { name: 'ai_assistant.decision_calls', limit: 5, used: 0 }]), ...KEYS }), 'decision-key')
+  assert.equal(getDefaultPromptTemplateKey({ user: withCapabilities([]), ...KEYS }), 'chat-key')
+  assert.equal(getDefaultPromptTemplateKey({ user: undefined, ...KEYS }), 'chat-key')
+})
+
+test('getAIRecommendationDescription: keeps the rationale when there is one, string or narrative object', () => {
+  assert.equal(getAIRecommendationDescription({ output: { rationale: 'because' } }), 'because')
+  assert.deepEqual(getAIRecommendationDescription({ output: { rationale: { narrative: 'n' } } }), { narrative: 'n' })
+  assert.equal(getAIRecommendationDescription({ rationale: 'top level' }), 'top level')
+})
+
+test('getAIRecommendationDescription: a decision answer without rationale describes the recommendation and primary code', () => {
+  const data = { output: { recommendation: 'RECOMMEND', primary_candidate: { canonical_reference: { code: 'E11.9' } } } }
+  assert.equal(getAIRecommendationDescription(data), 'RECOMMEND E11.9')
+})
+
+test('getAIRecommendationDescription: never undefined', () => {
+  assert.equal(getAIRecommendationDescription({ output: { recommendation: 'REJECT' } }), 'REJECT')
+  assert.equal(getAIRecommendationDescription({ output: {} }), '')
+  assert.equal(getAIRecommendationDescription(undefined), '')
 })
