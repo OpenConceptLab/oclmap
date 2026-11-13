@@ -27,3 +27,10 @@ test('lookupTokenHasSpaces flags whitespace inside the token only', () => {
   assert.equal(lookupTokenHasSpaces(''), false)
   assert.equal(lookupTokenHasSpaces(undefined), false)
 })
+
+test('normalizeLookupConfig: a blank token keeps a saved one, and clears none otherwise', () => {
+  const saved = normalizeLookupConfig({url: 'https://x.org/', has_token: true, __token_url: 'https://x.org/', token: '   '})
+  assert.equal(saved.token, undefined)
+  assert.equal(JSON.stringify(saved).includes('"token"'), false)
+  assert.equal(normalizeLookupConfig({url: 'https://x.org/', token: '   '}).token, '')
+})

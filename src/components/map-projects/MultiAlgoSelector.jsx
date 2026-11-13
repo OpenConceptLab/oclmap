@@ -37,6 +37,7 @@ import { OperationsContext } from '../app/LayoutContext'
 import { isLikelyCanonicalUrl } from './algorithms'
 import RepoVersionSearchAutocomplete from '../repos/RepoVersionSearchAutocomplete'
 import APIService from '../../services/APIService';
+import { needsSessionToken, getTokenFlag, tokenInputValue, removeSavedToken } from '../../services/tokenScope';
 import { getRequestLimits, getRequestSettings } from './requestLimits'
 import { dropVersion } from '../../common/utils'
 import {
@@ -509,7 +510,8 @@ export default function MultiAlgoSelector({
                             label={t('map_project.api_url')}
                             value={sel.url || ""}
                             onChange={(e) => {
-                              updateSelected(sel.__key, { url: e.target.value });
+                              // A saved key belongs to the URL it was saved with.
+                              updateSelected(sel.__key, { url: e.target.value, has_token: getTokenFlag(sel, e.target.value) });
                               if(customMeta.requestError || customMeta.requestSuccess || customMeta.tokenRequired) {
                                 setCustomAlgoState(sel.__key, {
                                   requestError: '',
@@ -518,19 +520,23 @@ export default function MultiAlgoSelector({
                                 });
                               }
                             }}
-                            onBlur={() => verifyCustomAlgorithm(sel.__key)}
+                            onBlur={() => {
+                              // Without its saved key this session, a check would only get a 401.
+                              if(!needsSessionToken(sel))
+                                verifyCustomAlgorithm(sel.__key)
+                            }}
                             placeholder="https://example.com/match"
                             error={Boolean(customMeta.requestError)}
                             helperText={customMeta.requestError || customMeta.requestSuccess || ''}
                           />
                           <TextField
                             fullWidth
-                            required={Boolean(customMeta.tokenRequired)}
+                            required={Boolean(customMeta.tokenRequired || needsSessionToken(sel))}
                             type='password'
                             label={t('map_project.api_token')}
                             value={sel.token || ""}
                             onChange={(e) => {
-                              updateSelected(sel.__key, { token: e.target.value });
+                              updateSelected(sel.__key, { token: tokenInputValue(sel, e.target.value) });
                               if(customMeta.requestError || customMeta.requestSuccess) {
                                 setCustomAlgoState(sel.__key, {
                                   requestError: '',
@@ -545,7 +551,18 @@ export default function MultiAlgoSelector({
                             }}
                             placeholder="••••••••"
                             error={Boolean(customMeta.tokenRequired && !sel.token)}
-                            helperText={customMeta.tokenRequired && !sel.token ? 'Authentication is required for this algorithm.' : ''}
+                            helperText={
+                              (customMeta.tokenRequired && !sel.token) || needsSessionToken(sel) ? (
+                                <>
+                                  {customMeta.tokenRequired && !sel.token ? 'Authentication is required for this algorithm.' : t('map_project.api_token_saved')}
+                                  {needsSessionToken(sel) && (
+                                    <Button size='small' variant='text' sx={{textTransform: 'none', minWidth: 0, padding: '0 4px'}} onClick={() => updateSelected(sel.__key, removeSavedToken(sel))}>
+                                      {t('map_project.remove_saved_token')}
+                                    </Button>
+                                  )}
+                                </>
+                              ) : ''
+                            }
                           />
                           <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
                             <TextField

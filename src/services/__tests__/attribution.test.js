@@ -298,3 +298,11 @@ test('matchesOnOCL: built-in algorithms and a custom one without a URL go to OCL
   assert.equal(matchesOnOCL({ id: 'c', type: 'custom', url: 'https://example.org/$match/' }), false)
   assert.equal(matchesOnOCL(undefined), true)
 })
+
+test('buildConfigSnapshot leaves out every token', () => {
+  const snapshot = buildConfigSnapshot({
+    selectedAlgos: [{id: 'custom-1', type: 'custom', url: 'https://match.example.com/', token: 'T', has_token: true}],
+  })
+  assert.deepEqual(snapshot.algorithms, [{id: 'custom-1', type: 'custom', url: 'https://match.example.com/'}])
+  assert.equal(JSON.stringify(snapshot).includes('"token"'), false)
+})

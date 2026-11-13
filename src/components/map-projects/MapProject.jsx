@@ -70,7 +70,7 @@ import pick from 'lodash/pick'
 import { OperationsContext } from '../app/LayoutContext';
 
 import APIService, { isTransientNetworkError, retryWithBackoff } from '../../services/APIService';
-import { matchToken, lookupToken } from '../../services/tokenScope'
+import { matchToken, lookupTokenFor, needsSessionToken, needsSessionLookupToken, withoutTokens, withSavedTokenURL, withoutLocalKeys, isAbsoluteURL } from '../../services/tokenScope'
 import { buildAttributionHeaders, buildConfigSnapshot, summarizeRunCompletion, matchesOnOCL } from '../../services/attribution'
 import { CAPACITY_LIMIT, RATE_LIMIT, CAPACITY_WAIT_CAP_MS, HEAVY_REQUEST_TIMEOUT_MS, LIGHT_REQUEST_TIMEOUT_MS, createCapacityGate, createLimiter, isRetryableError, requestWithCapacityRetry, sleepUnlessCancelled, untilCancelled } from '../../services/capacity'
 import { getAPIURL, highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, hasCapability, getMapperPreview, getNewProjectBlockReason, downloadObject, currentUserToken, refreshCurrentUserCapabilitiesCache } from '../../common/utils';
@@ -326,6 +326,7 @@ const MapProject = () => {
   const getConfigurationSnapshotRef = React.useRef(null)
   const projectIdRef = React.useRef(null)
   const onSaveRef = React.useRef(null)
+  const lookupTokenWarnedRef = React.useRef(false)
   const projectLogRef = React.useRef(() => {})
   // A save can complete after the user has left the project
   // (OpenConceptLab/ocl_issues#2829): these track the request still in flight
@@ -883,11 +884,12 @@ const MapProject = () => {
       setProjectPromptTemplateKey(copiedProject.prompt_template_key || '')
       setName(copiedProject.name ? t('map_project.create_similar_name', {name: copiedProject.name}) : '')
       setFilters(copiedProject.filters || {})
-      setLookupConfig(normalizeLookupConfig(copiedProject.lookup_config || {}))
+      // A copy starts without the original's saved tokens.
+      setLookupConfig(normalizeLookupConfig(withoutTokens(copiedProject.lookup_config || {})))
       setNamespace(copiedProject.namespace || '')
       setCandidatesScore(copiedProject.score_configuration || {recommended: 99, available: 70})
       setRetired(Boolean(copiedProject.include_retired || false))
-      setAlgosSelected(copiedProject.algorithms || [])
+      setAlgosSelected(withoutTokens(copiedProject.algorithms || []))
       setEncoderModel(copiedProject.encoder_model || DEFAULT_ENCODER_MODEL)
       setUseLexicalVariants(Boolean(copiedProject.use_lexical_variants))
       setInputLocale((copiedProject.input_locales || [])[0] || '')
@@ -933,7 +935,7 @@ const MapProject = () => {
           const sheet = workbook.Sheets[sheetName];
           const data = XLSX.utils.sheet_to_json(sheet, { raw: false, defval: '' })
           setProjectFromData(data, response.data)
-          setAlgosSelected(response?.data?.algorithms || [])
+          setAlgosSelected(map(response?.data?.algorithms || [], withSavedTokenURL))
           if (response?.data.columns?.length > 0) {
             // Saved mappings are the user's, so they are never re-suggested.
             const _columns = response.data.columns.map(col => ({...omit(col, ['hidden', 'auto', 'suggested'])}))
@@ -1014,7 +1016,7 @@ const MapProject = () => {
       setRowMatchState(_rowMatchState)
       conceptCacheRef.current = _cache
       rowMatchStateRef.current = _rowMatchState
-      setAlgosSelected(response.data.algorithms)
+      setAlgosSelected(map(response.data.algorithms, withSavedTokenURL))
       setRowStage(_rowStage)
 
       setName(response.data?.name || '')
@@ -1022,7 +1024,8 @@ const MapProject = () => {
       setOwner(response.data?.owner_url)
       setRetired(Boolean(response.data?.include_retired))
       setCandidatesScore(response.data?.score_configuration)
-      setLookupConfig(normalizeLookupConfig(response.data?.lookup_config))
+      setLookupConfig(normalizeLookupConfig(withSavedTokenURL(response.data?.lookup_config)))
+      lookupTokenWarnedRef.current = false
       setNamespace(response.data?.namespace || '')
       setEncoderModel(response.data?.encoder_model || DEFAULT_ENCODER_MODEL)
       setProjectPromptTemplateKey(response.data?.prompt_template_key || '')
@@ -1753,9 +1756,9 @@ const MapProject = () => {
         source: repo.short_code || repo.id,
         source_version: selectedTargetRepoVersion
       }))
-    formData.append('algorithms', JSON.stringify(map(algosSelected, algo => omit(algo, ['__key']))))
+    formData.append('algorithms', JSON.stringify(map(algosSelected, withoutLocalKeys)))
     formData.append('score_configuration', JSON.stringify(candidatesScore))
-    formData.append('lookup_config', JSON.stringify(lookupConfig))
+    formData.append('lookup_config', JSON.stringify(withoutLocalKeys(lookupConfig)))
     // Always send `namespace` (including empty string) so clearing the field
     // in the UI actually propagates to the server. The server reads empty
     // as "use the project owner default"; gating the append on truthiness
@@ -1800,7 +1803,7 @@ const MapProject = () => {
           description: isAutoSave ? t('map_project.auto_saved_changes') : undefined,
           created_at: moment().toDate(),
           user: user.username || user.id,
-          extras: isAutoSave ? {reasons: options.reasons || []} : (isUpdate ? undefined : {project: response.data})
+          extras: isAutoSave ? {reasons: options.reasons || []} : (isUpdate ? undefined : {project: withoutTokens(response.data)})
         }
         // Entries logged while the save was in flight are kept. A save that
         // lands after the user opened another project uses the logs as they
@@ -3186,8 +3189,13 @@ const MapProject = () => {
     event.stopPropagation()
     event.preventDefault()
     setAlert(false)
+    const algoWithoutKey = find(algosSelected, algo => selectedAlgos.includes(algo.id) && needsSessionToken(algo))
     const run = hasAutoMatchWork(selectedAlgos) ? getAutoMatchRunRows(data, selectedAlgos) : null
-    if(!run?.runRows.length) {
+    if(algoWithoutKey) {
+      setAlert({message: t('map_project.api_token_needed', {name: algoWithoutKey.name || algoWithoutKey.id}), severity: 'warning'})
+    } else if(needsSessionLookupToken(lookupConfig, getAPIURL())) {
+      setAlert({message: t('map_project.lookup_token_needed'), severity: 'warning'})
+    } else if(!run?.runRows.length) {
       setAlert({message: t('map_project.auto_match_nothing_to_run'), severity: 'warning'})
     } else if(isAnyValidColumn()){
       setStartMatchingAt(moment())
@@ -4321,7 +4329,12 @@ const MapProject = () => {
           }
         }
 
-      if(['ocl-semantic', 'ocl-search', 'custom'].includes(algoDef.type)) {
+      if(needsSessionToken(algoDef)) {
+        // Fails this algorithm for the row and goes on with the others.
+        setAlert({message: t('map_project.api_token_needed', {name: algoDef.name || algoDef.id}), severity: 'warning'})
+        markAlgo(__row.__index, algoId, -2)
+        goOnAfterFailure()
+      } else if(['ocl-semantic', 'ocl-search', 'custom'].includes(algoDef.type)) {
         fetchOCLOrCustomCandidates(algoDef, _row, offset, _retired, _filters, onResponse)
       } else if (algoDef.type === 'ocl-scispacy') {
         fetchScispacyCandidates(__row, scrollToBottom, forceReload, false, onResponse, goOnAfterFailure)
@@ -5121,7 +5134,7 @@ const MapProject = () => {
   const getLookupService = () => {
     let service = APIService.new()
     if(lookupConfig?.url) {
-      if(lookupConfig.url.startsWith('http'))
+      if(isAbsoluteURL(lookupConfig.url))
         service.URL = lookupConfig.url
       else
         service.overrideURL(lookupConfig.url)
@@ -5131,10 +5144,15 @@ const MapProject = () => {
     return service.appendToUrl('concepts/')
   }
 
-  // The token a lookup request to this URL gets (see lookupToken).
-  const getLookupToken = url => lookupToken(lookupConfig?.token, url, getAPIURL(), currentUserToken())
+  // The token a lookup request to this URL gets (see lookupTokenFor).
+  const getLookupToken = url => lookupTokenFor(lookupConfig, url, getAPIURL(), currentUserToken())
 
   const requestLookup = query => {
+    // Lookups still go out without the saved token, so say once why they may fail.
+    if(!lookupTokenWarnedRef.current && needsSessionLookupToken(lookupConfig, getAPIURL())) {
+      lookupTokenWarnedRef.current = true
+      setAlert({message: t('map_project.lookup_token_needed'), severity: 'warning'})
+    }
     const service = getLookupService()
     return service.request('GET', undefined, getLookupToken(service.URL), {query, handlesThrottle: true, timeout: LIGHT_REQUEST_TIMEOUT_MS})
   }
@@ -5267,7 +5285,7 @@ const MapProject = () => {
       const dataPromise = session.fetchOnce(oclUrl, () => {
         const attemptFetch = async () => {
           let service = APIService.new()
-          if(oclUrl.startsWith('http://') || oclUrl.startsWith('https://')) {
+          if(isAbsoluteURL(oclUrl)) {
             service.URL = oclUrl
           } else {
             service = service.overrideURL(oclUrl)

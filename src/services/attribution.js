@@ -19,6 +19,7 @@
  */
 
 import isFunction from 'lodash/isFunction.js'
+import { withoutTokens } from './tokenScope.js'
 
 export const REQUEST_SOURCE = {
   AUTOMATCH: 'automatch',
@@ -100,7 +101,7 @@ export const buildAttributionHeaders = ({
 /**
  * Assemble the JSON-safe project config captured at run start
  * (AutomatchRun.config_snapshot). Strips function-valued algorithm fields
- * (e.g. getIcon) so the POST body serializes cleanly.
+ * (e.g. getIcon) so the POST body serializes cleanly, and every token.
  *
  * @param {object}        [opts]
  * @param {object[]}      [opts.selectedAlgos] algorithms selected for the run
@@ -124,7 +125,7 @@ export const buildConfigSnapshot = ({
     Object.keys(algo || {}).forEach(key => {
       if(!isFunction(algo[key])) clean[key] = algo[key]
     })
-    return clean
+    return withoutTokens(clean)
   }),
   encoder: encoderModel || null,
   score_config: scoreConfig || null,

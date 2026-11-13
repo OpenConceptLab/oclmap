@@ -1,3 +1,5 @@
+import { TOKEN_URL_KEY } from '../../services/tokenScope.js'
+
 // Stray whitespace in the lookup URL or token breaks every lookup request:
 // a padded URL becomes `.../%20concepts/` and a token with a space is
 // rejected by the API (OpenConceptLab/ocl_issues#2925).
@@ -5,7 +7,11 @@
 // left for the user to fix.
 const trim = value => typeof value === 'string' ? value.trim() : value
 
-export const normalizeLookupConfig = config => config ? {...config, url: trim(config.url), token: trim(config.token)} : config
+// A token that trims to nothing keeps a saved one (the key is left out), as an
+// emptied field does.
+export const normalizeLookupConfig = config => config ? {
+  ...config, url: trim(config.url), token: trim(config.token) || (config[TOKEN_URL_KEY] ? undefined : trim(config.token)),
+} : config
 
 // A token never contains whitespace; one that does was most likely pasted
 // with a `Token `/`Bearer ` prefix.
