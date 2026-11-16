@@ -12,7 +12,7 @@ export const metadataFields = data => ({
   ...(isLikelyCanonicalUrl(data.canonical_url) ? { canonical_url: data.canonical_url.trim() } : {}),
 })
 
-// Try the non-operation metadata path before the original POST endpoint.
+// Try metadata paths in order: operation without $, original URL, then parent.
 export const fetchAlgorithmMetadata = async (url, get) => {
   const [path] = url.split(/[?#]/, 1)
   const metadataUrl = path.replace(/\/\$([^/]+)(\/?)$/, '/$1$2') + url.slice(path.length)
@@ -22,6 +22,10 @@ export const fetchAlgorithmMetadata = async (url, get) => {
   const second = await get(url)
   const secondData = second?.data || second
   if(!second?.response && secondData?.name && (secondData?.ID || secondData?.id)) return second
-  const firstStatus = first?.response?.status || first?.status
-  return [401, 403].includes(firstStatus) ? first : second
+  const parentPath = path.replace(/\/\$[^/]+\/?$/, '')
+  const parentUrl = parentPath + url.slice(path.length)
+  const third = await get(parentUrl)
+  const thirdData = third?.data || third
+  if(!third?.response && thirdData?.name && (thirdData?.ID || thirdData?.id)) return third
+  return [first, second, third].find(response => [401, 403].includes(response?.response?.status || response?.status)) || third
 }
