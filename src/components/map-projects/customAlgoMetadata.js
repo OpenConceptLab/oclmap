@@ -11,3 +11,17 @@ export const metadataFields = data => ({
   description: data.description || '',
   ...(isLikelyCanonicalUrl(data.canonical_url) ? { canonical_url: data.canonical_url.trim() } : {}),
 })
+
+// Try the non-operation metadata path before the original POST endpoint.
+export const fetchAlgorithmMetadata = async (url, get) => {
+  const [path] = url.split(/[?#]/, 1)
+  const metadataUrl = path.replace(/\/\$([^/]+)(\/?)$/, '/$1$2') + url.slice(path.length)
+  const first = await get(metadataUrl)
+  const data = first?.data || first
+  if(metadataUrl === url || (!first?.response && data?.name && (data?.ID || data?.id))) return first
+  const second = await get(url)
+  const secondData = second?.data || second
+  if(!second?.response && secondData?.name && (secondData?.ID || secondData?.id)) return second
+  const firstStatus = first?.response?.status || first?.status
+  return [401, 403].includes(firstStatus) ? first : second
+}

@@ -35,7 +35,7 @@ import orderBy from 'lodash/orderBy'
 import ConceptIcon from '../concepts/ConceptIcon'
 import { OperationsContext } from '../app/LayoutContext'
 import { isLikelyCanonicalUrl } from './algorithms'
-import { metadataFields } from './customAlgoMetadata.js'
+import { metadataFields, fetchAlgorithmMetadata } from './customAlgoMetadata.js'
 import RepoVersionSearchAutocomplete from '../repos/RepoVersionSearchAutocomplete'
 import APIService from '../../services/APIService';
 import { needsSessionToken, getTokenFlag, tokenInputValue, removeSavedToken } from '../../services/tokenScope';
@@ -354,9 +354,10 @@ export default function MultiAlgoSelector({
     setCustomAlgoState(key, {isLoading: true, requestError: '', requestSuccess: '', tokenRequired: false});
 
     const service = APIService.new();
-    service.URL = selected.url;
-
-    const response = await service.get(token || false, {}, undefined, true);
+    const response = await fetchAlgorithmMetadata(selected.url, url => {
+      service.URL = url;
+      return service.get(token || false, {}, undefined, true);
+    });
     const status = response?.response?.status || response?.status;
 
     if([401, 403].includes(status)) {
