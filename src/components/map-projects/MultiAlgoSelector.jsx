@@ -35,6 +35,7 @@ import orderBy from 'lodash/orderBy'
 import ConceptIcon from '../concepts/ConceptIcon'
 import { OperationsContext } from '../app/LayoutContext'
 import { isLikelyCanonicalUrl } from './algorithms'
+import { metadataFields } from './customAlgoMetadata.js'
 import RepoVersionSearchAutocomplete from '../repos/RepoVersionSearchAutocomplete'
 import APIService from '../../services/APIService';
 import { needsSessionToken, getTokenFlag, tokenInputValue, removeSavedToken } from '../../services/tokenScope';
@@ -389,11 +390,7 @@ export default function MultiAlgoSelector({
       return;
     }
 
-    updateSelected(key, {
-      id: data.ID || data.id || '',
-      name: data.name || '',
-      description: data.description || '',
-    });
+    updateSelected(key, metadataFields(data));
     setCustomAlgoState(key, {
       isLoading: false,
       tokenRequired: false,

@@ -1,5 +1,6 @@
 import React from 'react'
 import MatchingIcon from '@mui/icons-material/DeviceHub';
+import { isLikelyCanonicalUrl } from './customAlgoMetadata.js'
 
 // Canonical concept-identity config per algorithm type
 // (plans/unified-mapper-model.md). Single source of truth shared between
@@ -47,13 +48,7 @@ export const CONCEPT_IDENTITY_BY_TYPE = {
   }
 }
 
-// Cheap structural validator for canonical URLs. The unified mapper model
-// requires every algorithm's concept_identity.canonical_url to be a URL —
-// custom algos rely on user input for this, so the form validates here.
-export const isLikelyCanonicalUrl = (value) => {
-  if(!value || typeof value !== 'string') return false
-  return /^https?:\/\/[^\s]+$/i.test(value.trim())
-}
+export { isLikelyCanonicalUrl }
 
 // Walk algosSelected and return the subset that fails project-config
 // validation. Currently: custom algos must have a valid canonical_url.
