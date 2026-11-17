@@ -29,3 +29,11 @@ export const fetchAlgorithmMetadata = async (url, get) => {
   if(!third?.response && thirdData?.name && (thirdData?.ID || thirdData?.id)) return third
   return [first, second, third].find(response => [401, 403].includes(response?.response?.status || response?.status)) || third
 }
+
+// Whether the patched id/name collide with ANOTHER algorithm (the one being edited is excluded by key).
+export const conflictingFields = (items, key, patch) => {
+  const others = (items || []).filter(item => item.__key !== key)
+  return Object.fromEntries(['id', 'name']
+    .filter(field => patch[field])
+    .map(field => [field, others.some(item => item[field] === patch[field])]))
+}

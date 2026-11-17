@@ -1,7 +1,24 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
-import { metadataFields, fetchAlgorithmMetadata } from '../customAlgoMetadata.js'
+import { metadataFields, fetchAlgorithmMetadata, conflictingFields } from '../customAlgoMetadata.js'
+
+test('an algorithm never conflicts with itself when its own id and name are re-applied', () => {
+  const items = [{__key: 'a', id: 'icd-agent', name: 'ICD Agent'}]
+  assert.deepEqual(conflictingFields(items, 'a', {id: 'icd-agent', name: 'ICD Agent', description: ''}), {id: false, name: false})
+})
+
+test('id and name conflicts are reported independently against the other algorithms only', () => {
+  const items = [{__key: 'a', id: 'icd-agent', name: 'ICD Agent'}, {__key: 'b', id: 'other', name: 'ICD Agent'}]
+  assert.deepEqual(conflictingFields(items, 'a', {id: 'other', name: 'Fresh'}), {id: true, name: false})
+  assert.deepEqual(conflictingFields(items, 'a', {id: 'fresh', name: 'ICD Agent'}), {id: false, name: true})
+})
+
+test('fields absent from the patch are not evaluated', () => {
+  const items = [{__key: 'a', id: 'x', name: 'X'}, {__key: 'b', id: 'y', name: 'Y'}]
+  assert.deepEqual(conflictingFields(items, 'a', {description: 'd'}), {})
+  assert.deepEqual(conflictingFields(items, 'a', {id: 'y'}), {id: true})
+})
 
 test('metadata supplies the canonical URL alongside the other form fields', () => {
   assert.deepEqual(metadataFields({ ID: 'agent', name: 'Agent', canonical_url: 'http://example.test/system' }), {
