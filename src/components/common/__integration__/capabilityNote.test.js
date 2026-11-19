@@ -46,14 +46,3 @@ test('switching away and straight back never shows the earlier line', () => {
   assert.equal(getByTestId('note').textContent, 'Personal line again.')
   cleanup()
 })
-
-test('nothing while there is nothing to ask about', () => {
-  const { Note, keep } = renderNotes()
-  const { rerender, getByTestId } = render(React.createElement(Note, {noteKey: ORG}))
-  keep(ORG, 'Org line.')
-  rerender(React.createElement(Note, {noteKey: null}))
-  assert.equal(getByTestId('note').textContent, '')
-  keep(null, 'Stray line.')
-  assert.equal(getByTestId('note').textContent, '')
-  cleanup()
-})

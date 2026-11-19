@@ -23,27 +23,24 @@ export const toCapabilityNoteKey = ({capability, owner, lang, enabled = true}) =
   enabled && capability && owner ? JSON.stringify([capability, owner, lang]) : null
 
 // What the form has asked for (`asked`) and the line kept for it. Asking for
-// anything drops the kept line, so a line shows only after a reply to the
-// latest ask: never the last owner's, or an earlier one's when its new
-// request fails. A reply to anything but the latest ask is dropped.
+// anything drops the line, so a line shows only after a reply to the latest
+// ask: never the last owner's, or an earlier one's when its new request
+// fails. A reply to anything but the latest ask is dropped.
 export const capabilityNoteReducer = (state, action) => {
   if(action.type === 'ask')
-    return {asked: action.key, kept: null}
-  if(action.type === 'reply' && action.key && action.key === state?.asked)
-    return {...state, kept: {key: action.key, note: action.note}}
+    return {asked: action.key, note: null}
+  if(action.type === 'reply' && action.key && action.key === state.asked)
+    return {...state, note: action.note}
   return state
 }
-
-// The line kept for `key`, never one kept for another owner or language.
-export const getKeptCapabilityNote = (state, key) => key && state?.kept?.key === key ? state.kept.note : null
 
 // The line kept for `key`, and `keep(key, note)` for a reply. A new key asks
 // again during the render that brings it, so not even one render shows a line
 // kept for another owner, or for this one before it was asked again.
 export const useKeptCapabilityNote = key => {
-  const [state, dispatch] = React.useReducer(capabilityNoteReducer, {asked: null, kept: null})
+  const [state, dispatch] = React.useReducer(capabilityNoteReducer, {asked: null, note: null})
   if(state.asked !== key)
     dispatch({type: 'ask', key})
   const keep = React.useCallback((replyKey, note) => dispatch({type: 'reply', key: replyKey, note}), [])
-  return [state.asked === key ? getKeptCapabilityNote(state, key) : null, keep]
+  return [state.asked === key ? state.note : null, keep]
 }
