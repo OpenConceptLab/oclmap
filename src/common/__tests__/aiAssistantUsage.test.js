@@ -19,9 +19,7 @@ const REQUEST = {baseURL: 'https://ai.example.org/', token: 'personal-token', us
 test('the usage the service reports is read as sent: a unit and a count', () => {
   assert.deepEqual(toAIAssistantUsage({meter: 'tokens', used: 1234}), {meter: 'tokens', used: 1234})
   assert.deepEqual(toAIAssistantUsage({meter: 'calls', used: 0}), {meter: 'calls', used: 0})
-})
-
-test('nothing but the unit and the count is read', () => {
+  // nothing but the unit and the count
   assert.deepEqual(toAIAssistantUsage({meter: 'tokens', used: 5, limit: 3000, remaining: 2995}), {meter: 'tokens', used: 5})
 })
 

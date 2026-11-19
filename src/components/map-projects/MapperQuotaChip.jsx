@@ -11,18 +11,22 @@ import { getUsageChipReport } from '../../common/aiAssistantUsage'
 // Labels for the units the OCL AI Assistant reports its usage in.
 const AI_ASSISTANT_USAGE_LABELS = {calls: 'map_project.preview_quota_ai_calls', tokens: 'map_project.preview_quota_ai_tokens'}
 
-// The usage the OCL AI Assistant reports, on a chip of its own: the unit and
-// the count, never a limit (OpenConceptLab/ocl_online#641).
+// The OCL AI Assistant's report as one line: the unit and the count, never a
+// limit (OpenConceptLab/ocl_online#641). Nothing for a unit it has no label for.
+const UsageLine = ({usage, sx}) => {
+  const { t } = useTranslation()
+  return AI_ASSISTANT_USAGE_LABELS[usage.meter] ? (
+    <Typography variant='caption' component='div' sx={sx}>
+      {t(AI_ASSISTANT_USAGE_LABELS[usage.meter])}: {t('map_project.preview_quota_used', {used: usage.used})}
+    </Typography>
+  ) : null
+}
+
+// The report on a chip of its own.
 const AIAssistantUsageChip = ({usage, size}) => {
   const { t } = useTranslation()
   return (
-    <Tooltip
-      title={
-        <Typography variant='caption' component='div' sx={{p: 0.5}}>
-          {t(AI_ASSISTANT_USAGE_LABELS[usage.meter])}: {t('map_project.preview_quota_used', {used: usage.used})}
-        </Typography>
-      }
-    >
+    <Tooltip title={<UsageLine usage={usage} sx={{p: 0.5}} />}>
       <Chip size={size} variant='outlined' label={t(`map_project.ai_assistant_usage_chip_${usage.meter}`, {used: usage.used})} />
     </Tooltip>
   )
@@ -65,13 +69,9 @@ const MapperQuotaChip = ({size = 'small'}) => {
           </Typography>
           {meterLine('map_project.preview_quota_match_operations', matchOperations)}
           {
-            // The service's own report, when it sends one: a unit and the count
-            // used (OpenConceptLab/ocl_online#641).
+            // The service's own report, when it sends one.
             aiAssistantUsage ?
-              AI_ASSISTANT_USAGE_LABELS[aiAssistantUsage.meter] &&
-                <Typography variant='caption' component='div'>
-                  {t(AI_ASSISTANT_USAGE_LABELS[aiAssistantUsage.meter])}: {t('map_project.preview_quota_used', {used: aiAssistantUsage.used})}
-                </Typography> :
+              <UsageLine usage={aiAssistantUsage} /> :
               meterLine('map_project.preview_quota_ai_calls', aiAssistantCalls)
           }
         </Box>
