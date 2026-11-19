@@ -1,5 +1,3 @@
-import { buildAttributionHeaders } from '../services/attribution.js'
-
 // The OCL AI Assistant's usage as the service reports it: the unit it counts in
 // and how many it has counted, never a limit (OpenConceptLab/ocl_online#641).
 export const toAIAssistantUsage = data =>
@@ -79,17 +77,17 @@ export const withoutAIAssistantUsage = reply => {
 // without a unit and a count clears the kept one. A failed request keeps it,
 // and so does one that's overtaken: something else (a reply's report, in this
 // tab or another) kept a report while it was in flight. Resolves to whether
-// the kept report changed. The request names the project in the same header
-// the calls on it send, so the report is the count their replies carry.
+// the kept report changed. The request names the project (`map_project`), so
+// the report is the count the calls on it are charged to, as their replies
+// carry it.
 const fetchAIAssistantUsage = ({get, storage, baseURL, token, username, project}) => {
   const url = `${baseURL.replace(/\/+$/, '')}/match/usage/`
   const key = storageKey(username, project)
   const keptBefore = read(storage, key)
-  const headers = {
-    ...(hasProject(project) ? buildAttributionHeaders({projectId: project}) : {}),
-    Authorization: `Token ${token}`,
-  }
-  return get(url, {headers, timeout: 10000})
+  const config = {headers: {Authorization: `Token ${token}`}, timeout: 10000}
+  if(hasProject(project))
+    config.params = {map_project: project}
+  return get(url, config)
     .then(response => {
       if(read(storage, key) !== keptBefore)
         return false

@@ -184,7 +184,7 @@ test('each map project keeps its own report, apart from the one for calls that n
   assert.equal(getAIAssistantUsage(storage, 'someone-else', '139'), null)
 })
 
-test('a refresh for a map project names it as the calls on it do, and keeps the report for it', async () => {
+test('a refresh for a map project names it in the query string, and keeps the report for it', async () => {
   const storage = memoryStorage({'ai_assistant_usage:someone': JSON.stringify({meter: 'calls', used: 4})})
   const calls = []
   const get = (url, config) => {
@@ -192,7 +192,7 @@ test('a refresh for a map project names it as the calls on it do, and keeps the 
     return Promise.resolve({status: 200, data: {meter: 'tokens', used: 600}})
   }
   assert.equal(await refreshAIAssistantUsage({...REQUEST, project: '139', get, storage}), true)
-  assert.deepEqual(calls[0].config.headers, {'X-OCL-Request-Source': 'mapper-ui-manual', 'X-OCL-Event-Metadata': '{"map_project_id":"139"}', Authorization: 'Token personal-token'})
+  assert.deepEqual(calls[0].config, {headers: {Authorization: 'Token personal-token'}, params: {map_project: '139'}, timeout: 10000})
   assert.deepEqual(getAIAssistantUsage(storage, 'someone', '139'), {meter: 'tokens', used: 600})
   assert.deepEqual(getAIAssistantUsage(storage, 'someone'), {meter: 'calls', used: 4})
 })
@@ -200,10 +200,10 @@ test('a refresh for a map project names it as the calls on it do, and keeps the 
 test('refreshes for different map projects don\'t wait on each other', async () => {
   const storage = memoryStorage()
   const answers = []
-  const get = (url, config) => new Promise(resolve => answers.push({project: config.headers['X-OCL-Event-Metadata'], answer: data => resolve({status: 200, data})}))
+  const get = (url, config) => new Promise(resolve => answers.push({project: config.params?.map_project, answer: data => resolve({status: 200, data})}))
   const first = refreshAIAssistantUsage({...REQUEST, project: '1', get, storage})
   const second = refreshAIAssistantUsage({...REQUEST, project: '2', get, storage})
-  assert.deepEqual(answers.map(({project}) => project), ['{"map_project_id":"1"}', '{"map_project_id":"2"}'])
+  assert.deepEqual(answers.map(({project}) => project), ['1', '2'])
   answers[1].answer({meter: 'tokens', used: 20})
   answers[0].answer({meter: 'calls', used: 1})
   assert.deepEqual([await first, await second], [true, true])

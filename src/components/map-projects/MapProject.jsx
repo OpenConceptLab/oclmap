@@ -73,7 +73,7 @@ import APIService, { isTransientNetworkError, retryWithBackoff } from '../../ser
 import { matchToken, lookupTokenFor, needsSessionToken, needsSessionLookupToken, withoutTokens, withSavedTokenURL, withoutLocalKeys, isAbsoluteURL } from '../../services/tokenScope'
 import { buildAttributionHeaders, buildConfigSnapshot, summarizeRunCompletion, matchesOnOCL } from '../../services/attribution'
 import { CAPACITY_LIMIT, RATE_LIMIT, CAPACITY_WAIT_CAP_MS, HEAVY_REQUEST_TIMEOUT_MS, LIGHT_REQUEST_TIMEOUT_MS, createCapacityGate, createLimiter, isRetryableError, requestWithCapacityRetry, sleepUnlessCancelled, untilCancelled } from '../../services/capacity'
-import { getAPIURL, highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, hasCapability, getMapperPreview, getNewProjectBlockReason, downloadObject, currentUserToken, refreshCapabilitiesAndAIAssistantUsage, keepAIAssistantUsageFromReply } from '../../common/utils';
+import { getAPIURL, highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, hasCapability, getMapperPreview, getNewProjectBlockReason, downloadObject, currentUserToken, refreshCapabilitiesAndAIAssistantUsage, refreshAIAssistantUsageCache, keepAIAssistantUsageFromReply } from '../../common/utils';
 import { withoutAIAssistantUsage } from '../../common/aiAssistantUsage';
 import { WHITE, SURFACE_COLORS, TEXT_GRAY } from '../../common/colors';
 
@@ -841,6 +841,18 @@ const MapProject = () => {
 
   React.useEffect(() => {
     setPermissionDenied(false)
+  }, [params.projectId])
+
+  // A project's first save gives the route its id, after the save's own
+  // refresh, which named no project: the chip asks for the new project's
+  // report then (OpenConceptLab/ocl_online#641).
+  const usageRouteProjectIdRef = React.useRef(params.projectId)
+  React.useEffect(() => {
+    if(usageRouteProjectIdRef.current === params.projectId)
+      return
+    usageRouteProjectIdRef.current = params.projectId
+    if(params.projectId)
+      refreshAIAssistantUsageCache(() => setAIAssistantUsageVersion(version => version + 1), params.projectId)
   }, [params.projectId])
 
   const newProjectBlockReason = (!params.projectId && !project?.id && mapperQuotaCacheVersion > 0)
@@ -1841,8 +1853,9 @@ const MapProject = () => {
         }
         setProjectPromptTemplateKey(response.data?.prompt_template_key || getProjectPromptTemplateKey())
         setProject(response.data)
+        // The new project's usage is asked for once the route has its id.
         if(!isUpdate)
-          refreshMapperQuotaCache()
+          refreshMapperQuotaCache({usage: false})
         if(response.data.url && isMountedRef.current && !options.leaving && history.location.pathname === pathAtSave) {
           ownNavigationRef.current = true
           try {
