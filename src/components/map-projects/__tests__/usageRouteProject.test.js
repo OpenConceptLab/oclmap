@@ -69,8 +69,9 @@ test('a reply kept for another project than the open one asks for the open one\'
   })
   assert.deepEqual(refreshes, ['{usage: !usageKept || lastOfOverlapping || !keptForOpenProject}'])
   assert.match(source, /const keptForOpenProject = invokeProjectId === usageProjectIdRef\.current/)
-  // An AutoMatch reply too, which otherwise leaves the usage to the run's end.
-  assert.match(source, /else if\(usageKept && !keptForOpenProject\)\s*refreshMapperQuotaCache\(\)/)
+  // An AutoMatch reply too, which otherwise leaves the usage to the run's end:
+  // the report only, as a run's own refresh did the capabilities.
+  assert.match(source, /else if\(usageKept && !keptForOpenProject\)\s*\/\/[^\n]*\n\s*refreshAIAssistantUsageCache\([^\n]*, usageProjectIdRef\.current\)/)
 })
 
 test('the usage read names the route\'s project, as the calls on it do', () => {

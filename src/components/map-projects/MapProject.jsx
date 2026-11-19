@@ -73,7 +73,7 @@ import APIService, { isTransientNetworkError, retryWithBackoff } from '../../ser
 import { matchToken, lookupTokenFor, needsSessionToken, needsSessionLookupToken, withoutTokens, withSavedTokenURL, withoutLocalKeys, isAbsoluteURL } from '../../services/tokenScope'
 import { buildAttributionHeaders, buildConfigSnapshot, summarizeRunCompletion, matchesOnOCL } from '../../services/attribution'
 import { CAPACITY_LIMIT, RATE_LIMIT, CAPACITY_WAIT_CAP_MS, HEAVY_REQUEST_TIMEOUT_MS, LIGHT_REQUEST_TIMEOUT_MS, createCapacityGate, createLimiter, isRetryableError, requestWithCapacityRetry, sleepUnlessCancelled, untilCancelled } from '../../services/capacity'
-import { getAPIURL, highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, hasCapability, getMapperPreview, getNewProjectBlockReason, downloadObject, currentUserToken, refreshCapabilitiesAndAIAssistantUsage, keepAIAssistantUsageFromReply } from '../../common/utils';
+import { getAPIURL, highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, hasCapability, getMapperPreview, getNewProjectBlockReason, downloadObject, currentUserToken, refreshCapabilitiesAndAIAssistantUsage, refreshAIAssistantUsageCache, keepAIAssistantUsageFromReply } from '../../common/utils';
 import { withoutAIAssistantUsage } from '../../common/aiAssistantUsage';
 import { WHITE, SURFACE_COLORS, TEXT_GRAY } from '../../common/colors';
 
@@ -6273,7 +6273,8 @@ const MapProject = () => {
             singleAICallsOverlappedRef.current = false
           refreshMapperQuotaCache({usage: !usageKept || lastOfOverlapping || !keptForOpenProject})
         } else if(usageKept && !keptForOpenProject)
-          refreshMapperQuotaCache()
+          // only the report: a run's own refresh did the capabilities
+          refreshAIAssistantUsageCache(() => setAIAssistantUsageVersion(version => version + 1), usageProjectIdRef.current)
       }
     } else {
       markRecommend(analysis[__index]?.length > 0 ? 1 : -3)
