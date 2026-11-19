@@ -588,16 +588,11 @@
   "quota": {
     "title_quota": "Você atingiu sua cota",
     "title_cap": "Você atingiu seu limite",
-    "title_ai_assistant_request": "O Assistente de IA do OCL pulou uma linha",
     "consequence": {
       "generic": "Alguns recursos estão pausados.",
       "ai_assistant_calls": {
         "default": "Recursos que usam o Assistente de IA do OCL estão pausados.",
         "auto_match": "O AutoMatch continuará rodando sem recomendações do Assistente de IA do OCL."
-      },
-      "ai_assistant_request": {
-        "default": "O Assistente de IA do OCL não pode analisar esta solicitação agora.",
-        "auto_match": "O AutoMatch continuará rodando. O Assistente de IA do OCL pula as linhas que não pode analisar agora e segue para as próximas."
       },
       "ai_assistant_change_comments": {
         "default": "Você ainda pode escrever o comentário de atualização sozinho, sem um rascunho do Assistente de IA do OCL.",

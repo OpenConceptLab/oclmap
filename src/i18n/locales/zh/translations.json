@@ -587,16 +587,11 @@
   "quota": {
     "title_quota": "您已达到配额上限",
     "title_cap": "您已达到使用上限",
-    "title_ai_assistant_request": "OCL AI 助手跳过了一行",
     "consequence": {
       "generic": "部分功能已暂停。",
       "ai_assistant_calls": {
         "default": "使用 OCL AI 助手的功能已暂停。",
         "auto_match": "AutoMatch 将继续运行，但不再提供 OCL AI 助手的推荐。"
-      },
-      "ai_assistant_request": {
-        "default": "OCL AI 助手现在无法分析此请求。",
-        "auto_match": "AutoMatch 将继续运行。OCL AI 助手会跳过现在无法分析的行，继续处理后续的行。"
       },
       "ai_assistant_change_comments": {
         "default": "您仍可自行撰写更新备注，只是没有 OCL AI 助手的草稿。",

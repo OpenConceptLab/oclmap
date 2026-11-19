@@ -588,16 +588,11 @@
   "quota": {
     "title_quota": "You've reached your quota",
     "title_cap": "You've reached your limit",
-    "title_ai_assistant_request": "The OCL AI Assistant skipped a row",
     "consequence": {
       "generic": "Some features are paused.",
       "ai_assistant_calls": {
         "default": "Features that use the OCL AI Assistant are paused.",
         "auto_match": "AutoMatch will keep running without recommendations from the OCL AI Assistant."
-      },
-      "ai_assistant_request": {
-        "default": "The OCL AI Assistant can't analyse this request now.",
-        "auto_match": "AutoMatch will keep running. The OCL AI Assistant skips rows it can't analyse now and goes on to the next ones."
       },
       "ai_assistant_change_comments": {
         "default": "You can still write the update comment yourself, without a draft from the OCL AI Assistant.",

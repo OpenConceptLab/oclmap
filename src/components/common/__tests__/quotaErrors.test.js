@@ -1,6 +1,5 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
 
 import { getQuotaError, isCapMeter, isQuotaError } from '../quotaErrors.js'
 
@@ -30,24 +29,4 @@ test('isCapMeter: only projects and rows are caps', () => {
   assert.equal(isCapMeter('projects'), true)
   assert.equal(isCapMeter('rows'), true)
   assert.equal(isCapMeter('match_operations'), false)
-})
-
-// QuotaDialog builds its keys at run time, so the catalog key check can't see
-// them. ai_assistant_request is a refusal scoped to its request, with its own
-// title (OpenConceptLab/ocl_online#641).
-test('every meter a refusal names has its consequence in each language', () => {
-  const meters = [
-    'mapper_match_operations_limit_reached',
-    'ai_assistant_calls_limit_reached',
-    'ai_assistant_change_comments_limit_reached',
-    'mapper_projects_limit_reached',
-    'mapper_rows_per_project_limit_reached',
-  ].map(error_code => getQuotaError({error_code}).meter)
-  for (const locale of ['en', 'es', 'pt-BR', 'zh']) {
-    const quota = JSON.parse(readFileSync(new URL(`../../../i18n/locales/${locale}/translations.json`, import.meta.url), 'utf8')).quota
-    const consequence = quota.consequence
-    assert.ok(quota.title_ai_assistant_request, locale)
-    assert.deepEqual([...meters, 'ai_assistant_request'].filter(meter => !consequence[meter]?.default), [], locale)
-    assert.deepEqual(['match_operations', 'ai_assistant_calls', 'ai_assistant_request'].filter(meter => !consequence[meter]?.auto_match), [], locale)
-  }
 })

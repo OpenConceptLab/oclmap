@@ -8,7 +8,7 @@ const QuotaDialog = ({open, onClose, errorCode, capability, meter, surface}) => 
   const { t } = useTranslation()
 
   return (
-    <LimitDialog open={open} onClose={onClose} errorCode={errorCode} capability={capability} title={t([`quota.title_${meter}`, isCapMeter(meter) ? 'quota.title_cap' : 'quota.title_quota'])}>
+    <LimitDialog open={open} onClose={onClose} errorCode={errorCode} capability={capability} title={t(isCapMeter(meter) ? 'quota.title_cap' : 'quota.title_quota')}>
       {t([`quota.consequence.${meter}.${surface}`, `quota.consequence.${meter}.default`, 'quota.consequence.generic'])}
     </LimitDialog>
   )

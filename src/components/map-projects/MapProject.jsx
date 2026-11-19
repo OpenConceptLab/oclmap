@@ -287,8 +287,7 @@ const MapProject = () => {
   // Holds the limit's error_code, or null.
   const matchQuotaStopRef = React.useRef(null);
   const rerankQuotaStopRef = React.useRef(null);
-  // The at-limit dialog opens once per run, not once per failed request:
-  // false, true, or 'skip' while only a skipped row's dialog has opened.
+  // The at-limit dialog opens once per run, not once per failed request.
   const runPreviewLimitShownRef = React.useRef(false);
   const bulkMatchAlgoIdsRef = React.useRef([]);
   // ocl_online#105 Phase 5: the active AutomatchRun ({id, algoIds}) or null.
@@ -306,7 +305,7 @@ const MapProject = () => {
   const ownNavigationRef = React.useRef(false)
   const refreshRowStageSnapshotRef = React.useRef({});
 
-  const [previewLimit, setPreviewLimit] = React.useState(null) // {errorCode, capability, phase, skipsRow, isRun} or null
+  const [previewLimit, setPreviewLimit] = React.useState(null) // {errorCode, capability, phase} or null
   const previewLimitQuota = previewLimit ? getQuotaError({error_code: previewLimit.errorCode}) : null
 
   const [row, setRow] = React.useState(false)
@@ -4078,10 +4077,16 @@ const MapProject = () => {
     setIsLoadingInDecisionView(false)
     if(isNumber(rowId) && !restoreRefreshRowStage(rowId) && algoId)
       markAlgo(rowId, algoId, -2)
-    // A superseded run's late refusal comes with no row: one scoped to its
-    // request isn't this run's, so it leaves this run's dialog alone.
-    if(isRun && skipsRow && !isNumber(rowId))
+    // A refusal scoped to its request opens no dialog: only its row is
+    // skipped, and a run goes on. A superseded run's late one comes with no
+    // row, and isn't this run's.
+    if(skipsRow) {
+      if(isRun && isNumber(rowId))
+        aiQuotaSkippedRef.current = true
+      else if(!isRun && isNumber(rowId))
+        refreshMapperQuotaCache()
       return true
+    }
     if(isRun) {
       if(stopPhase === 'match' && !matchQuotaStopRef.current)
         matchQuotaStopRef.current = response.error_code
@@ -4089,19 +4094,16 @@ const MapProject = () => {
         rerankQuotaStopRef.current = response.error_code
       if(stopsAIStep)
         aiQuotaExhaustedRef.current = true
-      else if(skipsRow)
-        aiQuotaSkippedRef.current = true
-      // A skipped row's dialog says the run goes on, so a stop after it is shown too.
-      if(runPreviewLimitShownRef.current && (skipsRow || runPreviewLimitShownRef.current !== 'skip'))
+      if(runPreviewLimitShownRef.current)
         return true
-      runPreviewLimitShownRef.current = skipsRow ? 'skip' : true
+      runPreviewLimitShownRef.current = true
     } else {
       if(stopsAIStep)
         aiQuotaExhaustedRef.current = true
       if(isNumber(rowId))
         refreshMapperQuotaCache()
     }
-    setPreviewLimit({errorCode: response.error_code, capability: response.capability, phase: stopPhase, skipsRow, isRun})
+    setPreviewLimit({errorCode: response.error_code, capability: response.capability, phase: stopPhase})
     return true
   }
 
@@ -6803,15 +6805,6 @@ const MapProject = () => {
             }}
           />
           {
-            previewLimit?.skipsRow ?
-              <QuotaDialog
-                open
-                onClose={() => setPreviewLimit(null)}
-                errorCode={previewLimit.errorCode}
-                capability={previewLimit.capability}
-                meter='ai_assistant_request'
-                surface={previewLimit.isRun ? 'auto_match' : 'default'}
-              /> :
             previewLimitQuota ?
               <QuotaDialog
                 open
