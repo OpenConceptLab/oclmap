@@ -289,9 +289,9 @@ export const refreshAIAssistantUsageCache = callback => {
   }).then(changed => changed && callback && callback())
 }
 
-// Keeps the usage an OCL AI Assistant reply carries for the person signed in.
-// Returns whether it kept one.
-export const keepAIAssistantUsageFromReply = reply => keepAIAssistantUsage(localStorage, getCurrentUser()?.username, reply)
+// Keeps the usage an OCL AI Assistant reply carries for `username`, the person
+// signed in when the request was sent. Returns whether it kept one.
+export const keepAIAssistantUsageFromReply = (reply, username) => keepAIAssistantUsage(localStorage, username, reply)
 
 export const replaceCurrentUserCacheWith = data => localStorage.setItem('user', JSON.stringify(data));
 

@@ -31,12 +31,12 @@ test('a report without a unit and a count is no report', () => {
 })
 
 test('a kept report is only for the person it was asked for', () => {
-  const storage = memoryStorage({ai_assistant_usage: JSON.stringify({meter: 'tokens', used: 5, username: 'someone'})})
+  const storage = memoryStorage({'ai_assistant_usage:someone': JSON.stringify({meter: 'tokens', used: 5})})
   assert.deepEqual(getAIAssistantUsage(storage, 'someone'), {meter: 'tokens', used: 5})
   assert.equal(getAIAssistantUsage(storage, 'someone-else'), null)
   assert.equal(getAIAssistantUsage(storage, undefined), null)
   assert.equal(getAIAssistantUsage(memoryStorage(), 'someone'), null)
-  assert.equal(getAIAssistantUsage(memoryStorage({ai_assistant_usage: '{not json'}), 'someone'), null)
+  assert.equal(getAIAssistantUsage(memoryStorage({'ai_assistant_usage:someone': '{not json'}), 'someone'), null)
 })
 
 test('asks the service with the person\'s token and keeps its report', async () => {
@@ -53,7 +53,7 @@ test('asks the service with the person\'s token and keeps its report', async () 
 
 test('a failed or throttled request keeps the last report', async () => {
   for (const status of [429, 404, 500]) {
-    const storage = memoryStorage({ai_assistant_usage: JSON.stringify({meter: 'tokens', used: 5, username: 'someone'})})
+    const storage = memoryStorage({'ai_assistant_usage:someone': JSON.stringify({meter: 'tokens', used: 5})})
     const get = () => Promise.reject({response: {status, headers: {'retry-after': '30'}}})
     assert.equal(await refreshAIAssistantUsage({...REQUEST, get, storage}), false, String(status))
     assert.deepEqual(getAIAssistantUsage(storage, 'someone'), {meter: 'tokens', used: 5}, String(status))
@@ -61,7 +61,7 @@ test('a failed or throttled request keeps the last report', async () => {
 })
 
 test('a report without a unit and a count clears the kept one', async () => {
-  const storage = memoryStorage({ai_assistant_usage: JSON.stringify({meter: 'tokens', used: 5, username: 'someone'})})
+  const storage = memoryStorage({'ai_assistant_usage:someone': JSON.stringify({meter: 'tokens', used: 5})})
   assert.equal(await refreshAIAssistantUsage({...REQUEST, get: () => Promise.resolve({status: 200, data: {}}), storage}), true)
   assert.equal(getAIAssistantUsage(storage, 'someone'), null)
 })
@@ -81,7 +81,7 @@ test('a reply\'s usage is kept for the person, as a refresh keeps it', () => {
 })
 
 test('a reply without a usage report keeps the last one', () => {
-  const storage = memoryStorage({ai_assistant_usage: JSON.stringify({meter: 'tokens', used: 5, username: 'someone'})})
+  const storage = memoryStorage({'ai_assistant_usage:someone': JSON.stringify({meter: 'tokens', used: 5})})
   for (const reply of [undefined, null, {}, {metadata: {}}, {metadata: {usage: {meter: 'tokens'}}}, {metadata: {usage: {meter: 'tokens', used: '9'}}}])
     assert.equal(keepAIAssistantUsage(storage, 'someone', reply), false, JSON.stringify(reply))
   assert.equal(keepAIAssistantUsage(storage, undefined, {metadata: {usage: {meter: 'tokens', used: 9}}}), false)
@@ -103,4 +103,31 @@ test('the usage chip shows a report in a unit it knows, and nothing else', () =>
   assert.deepEqual(getUsageChipReport({meter: 'calls', used: 3}), {meter: 'calls', used: 3})
   for (const usage of [null, undefined, {meter: 'credits', used: 1}])
     assert.equal(getUsageChipReport(usage), null, JSON.stringify(usage))
+})
+
+test('each person keeps their own report', async () => {
+  const storage = memoryStorage()
+  keepAIAssistantUsage(storage, 'someone', {metadata: {usage: {meter: 'tokens', used: 5}}})
+  keepAIAssistantUsage(storage, 'someone-else', {metadata: {usage: {meter: 'calls', used: 2}}})
+  const get = () => Promise.reject({response: {status: 429}})
+  assert.equal(await refreshAIAssistantUsage({...REQUEST, get, storage}), false)
+  assert.deepEqual(getAIAssistantUsage(storage, 'someone'), {meter: 'tokens', used: 5})
+  assert.deepEqual(getAIAssistantUsage(storage, 'someone-else'), {meter: 'calls', used: 2})
+})
+
+test('a refresh sent before a reply\'s report doesn\'t overwrite it', async () => {
+  const storage = memoryStorage()
+  let answer
+  const get = () => new Promise(resolve => { answer = resolve })
+  const refreshed = refreshAIAssistantUsage({...REQUEST, get, storage})
+  keepAIAssistantUsage(storage, 'someone', {metadata: {usage: {meter: 'tokens', used: 300}}})
+  answer({status: 200, data: {meter: 'tokens', used: 100}})
+  assert.equal(await refreshed, false)
+  assert.deepEqual(getAIAssistantUsage(storage, 'someone'), {meter: 'tokens', used: 300})
+})
+
+test('a storage that refuses to keep a report throws nothing', async () => {
+  const storage = {...memoryStorage(), setItem: () => { throw new Error('QuotaExceededError') }, removeItem: () => { throw new Error('SecurityError') }}
+  assert.equal(keepAIAssistantUsage(storage, 'someone', {metadata: {usage: {meter: 'tokens', used: 7}}}), true)
+  assert.equal(await refreshAIAssistantUsage({...REQUEST, get: () => Promise.resolve({status: 200, data: {}}), storage}), true)
 })

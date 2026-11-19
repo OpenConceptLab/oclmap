@@ -6138,6 +6138,8 @@ const MapProject = () => {
       const service = APIService.new()
       service.URL = getPromptTemplateInvokeURL(activePromptTemplate, promptTemplateRef?.key)
       const invokeTs = Date.now()
+      // The reply's usage is this person's, whoever is signed in when it lands.
+      const invokeUsername = getCurrentUser()?.username
       let usageKept = false
       try {
         const response = await retryWithBackoff(
@@ -6183,7 +6185,7 @@ const MapProject = () => {
           aiFailuresInARowRef.current = 0
         // The chip follows the usage the reply reports, also during a run; the
         // project keeps the reply without it (OpenConceptLab/ocl_online#641).
-        usageKept = keepAIAssistantUsageFromReply(response.data)
+        usageKept = keepAIAssistantUsageFromReply(response.data, invokeUsername)
         if(usageKept)
           setAIAssistantUsageVersion(version => version + 1)
         const reply = withoutAIAssistantUsage(response.data)
