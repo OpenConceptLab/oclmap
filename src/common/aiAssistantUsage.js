@@ -87,22 +87,22 @@ const fetchAIAssistantUsage = ({get, storage, baseURL, token, username}) => {
 // One refresh at a time per person: a request made while one is in flight
 // waits for it, then all such requests share one more, so a refresh never
 // overtakes another and discards its newer count.
-const refreshing = {}
+const refreshing = new Map()
 
 export const refreshAIAssistantUsage = request => {
   const { baseURL, token, username } = request
   if(!baseURL || !token || !username)
     return Promise.resolve(false)
-  const running = refreshing[username]
+  const running = refreshing.get(username)
   if(running) {
     running.next = running.next || running.promise.then(() => refreshAIAssistantUsage(request))
     return running.next
   }
   const entry = {}
   entry.promise = fetchAIAssistantUsage(request).finally(() => {
-    if(refreshing[username] === entry)
-      delete refreshing[username]
+    if(refreshing.get(username) === entry)
+      refreshing.delete(username)
   })
-  refreshing[username] = entry
+  refreshing.set(username, entry)
   return entry.promise
 }

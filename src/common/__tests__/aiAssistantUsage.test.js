@@ -158,9 +158,16 @@ test('a refresh asked for while one is in flight runs after it, and keeps its ne
   assert.equal(answers.length, 1)
   answers[0]({meter: 'tokens', used: 200})
   assert.equal(await first, true)
-  await new Promise(resolve => setImmediate(resolve))
+  await new Promise(resolve => setTimeout(resolve, 0))
   assert.equal(answers.length, 2)
   answers[1]({meter: 'tokens', used: 300})
   assert.equal(await second, true)
   assert.deepEqual(getAIAssistantUsage(storage, 'someone'), {meter: 'tokens', used: 300})
+})
+
+test('any username, even one an object has as a property, is refreshed', async () => {
+  const storage = memoryStorage()
+  const get = () => Promise.resolve({status: 200, data: {meter: 'tokens', used: 9}})
+  assert.equal(await refreshAIAssistantUsage({...REQUEST, username: 'constructor', get, storage}), true)
+  assert.deepEqual(getAIAssistantUsage(storage, 'constructor'), {meter: 'tokens', used: 9})
 })
