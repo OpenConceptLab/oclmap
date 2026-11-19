@@ -73,7 +73,7 @@ import APIService, { isTransientNetworkError, retryWithBackoff } from '../../ser
 import { matchToken, lookupTokenFor, needsSessionToken, needsSessionLookupToken, withoutTokens, withSavedTokenURL, withoutLocalKeys, isAbsoluteURL } from '../../services/tokenScope'
 import { buildAttributionHeaders, buildConfigSnapshot, summarizeRunCompletion, matchesOnOCL } from '../../services/attribution'
 import { CAPACITY_LIMIT, RATE_LIMIT, CAPACITY_WAIT_CAP_MS, HEAVY_REQUEST_TIMEOUT_MS, LIGHT_REQUEST_TIMEOUT_MS, createCapacityGate, createLimiter, isRetryableError, requestWithCapacityRetry, sleepUnlessCancelled, untilCancelled } from '../../services/capacity'
-import { getAPIURL, highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, hasCapability, getMapperPreview, getNewProjectBlockReason, downloadObject, currentUserToken, refreshCurrentUserCapabilitiesCache, refreshAIAssistantUsageCache, keepAIAssistantUsageFromReply } from '../../common/utils';
+import { getAPIURL, highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, hasCapability, getMapperPreview, getNewProjectBlockReason, downloadObject, currentUserToken, refreshCapabilitiesAndAIAssistantUsage, keepAIAssistantUsageFromReply } from '../../common/utils';
 import { withoutAIAssistantUsage } from '../../common/aiAssistantUsage';
 import { WHITE, SURFACE_COLORS, TEXT_GRAY } from '../../common/colors';
 
@@ -159,14 +159,13 @@ const MapProject = () => {
   const user = getCurrentUser()
   const [mapperQuotaCacheVersion, setMapperQuotaCacheVersion] = React.useState(0)
   const [, setAIAssistantUsageVersion] = React.useState(0)
-  // The OCL AI Assistant is asked once the permissions are fresh, since only
-  // those with it are asked; {usage: false} skips it when a reply already
+  // {usage: false} skips asking the OCL AI Assistant, when its reply already
   // carried the usage (OpenConceptLab/ocl_online#641).
   const refreshMapperQuotaCache = React.useCallback(({usage = true} = {}) => {
-    refreshCurrentUserCapabilitiesCache(() => {
-      setMapperQuotaCacheVersion(version => version + 1)
-      if(usage)
-        refreshAIAssistantUsageCache(() => setAIAssistantUsageVersion(version => version + 1))
+    refreshCapabilitiesAndAIAssistantUsage({
+      onCapabilities: () => setMapperQuotaCacheVersion(version => version + 1),
+      onUsage: () => setAIAssistantUsageVersion(version => version + 1),
+      usage,
     })
   }, [])
   const params = useParams()

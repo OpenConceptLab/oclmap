@@ -276,6 +276,21 @@ export const refreshCurrentUserCapabilitiesCache = callback => {
 
 // Asks the OCL AI Assistant what it has counted for this person
 // (OpenConceptLab/ocl_online#641).
+// Refreshes the capabilities and, beside them, the OCL AI Assistant's usage
+// report, which is asked for only with the OCL AI Assistant permission: if the
+// cached permissions lacked it, it's asked for again once fresh ones arrive.
+// `usage: false` skips the report. Each callback runs when its part changed.
+export const refreshCapabilitiesAndAIAssistantUsage = ({onCapabilities, onUsage, usage = true}) => {
+  const hadAIAssistant = hasCapability(getCurrentUser(), 'users.mapper_ai_assistant')
+  refreshCurrentUserCapabilitiesCache(() => {
+    onCapabilities()
+    if(usage && !hadAIAssistant)
+      refreshAIAssistantUsageCache(onUsage)
+  })
+  if(usage)
+    refreshAIAssistantUsageCache(onUsage)
+}
+
 export const refreshAIAssistantUsageCache = callback => {
   const user = getCurrentUser()
   if(!hasCapability(user, 'users.mapper_ai_assistant'))

@@ -71,9 +71,7 @@ export const withoutAIAssistantUsage = reply => {
 // and so does one that's overtaken: something else (a reply's report, in this
 // tab or another) kept a report while it was in flight. Resolves to whether
 // the kept report changed.
-export const refreshAIAssistantUsage = ({get, storage, baseURL, token, username}) => {
-  if(!baseURL || !token || !username)
-    return Promise.resolve(false)
+const fetchAIAssistantUsage = ({get, storage, baseURL, token, username}) => {
   const url = `${baseURL.replace(/\/+$/, '')}/match/usage/`
   const keptBefore = read(storage, username)
   return get(url, {headers: {Authorization: `Token ${token}`}, timeout: 10000})
@@ -84,4 +82,27 @@ export const refreshAIAssistantUsage = ({get, storage, baseURL, token, username}
       return true
     })
     .catch(() => false)
+}
+
+// One refresh at a time per person: a request made while one is in flight
+// waits for it, then all such requests share one more, so a refresh never
+// overtakes another and discards its newer count.
+const refreshing = {}
+
+export const refreshAIAssistantUsage = request => {
+  const { baseURL, token, username } = request
+  if(!baseURL || !token || !username)
+    return Promise.resolve(false)
+  const running = refreshing[username]
+  if(running) {
+    running.next = running.next || running.promise.then(() => refreshAIAssistantUsage(request))
+    return running.next
+  }
+  const entry = {}
+  entry.promise = fetchAIAssistantUsage(request).finally(() => {
+    if(refreshing[username] === entry)
+      delete refreshing[username]
+  })
+  refreshing[username] = entry
+  return entry.promise
 }

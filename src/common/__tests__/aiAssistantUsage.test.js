@@ -141,3 +141,26 @@ test('a storage that refuses to keep a report throws nothing', async () => {
   assert.equal(keepAIAssistantUsage(storage, 'someone', {metadata: {usage: {meter: 'tokens', used: 7}}}), true)
   assert.equal(await refreshAIAssistantUsage({...REQUEST, get: () => Promise.resolve({status: 200, data: {}}), storage}), true)
 })
+
+test('a refresh asked for while one is in flight runs after it, and keeps its newer count', async () => {
+  const storage = memoryStorage({'ai_assistant_usage:someone': JSON.stringify({meter: 'tokens', used: 100})})
+  const answers = []
+  let inFlight = 0
+  const get = () => {
+    inFlight += 1
+    assert.equal(inFlight, 1, 'one request at a time')
+    return new Promise(resolve => answers.push(data => { inFlight -= 1; resolve({status: 200, data}) }))
+  }
+  const first = refreshAIAssistantUsage({...REQUEST, get, storage})
+  const second = refreshAIAssistantUsage({...REQUEST, get, storage})
+  const third = refreshAIAssistantUsage({...REQUEST, get, storage})
+  assert.equal(second, third, 'requests made meanwhile share one more')
+  assert.equal(answers.length, 1)
+  answers[0]({meter: 'tokens', used: 200})
+  assert.equal(await first, true)
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(answers.length, 2)
+  answers[1]({meter: 'tokens', used: 300})
+  assert.equal(await second, true)
+  assert.deepEqual(getAIAssistantUsage(storage, 'someone'), {meter: 'tokens', used: 300})
+})
