@@ -1,7 +1,8 @@
 /**
  * The kept line under a form field follows the owner chosen now
- * (OpenConceptLab/ocl_online#700): switching away and straight back never
- * shows the line kept for the earlier choice, not even for one render.
+ * (OpenConceptLab/ocl_online#700): switching away and back shows the line
+ * kept for the earlier choice in no committed render, drops a late reply for
+ * another owner, and shows the fresh reply.
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'

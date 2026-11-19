@@ -35,12 +35,13 @@ export const capabilityNoteReducer = (state, action) => {
 }
 
 // The line kept for `key`, and `keep(key, note)` for a reply. A new key asks
-// again during the render that brings it, so not even one render shows a line
-// kept for another owner, or for this one before it was asked again.
+// again in an effect, not during render: React can drop a render-phase update
+// when it replays queued ones, and then a reply to the new key would be lost.
 export const useKeptCapabilityNote = key => {
   const [state, dispatch] = React.useReducer(capabilityNoteReducer, {asked: null, note: null})
-  if(state.asked !== key)
+  React.useEffect(() => {
     dispatch({type: 'ask', key})
+  }, [key])
   const keep = React.useCallback((replyKey, note) => dispatch({type: 'reply', key: replyKey, note}), [])
   return [state.asked === key ? state.note : null, keep]
 }
