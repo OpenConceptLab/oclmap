@@ -15,3 +15,11 @@ export const getCapabilityNoteRequest = ({baseURL, token, capability, owner, lan
 // Only a non-empty string becomes a line.
 export const toCapabilityNote = data =>
   typeof data?.message === 'string' && data.message.trim() ? data.message.trim() : null
+
+// What a line is for: the capability, the owner and the language. None while
+// there's nothing to ask about.
+export const toCapabilityNoteKey = ({capability, owner, lang, enabled = true}) =>
+  enabled && capability && owner ? JSON.stringify([capability, owner, lang]) : null
+
+// The line kept for `key`, never one kept for another owner or language.
+export const getKeptCapabilityNote = (kept, key) => key && kept?.key === key ? kept.note : null

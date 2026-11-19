@@ -165,11 +165,8 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
         asOwner
         personalOnly={!canUseOrgProjects}
         sx={{marginTop: '12px'}}
+        helperText={projectsNote}
       />
-      {
-        projectsNote &&
-          <FormHelperText sx={{margin: '4px 14px 0'}}>{projectsNote}</FormHelperText>
-      }
       <TextField
         required
         fullWidth
