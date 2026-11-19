@@ -9,7 +9,7 @@ export const USAGE_CHIP_METERS = ['calls', 'tokens']
 
 export const getUsageChipReport = usage => usage && USAGE_CHIP_METERS.includes(usage.meter) ? usage : null
 
-const hasProject = project => project !== undefined && project !== null && project !== ''
+const hasProject = project => project != null && project !== ''
 
 // The service reports the count for the map project a call names (none for a
 // project not saved yet), so each person's last report is kept per project,
