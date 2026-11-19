@@ -17,11 +17,13 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import SaveIcon from '@mui/icons-material/Save';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 
+import Box from '@mui/material/Box'
 import Stack from '@mui/material/Stack'
 import Alert from '@mui/material/Alert'
 import Tooltip from '@mui/material/Tooltip'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 
+import { visuallyHidden } from '@mui/utils'
 import isEmpty from 'lodash/isEmpty'
 import omit from 'lodash/omit'
 import filter from 'lodash/filter'
@@ -167,6 +169,8 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
         sx={{marginTop: '12px'}}
         helperText={projectsNote}
       />
+      {/* announces the line when it arrives: a live region is heard only when it's there before its text */}
+      <Box component='span' role='status' sx={visuallyHidden}>{projectsNote || ''}</Box>
       <TextField
         required
         fullWidth

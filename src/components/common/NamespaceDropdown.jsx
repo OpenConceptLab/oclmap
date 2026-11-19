@@ -85,9 +85,9 @@ const NamespaceDropdown = ({onChange, label, id, owner, backgroundColor, asOwner
               label={label}
               size={size || 'medium'}
               sx={{backgroundColor: backgroundColor || 'primary.contrastText'}}
-              // the field's description, and announced when it changes
+              // the field's description (aria-describedby)
               helperText={helperText}
-              slotProps={helperText ? {...slotProps, formHelperText: {'aria-live': 'polite'}} : slotProps}
+              slotProps={slotProps}
             />
           )
         }

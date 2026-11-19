@@ -21,5 +21,17 @@ export const toCapabilityNote = data =>
 export const toCapabilityNoteKey = ({capability, owner, lang, enabled = true}) =>
   enabled && capability && owner ? JSON.stringify([capability, owner, lang]) : null
 
+// What the form has asked for (`asked`) and the line kept for it. Asking for
+// anything drops the kept line, so a line shows only after a reply to the
+// latest ask: never the last owner's, or an earlier one's when its new
+// request fails. A reply to anything but the latest ask is dropped.
+export const capabilityNoteReducer = (state, action) => {
+  if(action.type === 'ask')
+    return {asked: action.key, kept: null}
+  if(action.type === 'reply' && action.key && action.key === state?.asked)
+    return {...state, kept: {key: action.key, note: action.note}}
+  return state
+}
+
 // The line kept for `key`, never one kept for another owner or language.
-export const getKeptCapabilityNote = (kept, key) => key && kept?.key === key ? kept.note : null
+export const getKeptCapabilityNote = (state, key) => key && state?.kept?.key === key ? state.kept.note : null
