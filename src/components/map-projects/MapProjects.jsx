@@ -68,8 +68,10 @@ const MapProjects = () => {
   const user = getCurrentUser()
   const [, setQuotaCacheVersion] = React.useState(0)
   const refreshMapperQuotaCache = React.useCallback(() => {
-    refreshCurrentUserCapabilitiesCache(() => setQuotaCacheVersion(version => version + 1))
-    refreshAIAssistantUsageCache(() => setQuotaCacheVersion(version => version + 1))
+    refreshCurrentUserCapabilitiesCache(() => {
+      setQuotaCacheVersion(version => version + 1)
+      refreshAIAssistantUsageCache(() => setQuotaCacheVersion(version => version + 1))
+    })
   }, [])
   React.useEffect(() => { refreshMapperQuotaCache() }, [])
   const [newProjectBlock, setNewProjectBlock] = React.useState(null)

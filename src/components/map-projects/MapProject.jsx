@@ -159,12 +159,15 @@ const MapProject = () => {
   const user = getCurrentUser()
   const [mapperQuotaCacheVersion, setMapperQuotaCacheVersion] = React.useState(0)
   const [, setAIAssistantUsageVersion] = React.useState(0)
-  // {usage: false} skips asking the OCL AI Assistant, when its reply already
+  // The OCL AI Assistant is asked once the permissions are fresh, since only
+  // those with it are asked; {usage: false} skips it when a reply already
   // carried the usage (OpenConceptLab/ocl_online#641).
   const refreshMapperQuotaCache = React.useCallback(({usage = true} = {}) => {
-    refreshCurrentUserCapabilitiesCache(() => setMapperQuotaCacheVersion(version => version + 1))
-    if(usage)
-      refreshAIAssistantUsageCache(() => setAIAssistantUsageVersion(version => version + 1))
+    refreshCurrentUserCapabilitiesCache(() => {
+      setMapperQuotaCacheVersion(version => version + 1)
+      if(usage)
+        refreshAIAssistantUsageCache(() => setAIAssistantUsageVersion(version => version + 1))
+    })
   }, [])
   const params = useParams()
   const history = useHistory()
