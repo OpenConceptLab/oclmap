@@ -73,7 +73,7 @@ import APIService, { isTransientNetworkError, retryWithBackoff } from '../../ser
 import { matchToken, lookupTokenFor, needsSessionToken, needsSessionLookupToken, withoutTokens, withSavedTokenURL, withoutLocalKeys, isAbsoluteURL } from '../../services/tokenScope'
 import { buildAttributionHeaders, buildConfigSnapshot, summarizeRunCompletion, matchesOnOCL } from '../../services/attribution'
 import { CAPACITY_LIMIT, RATE_LIMIT, CAPACITY_WAIT_CAP_MS, HEAVY_REQUEST_TIMEOUT_MS, LIGHT_REQUEST_TIMEOUT_MS, createCapacityGate, createLimiter, isRetryableError, requestWithCapacityRetry, sleepUnlessCancelled, untilCancelled } from '../../services/capacity'
-import { getAPIURL, highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, hasCapability, getMapperPreview, getNewProjectBlockReason, downloadObject, currentUserToken, refreshCapabilitiesAndAIAssistantUsage, refreshAIAssistantUsageCache, keepAIAssistantUsageFromReply } from '../../common/utils';
+import { getAPIURL, highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, hasCapability, getMapperPreview, getNewProjectBlockReason, downloadObject, currentUserToken, refreshCapabilitiesAndAIAssistantUsage, keepAIAssistantUsageFromReply } from '../../common/utils';
 import { withoutAIAssistantUsage } from '../../common/aiAssistantUsage';
 import { WHITE, SURFACE_COLORS, TEXT_GRAY } from '../../common/colors';
 
@@ -845,14 +845,15 @@ const MapProject = () => {
 
   // A project's first save gives the route its id, after the save's own
   // refresh, which named no project: the chip asks for the new project's
-  // report then (OpenConceptLab/ocl_online#641).
+  // report then, with the capabilities, in case they grant the OCL AI
+  // Assistant only now (OpenConceptLab/ocl_online#641).
   const usageRouteProjectIdRef = React.useRef(params.projectId)
   React.useEffect(() => {
     if(usageRouteProjectIdRef.current === params.projectId)
       return
     usageRouteProjectIdRef.current = params.projectId
     if(params.projectId)
-      refreshAIAssistantUsageCache(() => setAIAssistantUsageVersion(version => version + 1), params.projectId)
+      refreshMapperQuotaCache()
   }, [params.projectId])
 
   const newProjectBlockReason = (!params.projectId && !project?.id && mapperQuotaCacheVersion > 0)
@@ -6267,7 +6268,10 @@ const MapProject = () => {
           const lastOfOverlapping = singleAICallsInFlightRef.current === 0 && singleAICallsOverlappedRef.current
           if(singleAICallsInFlightRef.current === 0)
             singleAICallsOverlappedRef.current = false
-          refreshMapperQuotaCache({usage: !usageKept || lastOfOverlapping})
+          // A reply kept for another project than the open one (it was saved
+          // while the call was in flight) leaves the open one's to ask for.
+          const keptForOpenProject = invokeProjectId === usageProjectIdRef.current
+          refreshMapperQuotaCache({usage: !usageKept || lastOfOverlapping || !keptForOpenProject})
         }
       }
     } else {
