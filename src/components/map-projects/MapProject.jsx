@@ -6263,16 +6263,17 @@ const MapProject = () => {
         setAlert({message: errorMessage, severity: 'error'})
         return -2
       } finally {
+        // A reply kept for another project than the open one (it was saved
+        // while the call was in flight) leaves the open one's to ask for.
+        const keptForOpenProject = invokeProjectId === usageProjectIdRef.current
         if(!isBulk) {
           singleAICallsInFlightRef.current -= 1
           const lastOfOverlapping = singleAICallsInFlightRef.current === 0 && singleAICallsOverlappedRef.current
           if(singleAICallsInFlightRef.current === 0)
             singleAICallsOverlappedRef.current = false
-          // A reply kept for another project than the open one (it was saved
-          // while the call was in flight) leaves the open one's to ask for.
-          const keptForOpenProject = invokeProjectId === usageProjectIdRef.current
           refreshMapperQuotaCache({usage: !usageKept || lastOfOverlapping || !keptForOpenProject})
-        }
+        } else if(usageKept && !keptForOpenProject)
+          refreshMapperQuotaCache()
       }
     } else {
       markRecommend(analysis[__index]?.length > 0 ? 1 : -3)
