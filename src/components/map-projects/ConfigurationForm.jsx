@@ -31,6 +31,7 @@ import { MATCHING_ALGORITHMS_DOC_LINK, MAPPER_DOCS_LINK } from '../../common/con
 import { COLORS } from '../../common/colors'
 import { getProjectConfigErrors } from './algorithms'
 import NamespaceDropdown from '../common/NamespaceDropdown'
+import useCapabilityNote from '../common/useCapabilityNote'
 import RepoSearchAutocomplete from '../repos/RepoSearchAutocomplete'
 import RepoVersionSearchAutocomplete from '../repos/RepoVersionSearchAutocomplete'
 import CloseIconButton from '../common/CloseIconButton';
@@ -117,6 +118,9 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
     canUseCustomAlgorithms,
   })
   const hasAccessErrors = accessErrors.length > 0
+  // While the project is new, any line the API sends about the projects
+  // the chosen owner has (OpenConceptLab/ocl_online#700).
+  const projectsNote = useCapabilityNote('mapper.projects', owner, !project?.id)
 
   // Project-config validation. Currently flags custom algos with missing /
   // malformed canonical_url. Returned as a structured list so the banner
@@ -162,6 +166,10 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
         personalOnly={!canUseOrgProjects}
         sx={{marginTop: '12px'}}
       />
+      {
+        projectsNote &&
+          <FormHelperText sx={{margin: '4px 14px 0'}}>{projectsNote}</FormHelperText>
+      }
       <TextField
         required
         fullWidth
