@@ -278,6 +278,10 @@ const MapProject = () => {
   // Consecutive rows whose AI step failed for a reason other than quota. Reset
   // at the start of each run's AI step (see shouldStopAIStep).
   const aiFailuresInARowRef = React.useRef(0);
+  // Single-row AI calls in flight, and whether any overlapped since none were
+  // (OpenConceptLab/ocl_online#641).
+  const singleAICallsInFlightRef = React.useRef(0);
+  const singleAICallsOverlappedRef = React.useRef(false);
   const isBulkMatchRunningRef = React.useRef(false);
   // A run that hits a preview limit mid-way stops sending $match but still
   // finishes (rerank, AI, autosave) - unlike abortRef, which is the user's Stop.
@@ -6148,6 +6152,13 @@ const MapProject = () => {
       // The reply's usage is this person's, whoever is signed in when it lands.
       const invokeUsername = getCurrentUser()?.username
       let usageKept = false
+      // Overlapping single-row calls can land out of order, and each reply's
+      // usage is a snapshot: the last of them asks for the current count.
+      if(!isBulk) {
+        if(singleAICallsInFlightRef.current > 0)
+          singleAICallsOverlappedRef.current = true
+        singleAICallsInFlightRef.current += 1
+      }
       try {
         const response = await retryWithBackoff(
           attempt => service.request('POST', payload, undefined, {headers: {
@@ -6231,8 +6242,13 @@ const MapProject = () => {
         setAlert({message: errorMessage, severity: 'error'})
         return -2
       } finally {
-        if(!isBulk)
-          refreshMapperQuotaCache({usage: !usageKept})
+        if(!isBulk) {
+          singleAICallsInFlightRef.current -= 1
+          const lastOfOverlapping = singleAICallsInFlightRef.current === 0 && singleAICallsOverlappedRef.current
+          if(singleAICallsInFlightRef.current === 0)
+            singleAICallsOverlappedRef.current = false
+          refreshMapperQuotaCache({usage: !usageKept || lastOfOverlapping})
+        }
       }
     } else {
       markRecommend(analysis[__index]?.length > 0 ? 1 : -3)
