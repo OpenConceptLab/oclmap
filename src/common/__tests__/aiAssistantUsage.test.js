@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { getAIAssistantUsage, refreshAIAssistantUsage, toAIAssistantUsage } from '../aiAssistantUsage.js'
+import { getAIAssistantUsage, getUsageChipReport, keepAIAssistantUsage, refreshAIAssistantUsage, toAIAssistantUsage, withoutAIAssistantUsage } from '../aiAssistantUsage.js'
 
 const memoryStorage = (initial = {}) => {
   const store = {...initial}
@@ -70,4 +70,37 @@ test('no service URL, token or person: nothing is asked', async () => {
   const get = () => assert.fail('asked')
   for (const missing of ['baseURL', 'token', 'username'])
     assert.equal(await refreshAIAssistantUsage({...REQUEST, [missing]: undefined, get, storage: memoryStorage()}), false, missing)
+})
+
+// OpenConceptLab/ocl_online#641
+test('a reply\'s usage is kept for the person, as a refresh keeps it', () => {
+  const storage = memoryStorage()
+  assert.equal(keepAIAssistantUsage(storage, 'someone', {output: {}, metadata: {provider: 'x', usage: {meter: 'tokens', used: 7}}}), true)
+  assert.deepEqual(getAIAssistantUsage(storage, 'someone'), {meter: 'tokens', used: 7})
+  assert.equal(getAIAssistantUsage(storage, 'someone-else'), null)
+})
+
+test('a reply without a usage report keeps the last one', () => {
+  const storage = memoryStorage({ai_assistant_usage: JSON.stringify({meter: 'tokens', used: 5, username: 'someone'})})
+  for (const reply of [undefined, null, {}, {metadata: {}}, {metadata: {usage: {meter: 'tokens'}}}, {metadata: {usage: {meter: 'tokens', used: '9'}}}])
+    assert.equal(keepAIAssistantUsage(storage, 'someone', reply), false, JSON.stringify(reply))
+  assert.equal(keepAIAssistantUsage(storage, undefined, {metadata: {usage: {meter: 'tokens', used: 9}}}), false)
+  assert.deepEqual(getAIAssistantUsage(storage, 'someone'), {meter: 'tokens', used: 5})
+})
+
+test('what a project stores of a reply leaves out the usage, and only that', () => {
+  const reply = {output: {rationale: 'r'}, metadata: {provider: 'openrouter', tokens: {total: 150}, usage: {meter: 'tokens', used: 7}}}
+  assert.deepEqual(withoutAIAssistantUsage(reply), {output: {rationale: 'r'}, metadata: {provider: 'openrouter', tokens: {total: 150}}})
+  assert.deepEqual(reply.metadata.usage, {meter: 'tokens', used: 7})
+  const noUsage = {output: {}, metadata: {provider: 'x'}}
+  assert.equal(withoutAIAssistantUsage(noUsage), noUsage)
+  for (const value of [undefined, null, {output: {}}])
+    assert.equal(withoutAIAssistantUsage(value), value)
+})
+
+test('the usage chip shows a report in a unit it knows, and nothing else', () => {
+  assert.deepEqual(getUsageChipReport({meter: 'tokens', used: 7}), {meter: 'tokens', used: 7})
+  assert.deepEqual(getUsageChipReport({meter: 'calls', used: 3}), {meter: 'calls', used: 3})
+  for (const usage of [null, undefined, {meter: 'credits', used: 1}])
+    assert.equal(getUsageChipReport(usage), null, JSON.stringify(usage))
 })

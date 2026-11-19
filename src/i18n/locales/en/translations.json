@@ -332,6 +332,8 @@
     "preview_quota_ai_tokens": "OCL AI Assistant tokens",
     "preview_quota_used_of_limit": "{{used}} of {{limit}} used",
     "preview_quota_used": "{{used, number}} used",
+    "ai_assistant_usage_chip_tokens": "OCL AI Assistant: {{used, number(notation: compact)}} tokens used",
+    "ai_assistant_usage_chip_calls": "OCL AI Assistant: {{used, number}} calls used",
     "preview_rows_activated_notice": "Preview projects hold {{limit}} rows - we activated the first {{limit}} of your {{total}}.",
     "limit_unavailable_title": "Not available for your account",
     "limit_unavailable_body_access": "Your account doesn't have access to the Mapper.",

@@ -6,16 +6,39 @@ import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
 
 import { getMapperPreview } from '../../common/utils'
+import { getUsageChipReport } from '../../common/aiAssistantUsage'
 
 // Labels for the units the OCL AI Assistant reports its usage in.
 const AI_ASSISTANT_USAGE_LABELS = {calls: 'map_project.preview_quota_ai_calls', tokens: 'map_project.preview_quota_ai_tokens'}
+
+// The usage the OCL AI Assistant reports, on a chip of its own: the unit and
+// the count, never a limit (OpenConceptLab/ocl_online#641).
+const AIAssistantUsageChip = ({usage, size}) => {
+  const { t } = useTranslation()
+  return (
+    <Tooltip
+      title={
+        <Typography variant='caption' component='div' sx={{p: 0.5}}>
+          {t(AI_ASSISTANT_USAGE_LABELS[usage.meter])}: {t('map_project.preview_quota_used', {used: usage.used})}
+        </Typography>
+      }
+    >
+      <Chip size={size} variant='outlined' label={t(`map_project.ai_assistant_usage_chip_${usage.meter}`, {used: usage.used})} />
+    </Tooltip>
+  )
+}
 
 const MapperQuotaChip = ({size = 'small'}) => {
   const { t } = useTranslation()
   const preview = getMapperPreview()
   const { rowsPerProject, matchOperations, aiAssistantCalls, aiAssistantUsage, projects } = preview
 
-  if(!preview.hasAccess || rowsPerProject.unlimited || rowsPerProject.limit === null) return null
+  if(!preview.hasAccess) return null
+  // No Preview chip: the OCL AI Assistant's own report, when it sent one.
+  if(rowsPerProject.unlimited || rowsPerProject.limit === null) {
+    const usage = preview.hasAIAssistant ? getUsageChipReport(aiAssistantUsage) : null
+    return usage ? <AIAssistantUsageChip usage={usage} size={size} /> : null
+  }
 
   // Rows per project is a cap (the first N rows of each project), not a
   // spendable quota, so the warning colors follow match operations.

@@ -73,7 +73,8 @@ import APIService, { isTransientNetworkError, retryWithBackoff } from '../../ser
 import { matchToken, lookupTokenFor, needsSessionToken, needsSessionLookupToken, withoutTokens, withSavedTokenURL, withoutLocalKeys, isAbsoluteURL } from '../../services/tokenScope'
 import { buildAttributionHeaders, buildConfigSnapshot, summarizeRunCompletion, matchesOnOCL } from '../../services/attribution'
 import { CAPACITY_LIMIT, RATE_LIMIT, CAPACITY_WAIT_CAP_MS, HEAVY_REQUEST_TIMEOUT_MS, LIGHT_REQUEST_TIMEOUT_MS, createCapacityGate, createLimiter, isRetryableError, requestWithCapacityRetry, sleepUnlessCancelled, untilCancelled } from '../../services/capacity'
-import { getAPIURL, highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, hasCapability, getMapperPreview, getNewProjectBlockReason, downloadObject, currentUserToken, refreshCurrentUserCapabilitiesCache, refreshAIAssistantUsageCache } from '../../common/utils';
+import { getAPIURL, highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, hasCapability, getMapperPreview, getNewProjectBlockReason, downloadObject, currentUserToken, refreshCurrentUserCapabilitiesCache, refreshAIAssistantUsageCache, keepAIAssistantUsageFromReply } from '../../common/utils';
+import { withoutAIAssistantUsage } from '../../common/aiAssistantUsage';
 import { WHITE, SURFACE_COLORS, TEXT_GRAY } from '../../common/colors';
 
 import { useDoubleClick } from '../common/useDoubleClick'
@@ -158,9 +159,12 @@ const MapProject = () => {
   const user = getCurrentUser()
   const [mapperQuotaCacheVersion, setMapperQuotaCacheVersion] = React.useState(0)
   const [, setAIAssistantUsageVersion] = React.useState(0)
-  const refreshMapperQuotaCache = React.useCallback(() => {
+  // {usage: false} skips asking the OCL AI Assistant, when its reply already
+  // carried the usage (OpenConceptLab/ocl_online#641).
+  const refreshMapperQuotaCache = React.useCallback(({usage = true} = {}) => {
     refreshCurrentUserCapabilitiesCache(() => setMapperQuotaCacheVersion(version => version + 1))
-    refreshAIAssistantUsageCache(() => setAIAssistantUsageVersion(version => version + 1))
+    if(usage)
+      refreshAIAssistantUsageCache(() => setAIAssistantUsageVersion(version => version + 1))
   }, [])
   const params = useParams()
   const history = useHistory()
@@ -6134,6 +6138,7 @@ const MapProject = () => {
       const service = APIService.new()
       service.URL = getPromptTemplateInvokeURL(activePromptTemplate, promptTemplateRef?.key)
       const invokeTs = Date.now()
+      let usageKept = false
       try {
         const response = await retryWithBackoff(
           attempt => service.request('POST', payload, undefined, {headers: {
@@ -6176,19 +6181,25 @@ const MapProject = () => {
         markRecommend(1)
         if(!isSuperseded())
           aiFailuresInARowRef.current = 0
+        // The chip follows the usage the reply reports, also during a run; the
+        // project keeps the reply without it (OpenConceptLab/ocl_online#641).
+        usageKept = keepAIAssistantUsageFromReply(response.data)
+        if(usageKept)
+          setAIAssistantUsageVersion(version => version + 1)
+        const reply = withoutAIAssistantUsage(response.data)
         // Record the model that answered, not the one the UI shows: the AI
         // Assistant runs the template's default for everyone but staff.
-        const modelUsed = getModelUsed(response.data) || requestedModel?.id || null
+        const modelUsed = getModelUsed(reply) || requestedModel?.id || null
         const modelUsedRef = modelUsed ? (find(AIModels, {id: modelUsed}) || {id: modelUsed, name: modelUsed}) : null
-        log({created_at: timestamp, action: 'AIRecommendation', description: get(response.data, 'output.rationale') || get(response.data, 'rationale'), extras: {...response.data, model: modelUsedRef, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}}, __index)
-        const resolvedTemplate = response.data?.template || {}
+        log({created_at: timestamp, action: 'AIRecommendation', description: get(reply, 'output.rationale') || get(reply, 'rationale'), extras: {...reply, model: modelUsedRef, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}}, __index)
+        const resolvedTemplate = reply?.template || {}
         const resolvedVersion = resolvedTemplate.version || promptTemplateRef?.version || null
         const resolvedPromptRef = {
           ...promptTemplateRef,
           version: resolvedVersion,
           uri: resolvedVersion && promptTemplateRef?.key ? `/prompts/${promptTemplateRef.key}/${resolvedVersion}/` : (promptTemplateRef?.uri || null)
         }
-        const newEntry = {...response.data, model: modelUsed, model_name: modelUsedRef?.name, prompt_template: resolvedPromptRef, prompt_template_uri: resolvedPromptRef.uri, output_locale: promptOutputLocale || null, candidate_pool_fingerprint: candidatePoolFingerprint, timestamp: timestamp, user: user.username || user.id}
+        const newEntry = {...reply, model: modelUsed, model_name: modelUsedRef?.name, prompt_template: resolvedPromptRef, prompt_template_uri: resolvedPromptRef.uri, output_locale: promptOutputLocale || null, candidate_pool_fingerprint: candidatePoolFingerprint, timestamp: timestamp, user: user.username || user.id}
         setAnalysis(prev => ({...prev, [__index]: [...(prev[__index] || []), newEntry]}))
         // Schedule a save, or leaving loses the result
         // (OpenConceptLab/ocl_issues#2833). Auto Match rows (isBulk) are saved
@@ -6212,7 +6223,7 @@ const MapProject = () => {
         return -2
       } finally {
         if(!isBulk)
-          refreshMapperQuotaCache()
+          refreshMapperQuotaCache({usage: !usageKept})
       }
     } else {
       markRecommend(analysis[__index]?.length > 0 ? 1 : -3)

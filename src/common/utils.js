@@ -20,7 +20,7 @@ import { ensureIdToken, prepareSignOut, settleForcedSignOut, renewSessionSilentl
 import { SERVER_CONFIGS } from './serverConfigs';
 import { legacyHashRoute, isSameSitePath } from './history';
 import { resolveV3URL, resolveIntegratedV3URL } from './appUrls';
-import { getAIAssistantUsage, refreshAIAssistantUsage } from './aiAssistantUsage';
+import { getAIAssistantUsage, keepAIAssistantUsage, refreshAIAssistantUsage } from './aiAssistantUsage';
 
 export const currentPath = () => window.location.pathname;
 
@@ -288,6 +288,10 @@ export const refreshAIAssistantUsageCache = callback => {
     username: user?.username,
   }).then(changed => changed && callback && callback())
 }
+
+// Keeps the usage an OCL AI Assistant reply carries for the person signed in.
+// Returns whether it kept one.
+export const keepAIAssistantUsageFromReply = reply => keepAIAssistantUsage(localStorage, getCurrentUser()?.username, reply)
 
 export const replaceCurrentUserCacheWith = data => localStorage.setItem('user', JSON.stringify(data));
 

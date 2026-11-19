@@ -29,6 +29,8 @@ const NAMES_THE_ASSISTANT = [
   'ai_assistant',
   'preview_quota_ai_calls',
   'preview_quota_ai_tokens',
+  'ai_assistant_usage_chip_tokens',
+  'ai_assistant_usage_chip_calls',
   'limit_unavailable_body_ai_assistant',
   'column_send_to_ai_assistant',
   'ai_prompt_template_description',

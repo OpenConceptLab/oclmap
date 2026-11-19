@@ -313,6 +313,8 @@
     "preview_quota_ai_tokens": "Tokens del asistente de IA de OCL",
     "preview_quota_used_of_limit": "{{used}} de {{limit}} usados",
     "preview_quota_used": "{{used, number}} usados",
+    "ai_assistant_usage_chip_tokens": "Asistente de IA de OCL: {{used, number(notation: compact)}} tokens usados",
+    "ai_assistant_usage_chip_calls": "Asistente de IA de OCL: {{used, number}} llamadas usadas",
     "preview_rows_activated_notice": "Los proyectos de vista previa contienen {{limit}} filas: activamos las primeras {{limit}} de tus {{total}}.",
     "limit_unavailable_title": "No disponible para tu cuenta",
     "limit_unavailable_body_access": "Tu cuenta no tiene acceso al Mapper.",
