@@ -310,7 +310,9 @@
     "preview_quota_rows_cap": "primeras {{limit}} filas de cada proyecto",
     "preview_quota_match_operations": "Operaciones de coincidencia",
     "preview_quota_ai_calls": "Llamadas al asistente de IA de OCL",
+    "preview_quota_ai_tokens": "Tokens del asistente de IA de OCL",
     "preview_quota_used_of_limit": "{{used}} de {{limit}} usados",
+    "preview_quota_used": "{{used, number}} usados",
     "preview_rows_activated_notice": "Los proyectos de vista previa contienen {{limit}} filas: activamos las primeras {{limit}} de tus {{total}}.",
     "limit_unavailable_title": "No disponible para tu cuenta",
     "limit_unavailable_body_access": "Tu cuenta no tiene acceso al Mapper.",
@@ -584,11 +586,16 @@
   "quota": {
     "title_quota": "Ha alcanzado su cuota",
     "title_cap": "Ha alcanzado su límite",
+    "title_ai_assistant_request": "El asistente de IA de OCL omitió una fila",
     "consequence": {
       "generic": "Algunas funciones están en pausa.",
       "ai_assistant_calls": {
         "default": "Las funciones que usan el asistente de IA de OCL están en pausa.",
         "auto_match": "AutoMatch seguirá funcionando sin recomendaciones del asistente de IA de OCL."
+      },
+      "ai_assistant_request": {
+        "default": "El asistente de IA de OCL no puede analizar esta solicitud ahora.",
+        "auto_match": "AutoMatch seguirá funcionando. El asistente de IA de OCL omite las filas que no puede analizar ahora y continúa con las siguientes."
       },
       "ai_assistant_change_comments": {
         "default": "Aún puede escribir el comentario de actualización usted mismo, sin un borrador del asistente de IA de OCL.",

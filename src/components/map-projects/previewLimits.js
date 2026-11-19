@@ -30,10 +30,20 @@ export const PREVIEW_LIMIT_COPY_KEY = {
   ai_assistant_calls_not_entitled: 'ai_assistant',
 }
 
+// A refusal can name what it's about (capability) and how far it reaches
+// (scope), in the service's own terms (OpenConceptLab/ocl_online#641).
+// One whose code the Mapper doesn't know still counts when it names its
+// capability.
+const namesItsCapability = response => typeof response?.error_code === 'string' && typeof response?.capability === 'string'
+
 export const getPreviewLimitError = value => {
   const response = value?.response?.data || value?.data || value
-  return PREVIEW_LIMIT_ERROR_CODES.has(response?.error_code) ? response : null
+  return PREVIEW_LIMIT_ERROR_CODES.has(response?.error_code) || namesItsCapability(response) ? response : null
 }
+
+// The copy for a refusal the Mapper has no code for follows the step it refused.
+export const getPreviewLimitCopyKey = (errorCode, phase) =>
+  PREVIEW_LIMIT_COPY_KEY[errorCode] || (phase === 'ai' ? 'ai_assistant' : 'generic')
 
 export const isPreviewLimitError = value => Boolean(getPreviewLimitError(value))
 

@@ -7,10 +7,13 @@ import Typography from '@mui/material/Typography'
 
 import { getMapperPreview } from '../../common/utils'
 
+// Labels for the units the OCL AI Assistant reports its usage in.
+const AI_ASSISTANT_USAGE_LABELS = {calls: 'map_project.preview_quota_ai_calls', tokens: 'map_project.preview_quota_ai_tokens'}
+
 const MapperQuotaChip = ({size = 'small'}) => {
   const { t } = useTranslation()
   const preview = getMapperPreview()
-  const { rowsPerProject, matchOperations, aiAssistantCalls, projects } = preview
+  const { rowsPerProject, matchOperations, aiAssistantCalls, aiAssistantUsage, projects } = preview
 
   if(!preview.hasAccess || rowsPerProject.unlimited || rowsPerProject.limit === null) return null
 
@@ -38,7 +41,16 @@ const MapperQuotaChip = ({size = 'small'}) => {
             {t('map_project.preview_quota_rows')}: {t('map_project.preview_quota_rows_cap', {limit: rowsPerProject.limit})}
           </Typography>
           {meterLine('map_project.preview_quota_match_operations', matchOperations)}
-          {meterLine('map_project.preview_quota_ai_calls', aiAssistantCalls)}
+          {
+            // The service's own report, when it sends one: a unit and the count
+            // used (OpenConceptLab/ocl_online#641).
+            aiAssistantUsage ?
+              AI_ASSISTANT_USAGE_LABELS[aiAssistantUsage.meter] &&
+                <Typography variant='caption' component='div'>
+                  {t(AI_ASSISTANT_USAGE_LABELS[aiAssistantUsage.meter])}: {t('map_project.preview_quota_used', {used: aiAssistantUsage.used})}
+                </Typography> :
+              meterLine('map_project.preview_quota_ai_calls', aiAssistantCalls)
+          }
         </Box>
       }
     >

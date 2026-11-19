@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 import {
+  getPreviewLimitCopyKey,
   getPreviewLimitError,
   isAIPreviewLimitError,
   isPreviewLimitError,
@@ -50,6 +51,22 @@ test('AI preview errors use AI Assistant dialog copy', () => {
   assert.equal(PREVIEW_LIMIT_COPY_KEY.mapper_scispacy_denied, 'scispacy')
   assert.equal(isAIPreviewLimitError('ai_assistant_calls_limit_reached'), true)
   assert.equal(isAIPreviewLimitError('mapper_match_operations_limit_reached'), false)
+})
+
+// OpenConceptLab/ocl_online#641
+test('a refusal with a code the Mapper does not know counts when it names its capability', () => {
+  const refusal = {error_code: 'example_service_limit_reached', capability: 'example.capability', detail: 'Refused.'}
+  assert.deepEqual(getPreviewLimitError({response: {status: 403, data: refusal}}), refusal)
+  assert.equal(isPreviewLimitError({error_code: 'example_service_limit_reached'}), false)
+  assert.equal(isPreviewLimitError({error_code: 'example_service_limit_reached', capability: 7}), false)
+  assert.equal(isPreviewLimitError({capability: 'example.capability', detail: 'No code.'}), false)
+})
+
+test('a refusal with a code the Mapper does not know gets the copy of the step it refused', () => {
+  assert.equal(getPreviewLimitCopyKey('mapper_scispacy_denied', 'ai'), 'scispacy')
+  assert.equal(getPreviewLimitCopyKey('example_service_not_entitled', 'ai'), 'ai_assistant')
+  assert.equal(getPreviewLimitCopyKey('example_service_not_entitled', 'match'), 'generic')
+  assert.equal(getPreviewLimitCopyKey(undefined, undefined), 'generic')
 })
 
 // Limits reached go to QuotaDialog; PreviewLimitDialog shows the rest.

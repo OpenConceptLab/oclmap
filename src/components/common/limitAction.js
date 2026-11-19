@@ -21,14 +21,17 @@ const LIMIT_SUBJECTS = {
   mapper_scispacy_denied: {permission: 'users.mapper_scispacy'},
 }
 
-export const getLimitSubject = errorCode => LIMIT_SUBJECTS[errorCode] || {}
+// A refusal that names its own capability is asked about that one
+// (OpenConceptLab/ocl_online#641).
+export const getLimitSubject = (errorCode, capability) =>
+  typeof capability === 'string' && capability ? {capability} : (LIMIT_SUBJECTS[errorCode] || {})
 
-export const getLimitActionRequest = ({baseURL, token, errorCode, lang}) => {
+export const getLimitActionRequest = ({baseURL, token, errorCode, capability, lang}) => {
   if(!baseURL || !token)
     return null
   return {
     url: `${baseURL.replace(/\/+$/, '')}/billing/plan/`,
-    params: {context: 'limit', ...getLimitSubject(errorCode), lang},
+    params: {context: 'limit', ...getLimitSubject(errorCode, capability), lang},
     headers: {Authorization: `Token ${token}`},
   }
 }

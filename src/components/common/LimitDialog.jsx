@@ -14,9 +14,9 @@ import useLimitAction from './useLimitAction'
 // The frame every limit dialog shares: what was refused, then any next step
 // the connected service sends (OpenConceptLab/ocl_online#367), which opens
 // in a new tab.
-const LimitDialog = ({open, onClose, errorCode, title, children}) => {
+const LimitDialog = ({open, onClose, errorCode, capability, title, children}) => {
   const { t } = useTranslation()
-  const { action, onActionClick } = useLimitAction(open, errorCode)
+  const { action, onActionClick } = useLimitAction(open, errorCode, capability)
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth='sm' fullWidth>

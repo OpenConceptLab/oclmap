@@ -31,7 +31,7 @@ import ContentCopy from '@mui/icons-material/ContentCopy';
 import DeleteOutlined from '@mui/icons-material/DeleteOutlined';
 
 import APIService from '../../services/APIService'
-import { getCurrentUser, getMapperPreview, getNewProjectBlockReason, refreshCurrentUserCapabilitiesCache } from '../../common/utils'
+import { getCurrentUser, getMapperPreview, getNewProjectBlockReason, refreshCurrentUserCapabilitiesCache, refreshAIAssistantUsageCache } from '../../common/utils'
 
 import OwnerIcon from '../common/OwnerIcon'
 import NoResults from '../search/NoResults';
@@ -69,6 +69,7 @@ const MapProjects = () => {
   const [, setQuotaCacheVersion] = React.useState(0)
   const refreshMapperQuotaCache = React.useCallback(() => {
     refreshCurrentUserCapabilitiesCache(() => setQuotaCacheVersion(version => version + 1))
+    refreshAIAssistantUsageCache(() => setQuotaCacheVersion(version => version + 1))
   }, [])
   React.useEffect(() => { refreshMapperQuotaCache() }, [])
   const [newProjectBlock, setNewProjectBlock] = React.useState(null)

@@ -13,12 +13,14 @@ import {
   DATE_FORMAT, TIME_FORMAT, DATETIME_FORMAT, OCL_SERVERS_GROUP, OCL_FHIR_SERVERS_GROUP, HAPI_FHIR_SERVERS_GROUP,
   OPENMRS_URL, DEFAULT_FHIR_SERVER_FOR_LOCAL_ID, OPERATIONS_PANEL_GROUP
 } from './constants';
+import axios from 'axios';
 import APIService from '../services/APIService';
 import GAService from '../services/GAService';
 import { ensureIdToken, prepareSignOut, settleForcedSignOut, renewSessionSilently } from './ssoSession';
 import { SERVER_CONFIGS } from './serverConfigs';
 import { legacyHashRoute, isSameSitePath } from './history';
 import { resolveV3URL, resolveIntegratedV3URL } from './appUrls';
+import { getAIAssistantUsage, refreshAIAssistantUsage } from './aiAssistantUsage';
 
 export const currentPath = () => window.location.pathname;
 
@@ -270,6 +272,21 @@ export const refreshCurrentUserCapabilitiesCache = callback => {
       if(callback) callback(response);
     }
   });
+}
+
+// Asks the OCL AI Assistant what it has counted for this person
+// (OpenConceptLab/ocl_online#641).
+export const refreshAIAssistantUsageCache = callback => {
+  const user = getCurrentUser()
+  if(!hasCapability(user, 'users.mapper_ai_assistant'))
+    return
+  refreshAIAssistantUsage({
+    get: axios.get,
+    storage: localStorage,
+    baseURL: window.AI_ASSISTANT_API_URL || process.env.AI_ASSISTANT_API_URL,
+    token: currentUserToken(),
+    username: user?.username,
+  }).then(changed => changed && callback && callback())
 }
 
 export const replaceCurrentUserCacheWith = data => localStorage.setItem('user', JSON.stringify(data));
@@ -1193,6 +1210,7 @@ export const getMapperPreview = () => {
     rowsPerProject: toCap('mapper.rows_per_project'),
     matchOperations: toMeter('mapper.match_operations'),
     aiAssistantCalls: toMeter('ai_assistant.calls'),
+    aiAssistantUsage: getAIAssistantUsage(localStorage, user?.username),
   }
 }
 

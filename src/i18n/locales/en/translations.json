@@ -329,7 +329,9 @@
     "preview_quota_rows_cap": "first {{limit}} rows of each project",
     "preview_quota_match_operations": "Match operations",
     "preview_quota_ai_calls": "OCL AI Assistant calls",
+    "preview_quota_ai_tokens": "OCL AI Assistant tokens",
     "preview_quota_used_of_limit": "{{used}} of {{limit}} used",
+    "preview_quota_used": "{{used, number}} used",
     "preview_rows_activated_notice": "Preview projects hold {{limit}} rows - we activated the first {{limit}} of your {{total}}.",
     "limit_unavailable_title": "Not available for your account",
     "limit_unavailable_body_access": "Your account doesn't have access to the Mapper.",
@@ -584,11 +586,16 @@
   "quota": {
     "title_quota": "You've reached your quota",
     "title_cap": "You've reached your limit",
+    "title_ai_assistant_request": "The OCL AI Assistant skipped a row",
     "consequence": {
       "generic": "Some features are paused.",
       "ai_assistant_calls": {
         "default": "Features that use the OCL AI Assistant are paused.",
         "auto_match": "AutoMatch will keep running without recommendations from the OCL AI Assistant."
+      },
+      "ai_assistant_request": {
+        "default": "The OCL AI Assistant can't analyse this request now.",
+        "auto_match": "AutoMatch will keep running. The OCL AI Assistant skips rows it can't analyse now and goes on to the next ones."
       },
       "ai_assistant_change_comments": {
         "default": "You can still write the update comment yourself, without a draft from the OCL AI Assistant.",
