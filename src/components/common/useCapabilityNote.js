@@ -3,9 +3,7 @@ import axios from 'axios'
 import { useTranslation } from 'react-i18next'
 
 import { currentUserToken, getAPIURL } from '../../common/utils'
-import {
-  capabilityNoteReducer, getCapabilityNoteRequest, getKeptCapabilityNote, toCapabilityNote, toCapabilityNoteKey
-} from './capabilityNote'
+import { getCapabilityNoteRequest, toCapabilityNote, toCapabilityNoteKey, useKeptCapabilityNote } from './capabilityNote'
 
 // The API's line about `capability` for `owner`, asked for again when the
 // owner changes; null while `enabled` is false, until the reply arrives, and
@@ -15,10 +13,9 @@ import {
 const useCapabilityNote = (capability, owner, enabled = true) => {
   const { i18n } = useTranslation()
   const key = toCapabilityNoteKey({capability, owner, lang: i18n.language, enabled})
-  const [state, dispatch] = React.useReducer(capabilityNoteReducer, {asked: null, kept: null})
+  const [note, keep] = useKeptCapabilityNote(key)
 
   React.useEffect(() => {
-    dispatch({type: 'ask', key})
     const request = key ?
       getCapabilityNoteRequest({baseURL: getAPIURL(), token: currentUserToken(), capability, owner, lang: i18n.language}) :
       null
@@ -27,14 +24,14 @@ const useCapabilityNote = (capability, owner, enabled = true) => {
     // only this request's reply, while it's the latest
     let current = true
     axios.get(request.url, {params: request.params, headers: request.headers, timeout: 10000})
-      .then(response => current && dispatch({type: 'reply', key, note: toCapabilityNote(response.data)}))
+      .then(response => current && keep(key, toCapabilityNote(response.data)))
       .catch(() => {})
     return () => {
       current = false
     }
   }, [key])
 
-  return getKeptCapabilityNote(state, key)
+  return note
 }
 
 export default useCapabilityNote

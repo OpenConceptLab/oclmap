@@ -1,6 +1,7 @@
 // A line the API may send to show beside a form, about a capability and the
 // owner the form is for (OpenConceptLab/ocl_online#700). Open code shows only
 // the text it's sent: an API without the route sends nothing, and nothing shows.
+import React from 'react'
 
 export const getCapabilityNoteRequest = ({baseURL, token, capability, owner, lang}) => {
   if(!baseURL || !token || !capability || !owner)
@@ -35,3 +36,14 @@ export const capabilityNoteReducer = (state, action) => {
 
 // The line kept for `key`, never one kept for another owner or language.
 export const getKeptCapabilityNote = (state, key) => key && state?.kept?.key === key ? state.kept.note : null
+
+// The line kept for `key`, and `keep(key, note)` for a reply. A new key asks
+// again during the render that brings it, so not even one render shows a line
+// kept for another owner, or for this one before it was asked again.
+export const useKeptCapabilityNote = key => {
+  const [state, dispatch] = React.useReducer(capabilityNoteReducer, {asked: null, kept: null})
+  if(state.asked !== key)
+    dispatch({type: 'ask', key})
+  const keep = React.useCallback((replyKey, note) => dispatch({type: 'reply', key: replyKey, note}), [])
+  return [state.asked === key ? getKeptCapabilityNote(state, key) : null, keep]
+}
