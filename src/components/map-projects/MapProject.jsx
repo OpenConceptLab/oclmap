@@ -114,7 +114,7 @@ import QuotaDialog from '../common/QuotaDialog'
 import { getQuotaError } from '../common/quotaErrors'
 import MapperQuotaChip from './MapperQuotaChip'
 import MapProjectBreadcrumb from './MapProjectBreadcrumb'
-import { getPreviewLimitError, isAIPreviewLimitError } from './previewLimits'
+import { getPreviewLimitError, isAIPreviewLimitError, isPreviewLimitError } from './previewLimits'
 import { formatRowNumbers, rowNumberOf, runMatchBatch, requestSingleMatch, runWithConcurrency, INTERACTIVE_WAIT_CAP_MS } from './matchBatch'
 import { getAIAssistantChoices, getModelUsed, getPromptTemplateKey, createLatestRequestGate } from './aiVisibility'
 import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
@@ -1854,7 +1854,7 @@ const MapProject = () => {
         // The user has left the project, so no dialog can show: say so once.
         baseSetAlert({severity: 'error', message: t('map_project.leave_save_failed', {name: name || project?.name, detail: errorData?.detail || t('unknown_error')}), duration: 12000})
       } else if(status === 403 && errorData?.error_code) {
-        setPreviewLimit({errorCode: errorData.error_code})
+        setPreviewLimit({errorCode: errorData.error_code, capability: errorData.capability})
       } else if(!isAutoSave && status !== 429 && status !== 401) {
         baseSetAlert({severity: 'error', message: errorData?.detail || t('unknown_error'), duration: 8000})
       }
@@ -2101,7 +2101,7 @@ const MapProject = () => {
         abortRef.current = true
         setLoadingMatches(false)
         setIsLoadingInDecisionView(false)
-        setPreviewLimit({errorCode: data.error_code})
+        setPreviewLimit({errorCode: data.error_code, capability: data.capability})
         return
       }
       projectLog({action: 'automatch_run_create_failed', extras: {status: status || 'no-id', ...(result.ok ? {} : {reason: result.reason, error: result.error?.message || null})}})
@@ -4072,6 +4072,10 @@ const MapProject = () => {
     setIsLoadingInDecisionView(false)
     if(isNumber(rowId) && !restoreRefreshRowStage(rowId) && algoId)
       markAlgo(rowId, algoId, -2)
+    // A superseded run's late refusal comes with no row: one scoped to its
+    // request isn't this run's, so it leaves this run's dialog alone.
+    if(isRun && skipsRow && !isNumber(rowId))
+      return true
     if(isRun) {
       if(stopPhase === 'match' && !matchQuotaStopRef.current)
         matchQuotaStopRef.current = response.error_code
@@ -4079,8 +4083,7 @@ const MapProject = () => {
         rerankQuotaStopRef.current = response.error_code
       if(stopsAIStep)
         aiQuotaExhaustedRef.current = true
-      // A superseded run's late refusal comes with no row, and isn't this run's.
-      else if(skipsRow && isNumber(rowId))
+      else if(skipsRow)
         aiQuotaSkippedRef.current = true
       // A skipped row's dialog says the run goes on, so a stop after it is shown too.
       if(runPreviewLimitShownRef.current && (skipsRow || runPreviewLimitShownRef.current !== 'skip'))
@@ -4248,7 +4251,8 @@ const MapProject = () => {
       const onResponse = (response, payload) => {
         const projectContext = buildProjectContext()
         const logExtras = getAlgoLogExtras(getAlgoDef(algoId))
-        if(response?.detail) {
+        // A refusal is handled as one even without a detail.
+        if(response?.detail || isPreviewLimitError(response)) {
           if(handlePreviewLimitError(response, __row.__index, algoId))
             return
           clearRefreshRowStageSnapshot(__row.__index)

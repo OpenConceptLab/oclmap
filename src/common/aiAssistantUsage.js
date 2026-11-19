@@ -12,9 +12,15 @@ export const getUsageChipReport = usage => usage && USAGE_CHIP_METERS.includes(u
 // Each person's last report, under their own key.
 const storageKey = username => `ai_assistant_usage:${username}`
 
-// Counts the reports kept from replies, so a refresh that was sent before one
-// doesn't overwrite it with an older count.
-let keptFromReplies = 0
+// What's kept for this person now, to tell whether it changed: undefined if
+// the storage can't be read.
+const read = (storage, username) => {
+  try {
+    return storage.getItem(storageKey(username))
+  } catch(_) {
+    return undefined
+  }
+}
 
 // A full or blocked storage only costs the chip its report.
 const store = (storage, username, usage) => {
@@ -45,7 +51,6 @@ export const keepAIAssistantUsage = (storage, username, reply) => {
   const usage = toAIAssistantUsage(reply?.metadata?.usage)
   if(!usage || !username)
     return false
-  keptFromReplies += 1
   store(storage, username, usage)
   return true
 }
@@ -62,17 +67,18 @@ export const withoutAIAssistantUsage = reply => {
 
 // Asks for the report with `get` (axios.get, not APIService, so a refused or
 // throttled request skips its sign-out and throttling handling). A report
-// without a unit and a count clears the kept one; a failed request, or one
-// overtaken by a reply's report, keeps it. Resolves to whether the kept
-// report changed.
+// without a unit and a count clears the kept one. A failed request keeps it,
+// and so does one that's overtaken: something else (a reply's report, in this
+// tab or another) kept a report while it was in flight. Resolves to whether
+// the kept report changed.
 export const refreshAIAssistantUsage = ({get, storage, baseURL, token, username}) => {
   if(!baseURL || !token || !username)
     return Promise.resolve(false)
   const url = `${baseURL.replace(/\/+$/, '')}/match/usage/`
-  const keptBefore = keptFromReplies
+  const keptBefore = read(storage, username)
   return get(url, {headers: {Authorization: `Token ${token}`}, timeout: 10000})
     .then(response => {
-      if(keptFromReplies !== keptBefore)
+      if(read(storage, username) !== keptBefore)
         return false
       store(storage, username, toAIAssistantUsage(response?.data))
       return true

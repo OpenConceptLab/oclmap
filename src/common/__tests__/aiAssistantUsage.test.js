@@ -126,6 +126,18 @@ test('a refresh sent before a reply\'s report doesn\'t overwrite it', async () =
   assert.deepEqual(getAIAssistantUsage(storage, 'someone'), {meter: 'tokens', used: 300})
 })
 
+test('a refresh sent before another tab kept a report doesn\'t overwrite it', async () => {
+  const storage = memoryStorage({'ai_assistant_usage:someone': JSON.stringify({meter: 'tokens', used: 100})})
+  let answer
+  const get = () => new Promise(resolve => { answer = resolve })
+  const refreshed = refreshAIAssistantUsage({...REQUEST, get, storage})
+  // the other tab shares the storage, not this module
+  storage.setItem('ai_assistant_usage:someone', JSON.stringify({meter: 'tokens', used: 300}))
+  answer({status: 200, data: {meter: 'tokens', used: 100}})
+  assert.equal(await refreshed, false)
+  assert.deepEqual(getAIAssistantUsage(storage, 'someone'), {meter: 'tokens', used: 300})
+})
+
 test('a storage that refuses to keep a report throws nothing', async () => {
   const storage = {...memoryStorage(), setItem: () => { throw new Error('QuotaExceededError') }, removeItem: () => { throw new Error('SecurityError') }}
   assert.equal(keepAIAssistantUsage(storage, 'someone', {metadata: {usage: {meter: 'tokens', used: 7}}}), true)
