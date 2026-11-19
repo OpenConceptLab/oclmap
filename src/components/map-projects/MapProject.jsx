@@ -160,15 +160,19 @@ const MapProject = () => {
   const [mapperQuotaCacheVersion, setMapperQuotaCacheVersion] = React.useState(0)
   const [, setAIAssistantUsageVersion] = React.useState(0)
   // {usage: false} skips asking the OCL AI Assistant, when its reply already
-  // carried the usage (OpenConceptLab/ocl_online#641).
+  // carried the usage (OpenConceptLab/ocl_online#641). The report asked for is
+  // the open project's.
+  const usageProjectIdRef = React.useRef(null)
   const refreshMapperQuotaCache = React.useCallback(({usage = true} = {}) => {
     refreshCapabilitiesAndAIAssistantUsage({
       onCapabilities: () => setMapperQuotaCacheVersion(version => version + 1),
       onUsage: () => setAIAssistantUsageVersion(version => version + 1),
       usage,
+      project: usageProjectIdRef.current,
     })
   }, [])
   const params = useParams()
+  usageProjectIdRef.current = params.projectId
   const history = useHistory()
   const location = useLocation()
   const templateFromProjectURL = React.useMemo(() => {
@@ -6150,8 +6154,10 @@ const MapProject = () => {
       const service = APIService.new()
       service.URL = getPromptTemplateInvokeURL(activePromptTemplate, promptTemplateRef?.key)
       const invokeTs = Date.now()
-      // The reply's usage is this person's, whoever is signed in when it lands.
+      // The reply's usage is for this person and the project the call names,
+      // whoever is signed in and whichever project is open when it lands.
       const invokeUsername = getCurrentUser()?.username
+      const invokeProjectId = params.projectId
       let usageKept = false
       // Overlapping single-row calls can land out of order, and each reply's
       // usage is a snapshot: the last of them asks for the current count.
@@ -6204,7 +6210,7 @@ const MapProject = () => {
           aiFailuresInARowRef.current = 0
         // The chip follows the usage the reply reports, also during a run; the
         // project keeps the reply without it (OpenConceptLab/ocl_online#641).
-        usageKept = keepAIAssistantUsageFromReply(response.data, invokeUsername)
+        usageKept = keepAIAssistantUsageFromReply(response.data, invokeUsername, invokeProjectId)
         if(usageKept)
           setAIAssistantUsageVersion(version => version + 1)
         const reply = withoutAIAssistantUsage(response.data)
@@ -6423,7 +6429,7 @@ const MapProject = () => {
                       </span>
                   }
                   <span style={{marginRight: '8px'}}>
-                    <MapperQuotaChip />
+                    <MapperQuotaChip projectId={params.projectId} />
                   </span>
                   {
                     scispacyCandidatesStartedAt &&

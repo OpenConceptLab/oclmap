@@ -32,9 +32,10 @@ const AIAssistantUsageChip = ({usage, size}) => {
   )
 }
 
-const MapperQuotaChip = ({size = 'small'}) => {
+// `projectId`: the map project open, whose OCL AI Assistant report it shows.
+const MapperQuotaChip = ({size = 'small', projectId}) => {
   const { t } = useTranslation()
-  const preview = getMapperPreview()
+  const preview = getMapperPreview({projectId})
   const { rowsPerProject, matchOperations, aiAssistantCalls, aiAssistantUsage, projects } = preview
 
   if(!preview.hasAccess) return null
