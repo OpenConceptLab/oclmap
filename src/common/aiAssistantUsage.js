@@ -56,7 +56,7 @@ export const keepAIAssistantUsage = (storage, username, reply) => {
 }
 
 // The reply without `metadata.usage`, for what a project stores: the report is
-// a running count for whoever sent the request, not part of the project's work.
+// the service's running count, which covers more than this project's work.
 export const withoutAIAssistantUsage = reply => {
   if(!reply?.metadata || !Object.prototype.hasOwnProperty.call(reply.metadata, 'usage'))
     return reply
