@@ -30,6 +30,17 @@ test('an access check asks about its permission', () => {
   )
 })
 
+// OpenConceptLab/ocl_online#641
+test('a refusal that names its capability is asked about that one', () => {
+  assert.deepEqual(
+    getLimitActionRequest({baseURL: 'https://online.example.org', token: 'personal-token', errorCode: 'example_service_limit_reached', capability: 'example.capability', lang: 'es'}).params,
+    {context: 'limit', capability: 'example.capability', lang: 'es'}
+  )
+  assert.deepEqual(getLimitSubject('ai_assistant_calls_limit_reached', 'example.capability'), {capability: 'example.capability'})
+  for (const capability of [undefined, null, '', 7])
+    assert.deepEqual(getLimitSubject('ai_assistant_calls_limit_reached', capability), {capability: 'ai_assistant.calls'}, String(capability))
+})
+
 test('every refusal the dialogs show names one capability or permission', () => {
   [
     'mapper_match_operations_limit_reached',

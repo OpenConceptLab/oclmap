@@ -73,7 +73,8 @@ import APIService, { isTransientNetworkError, retryWithBackoff } from '../../ser
 import { matchToken, lookupTokenFor, needsSessionToken, needsSessionLookupToken, withoutTokens, withSavedTokenURL, withoutLocalKeys, isAbsoluteURL } from '../../services/tokenScope'
 import { buildAttributionHeaders, buildConfigSnapshot, summarizeRunCompletion, matchesOnOCL } from '../../services/attribution'
 import { CAPACITY_LIMIT, RATE_LIMIT, CAPACITY_WAIT_CAP_MS, HEAVY_REQUEST_TIMEOUT_MS, LIGHT_REQUEST_TIMEOUT_MS, createCapacityGate, createLimiter, isRetryableError, requestWithCapacityRetry, sleepUnlessCancelled, untilCancelled } from '../../services/capacity'
-import { getAPIURL, highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, hasCapability, getMapperPreview, getNewProjectBlockReason, downloadObject, currentUserToken, refreshCurrentUserCapabilitiesCache } from '../../common/utils';
+import { getAPIURL, highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, hasCapability, getMapperPreview, getNewProjectBlockReason, downloadObject, currentUserToken, refreshCapabilitiesAndAIAssistantUsage, keepAIAssistantUsageFromReply } from '../../common/utils';
+import { withoutAIAssistantUsage } from '../../common/aiAssistantUsage';
 import { WHITE, SURFACE_COLORS, TEXT_GRAY } from '../../common/colors';
 
 import { useDoubleClick } from '../common/useDoubleClick'
@@ -113,7 +114,7 @@ import QuotaDialog from '../common/QuotaDialog'
 import { getQuotaError } from '../common/quotaErrors'
 import MapperQuotaChip from './MapperQuotaChip'
 import MapProjectBreadcrumb from './MapProjectBreadcrumb'
-import { getPreviewLimitError, isAIPreviewLimitError } from './previewLimits'
+import { getPreviewLimitError, isAIPreviewLimitError, isPreviewLimitError } from './previewLimits'
 import { formatRowNumbers, rowNumberOf, runMatchBatch, requestSingleMatch, runWithConcurrency, INTERACTIVE_WAIT_CAP_MS } from './matchBatch'
 import { getAIAssistantChoices, getModelUsed, getPromptTemplateKey, createLatestRequestGate } from './aiVisibility'
 import { DEFAULT_ENCODER_MODEL } from './rerankerModels'
@@ -157,8 +158,15 @@ const MapProject = () => {
   const { toggles, setAlert: baseSetAlert, setProjectRowSearch } = React.useContext(OperationsContext);
   const user = getCurrentUser()
   const [mapperQuotaCacheVersion, setMapperQuotaCacheVersion] = React.useState(0)
-  const refreshMapperQuotaCache = React.useCallback(() => {
-    refreshCurrentUserCapabilitiesCache(() => setMapperQuotaCacheVersion(version => version + 1))
+  const [, setAIAssistantUsageVersion] = React.useState(0)
+  // {usage: false} skips asking the OCL AI Assistant, when its reply already
+  // carried the usage (OpenConceptLab/ocl_online#641).
+  const refreshMapperQuotaCache = React.useCallback(({usage = true} = {}) => {
+    refreshCapabilitiesAndAIAssistantUsage({
+      onCapabilities: () => setMapperQuotaCacheVersion(version => version + 1),
+      onUsage: () => setAIAssistantUsageVersion(version => version + 1),
+      usage,
+    })
   }, [])
   const params = useParams()
   const history = useHistory()
@@ -262,10 +270,17 @@ const MapProject = () => {
   const bridgeCallContextRef = React.useRef(null)
   // ai_assistant.calls is a one-time allowance (no reset, R2) - once exhausted it
   // stays exhausted for the rest of the session, so this is never reset per-run.
+  // A refusal scoped to its request skips only its row and never sets it.
   const aiQuotaExhaustedRef = React.useRef(false);
+  // The current run skipped a row's AI step for a refusal scoped to its request.
+  const aiQuotaSkippedRef = React.useRef(false);
   // Consecutive rows whose AI step failed for a reason other than quota. Reset
   // at the start of each run's AI step (see shouldStopAIStep).
   const aiFailuresInARowRef = React.useRef(0);
+  // Single-row AI calls in flight, and whether any overlapped since none were
+  // (OpenConceptLab/ocl_online#641).
+  const singleAICallsInFlightRef = React.useRef(0);
+  const singleAICallsOverlappedRef = React.useRef(false);
   const isBulkMatchRunningRef = React.useRef(false);
   // A run that hits a preview limit mid-way stops sending $match but still
   // finishes (rerank, AI, autosave) - unlike abortRef, which is the user's Stop.
@@ -290,7 +305,7 @@ const MapProject = () => {
   const ownNavigationRef = React.useRef(false)
   const refreshRowStageSnapshotRef = React.useRef({});
 
-  const [previewLimit, setPreviewLimit] = React.useState(null) // {errorCode} or null
+  const [previewLimit, setPreviewLimit] = React.useState(null) // {errorCode, capability, phase} or null
   const previewLimitQuota = previewLimit ? getQuotaError({error_code: previewLimit.errorCode}) : null
 
   const [row, setRow] = React.useState(false)
@@ -1844,7 +1859,7 @@ const MapProject = () => {
         // The user has left the project, so no dialog can show: say so once.
         baseSetAlert({severity: 'error', message: t('map_project.leave_save_failed', {name: name || project?.name, detail: errorData?.detail || t('unknown_error')}), duration: 12000})
       } else if(status === 403 && errorData?.error_code) {
-        setPreviewLimit({errorCode: errorData.error_code})
+        setPreviewLimit({errorCode: errorData.error_code, capability: errorData.capability})
       } else if(!isAutoSave && status !== 429 && status !== 401) {
         baseSetAlert({severity: 'error', message: errorData?.detail || t('unknown_error'), duration: 8000})
       }
@@ -2091,7 +2106,7 @@ const MapProject = () => {
         abortRef.current = true
         setLoadingMatches(false)
         setIsLoadingInDecisionView(false)
-        setPreviewLimit({errorCode: data.error_code})
+        setPreviewLimit({errorCode: data.error_code, capability: data.capability})
         return
       }
       projectLog({action: 'automatch_run_create_failed', extras: {status: status || 'no-id', ...(result.ok ? {} : {reason: result.reason, error: result.error?.message || null})}})
@@ -2121,7 +2136,7 @@ const MapProject = () => {
       algoIds: run.algoIds?.length ? run.algoIds : map(selectedAlgos, 'id'),
       aiOnly: Boolean(run.aiOnly),
       aborted,
-      stoppedForQuota: Boolean(matchQuotaStopRef.current || (run.aiOnly && aiQuotaExhaustedRef.current)),
+      stoppedForQuota: Boolean(matchQuotaStopRef.current || (run.aiOnly && (aiQuotaExhaustedRef.current || aiQuotaSkippedRef.current))),
     })
     // The tab is closing: one request, sent before this function yields.
     if(keepalive)
@@ -2419,6 +2434,7 @@ const MapProject = () => {
     matchQuotaStopRef.current = null;
     rerankQuotaStopRef.current = null;
     runPreviewLimitShownRef.current = false;
+    aiQuotaSkippedRef.current = false;
     const selectedRowIndexes = getSelectedRowIndexes(rows)
     const isAutoMatchUnmappedOnly = autoMatchScope === 'unmapped'
     const isAutoMatchAllIncludingApproved = autoMatchScope === 'allIncludingApproved'
@@ -4054,26 +4070,40 @@ const MapProject = () => {
       return false
     const isRun = options.isRun === undefined ? isBulkMatchRunningRef.current : options.isRun
     const stopPhase = options.stopPhase || (isAIPreviewLimitError(response.error_code) ? 'ai' : 'match')
+    // A refusal scoped to its request skips that row: another may still go
+    // through. Any other scope, or none, stops the AI step.
+    const skipsRow = stopPhase === 'ai' && response.scope === 'request'
+    const stopsAIStep = stopPhase === 'ai' && !skipsRow
     setIsLoadingInDecisionView(false)
     if(isNumber(rowId) && !restoreRefreshRowStage(rowId) && algoId)
       markAlgo(rowId, algoId, -2)
+    // A refusal scoped to its request opens no dialog: only its row is
+    // skipped, and a run goes on. A superseded run's late one comes with no
+    // row, and isn't this run's.
+    if(skipsRow) {
+      if(isRun && isNumber(rowId))
+        aiQuotaSkippedRef.current = true
+      else if(!isRun && isNumber(rowId))
+        refreshMapperQuotaCache()
+      return true
+    }
     if(isRun) {
       if(stopPhase === 'match' && !matchQuotaStopRef.current)
         matchQuotaStopRef.current = response.error_code
       if(stopPhase === 'rerank' && !rerankQuotaStopRef.current)
         rerankQuotaStopRef.current = response.error_code
-      if(stopPhase === 'ai')
+      if(stopsAIStep)
         aiQuotaExhaustedRef.current = true
       if(runPreviewLimitShownRef.current)
         return true
       runPreviewLimitShownRef.current = true
     } else {
-      if(stopPhase === 'ai')
+      if(stopsAIStep)
         aiQuotaExhaustedRef.current = true
       if(isNumber(rowId))
         refreshMapperQuotaCache()
     }
-    setPreviewLimit({errorCode: response.error_code})
+    setPreviewLimit({errorCode: response.error_code, capability: response.capability, phase: stopPhase})
     return true
   }
 
@@ -4229,7 +4259,8 @@ const MapProject = () => {
       const onResponse = (response, payload) => {
         const projectContext = buildProjectContext()
         const logExtras = getAlgoLogExtras(getAlgoDef(algoId))
-        if(response?.detail) {
+        // A refusal is handled as one even without a detail.
+        if(response?.detail || isPreviewLimitError(response)) {
           if(handlePreviewLimitError(response, __row.__index, algoId))
             return
           clearRefreshRowStageSnapshot(__row.__index)
@@ -6119,6 +6150,16 @@ const MapProject = () => {
       const service = APIService.new()
       service.URL = getPromptTemplateInvokeURL(activePromptTemplate, promptTemplateRef?.key)
       const invokeTs = Date.now()
+      // The reply's usage is this person's, whoever is signed in when it lands.
+      const invokeUsername = getCurrentUser()?.username
+      let usageKept = false
+      // Overlapping single-row calls can land out of order, and each reply's
+      // usage is a snapshot: the last of them asks for the current count.
+      if(!isBulk) {
+        if(singleAICallsInFlightRef.current > 0)
+          singleAICallsOverlappedRef.current = true
+        singleAICallsInFlightRef.current += 1
+      }
       try {
         const response = await retryWithBackoff(
           attempt => service.request('POST', payload, undefined, {headers: {
@@ -6161,19 +6202,25 @@ const MapProject = () => {
         markRecommend(1)
         if(!isSuperseded())
           aiFailuresInARowRef.current = 0
+        // The chip follows the usage the reply reports, also during a run; the
+        // project keeps the reply without it (OpenConceptLab/ocl_online#641).
+        usageKept = keepAIAssistantUsageFromReply(response.data, invokeUsername)
+        if(usageKept)
+          setAIAssistantUsageVersion(version => version + 1)
+        const reply = withoutAIAssistantUsage(response.data)
         // Record the model that answered, not the one the UI shows: the AI
         // Assistant runs the template's default for everyone but staff.
-        const modelUsed = getModelUsed(response.data) || requestedModel?.id || null
+        const modelUsed = getModelUsed(reply) || requestedModel?.id || null
         const modelUsedRef = modelUsed ? (find(AIModels, {id: modelUsed}) || {id: modelUsed, name: modelUsed}) : null
-        log({created_at: timestamp, action: 'AIRecommendation', description: get(response.data, 'output.rationale') || get(response.data, 'rationale'), extras: {...response.data, model: modelUsedRef, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}}, __index)
-        const resolvedTemplate = response.data?.template || {}
+        log({created_at: timestamp, action: 'AIRecommendation', description: get(reply, 'output.rationale') || get(reply, 'rationale'), extras: {...reply, model: modelUsedRef, prompt_template: promptTemplateRef, prompt_template_uri: promptTemplateRef?.uri}}, __index)
+        const resolvedTemplate = reply?.template || {}
         const resolvedVersion = resolvedTemplate.version || promptTemplateRef?.version || null
         const resolvedPromptRef = {
           ...promptTemplateRef,
           version: resolvedVersion,
           uri: resolvedVersion && promptTemplateRef?.key ? `/prompts/${promptTemplateRef.key}/${resolvedVersion}/` : (promptTemplateRef?.uri || null)
         }
-        const newEntry = {...response.data, model: modelUsed, model_name: modelUsedRef?.name, prompt_template: resolvedPromptRef, prompt_template_uri: resolvedPromptRef.uri, output_locale: promptOutputLocale || null, candidate_pool_fingerprint: candidatePoolFingerprint, timestamp: timestamp, user: user.username || user.id}
+        const newEntry = {...reply, model: modelUsed, model_name: modelUsedRef?.name, prompt_template: resolvedPromptRef, prompt_template_uri: resolvedPromptRef.uri, output_locale: promptOutputLocale || null, candidate_pool_fingerprint: candidatePoolFingerprint, timestamp: timestamp, user: user.username || user.id}
         setAnalysis(prev => ({...prev, [__index]: [...(prev[__index] || []), newEntry]}))
         // Schedule a save, or leaving loses the result
         // (OpenConceptLab/ocl_issues#2833). Auto Match rows (isBulk) are saved
@@ -6196,8 +6243,13 @@ const MapProject = () => {
         setAlert({message: errorMessage, severity: 'error'})
         return -2
       } finally {
-        if(!isBulk)
-          refreshMapperQuotaCache()
+        if(!isBulk) {
+          singleAICallsInFlightRef.current -= 1
+          const lastOfOverlapping = singleAICallsInFlightRef.current === 0 && singleAICallsOverlappedRef.current
+          if(singleAICallsInFlightRef.current === 0)
+            singleAICallsOverlappedRef.current = false
+          refreshMapperQuotaCache({usage: !usageKept || lastOfOverlapping})
+        }
       }
     } else {
       markRecommend(analysis[__index]?.length > 0 ? 1 : -3)
@@ -6758,6 +6810,7 @@ const MapProject = () => {
                 open
                 onClose={() => setPreviewLimit(null)}
                 errorCode={previewLimitQuota.errorCode}
+                capability={previewLimit.capability}
                 meter={previewLimitQuota.meter}
                 surface={MAPPER_QUOTA_SURFACE[previewLimitQuota.meter]}
               /> :
@@ -6765,6 +6818,8 @@ const MapProject = () => {
                 open={Boolean(previewLimit)}
                 onClose={() => setPreviewLimit(null)}
                 errorCode={previewLimit?.errorCode}
+                capability={previewLimit?.capability}
+                phase={previewLimit?.phase}
               />
           }
       </Paper>

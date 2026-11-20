@@ -13,12 +13,14 @@ import {
   DATE_FORMAT, TIME_FORMAT, DATETIME_FORMAT, OCL_SERVERS_GROUP, OCL_FHIR_SERVERS_GROUP, HAPI_FHIR_SERVERS_GROUP,
   OPENMRS_URL, DEFAULT_FHIR_SERVER_FOR_LOCAL_ID, OPERATIONS_PANEL_GROUP
 } from './constants';
+import axios from 'axios';
 import APIService from '../services/APIService';
 import GAService from '../services/GAService';
 import { ensureIdToken, prepareSignOut, settleForcedSignOut, renewSessionSilently } from './ssoSession';
 import { SERVER_CONFIGS } from './serverConfigs';
 import { legacyHashRoute, isSameSitePath } from './history';
 import { resolveV3URL, resolveIntegratedV3URL } from './appUrls';
+import { getAIAssistantUsage, keepAIAssistantUsage, refreshAIAssistantUsage } from './aiAssistantUsage';
 
 export const currentPath = () => window.location.pathname;
 
@@ -271,6 +273,40 @@ export const refreshCurrentUserCapabilitiesCache = callback => {
     }
   });
 }
+
+// Asks the OCL AI Assistant what it has counted for this person
+// (OpenConceptLab/ocl_online#641).
+// Refreshes the capabilities and, beside them, the OCL AI Assistant's usage
+// report, which is asked for only with the OCL AI Assistant permission: if the
+// cached permissions lacked it, it's asked for again once fresh ones arrive.
+// `usage: false` skips the report. Each callback runs when its part changed.
+export const refreshCapabilitiesAndAIAssistantUsage = ({onCapabilities, onUsage, usage = true}) => {
+  const hadAIAssistant = hasCapability(getCurrentUser(), 'users.mapper_ai_assistant')
+  refreshCurrentUserCapabilitiesCache(() => {
+    onCapabilities()
+    if(usage && !hadAIAssistant)
+      refreshAIAssistantUsageCache(onUsage)
+  })
+  if(usage)
+    refreshAIAssistantUsageCache(onUsage)
+}
+
+export const refreshAIAssistantUsageCache = callback => {
+  const user = getCurrentUser()
+  if(!hasCapability(user, 'users.mapper_ai_assistant'))
+    return
+  refreshAIAssistantUsage({
+    get: axios.get,
+    storage: localStorage,
+    baseURL: window.AI_ASSISTANT_API_URL || process.env.AI_ASSISTANT_API_URL,
+    token: currentUserToken(),
+    username: user?.username,
+  }).then(changed => changed && callback && callback())
+}
+
+// Keeps the usage an OCL AI Assistant reply carries for `username`, the person
+// signed in when the request was sent. Returns whether it kept one.
+export const keepAIAssistantUsageFromReply = (reply, username) => keepAIAssistantUsage(localStorage, username, reply)
 
 export const replaceCurrentUserCacheWith = data => localStorage.setItem('user', JSON.stringify(data));
 
@@ -1193,6 +1229,7 @@ export const getMapperPreview = () => {
     rowsPerProject: toCap('mapper.rows_per_project'),
     matchOperations: toMeter('mapper.match_operations'),
     aiAssistantCalls: toMeter('ai_assistant.calls'),
+    aiAssistantUsage: getAIAssistantUsage(localStorage, user?.username),
   }
 }
 
