@@ -1,15 +1,17 @@
-// Match the form's URL validation when accepting metadata from a custom API.
+// Cheap structural validator for canonical URLs. The unified mapper model requires every
+// algorithm's concept_identity.canonical_url to be a URL, and custom algorithms rely on user
+// input or on the metadata below for it, so the form validates here.
 export const isLikelyCanonicalUrl = value => {
   if(!value || typeof value !== 'string') return false
   return /^https?:\/\/[^\s]+$/i.test(value.trim())
 }
 
-// Omit an absent or invalid canonical so an existing form value is preserved.
-export const metadataFields = data => ({
+// Omit an absent or invalid canonical, and never replace one the user already filled in.
+export const metadataFields = (data, current = {}) => ({
   id: data.ID || data.id || '',
   name: data.name || '',
   description: data.description || '',
-  ...(isLikelyCanonicalUrl(data.canonical_url) ? { canonical_url: data.canonical_url.trim() } : {}),
+  ...(isLikelyCanonicalUrl(data.canonical_url) && !current.canonical_url?.trim() ? { canonical_url: data.canonical_url.trim() } : {}),
 })
 
 const isMetadata = response => {

@@ -20,6 +20,14 @@ test('fields absent from the patch are not evaluated', () => {
   assert.deepEqual(conflictingFields(items, 'a', {id: 'y'}), {id: true})
 })
 
+test('metadata does not replace a canonical URL the user already filled in', () => {
+  const data = { id: 'agent', name: 'Agent', canonical_url: 'http://example.test/system' }
+  assert.equal('canonical_url' in metadataFields(data, { canonical_url: 'http://typed.test' }), false)
+  for (const canonical_url of [undefined, '', '   ']) {
+    assert.equal(metadataFields(data, { canonical_url }).canonical_url, 'http://example.test/system')
+  }
+})
+
 test('metadata supplies the canonical URL alongside the other form fields', () => {
   assert.deepEqual(metadataFields({ ID: 'agent', name: 'Agent', canonical_url: 'http://example.test/system' }), {
     id: 'agent', name: 'Agent', description: '', canonical_url: 'http://example.test/system'

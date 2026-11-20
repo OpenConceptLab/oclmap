@@ -385,7 +385,7 @@ export default function MultiAlgoSelector({
       return;
     }
 
-    updateSelected(key, metadataFields(data));
+    updateSelected(key, metadataFields(data, selected));
     setCustomAlgoState(key, {
       isLoading: false,
       tokenRequired: false,
