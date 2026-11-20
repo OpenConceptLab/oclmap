@@ -26,7 +26,6 @@ import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import MatchingIcon from '@mui/icons-material/DeviceHub';
 import countBy from 'lodash/countBy'
 import omit from 'lodash/omit'
-import filter from 'lodash/filter'
 import find from 'lodash/find'
 import isString from 'lodash/isString'
 import orderBy from 'lodash/orderBy'
@@ -35,6 +34,7 @@ import orderBy from 'lodash/orderBy'
 import ConceptIcon from '../concepts/ConceptIcon'
 import { OperationsContext } from '../app/LayoutContext'
 import { isLikelyCanonicalUrl } from './algorithms'
+import { metadataFields, fetchAlgorithmMetadata, conflictingFields } from './customAlgoMetadata.js'
 import RepoVersionSearchAutocomplete from '../repos/RepoVersionSearchAutocomplete'
 import APIService from '../../services/APIService';
 import { needsSessionToken, getTokenFlag, tokenInputValue, removeSavedToken } from '../../services/tokenScope';
@@ -201,14 +201,9 @@ export default function MultiAlgoSelector({
   const updateSelected = (key, patch) => {
     const next = normalizedValue.map(v => (v.__key === key ? { ...v, ...patch } : v));
     onChange(next);
-    if((patch.id || patch.name)) {
-      if(filter(value, patch).length > 0)
-        setErrors(prev => ({...prev, [key]: {...prev[key], ...patch}}))
-      else if (patch.id)
-        setErrors(prev => ({...prev, [key]: {...omit(prev[key], 'id')}}))
-      else if (patch.name)
-        setErrors(prev => ({...prev, [key]: {...omit(prev[key], 'name')}}))
-    }
+    const conflicts = conflictingFields(normalizedValue, key, patch);
+    if(Object.keys(conflicts).length > 0)
+      setErrors(prev => ({...prev, [key]: {...prev[key], ...conflicts}}))
   };
 
   // For each selected bridge algo, fetch the source repo's canonical_url from
@@ -353,9 +348,10 @@ export default function MultiAlgoSelector({
     setCustomAlgoState(key, {isLoading: true, requestError: '', requestSuccess: '', tokenRequired: false});
 
     const service = APIService.new();
-    service.URL = selected.url;
-
-    const response = await service.get(token || false, {}, undefined, true);
+    const response = await fetchAlgorithmMetadata(selected.url, url => {
+      service.URL = url;
+      return service.get(token || false, {}, undefined, true);
+    });
     const status = response?.response?.status || response?.status;
 
     if([401, 403].includes(status)) {
@@ -389,11 +385,7 @@ export default function MultiAlgoSelector({
       return;
     }
 
-    updateSelected(key, {
-      id: data.ID || data.id || '',
-      name: data.name || '',
-      description: data.description || '',
-    });
+    updateSelected(key, metadataFields(data, selected));
     setCustomAlgoState(key, {
       isLoading: false,
       tokenRequired: false,
