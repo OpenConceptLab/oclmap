@@ -12,22 +12,29 @@ export const metadataFields = data => ({
   ...(isLikelyCanonicalUrl(data.canonical_url) ? { canonical_url: data.canonical_url.trim() } : {}),
 })
 
-// Try metadata paths in order: operation without $, original URL, then parent.
+const isMetadata = response => {
+  const data = response?.data || response
+  return !response?.response && Boolean(data?.name && (data?.ID || data?.id))
+}
+
+// The configured URL is authoritative: request it first, then the operation without $
+// (`/$match` -> `/match`), then the parent path. Candidates that collapse to the same URL
+// (no `$` marker) are requested once.
 export const fetchAlgorithmMetadata = async (url, get) => {
   const [path] = url.split(/[?#]/, 1)
-  const metadataUrl = path.replace(/\/\$([^/]+)(\/?)$/, '/$1$2') + url.slice(path.length)
-  const first = await get(metadataUrl)
-  const data = first?.data || first
-  if(metadataUrl === url || (!first?.response && data?.name && (data?.ID || data?.id))) return first
-  const second = await get(url)
-  const secondData = second?.data || second
-  if(!second?.response && secondData?.name && (secondData?.ID || secondData?.id)) return second
-  const parentPath = path.replace(/\/\$[^/]+\/?$/, '')
-  const parentUrl = parentPath + url.slice(path.length)
-  const third = await get(parentUrl)
-  const thirdData = third?.data || third
-  if(!third?.response && thirdData?.name && (thirdData?.ID || thirdData?.id)) return third
-  return [first, second, third].find(response => [401, 403].includes(response?.response?.status || response?.status)) || third
+  const suffix = url.slice(path.length)
+  const candidates = [...new Set([
+    url,
+    path.replace(/\/\$([^/]+)(\/?)$/, '/$1$2') + suffix,
+    path.replace(/\/\$[^/]+\/?$/, '') + suffix,
+  ])]
+  const responses = []
+  for(const candidate of candidates) {
+    const response = await get(candidate)
+    if(isMetadata(response)) return response
+    responses.push(response)
+  }
+  return responses.find(response => [401, 403].includes(response?.response?.status || response?.status)) || responses[responses.length - 1]
 }
 
 // Whether the patched id/name collide with ANOTHER algorithm (the one being edited is excluded by key).

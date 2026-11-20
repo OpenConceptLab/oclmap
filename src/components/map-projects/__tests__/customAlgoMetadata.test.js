@@ -34,32 +34,40 @@ test('missing or invalid canonical URL leaves the existing field untouched', () 
   }
 })
 
-test('metadata GET tries the operation without dollar first, then the original on failure', async () => {
+test('metadata GET tries the configured URL first, then the operation without dollar on failure', async () => {
   const urls = []
   const result = await fetchAlgorithmMetadata('https://example.test/api/$match?x=$keep', async url => {
     urls.push(url)
     return urls.length === 1 ? {response: {status: 404}} : {data: {ID: 'x', name: 'X'}}
   })
-  assert.deepEqual(urls, ['https://example.test/api/match?x=$keep', 'https://example.test/api/$match?x=$keep'])
+  assert.deepEqual(urls, ['https://example.test/api/$match?x=$keep', 'https://example.test/api/match?x=$keep'])
   assert.equal(result.data.ID, 'x')
 })
 
-test('metadata GET avoids a retry on success or when the URL has no operation marker', async () => {
-  for (const url of ['https://example.test/api/$match/', 'https://example.test/api/match']) {
+test('metadata GET never reaches another document when the configured URL already returns metadata', async () => {
+  for (const url of ['https://example.test/api/$match/', 'https://example.test/fhir/ConceptMap/$translate']) {
     const calls = []
-    await fetchAlgorithmMetadata(url, async candidate => { calls.push(candidate); return {data: {id: 'x', name: 'X'}} })
-    assert.equal(calls.length, 1)
-    assert.equal(calls[0], 'https://example.test/api/match' + (url.endsWith('/') ? '/' : ''))
+    const result = await fetchAlgorithmMetadata(url, async candidate => (
+      calls.push(candidate) && candidate === url ? {data: {id: 'configured', name: 'Configured'}} : {data: {id: 'translate', name: 'Wrong document'}}
+    ))
+    assert.deepEqual(calls, [url])
+    assert.equal(result.data.id, 'configured')
   }
 })
 
-test('metadata GET retries when the first response is not usable metadata', async () => {
+test('metadata GET requests a URL without an operation marker only once', async () => {
+  const calls = []
+  await fetchAlgorithmMetadata('https://example.test/api/match', async candidate => { calls.push(candidate); return {response: {status: 404}} })
+  assert.deepEqual(calls, ['https://example.test/api/match'])
+})
+
+test('metadata GET moves on when the configured URL does not return usable metadata', async () => {
   const calls = []
   const result = await fetchAlgorithmMetadata('https://example.test/$match', async url => {
     calls.push(url)
     return calls.length === 1 ? {data: {message: 'not metadata'}} : {data: {id: 'x', name: 'X'}}
   })
-  assert.equal(calls.length, 2)
+  assert.deepEqual(calls, ['https://example.test/$match', 'https://example.test/match'])
   assert.equal(result.data.id, 'x')
 })
 
@@ -70,8 +78,8 @@ test('metadata GET falls back to the parent endpoint after both operation URLs f
     return calls.length < 3 ? {response: {status: 404}} : {data: {ID: 'x', name: 'X'}}
   })
   assert.deepEqual(calls, [
-    'https://example.test/api/ciel-bridge-rxnorm/match?lang=en',
     'https://example.test/api/ciel-bridge-rxnorm/$match?lang=en',
+    'https://example.test/api/ciel-bridge-rxnorm/match?lang=en',
     'https://example.test/api/ciel-bridge-rxnorm?lang=en',
   ])
   assert.equal(result.data.ID, 'x')
@@ -90,7 +98,7 @@ test('parent fallback keeps the first authentication error if all three attempts
     calls.push(url)
     return {response: {status: calls.length === 2 ? 403 : 404}}
   })
-  assert.deepEqual(calls, ['https://example.test/api/match/', 'https://example.test/api/$match/', 'https://example.test/api'])
+  assert.deepEqual(calls, ['https://example.test/api/$match/', 'https://example.test/api/match/', 'https://example.test/api'])
   assert.equal(result.response.status, 403)
 })
 
@@ -109,7 +117,7 @@ test('metadata fallback performs real GET requests against a local server', asyn
     const result = await fetch(candidate, {headers: {Authorization: 'Token test'}})
     return result.ok ? {data: await result.json()} : {response: {status: result.status}}
   })
-  assert.deepEqual(requests, [['GET', '/match', 'Token test'], ['GET', '/$match', 'Token test']])
+  assert.deepEqual(requests, [['GET', '/$match', 'Token test']])
   assert.equal(metadataFields(response.data).canonical_url, 'https://example.test/system')
 })
 
@@ -127,6 +135,6 @@ test('parent fallback obtains metadata through real HTTP after two 404 responses
     const response = await fetch(url)
     return response.ok ? {data: await response.json()} : {response: {status: response.status}}
   })
-  assert.deepEqual(requests, ['/api/algorithm/match', '/api/algorithm/$match', '/api/algorithm'])
+  assert.deepEqual(requests, ['/api/algorithm/$match', '/api/algorithm/match', '/api/algorithm'])
   assert.equal(result.data.ID, 'x')
 })
