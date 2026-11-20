@@ -37,9 +37,12 @@ export const capabilityNoteReducer = (state, action) => {
 // The line kept for `key`, and `keep(key, note)` for a reply. A new key asks
 // again in an effect, not during render: React can drop a render-phase update
 // when it replays queued ones, and then a reply to the new key would be lost.
+// A layout effect, so the ask is done as the new key commits: a passive
+// effect's ask can wait behind a quick switch back to the earlier key, which
+// would then show the line kept for it before its fresh reply.
 export const useKeptCapabilityNote = key => {
   const [state, dispatch] = React.useReducer(capabilityNoteReducer, {asked: null, note: null})
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
     dispatch({type: 'ask', key})
   }, [key])
   const keep = React.useCallback((replyKey, note) => dispatch({type: 'reply', key: replyKey, note}), [])
