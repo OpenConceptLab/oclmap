@@ -73,7 +73,7 @@ import APIService, { isTransientNetworkError, retryWithBackoff } from '../../ser
 import { matchToken, lookupTokenFor, needsSessionToken, needsSessionLookupToken, withoutTokens, withSavedTokenURL, withoutLocalKeys, isAbsoluteURL } from '../../services/tokenScope'
 import { buildAttributionHeaders, buildConfigSnapshot, summarizeRunCompletion, matchesOnOCL } from '../../services/attribution'
 import { CAPACITY_LIMIT, RATE_LIMIT, CAPACITY_WAIT_CAP_MS, HEAVY_REQUEST_TIMEOUT_MS, LIGHT_REQUEST_TIMEOUT_MS, createCapacityGate, createLimiter, isRetryableError, requestWithCapacityRetry, sleepUnlessCancelled, untilCancelled } from '../../services/capacity'
-import { getAPIURL, highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, hasCapability, getMapperPreview, getNewProjectBlockReason, downloadObject, currentUserToken, refreshCapabilitiesAndAIAssistantUsage, keepAIAssistantUsageFromReply } from '../../common/utils';
+import { getAPIURL, highlightTexts, dropVersion, getCurrentUser, hasAuthGroup, hasCapability, getMapperPreview, getNewProjectBlockReason, downloadObject, currentUserToken, refreshCapabilitiesAndAIAssistantUsage, refreshAIAssistantUsageCache, keepAIAssistantUsageFromReply } from '../../common/utils';
 import { withoutAIAssistantUsage } from '../../common/aiAssistantUsage';
 import { WHITE, SURFACE_COLORS, TEXT_GRAY } from '../../common/colors';
 
@@ -160,15 +160,19 @@ const MapProject = () => {
   const [mapperQuotaCacheVersion, setMapperQuotaCacheVersion] = React.useState(0)
   const [, setAIAssistantUsageVersion] = React.useState(0)
   // {usage: false} skips asking the OCL AI Assistant, when its reply already
-  // carried the usage (OpenConceptLab/ocl_online#641).
+  // carried the usage (OpenConceptLab/ocl_online#641). The report asked for is
+  // the open project's.
+  const usageProjectIdRef = React.useRef(null)
   const refreshMapperQuotaCache = React.useCallback(({usage = true} = {}) => {
     refreshCapabilitiesAndAIAssistantUsage({
       onCapabilities: () => setMapperQuotaCacheVersion(version => version + 1),
       onUsage: () => setAIAssistantUsageVersion(version => version + 1),
       usage,
+      project: usageProjectIdRef.current,
     })
   }, [])
   const params = useParams()
+  usageProjectIdRef.current = params.projectId
   const history = useHistory()
   const location = useLocation()
   const templateFromProjectURL = React.useMemo(() => {
@@ -837,6 +841,19 @@ const MapProject = () => {
 
   React.useEffect(() => {
     setPermissionDenied(false)
+  }, [params.projectId])
+
+  // A project's first save gives the route its id, after the save's own
+  // refresh, which named no project: the chip asks for the new project's
+  // report then, with the capabilities, in case they grant the OCL AI
+  // Assistant only now (OpenConceptLab/ocl_online#641).
+  const usageRouteProjectIdRef = React.useRef(params.projectId)
+  React.useEffect(() => {
+    if(usageRouteProjectIdRef.current === params.projectId)
+      return
+    usageRouteProjectIdRef.current = params.projectId
+    if(params.projectId)
+      refreshMapperQuotaCache()
   }, [params.projectId])
 
   const newProjectBlockReason = (!params.projectId && !project?.id && mapperQuotaCacheVersion > 0)
@@ -1837,8 +1854,9 @@ const MapProject = () => {
         }
         setProjectPromptTemplateKey(response.data?.prompt_template_key || getProjectPromptTemplateKey())
         setProject(response.data)
+        // The new project's usage is asked for once the route has its id.
         if(!isUpdate)
-          refreshMapperQuotaCache()
+          refreshMapperQuotaCache({usage: false})
         if(response.data.url && isMountedRef.current && !options.leaving && history.location.pathname === pathAtSave) {
           ownNavigationRef.current = true
           try {
@@ -6150,8 +6168,10 @@ const MapProject = () => {
       const service = APIService.new()
       service.URL = getPromptTemplateInvokeURL(activePromptTemplate, promptTemplateRef?.key)
       const invokeTs = Date.now()
-      // The reply's usage is this person's, whoever is signed in when it lands.
+      // The reply's usage is for this person and the project the call names,
+      // whoever is signed in and whichever project is open when it lands.
       const invokeUsername = getCurrentUser()?.username
+      const invokeProjectId = params.projectId
       let usageKept = false
       // Overlapping single-row calls can land out of order, and each reply's
       // usage is a snapshot: the last of them asks for the current count.
@@ -6204,7 +6224,7 @@ const MapProject = () => {
           aiFailuresInARowRef.current = 0
         // The chip follows the usage the reply reports, also during a run; the
         // project keeps the reply without it (OpenConceptLab/ocl_online#641).
-        usageKept = keepAIAssistantUsageFromReply(response.data, invokeUsername)
+        usageKept = keepAIAssistantUsageFromReply(response.data, invokeUsername, invokeProjectId)
         if(usageKept)
           setAIAssistantUsageVersion(version => version + 1)
         const reply = withoutAIAssistantUsage(response.data)
@@ -6243,13 +6263,18 @@ const MapProject = () => {
         setAlert({message: errorMessage, severity: 'error'})
         return -2
       } finally {
+        // A reply kept for another project than the open one (it was saved
+        // while the call was in flight) leaves the open one's to ask for.
+        const keptForOpenProject = invokeProjectId === usageProjectIdRef.current
         if(!isBulk) {
           singleAICallsInFlightRef.current -= 1
           const lastOfOverlapping = singleAICallsInFlightRef.current === 0 && singleAICallsOverlappedRef.current
           if(singleAICallsInFlightRef.current === 0)
             singleAICallsOverlappedRef.current = false
-          refreshMapperQuotaCache({usage: !usageKept || lastOfOverlapping})
-        }
+          refreshMapperQuotaCache({usage: !usageKept || lastOfOverlapping || !keptForOpenProject})
+        } else if(usageKept && !keptForOpenProject)
+          // only the report: a run's own refresh did the capabilities
+          refreshAIAssistantUsageCache(() => setAIAssistantUsageVersion(version => version + 1), usageProjectIdRef.current)
       }
     } else {
       markRecommend(analysis[__index]?.length > 0 ? 1 : -3)
@@ -6423,7 +6448,7 @@ const MapProject = () => {
                       </span>
                   }
                   <span style={{marginRight: '8px'}}>
-                    <MapperQuotaChip />
+                    <MapperQuotaChip projectId={params.projectId} />
                   </span>
                   {
                     scispacyCandidatesStartedAt &&

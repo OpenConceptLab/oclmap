@@ -171,3 +171,42 @@ test('any username, even one an object has as a property, is refreshed', async (
   assert.equal(await refreshAIAssistantUsage({...REQUEST, username: 'constructor', get, storage}), true)
   assert.deepEqual(getAIAssistantUsage(storage, 'constructor'), {meter: 'tokens', used: 9})
 })
+
+test('each map project keeps its own report, apart from the one for calls that name none', () => {
+  const storage = memoryStorage()
+  assert.equal(keepAIAssistantUsage(storage, 'someone', {metadata: {usage: {meter: 'tokens', used: 600}}}, '139'), true)
+  assert.equal(keepAIAssistantUsage(storage, 'someone', {metadata: {usage: {meter: 'calls', used: 4}}}), true)
+  assert.deepEqual(getAIAssistantUsage(storage, 'someone', '139'), {meter: 'tokens', used: 600})
+  assert.deepEqual(getAIAssistantUsage(storage, 'someone', 139), {meter: 'tokens', used: 600})
+  assert.deepEqual(getAIAssistantUsage(storage, 'someone'), {meter: 'calls', used: 4})
+  assert.deepEqual(getAIAssistantUsage(storage, 'someone', ''), {meter: 'calls', used: 4})
+  assert.equal(getAIAssistantUsage(storage, 'someone', '140'), null)
+  assert.equal(getAIAssistantUsage(storage, 'someone-else', '139'), null)
+})
+
+test('a refresh for a map project names it in the query string, and keeps the report for it', async () => {
+  const storage = memoryStorage({'ai_assistant_usage:someone': JSON.stringify({meter: 'calls', used: 4})})
+  const calls = []
+  const get = (url, config) => {
+    calls.push({url, config})
+    return Promise.resolve({status: 200, data: {meter: 'tokens', used: 600}})
+  }
+  assert.equal(await refreshAIAssistantUsage({...REQUEST, project: '139', get, storage}), true)
+  assert.deepEqual(calls[0].config, {headers: {Authorization: 'Token personal-token'}, params: {map_project: '139'}, timeout: 10000})
+  assert.deepEqual(getAIAssistantUsage(storage, 'someone', '139'), {meter: 'tokens', used: 600})
+  assert.deepEqual(getAIAssistantUsage(storage, 'someone'), {meter: 'calls', used: 4})
+})
+
+test('refreshes for different map projects don\'t wait on each other', async () => {
+  const storage = memoryStorage()
+  const answers = []
+  const get = (url, config) => new Promise(resolve => answers.push({project: config.params?.map_project, answer: data => resolve({status: 200, data})}))
+  const first = refreshAIAssistantUsage({...REQUEST, project: '1', get, storage})
+  const second = refreshAIAssistantUsage({...REQUEST, project: '2', get, storage})
+  assert.deepEqual(answers.map(({project}) => project), ['1', '2'])
+  answers[1].answer({meter: 'tokens', used: 20})
+  answers[0].answer({meter: 'calls', used: 1})
+  assert.deepEqual([await first, await second], [true, true])
+  assert.deepEqual(getAIAssistantUsage(storage, 'someone', '1'), {meter: 'calls', used: 1})
+  assert.deepEqual(getAIAssistantUsage(storage, 'someone', '2'), {meter: 'tokens', used: 20})
+})
