@@ -17,11 +17,13 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import SaveIcon from '@mui/icons-material/Save';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 
+import Box from '@mui/material/Box'
 import Stack from '@mui/material/Stack'
 import Alert from '@mui/material/Alert'
 import Tooltip from '@mui/material/Tooltip'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 
+import { visuallyHidden } from '@mui/utils'
 import isEmpty from 'lodash/isEmpty'
 import omit from 'lodash/omit'
 import filter from 'lodash/filter'
@@ -31,6 +33,7 @@ import { MATCHING_ALGORITHMS_DOC_LINK, MAPPER_DOCS_LINK } from '../../common/con
 import { COLORS } from '../../common/colors'
 import { getProjectConfigErrors } from './algorithms'
 import NamespaceDropdown from '../common/NamespaceDropdown'
+import useCapabilityNote from '../common/useCapabilityNote'
 import RepoSearchAutocomplete from '../repos/RepoSearchAutocomplete'
 import RepoVersionSearchAutocomplete from '../repos/RepoVersionSearchAutocomplete'
 import CloseIconButton from '../common/CloseIconButton';
@@ -117,6 +120,9 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
     canUseCustomAlgorithms,
   })
   const hasAccessErrors = accessErrors.length > 0
+  // While the project is new, any line the API sends about the projects
+  // the chosen owner has (OpenConceptLab/ocl_online#700).
+  const projectsNote = useCapabilityNote('mapper.projects', owner, !project?.id)
 
   // Project-config validation. Currently flags custom algos with missing /
   // malformed canonical_url. Returned as a structured list so the banner
@@ -161,7 +167,10 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
         asOwner
         personalOnly={!canUseOrgProjects}
         sx={{marginTop: '12px'}}
+        helperText={projectsNote}
       />
+      {/* announces the line when it arrives: a live region is heard only when it's there before its text */}
+      <Box component='span' role='status' sx={visuallyHidden}>{projectsNote || ''}</Box>
       <TextField
         required
         fullWidth
