@@ -57,6 +57,7 @@ const AutoMatchDialog = ({
   setPromptTemplate,
   repoVersion,
   versionsStatus,
+  onRetryVersions,
   onSubmit,
   inAIAssistantGroup,
   algosSelected,
@@ -214,10 +215,15 @@ const AutoMatchDialog = ({
           }
           {
             targetRepoState === 'failed' &&
-              <Typography id={TARGET_REPO_STATUS_ID} role='alert' variant='body2' sx={{display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '12px', color: 'error.main'}}>
-                <ErrorOutlineIcon fontSize='small' />
-                {t('map_project.auto_match_target_repository_failed')}
-              </Typography>
+              <>
+                <Typography id={TARGET_REPO_STATUS_ID} role='alert' variant='body2' sx={{display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '12px', color: 'error.main'}}>
+                  <ErrorOutlineIcon fontSize='small' />
+                  {t('map_project.auto_match_target_repository_failed')}
+                </Typography>
+                <Button size='small' sx={{textTransform: 'none', marginLeft: '8px'}} onClick={onRetryVersions}>
+                  {t('common.try_again')}
+                </Button>
+              </>
           }
           {
             !['loading', 'failed'].includes(targetRepoState) && repoVersion?.id &&

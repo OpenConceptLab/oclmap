@@ -3060,11 +3060,14 @@ const MapProject = () => {
   // Only the latest request may set the version: a slower response is for a
   // repository no longer chosen.
   const versionsRequestRef = React.useRef(0)
+  // The last read's arguments, for the AutoMatch dialog's Try again.
+  const versionsArgsRef = React.useRef(null)
 
   // A newly chosen repository gets the default version. A saved project
   // passes its own version and keeps it (OpenConceptLab/ocl_issues#2906).
   const fetchVersions = (url, savedVersion) => {
     const request = ++versionsRequestRef.current
+    versionsArgsRef.current = [url, savedVersion]
     setVersionsStatus('loading')
     // Raw, so a rate-limited read settles as failed after the app's countdown
     // instead of loading forever.
@@ -6827,6 +6830,7 @@ const MapProject = () => {
               setPromptTemplate: onPromptTemplateChange,
               repoVersion,
               versionsStatus,
+              onRetryVersions: () => fetchVersions(...versionsArgsRef.current),
               inAIAssistantGroup,
               algosSelected,
               runnableAlgos,
