@@ -244,7 +244,12 @@ test('MapProject sends the project\'s log only through the loader\'s check', () 
 })
 
 test('MapProject takes the log by project id, however the URL wrote it', () => {
-  assert.match(source, /key: params\.projectId \? String\(Number\(params\.projectId\) \|\| params\.projectId\) : null,/)
+  const key = source.match(/key: params\.projectId \? (String\(params\.projectId\)\.replace\([^\n]*\)) : null,/)
+  assert.ok(key, 'the key is the route\'s project id')
+  // The same rule, on ids as the route gives them: 64-bit ids stay distinct.
+  const normalize = id => String(id).replace(/^0+(?=\d)/, '')
+  assert.equal(key[1], "String(params.projectId).replace(/^0+(?=\\d)/, '')")
+  assert.deepEqual(['007', '7', '0', '9007199254740993', '9007199254740992'].map(normalize), ['7', '7', '0', '9007199254740993', '9007199254740992'])
   assert.match(source, /React\.useEffect\(\(\) => \{\s*projectLogsLoaderRef\.current\.claim\(\)\s*\}, \[\]\)/)
 })
 
