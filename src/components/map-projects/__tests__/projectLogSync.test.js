@@ -67,13 +67,17 @@ test('a download before the log read returns is sent with the saved log once it 
   const page = pageWith()
   page.loader.load(URL_)
   page.projectLog('downloaded')
+  // One read at a time: more entries, or another load, ask for no second read.
+  page.projectLog('downloaded again')
+  page.loader.load(URL_)
+  assert.equal(page.reads, 1)
   assert.deepEqual(page.posts, [])
 
   await page.answer()
 
   assert.equal(page.reads, 1)
   assert.equal(page.posts.length, 1)
-  assert.deepEqual(page.posts[0].project_logs.map(e => e.action), ['Opened', 'downloaded', 'Saved', 'Created'])
+  assert.deepEqual(page.posts[0].project_logs.map(e => e.action), ['Opened', 'downloaded again', 'downloaded', 'Saved', 'Created'])
   assert.deepEqual(page.posts[0].row_logs, SAVED.row_logs)
 })
 
@@ -182,17 +186,6 @@ test('a page left before its log loaded still sends what it held back, if the pr
   left.save()
   await left.answer()
   assert.deepEqual(left.posts.map(p => p.project_logs.map(e => e.action)), [['Opened', 'Saved again', 'Saved', 'Created']])
-})
-
-test('one read at a time: entries while the log loads ask for no second read', async () => {
-  const page = pageWith()
-  page.loader.load(URL_)
-  page.projectLog('downloaded')
-  page.save()
-  page.loader.load(URL_)
-  assert.equal(page.reads, 1)
-  await page.answer()
-  assert.equal(page.posts.length, 1)
 })
 
 test('a read that throws counts as failed', async () => {
