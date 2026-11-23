@@ -25,7 +25,7 @@ const OwnerOption = ({ option, selected, ...rest }) => {
 }
 
 
-const NamespaceDropdown = ({onChange, label, id, owner, backgroundColor, asOwner, personalOnly, size, disabled, sx}) => {
+const NamespaceDropdown = ({onChange, label, id, owner, backgroundColor, asOwner, personalOnly, size, disabled, sx, helperText}) => {
   const { t } = useTranslation()
   const user = getCurrentUser()
   const [ownerOptions, setOwnerOptions] = React.useState([])
@@ -67,25 +67,30 @@ const NamespaceDropdown = ({onChange, label, id, owner, backgroundColor, asOwner
       renderOption={(props, option, { selected }) => <OwnerOption key={option.id} option={option} dense={size === 'small'} {...props} selected={selected} />}
       onChange={onChange}
       renderInput={
-        params => (
-          <TextField
-            {...params}
-            label={label}
-            size={size || 'medium'}
-            sx={{backgroundColor: backgroundColor || 'primary.contrastText'}}
-            slotProps={ selectedOption?.icon ? {
-              ...params.slotProps,
-              input: {
-                ...params.slotProps?.input,
-                startAdornment: (
-                  <InputAdornment position="start">
-                    {selectedOption.icon}
-                  </InputAdornment>
-                )
-              }
-            } : params.slotProps}
-          />
-        )
+        params => {
+          const slotProps = selectedOption?.icon ? {
+            ...params.slotProps,
+            input: {
+              ...params.slotProps?.input,
+              startAdornment: (
+                <InputAdornment position="start">
+                  {selectedOption.icon}
+                </InputAdornment>
+              )
+            }
+          } : params.slotProps
+          return (
+            <TextField
+              {...params}
+              label={label}
+              size={size || 'medium'}
+              sx={{backgroundColor: backgroundColor || 'primary.contrastText'}}
+              // the field's description (aria-describedby)
+              helperText={helperText}
+              slotProps={slotProps}
+            />
+          )
+        }
       }
       sx={sx}
     />
