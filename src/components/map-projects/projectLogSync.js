@@ -18,23 +18,28 @@ export const mergeSavedLogs = (saved, local) => {
   }
 }
 
-// The page that last opened each project. A page left behind sends nothing
-// once the project is open again in this tab: its log would replace the one
-// the newer page keeps.
+// The page that last opened each project, in the order pages open. A page
+// left behind sends nothing once the project is open again in this tab: its
+// log would replace the one the newer page keeps.
 const latestPages = new Map()
 
-// After a failed read with an entry waiting, read again after these waits.
-const RETRY_DELAYS_MS = [10000, 30000, 90000]
+// After a failed read with an entry waiting, read again after a growing wait:
+// 10 s, 30 s, 90 s, then every 2 minutes, 10 times in all.
+const retryDelayMs = retry => Math.min(10000 * 3 ** retry, 120000)
+const MAX_RETRIES = 10
 
+// key names the project the page opened (null for a new project), and claim()
+// runs when the page opens.
+//
 // read(url, isCancelled) resolves the saved log, or null when the read failed.
 // One read runs at a time. A failed read is read again when the page next
-// wants to send, and, while an entry waits, after a few growing waits.
+// wants to send, and, while an entry waits, after the waits above.
 //
 // onLoaded(saved, {url, send}) runs once, when the saved log loads. `send` is
 // true when the page held back an entry while it waited, so the merged log
 // should go now. A page that left still sends what it held back, unless the
 // project has been opened again since.
-export const createProjectLogsLoader = ({loaded = false, read, onLoaded, retryDelaysMs = RETRY_DELAYS_MS}) => {
+export const createProjectLogsLoader = ({key = null, loaded = false, read, onLoaded, delayMs = retryDelayMs, maxRetries = MAX_RETRIES}) => {
   const page = {}
   let projectUrl = null
   let isLoaded = loaded
@@ -42,7 +47,7 @@ export const createProjectLogsLoader = ({loaded = false, read, onLoaded, retryDe
   let heldBack = false
   let retries = 0
 
-  const isSuperseded = () => projectUrl !== null && latestPages.get(projectUrl) !== page
+  const isSuperseded = () => key !== null && latestPages.get(key) !== page
 
   const finish = saved => {
     busy = false
@@ -53,25 +58,19 @@ export const createProjectLogsLoader = ({loaded = false, read, onLoaded, retryDe
       const send = heldBack
       heldBack = false
       onLoaded(saved, {url: projectUrl, send})
-    } else if(heldBack && retries < retryDelaysMs.length) {
+    } else if(heldBack && retries < maxRetries) {
       busy = true
       setTimeout(() => {
         busy = false
-        if(!isSuperseded())
-          load(projectUrl)
-      }, retryDelaysMs[retries++])
+        load(projectUrl)
+      }, delayMs(retries++))
     }
   }
 
   const load = url => {
-    if(!url || isLoaded || busy)
+    if(!url || isLoaded || busy || isSuperseded())
       return
-    if(!projectUrl) {
-      projectUrl = url
-      latestPages.set(url, page)
-    }
-    if(isSuperseded())
-      return
+    projectUrl = url
     busy = true
     let request
     try {
@@ -93,5 +92,10 @@ export const createProjectLogsLoader = ({loaded = false, read, onLoaded, retryDe
     return false
   }
 
-  return {load, canSend, isLoaded: () => isLoaded}
+  const claim = () => {
+    if(key !== null)
+      latestPages.set(key, page)
+  }
+
+  return {claim, load, canSend, isLoaded: () => isLoaded}
 }

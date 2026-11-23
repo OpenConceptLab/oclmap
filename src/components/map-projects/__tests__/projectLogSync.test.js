@@ -19,10 +19,12 @@ const SAVED = {
 
 // A page with a fake log read and POST. `answers` are the reads' results in
 // turn: the saved log, or null for a read that failed.
-const pageWith = (answers = [SAVED], retryDelaysMs = [0, 0, 0]) => {
+const pageWith = (answers = [SAVED], maxRetries = 3) => {
   const page = {rowLogs: {}, projectLogs: [], posts: [], reads: 0, pending: []}
   page.loader = createProjectLogsLoader({
-    retryDelaysMs,
+    key: URL_,
+    delayMs: () => 0,
+    maxRetries,
     read: url => {
       assert.equal(url, URL_)
       const answer = answers[Math.min(page.reads, answers.length - 1)]
@@ -44,6 +46,8 @@ const pageWith = (answers = [SAVED], retryDelaysMs = [0, 0, 0]) => {
       page.posts.push({row_logs: page.rowLogs, project_logs: page.projectLogs})
   }
   page.save = () => page.projectLog('Saved again')
+  // The page opens.
+  page.loader.claim()
   // Answers the reads, retries included, until none is left.
   page.answer = async () => {
     for(let idle = 0; idle < 3;) {
@@ -153,6 +157,21 @@ test('a page left behind sends nothing once the project is open in a newer page'
   await left.answer()
   assert.deepEqual(left.posts, [])
   assert.equal(left.loader.isLoaded(), false)
+  assert.deepEqual(reopened.posts.map(p => p.project_logs.map(e => e.action)), [['downloaded again', 'Opened', 'Saved', 'Created']])
+})
+
+test('an old page whose project details come back late doesn\'t take the project back', async () => {
+  const left = pageWith()
+  const reopened = pageWith()
+  // The old page's details arrive after the project has opened again.
+  left.loader.load(URL_)
+  left.projectLog('downloaded')
+  reopened.loader.load(URL_)
+  await reopened.answer()
+  reopened.projectLog('downloaded again')
+
+  assert.equal(left.reads, 0)
+  assert.deepEqual(left.posts, [])
   assert.deepEqual(reopened.posts.map(p => p.project_logs.map(e => e.action)), [['downloaded again', 'Opened', 'Saved', 'Created']])
 })
 
