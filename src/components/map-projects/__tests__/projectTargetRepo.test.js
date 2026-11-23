@@ -12,7 +12,9 @@ import {
   getTargetRepoVersionBadges,
   getTargetRepoVersionFromUrl,
   getTargetRepoVersionId,
+  getTargetRepoState,
   getTargetRepoVersionReleaseDate,
+  getVersionsFromResponse,
   hasSelectedTargetRepoVersion,
   needsSemanticSearchWarning
 } from '../projectTargetRepo.js'
@@ -252,4 +254,41 @@ test('needsSemanticSearchWarning stays quiet on a version that runs Semantic Sea
 
 test('needsSemanticSearchWarning waits for a version to be chosen', () => {
   assert.equal(needsSemanticSearchWarning(false, [SEMANTIC_ALGO]), false)
+})
+
+// OpenConceptLab/ocl_issues#3067: the AutoMatch dialog shows the target
+// repository loading, loaded or failed.
+test('getVersionsFromResponse reads the list from a reply', () => {
+  assert.deepEqual(getVersionsFromResponse({ data: LOINC_VERSIONS }), LOINC_VERSIONS)
+  assert.deepEqual(getVersionsFromResponse({ data: [] }), [])
+})
+
+test('getVersionsFromResponse gives null for a failed read', () => {
+  // APIService resolves a failed read with the error's body or message.
+  assert.equal(getVersionsFromResponse('<html>Service Unavailable</html>'), null)
+  assert.equal(getVersionsFromResponse({ detail: 'Not found.' }), null)
+  assert.equal(getVersionsFromResponse('Network Error'), null)
+  // A 401 resolves with undefined while the session renews.
+  assert.equal(getVersionsFromResponse(undefined), null)
+})
+
+const LOINC_281_URL = { ...LOINC_VERSIONS[0], version_url: '/orgs/Regenstrief/sources/LOINC/2.81/' }
+
+test('getTargetRepoState: loading while the versions are read', () => {
+  assert.equal(getTargetRepoState(false, 'loading'), 'loading')
+  // A version still set from before the read waits for the new one.
+  assert.equal(getTargetRepoState(LOINC_281_URL, 'loading'), 'loading')
+})
+
+test('getTargetRepoState: loaded once a version is chosen', () => {
+  assert.equal(getTargetRepoState(LOINC_281_URL, null), 'loaded')
+})
+
+test('getTargetRepoState: failed when the versions read failed', () => {
+  assert.equal(getTargetRepoState(false, 'failed'), 'failed')
+})
+
+test('getTargetRepoState: none chosen and nothing loading', () => {
+  assert.equal(getTargetRepoState(false, null), null)
+  assert.equal(getTargetRepoState({ id: '2.81' }, null), null)
 })

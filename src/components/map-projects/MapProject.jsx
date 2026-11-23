@@ -122,7 +122,7 @@ import { normalizeAlgorithmInvocation, hasSuccessfulAlgorithmResponse, getAlgori
 import { createLookupSession, LOOKUP_NOT_FOUND } from './lookupSession'
 import { parseConceptKey } from './conceptKey'
 import { normalizeLookupConfig } from './lookupConfigFields'
-import { getDeclaredLocales, getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getSavedTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId } from './projectTargetRepo'
+import { getDeclaredLocales, getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getSavedTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId, getVersionsFromResponse } from './projectTargetRepo'
 import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, findTargetRowView, formatBridgeTargetDownloadEntry, resolveAICandidateID, getScoreDetails, getAIAnalysisCandidateIDs, getAIIndicatorTooltip, withCachedConcept, withCandidateNames, buildMatchEntries, restoredNote, withOwnNames, withSavedMatch } from './viewBuilders.js'
 import { formatClockTime, getCapacityWaitLabel, mergeCapacityWaits } from './rowProgress.js'
 
@@ -495,6 +495,9 @@ const MapProject = () => {
   const [bridgeMappedSources, setBridgeMappedSources] = React.useState({})
   const [locales, setLocales] = React.useState([])
   const [versions, setVersions] = React.useState([])
+  // 'loading' while the target repository's versions are read, 'failed' if
+  // that read failed, else null (OpenConceptLab/ocl_issues#3067).
+  const [versionsStatus, setVersionsStatus] = React.useState(null)
   const [conceptCache, setConceptCache] = React.useState({})
   const [allMapTypes, setAllMapTypes] = React.useState([])
   // PR3-H: OCL Locales source provides the canonical language picker for
@@ -3062,11 +3065,14 @@ const MapProject = () => {
   // passes its own version and keeps it (OpenConceptLab/ocl_issues#2906).
   const fetchVersions = (url, savedVersion) => {
     const request = ++versionsRequestRef.current
+    setVersionsStatus('loading')
     APIService.new().overrideURL(dropVersion(url)).appendToUrl('versions/?verbose=true').get().then(response => {
       if(request !== versionsRequestRef.current)
         return
-      let _versions = response.data
+      const fetchedVersions = getVersionsFromResponse(response)
+      const _versions = fetchedVersions || []
       setVersions(_versions)
+      setVersionsStatus(fetchedVersions ? null : 'failed')
       onRepoVersionChange(savedVersion === undefined ? getDefaultTargetRepoVersion(_versions) : getSavedTargetRepoVersion(_versions, savedVersion))
     })
   }
@@ -3079,6 +3085,7 @@ const MapProject = () => {
     } else {
       versionsRequestRef.current += 1
       setVersions([])
+      setVersionsStatus(null)
     }
   }
 
@@ -6817,6 +6824,7 @@ const MapProject = () => {
               promptTemplate,
               setPromptTemplate: onPromptTemplateChange,
               repoVersion,
+              versionsStatus,
               inAIAssistantGroup,
               algosSelected,
               runnableAlgos,

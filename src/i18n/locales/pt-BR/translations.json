@@ -402,6 +402,8 @@
     "auto_match_blocked_no_ai_rows": "O Assistente de IA do OCL não tem linhas para analisar neste escopo.",
     "auto_match_nothing_to_run": "O AutoMatch não tinha nada para executar: nenhum algoritmo de correspondência está selecionado e o Assistente de IA do OCL não tem linhas para analisar.",
     "auto_match_target_repository": "Repositório de destino:",
+    "auto_match_target_repository_loading": "Carregando o repositório de destino...",
+    "auto_match_target_repository_failed": "Não foi possível carregar. Recarregue a página para tentar novamente.",
     "auto_match_input_rows": "Linhas de entrada para correspondência: <b>{{rows}}</b> de <b>{{total}}</b> no total",
     "auto_match_scope_selected": "Somente linhas selecionadas",
     "auto_match_scope_unmapped": "Somente linhas não mapeadas",
