@@ -25,22 +25,11 @@ const withRetry = (request, options) => retryWithBackoff(
 
 const versionURL = url => `${String(url || '').replace(/\/+$/, '')}/`
 
-// The API's version URLs can encode a version's id twice.
-const decoded = url => {
-  let value = url
-  try {
-    for(let i = 0; i < 2; i++)
-      value = decodeURIComponent(value)
-  } catch {
-    // keeps the last value that decoded
-  }
-  return value
-}
-
-// The API encodes a version's id in its URL, and the bridge's URL is built
-// from the bare id. A repository's HEAD is listed at its own URL and at
-// <repository>/HEAD/.
-const versionKey = url => decoded(versionURL(url)).replace(/^(\/(?:orgs|users)\/[^/]+\/(?:sources|collections)\/[^/]+\/)HEAD\/$/, '$1')
+// A repository's HEAD is listed at its own URL and at <repository>/HEAD/.
+// Version URLs are otherwise compared as given: the API encodes a version's id
+// in its URL and the bridge's URL holds the bare id, and the server can read
+// the two differently, so they aren't taken to be one version.
+const versionKey = url => versionURL(url).replace(/^(\/(?:orgs|users)\/[^/]+\/(?:sources|collections)\/[^/]+\/)HEAD\/$/, '$1')
 
 // fetchPage(url, page) answers as APIService does in raw mode: a response with
 // the page in `data` and the total in the `num_found` header, or the error. A

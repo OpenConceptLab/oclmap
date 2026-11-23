@@ -104,16 +104,16 @@ test('a repository\'s HEAD is one version, at its own URL or at HEAD/', async ()
   assert.deepEqual(lists, [10, 10])
 })
 
-test('a version id the API encodes in its URL is the same version as the bare id', async () => {
+test('a version id the API encodes in its URL is read apart from the bare id', async () => {
+  // The server can read a bare `+` differently from the API's encoded form,
+  // so sharing them could give one caller the other's failed read.
   const api = fakeAPI(10)
   const read = readerFor(api)
-  read(`${CIEL}v1%40build/`, () => {})
-  read(`${CIEL}v1@build/`, () => {})
-  // oclapi2 can encode it twice: once itself, then again in Django's reverse().
-  read(`${CIEL}v1%2540build/`, () => {})
+  read(`${CIEL}1.2.3+build.1/`, () => {})
+  read(`${CIEL}1.2.3%252Bbuild.1/`, () => {})
   await api.settle()
 
-  assert.deepEqual(api.reads, [`${CIEL}v1%40build/#1`])
+  assert.deepEqual(api.reads, [`${CIEL}1.2.3+build.1/#1`, `${CIEL}1.2.3%252Bbuild.1/#1`])
 })
 
 test('a failed page gives what was read so far and is read again on the next ask', async () => {
