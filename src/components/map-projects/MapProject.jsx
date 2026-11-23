@@ -3066,7 +3066,9 @@ const MapProject = () => {
   const fetchVersions = (url, savedVersion) => {
     const request = ++versionsRequestRef.current
     setVersionsStatus('loading')
-    APIService.new().overrideURL(dropVersion(url)).appendToUrl('versions/?verbose=true').get().then(response => {
+    // Raw, so a rate-limited read settles as failed after the app's countdown
+    // instead of loading forever.
+    APIService.new().overrideURL(dropVersion(url)).appendToUrl('versions/?verbose=true').get(undefined, undefined, undefined, true).then(response => {
       if(request !== versionsRequestRef.current)
         return
       const fetchedVersions = getVersionsFromResponse(response)

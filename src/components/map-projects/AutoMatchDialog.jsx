@@ -359,10 +359,11 @@ const AutoMatchDialog = ({
         }
         <Box sx={{display: 'flex', alignItems: 'flex-end', flexWrap: 'wrap', gap: '12px'}}>
           {check.summary && <Box sx={{flex: '1 1 300px', minWidth: 0}}>{check.summary}</Box>}
-          <Box sx={{display: 'flex', alignItems: 'center', gap: '12px', marginLeft: 'auto'}}>
+          <Box sx={{display: 'flex', alignItems: 'center', gap: '12px', marginLeft: 'auto', minWidth: 0}}>
+            {/* One line, so the footer keeps its height when it goes. */}
             {
               targetRepoState === 'loading' &&
-                <Typography id={TARGET_REPO_STATUS_ID} role='status' variant='body2' sx={{fontSize: '13px', color: 'text.secondary'}}>
+                <Typography id={TARGET_REPO_STATUS_ID} role='status' variant='body2' noWrap sx={{fontSize: '13px', color: 'text.secondary'}}>
                   {t('map_project.auto_match_target_repository_loading')}
                 </Typography>
             }

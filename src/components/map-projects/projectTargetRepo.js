@@ -1,8 +1,8 @@
 export const getTargetRepoVersionId = repoVersion => repoVersion?.id || repoVersion?.version || ''
 
 // The versions in a reply to GET versions/, or null when the read failed:
-// APIService resolves a failed read with the error's body or message, not
-// with a response holding a list.
+// APIService resolves a failed read with the error (raw), its body or its
+// message, not with a response holding a list.
 export const getVersionsFromResponse = response => Array.isArray(response?.data) ? response.data : null
 
 // What the AutoMatch dialog shows for the target repository

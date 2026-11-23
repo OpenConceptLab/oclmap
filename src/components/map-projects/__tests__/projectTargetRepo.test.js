@@ -270,6 +270,8 @@ test('getVersionsFromResponse gives null for a failed read', () => {
   assert.equal(getVersionsFromResponse('Network Error'), null)
   // A 401 resolves with undefined while the session renews.
   assert.equal(getVersionsFromResponse(undefined), null)
+  // A raw read resolves with the error itself, a 429 among them.
+  assert.equal(getVersionsFromResponse({ message: 'Request failed with status code 429', response: { status: 429, data: {} } }), null)
 })
 
 const LOINC_281_URL = { ...LOINC_VERSIONS[0], version_url: '/orgs/Regenstrief/sources/LOINC/2.81/' }
