@@ -345,14 +345,12 @@ const MapProject = () => {
   const projectLogsLoaderRef = React.useRef(null)
   if(!projectLogsLoaderRef.current)
     projectLogsLoaderRef.current = createProjectLogsLoader({
-      // A project's id, whichever owner URL or form opened it.
-      key: params.projectId ? String(params.projectId).replace(/^0+(?=\d)/, '') : null,
       loaded: !params.projectId,
       read: (url, isCancelled) => readProjectLogs(url, isCancelled),
       onLoaded: (saved, {url, send}) => onProjectLogsLoaded(saved, url, send)
     })
   React.useEffect(() => {
-    projectLogsLoaderRef.current.claim()
+    projectLogsLoaderRef.current.opened()
   }, [])
   const autoMatchAIDefaultAppliedRef = React.useRef(false)
   const configSnapshotOnOpenRef = React.useRef(null)

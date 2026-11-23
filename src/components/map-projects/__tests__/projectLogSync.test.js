@@ -22,7 +22,6 @@ const SAVED = {
 const pageWith = (answers = [SAVED], maxRetries = 3) => {
   const page = {rowLogs: {}, projectLogs: [], posts: [], reads: 0, pending: []}
   page.loader = createProjectLogsLoader({
-    key: URL_,
     delayMs: () => 0,
     maxRetries,
     read: url => {
@@ -47,7 +46,7 @@ const pageWith = (answers = [SAVED], maxRetries = 3) => {
   }
   page.save = () => page.projectLog('Saved again')
   // The page opens.
-  page.loader.claim()
+  page.loader.opened()
   // Answers the reads, retries included, until none is left.
   page.answer = async () => {
     for(let idle = 0; idle < 3;) {
@@ -167,10 +166,10 @@ test('a page left behind sends nothing once the project is open in a newer page'
 test('an old page whose project details come back late doesn\'t take the project back', async () => {
   const left = pageWith()
   const reopened = pageWith()
-  // The old page's details arrive after the project has opened again.
+  // The reopened page loads first; the old page's details arrive after.
+  reopened.loader.load(URL_)
   left.loader.load(URL_)
   left.projectLog('downloaded')
-  reopened.loader.load(URL_)
   await reopened.answer()
   reopened.projectLog('downloaded again')
 
@@ -197,6 +196,7 @@ test('a read that throws counts as failed', async () => {
     },
     onLoaded: () => {}
   })
+  loader.opened()
   loader.load(URL_)
   await new Promise(resolve => setTimeout(resolve, 0))
   assert.equal(loader.isLoaded(), false)
@@ -243,14 +243,8 @@ test('MapProject sends the project\'s log only through the loader\'s check', () 
   ])
 })
 
-test('MapProject takes the log by project id, however the URL wrote it', () => {
-  const key = source.match(/key: params\.projectId \? (String\(params\.projectId\)\.replace\([^\n]*\)) : null,/)
-  assert.ok(key, 'the key is the route\'s project id')
-  // The same rule, on ids as the route gives them: 64-bit ids stay distinct.
-  const normalize = id => String(id).replace(/^0+(?=\d)/, '')
-  assert.equal(key[1], "String(params.projectId).replace(/^0+(?=\\d)/, '')")
-  assert.deepEqual(['007', '7', '0', '9007199254740993', '9007199254740992'].map(normalize), ['7', '7', '0', '9007199254740993', '9007199254740992'])
-  assert.match(source, /React\.useEffect\(\(\) => \{\s*projectLogsLoaderRef\.current\.claim\(\)\s*\}, \[\]\)/)
+test('MapProject marks when the page opens, so a page opened later takes the project\'s log', () => {
+  assert.match(source, /React\.useEffect\(\(\) => \{\s*projectLogsLoaderRef\.current\.opened\(\)\s*\}, \[\]\)/)
 })
 
 test('MapProject reads the saved log through the loader, settling a throttled or failed read', () => {
