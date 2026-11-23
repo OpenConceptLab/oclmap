@@ -345,7 +345,8 @@ const MapProject = () => {
   const projectLogsLoaderRef = React.useRef(null)
   if(!projectLogsLoaderRef.current)
     projectLogsLoaderRef.current = createProjectLogsLoader({
-      key: params.projectId ? ['', params.ownerType, params.owner, 'map-projects', params.projectId, ''].join('/') : null,
+      // A project's id is a number, whichever owner URL or form opened it.
+      key: params.projectId ? String(Number(params.projectId) || params.projectId) : null,
       loaded: !params.projectId,
       read: (url, isCancelled) => readProjectLogs(url, isCancelled),
       onLoaded: (saved, {url, send}) => onProjectLogsLoaded(saved, url, send)

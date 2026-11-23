@@ -250,6 +250,11 @@ test('MapProject sends the project\'s log only through the loader\'s check', () 
   ])
 })
 
+test('MapProject takes the log by project id, however the URL wrote it', () => {
+  assert.match(source, /key: params\.projectId \? String\(Number\(params\.projectId\) \|\| params\.projectId\) : null,/)
+  assert.match(source, /React\.useEffect\(\(\) => \{\s*projectLogsLoaderRef\.current\.claim\(\)\s*\}, \[\]\)/)
+})
+
 test('MapProject reads the saved log through the loader, settling a throttled or failed read', () => {
   assert.equal(source.match(/appendToUrl\('logs\/'\)\.request\('GET'/g)?.length, 1)
   assert.match(source, /projectLogsLoaderRef\.current\.load\(response\.data\.url\)/)
