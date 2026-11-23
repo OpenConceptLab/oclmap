@@ -5,20 +5,15 @@ export const getTargetRepoVersionId = repoVersion => repoVersion?.id || repoVers
 // message, not with a response holding a list.
 export const getVersionsFromResponse = response => Array.isArray(response?.data) ? response.data : null
 
-// The target repository's reads (the repository and its versions) taken
-// together: 'loading' while any runs, 'failed' if any failed, else null.
-export const getTargetReadStatus = (...statuses) => {
-  if(statuses.includes('loading'))
-    return 'loading'
-  return statuses.includes('failed') ? 'failed' : null
-}
-
 // What the AutoMatch dialog shows for the target repository
-// (OpenConceptLab/ocl_issues#3067): 'loading' while it's read, 'failed' if a
-// read failed, 'loaded' once a version is chosen, and null when none is.
-export const getTargetRepoState = (repoVersion, readStatus) => {
-  if(readStatus === 'loading' || readStatus === 'failed')
-    return readStatus
+// (OpenConceptLab/ocl_issues#3067), given its reads' statuses (the repository
+// and its versions): 'loading' while any runs, 'failed' if any failed,
+// 'loaded' once a version is chosen, and null when none is.
+export const getTargetRepoState = (repoVersion, ...readStatuses) => {
+  if(readStatuses.includes('loading'))
+    return 'loading'
+  if(readStatuses.includes('failed'))
+    return 'failed'
   return repoVersion?.version_url ? 'loaded' : null
 }
 export const getTargetRepoVersionFromUrl = url => {

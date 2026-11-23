@@ -122,7 +122,7 @@ import { normalizeAlgorithmInvocation, hasSuccessfulAlgorithmResponse, getAlgori
 import { createLookupSession, LOOKUP_NOT_FOUND } from './lookupSession'
 import { parseConceptKey } from './conceptKey'
 import { normalizeLookupConfig } from './lookupConfigFields'
-import { getDeclaredLocales, getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getSavedTargetRepoVersion, getTargetReadStatus, getTargetRepoVersionFromUrl, getTargetRepoVersionId, getVersionsFromResponse } from './projectTargetRepo'
+import { getDeclaredLocales, getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getSavedTargetRepoVersion, getTargetRepoState, getTargetRepoVersionFromUrl, getTargetRepoVersionId, getVersionsFromResponse } from './projectTargetRepo'
 import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, findTargetRowView, formatBridgeTargetDownloadEntry, resolveAICandidateID, getScoreDetails, getAIAnalysisCandidateIDs, getAIIndicatorTooltip, withCachedConcept, withCandidateNames, buildMatchEntries, restoredNote, withOwnNames, withSavedMatch } from './viewBuilders.js'
 import { formatClockTime, getCapacityWaitLabel, mergeCapacityWaits } from './rowProgress.js'
 
@@ -3080,7 +3080,6 @@ const MapProject = () => {
   // The last read's arguments, for the AutoMatch dialog's Try again.
   const versionsArgsRef = React.useRef(null)
 
-  // The AutoMatch dialog's Try again repeats whichever read failed.
   const retryTargetReads = () => {
     if(repoStatus === 'failed')
       fetchRepo(...repoArgsRef.current)
@@ -3100,10 +3099,9 @@ const MapProject = () => {
       if(request !== versionsRequestRef.current)
         return
       const fetchedVersions = getVersionsFromResponse(response)
-      const _versions = fetchedVersions || []
-      setVersions(_versions)
+      setVersions(fetchedVersions || [])
       setVersionsStatus(fetchedVersions ? null : 'failed')
-      onRepoVersionChange(savedVersion === undefined ? getDefaultTargetRepoVersion(_versions) : getSavedTargetRepoVersion(_versions, savedVersion))
+      onRepoVersionChange(savedVersion === undefined ? getDefaultTargetRepoVersion(fetchedVersions) : getSavedTargetRepoVersion(fetchedVersions, savedVersion))
     })
   }
 
@@ -6856,7 +6854,7 @@ const MapProject = () => {
               promptTemplate,
               setPromptTemplate: onPromptTemplateChange,
               repoVersion,
-              targetReadStatus: getTargetReadStatus(repoStatus, versionsStatus),
+              targetRepoState: getTargetRepoState(repoVersion, repoStatus, versionsStatus),
               onRetryTargetReads: retryTargetReads,
               inAIAssistantGroup,
               algosSelected,

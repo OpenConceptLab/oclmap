@@ -29,7 +29,6 @@ import TagCountLabel from '../common/TagCountLabel'
 import RepoChip from '../repos/RepoVersionChip'
 import AIAssistantSelectorPanel from './AIAssistantSelectorPanel'
 import { getAutoMatchBlocker } from './autoMatchRows'
-import { getTargetRepoState } from './projectTargetRepo'
 // A private package can fill this checkpoint in; see autoMatchCheck.js.
 import useAutoMatchCheck from '@openconceptlab/oclmap-extensions'
 
@@ -56,7 +55,7 @@ const AutoMatchDialog = ({
   promptTemplate,
   setPromptTemplate,
   repoVersion,
-  targetReadStatus,
+  targetRepoState,
   onRetryTargetReads,
   onSubmit,
   inAIAssistantGroup,
@@ -177,7 +176,6 @@ const AutoMatchDialog = ({
 
   notices.push(...(check.notices || []))
 
-  const targetRepoState = getTargetRepoState(repoVersion, targetReadStatus)
   const targetRepoStatusId = ['loading', 'failed'].includes(targetRepoState) ? TARGET_REPO_STATUS_ID : undefined
 
   const isDisabled =

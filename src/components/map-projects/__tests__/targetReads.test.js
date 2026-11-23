@@ -57,8 +57,8 @@ test('Try again repeats whichever read failed', () => {
   assert.match(retry, /if\(versionsStatus === 'failed'\)\s*fetchVersions\(\.\.\.versionsArgsRef\.current\)/)
 })
 
-test('the dialog gets both reads\' status and Try again', () => {
-  assert.match(source, /targetReadStatus: getTargetReadStatus\(repoStatus, versionsStatus\),\s*onRetryTargetReads: retryTargetReads,/)
+test('the dialog gets both reads\' state and Try again', () => {
+  assert.match(source, /targetRepoState: getTargetRepoState\(repoVersion, repoStatus, versionsStatus\),\s*onRetryTargetReads: retryTargetReads,/)
 })
 
 test('choosing another repository drops an older repository read', () => {

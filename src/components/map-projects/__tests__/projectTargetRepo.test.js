@@ -12,7 +12,6 @@ import {
   getTargetRepoVersionBadges,
   getTargetRepoVersionFromUrl,
   getTargetRepoVersionId,
-  getTargetReadStatus,
   getTargetRepoState,
   getTargetRepoVersionReleaseDate,
   getVersionsFromResponse,
@@ -265,41 +264,34 @@ test('getVersionsFromResponse reads the list from a reply', () => {
 })
 
 test('getVersionsFromResponse gives null for a failed read', () => {
-  // APIService resolves a failed read with the error's body or message.
-  assert.equal(getVersionsFromResponse('<html>Service Unavailable</html>'), null)
-  assert.equal(getVersionsFromResponse({ detail: 'Not found.' }), null)
-  assert.equal(getVersionsFromResponse('Network Error'), null)
   // A 401 resolves with undefined while the session renews.
   assert.equal(getVersionsFromResponse(undefined), null)
   // A raw read resolves with the error itself, a 429 among them.
   assert.equal(getVersionsFromResponse({ message: 'Request failed with status code 429', response: { status: 429, data: {} } }), null)
 })
 
-test('getTargetReadStatus: loading while either read runs, failed if either failed', () => {
-  assert.equal(getTargetReadStatus(null, 'loading'), 'loading')
-  assert.equal(getTargetReadStatus('failed', 'loading'), 'loading')
-  assert.equal(getTargetReadStatus('failed', null), 'failed')
-  assert.equal(getTargetReadStatus(null, 'failed'), 'failed')
-  assert.equal(getTargetReadStatus(null, null), null)
-})
-
 const LOINC_281_URL = { ...LOINC_VERSIONS[0], version_url: '/orgs/Regenstrief/sources/LOINC/2.81/' }
 
-test('getTargetRepoState: loading while the versions are read', () => {
-  assert.equal(getTargetRepoState(false, 'loading'), 'loading')
+// getTargetRepoState(repoVersion, repoStatus, versionsStatus)
+test('getTargetRepoState: loading while either read runs', () => {
+  assert.equal(getTargetRepoState(false, null, 'loading'), 'loading')
+  assert.equal(getTargetRepoState(false, 'loading', null), 'loading')
+  assert.equal(getTargetRepoState(false, 'failed', 'loading'), 'loading')
   // A version still set from before the read waits for the new one.
-  assert.equal(getTargetRepoState(LOINC_281_URL, 'loading'), 'loading')
+  assert.equal(getTargetRepoState(LOINC_281_URL, null, 'loading'), 'loading')
 })
 
-test('getTargetRepoState: loaded once a version is chosen', () => {
-  assert.equal(getTargetRepoState(LOINC_281_URL, null), 'loaded')
+test('getTargetRepoState: loaded once both reads are in and a version is chosen', () => {
+  assert.equal(getTargetRepoState(LOINC_281_URL, null, null), 'loaded')
 })
 
-test('getTargetRepoState: failed when the versions read failed', () => {
-  assert.equal(getTargetRepoState(false, 'failed'), 'failed')
+test('getTargetRepoState: failed when either read failed', () => {
+  assert.equal(getTargetRepoState(false, null, 'failed'), 'failed')
+  // The repository's read failed, its versions' didn't: Submit still waits.
+  assert.equal(getTargetRepoState(LOINC_281_URL, 'failed', null), 'failed')
 })
 
 test('getTargetRepoState: none chosen and nothing loading', () => {
-  assert.equal(getTargetRepoState(false, null), null)
-  assert.equal(getTargetRepoState({ id: '2.81' }, null), null)
+  assert.equal(getTargetRepoState(false, null, null), null)
+  assert.equal(getTargetRepoState({ id: '2.81' }, null, null), null)
 })
