@@ -14,13 +14,13 @@ const isTransientFailure = response => Boolean(response?.isAxiosError) &&
   (!response.response || response.response.status >= 500)
 
 // Settles with the answer, after trying again while the failure is transient.
-const withRetry = (request, {isCancelled, ...retry}) => retryWithBackoff(
+const withRetry = (request, options) => retryWithBackoff(
   () => Promise.resolve(request()).then(response => {
     if(isTransientFailure(response))
       throw response
     return response
   }),
-  {...retry, isCancelled, isRetryable: isTransientFailure}
+  {...options, isRetryable: isTransientFailure}
 ).catch(() => null)
 
 const versionURL = url => `${String(url || '').replace(/\/+$/, '')}/`
@@ -28,16 +28,11 @@ const versionURL = url => `${String(url || '').replace(/\/+$/, '')}/`
 // The API's version URLs can encode a version's id twice.
 const decoded = url => {
   let value = url
-  for(let i = 0; i < 3; i++) {
-    let next
-    try {
-      next = decodeURIComponent(value)
-    } catch {
-      break
-    }
-    if(next === value)
-      break
-    value = next
+  try {
+    for(let i = 0; i < 2; i++)
+      value = decodeURIComponent(value)
+  } catch {
+    // keeps the last value that decoded
   }
   return value
 }
