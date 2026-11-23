@@ -19,7 +19,8 @@ const SAVED = {
 
 // A page with a fake log read and POST. `answers` are the reads' results in
 // turn: the saved log, or null for a read that failed.
-const pageWith = (answers = [SAVED], maxRetries = 3) => {
+const ROUTE = '/users/jontest1/map-projects/7/'
+const pageWith = (answers = [SAVED], maxRetries = 3, route = ROUTE) => {
   const page = {rowLogs: {}, projectLogs: [], posts: [], reads: 0, pending: []}
   page.loader = createProjectLogsLoader({
     delayMs: () => 0,
@@ -46,7 +47,7 @@ const pageWith = (answers = [SAVED], maxRetries = 3) => {
   }
   page.save = () => page.projectLog('Saved again')
   // The page opens.
-  page.loader.opened()
+  page.loader.opened(route)
   // Answers the reads, retries included, until none is left.
   page.answer = async () => {
     for(let idle = 0; idle < 3;) {
@@ -178,6 +179,35 @@ test('an old page whose project details come back late doesn\'t take the project
   assert.deepEqual(reopened.posts.map(p => p.project_logs.map(e => e.action)), [['downloaded again', 'Opened', 'Saved', 'Created']])
 })
 
+test('a reopen stops the page left behind at once, before the new page has its project details', async () => {
+  const left = pageWith()
+  left.loader.load(URL_)
+  left.projectLog('downloaded')
+  // Reopened by the same route; its details haven't arrived yet.
+  const reopened = pageWith()
+  await left.answer()
+
+  assert.deepEqual(left.posts, [])
+  assert.equal(left.loader.isLoaded(), false)
+  reopened.loader.load(URL_)
+  await reopened.answer()
+  reopened.projectLog('downloaded again')
+  assert.deepEqual(reopened.posts.map(p => p.project_logs.map(e => e.action)), [['downloaded again', 'Opened', 'Saved', 'Created']])
+})
+
+test('a reopen by another route to the same project stops the page left behind once its details arrive', async () => {
+  const left = pageWith()
+  left.loader.load(URL_)
+  left.projectLog('downloaded')
+  const reopened = pageWith([SAVED], 3, '/users/jontest1/map-projects/007/')
+  reopened.loader.load(URL_)
+  await left.answer()
+  await reopened.answer()
+
+  assert.deepEqual(left.posts, [])
+  assert.equal(reopened.loader.isLoaded(), true)
+})
+
 test('a page left before its log loaded still sends what it held back, if the project isn\'t open again', async () => {
   // As a save on leave does: the page is gone, but its read and send go on.
   const left = pageWith()
@@ -196,7 +226,7 @@ test('a read that throws counts as failed', async () => {
     },
     onLoaded: () => {}
   })
-  loader.opened()
+  loader.opened(null)
   loader.load(URL_)
   await new Promise(resolve => setTimeout(resolve, 0))
   assert.equal(loader.isLoaded(), false)
@@ -243,8 +273,8 @@ test('MapProject sends the project\'s log only through the loader\'s check', () 
   ])
 })
 
-test('MapProject marks when the page opens, so a page opened later takes the project\'s log', () => {
-  assert.match(source, /React\.useEffect\(\(\) => \{\s*projectLogsLoaderRef\.current\.opened\(\)\s*\}, \[\]\)/)
+test('MapProject marks when the page opens, with its route, so a page opened later takes the project\'s log', () => {
+  assert.match(source, /React\.useEffect\(\(\) => \{\s*projectLogsLoaderRef\.current\.opened\(params\.projectId \? \['', params\.ownerType, params\.owner, 'map-projects', params\.projectId, ''\]\.join\('\/'\) : null\)\s*\}, \[\]\)/)
 })
 
 test('MapProject reads the saved log through the loader, settling a throttled or failed read', () => {

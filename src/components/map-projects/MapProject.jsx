@@ -350,7 +350,7 @@ const MapProject = () => {
       onLoaded: (saved, {url, send}) => onProjectLogsLoaded(saved, url, send)
     })
   React.useEffect(() => {
-    projectLogsLoaderRef.current.opened()
+    projectLogsLoaderRef.current.opened(params.projectId ? ['', params.ownerType, params.owner, 'map-projects', params.projectId, ''].join('/') : null)
   }, [])
   const autoMatchAIDefaultAppliedRef = React.useRef(false)
   const configSnapshotOnOpenRef = React.useRef(null)
