@@ -154,9 +154,10 @@ import '../common/ResizablePanel.scss'
 const NEW_PROJECT_BLOCK_ERROR_CODES = {access: 'mapper_access_denied', projects_not_entitled: 'mapper_projects_not_entitled', projects: 'mapper_projects_limit_reached'}
 const MAPPER_QUOTA_SURFACE = {match_operations: 'auto_match', ai_assistant_calls: 'auto_match', projects: 'new_project', rows: 'import'}
 
+// Raw, so a failed or throttled read settles and isn't kept.
 const fetchMappedSourcesPage = (url, page) => APIService.new().overrideURL(url).appendToUrl('mapped-sources/').get(null, null, {
   excludeSelf: false, brief: true, limit: MAPPED_SOURCES_PAGE_SIZE, offset: (page - 1) * MAPPED_SOURCES_PAGE_SIZE, page
-})
+}, true)
 
 const MapProject = () => {
   const { t } = useTranslation();
@@ -886,8 +887,7 @@ const MapProject = () => {
     namespace: bridgeNamespace,
     resolveVersion: (bridgeUrl, resolveNamespace) => APIService.new()
       .overrideURL('/$resolveReference/')
-      .post([{url: bridgeUrl}], currentUserToken(), null, resolveNamespace ? {namespace: resolveNamespace} : undefined)
-      .then(response => get(response, 'data.0.result.version', '')),
+      .post([{url: bridgeUrl}], currentUserToken(), null, resolveNamespace ? {namespace: resolveNamespace} : undefined, true),
     readMappedSources,
     pinVersion: (algoId, version) => setAlgosSelected(prev => prev.map(algo =>
       algo?.id === algoId ? {...algo, target_repo_version: version} : algo
