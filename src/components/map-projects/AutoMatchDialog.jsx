@@ -176,7 +176,8 @@ const AutoMatchDialog = ({
 
   notices.push(...(check.notices || []))
 
-  const targetRepoStatusId = ['loading', 'failed'].includes(targetRepoState) ? TARGET_REPO_STATUS_ID : undefined
+  const targetRepoSettling = ['loading', 'failed'].includes(targetRepoState)
+  const targetRepoStatusId = targetRepoSettling ? TARGET_REPO_STATUS_ID : undefined
 
   const isDisabled =
     targetRepoState !== 'loaded' ||
@@ -224,7 +225,7 @@ const AutoMatchDialog = ({
               </>
           }
           {
-            !['loading', 'failed'].includes(targetRepoState) && repoVersion?.id &&
+            !targetRepoSettling && repoVersion?.id &&
               <RepoChip repo={repoVersion} hideType sx={{marginLeft: '12px'}} />
           }
         </div>
