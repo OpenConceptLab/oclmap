@@ -25,12 +25,21 @@ const withRetry = (request, {isCancelled, ...retry}) => retryWithBackoff(
 
 const versionURL = url => `${String(url || '').replace(/\/+$/, '')}/`
 
+// The API's version URLs can encode a version's id twice.
 const decoded = url => {
-  try {
-    return decodeURIComponent(url)
-  } catch {
-    return url
+  let value = url
+  for(let i = 0; i < 3; i++) {
+    let next
+    try {
+      next = decodeURIComponent(value)
+    } catch {
+      break
+    }
+    if(next === value)
+      break
+    value = next
   }
+  return value
 }
 
 // The API encodes a version's id in its URL, and the bridge's URL is built

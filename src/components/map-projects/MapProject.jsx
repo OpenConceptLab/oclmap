@@ -3031,7 +3031,7 @@ const MapProject = () => {
   const fetchVersions = (url, savedVersion) => {
     const request = ++versionsRequestRef.current
     APIService.new().overrideURL(dropVersion(url)).appendToUrl('versions/?verbose=true').get().then(response => {
-      if(request !== versionsRequestRef.current)
+      if(request !== versionsRequestRef.current || !isMountedRef.current)
         return
       let _versions = response.data
       setVersions(_versions)

@@ -109,6 +109,8 @@ test('a version id the API encodes in its URL is the same version as the bare id
   const read = readerFor(api)
   read(`${CIEL}v1%40build/`, () => {})
   read(`${CIEL}v1@build/`, () => {})
+  // oclapi2 can encode it twice: once itself, then again in Django's reverse().
+  read(`${CIEL}v1%2540build/`, () => {})
   await api.settle()
 
   assert.deepEqual(api.reads, [`${CIEL}v1%40build/#1`])
@@ -307,7 +309,9 @@ test('the target version and the bridge probe read through the one shared reader
   assert.deepEqual(readers, ['createMappedSourcesReader(fetchMappedSourcesPage)'])
   assert.deepEqual(reads, [['version.version_url', 'setMappedSources']])
   assert.match(source, /readMappedSources,\n/)
-  // Leaving the project stops the target's read.
+  // Leaving the project stops the target's read, and a versions answer that
+  // lands after it starts none.
+  assert.match(source, /if\(request !== versionsRequestRef\.current \|\| !isMountedRef\.current\)\n\s*return\n\s*let _versions/)
   assert.match(source, /React\.useEffect\(\(\) => \(\) => stopTargetMappedSourcesRef\.current\(\), \[\]\)/)
   // Nothing reads the list around the reader, and a throttled read settles.
   assert.equal(source.match(/appendToUrl\('mapped-sources\/'\)/g).length, 1)
