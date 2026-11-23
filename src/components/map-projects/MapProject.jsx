@@ -122,7 +122,7 @@ import { normalizeAlgorithmInvocation, hasSuccessfulAlgorithmResponse, getAlgori
 import { createLookupSession, LOOKUP_NOT_FOUND } from './lookupSession'
 import { parseConceptKey } from './conceptKey'
 import { normalizeLookupConfig } from './lookupConfigFields'
-import { getDeclaredLocales, getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getSavedTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId, getVersionsFromResponse } from './projectTargetRepo'
+import { getDeclaredLocales, getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getSavedTargetRepoVersion, getTargetReadStatus, getTargetRepoVersionFromUrl, getTargetRepoVersionId, getVersionsFromResponse } from './projectTargetRepo'
 import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, findTargetRowView, formatBridgeTargetDownloadEntry, resolveAICandidateID, getScoreDetails, getAIAnalysisCandidateIDs, getAIIndicatorTooltip, withCachedConcept, withCandidateNames, buildMatchEntries, restoredNote, withOwnNames, withSavedMatch } from './viewBuilders.js'
 import { formatClockTime, getCapacityWaitLabel, mergeCapacityWaits } from './rowProgress.js'
 
@@ -495,8 +495,9 @@ const MapProject = () => {
   const [bridgeMappedSources, setBridgeMappedSources] = React.useState({})
   const [locales, setLocales] = React.useState([])
   const [versions, setVersions] = React.useState([])
-  // 'loading' while the target repository's versions are read, 'failed' if
-  // that read failed, else null (OpenConceptLab/ocl_issues#3067).
+  // 'loading' while the target repository, or its versions, are read,
+  // 'failed' if that read failed, else null (OpenConceptLab/ocl_issues#3067).
+  const [repoStatus, setRepoStatus] = React.useState(null)
   const [versionsStatus, setVersionsStatus] = React.useState(null)
   const [conceptCache, setConceptCache] = React.useState({})
   const [allMapTypes, setAllMapTypes] = React.useState([])
@@ -2171,7 +2172,23 @@ const MapProject = () => {
     )
   }
 
-  const fetchRepo = (url, _repo) => APIService.new().overrideURL(url).get().then(response => setRepo(response.data?.id ? response.data : _repo))
+  // Only the latest read may set the repository. A failed read falls back to
+  // the repository the saved rows name, if any. Raw, so a rate-limited read
+  // settles too.
+  const repoRequestRef = React.useRef(0)
+  const repoArgsRef = React.useRef(null)
+  const fetchRepo = (url, _repo) => {
+    const request = ++repoRequestRef.current
+    repoArgsRef.current = [url, _repo]
+    setRepoStatus('loading')
+    APIService.new().overrideURL(url).get(undefined, undefined, undefined, true).then(response => {
+      if(request !== repoRequestRef.current)
+        return
+      const fetchedRepo = response?.data?.id ? response.data : _repo
+      setRepo(fetchedRepo)
+      setRepoStatus(fetchedRepo ? null : 'failed')
+    })
+  }
 
   const fetchMappedSources = (url, setter) => {
     let limit = 25
@@ -3063,6 +3080,14 @@ const MapProject = () => {
   // The last read's arguments, for the AutoMatch dialog's Try again.
   const versionsArgsRef = React.useRef(null)
 
+  // The AutoMatch dialog's Try again repeats whichever read failed.
+  const retryTargetReads = () => {
+    if(repoStatus === 'failed')
+      fetchRepo(...repoArgsRef.current)
+    if(versionsStatus === 'failed')
+      fetchVersions(...versionsArgsRef.current)
+  }
+
   // A newly chosen repository gets the default version. A saved project
   // passes its own version and keeps it (OpenConceptLab/ocl_issues#2906).
   const fetchVersions = (url, savedVersion) => {
@@ -3083,7 +3108,9 @@ const MapProject = () => {
   }
 
   const onRepoChange = (newRepo) => {
+    repoRequestRef.current += 1
     setRepo(newRepo)
+    setRepoStatus(null)
     onRepoVersionChange(false)
     if(newRepo?.url) {
       fetchVersions(newRepo.url)
@@ -6829,8 +6856,8 @@ const MapProject = () => {
               promptTemplate,
               setPromptTemplate: onPromptTemplateChange,
               repoVersion,
-              versionsStatus,
-              onRetryVersions: () => fetchVersions(...versionsArgsRef.current),
+              targetReadStatus: getTargetReadStatus(repoStatus, versionsStatus),
+              onRetryTargetReads: retryTargetReads,
               inAIAssistantGroup,
               algosSelected,
               runnableAlgos,

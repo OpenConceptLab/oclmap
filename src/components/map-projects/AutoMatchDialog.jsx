@@ -56,8 +56,8 @@ const AutoMatchDialog = ({
   promptTemplate,
   setPromptTemplate,
   repoVersion,
-  versionsStatus,
-  onRetryVersions,
+  targetReadStatus,
+  onRetryTargetReads,
   onSubmit,
   inAIAssistantGroup,
   algosSelected,
@@ -177,7 +177,7 @@ const AutoMatchDialog = ({
 
   notices.push(...(check.notices || []))
 
-  const targetRepoState = getTargetRepoState(repoVersion, versionsStatus)
+  const targetRepoState = getTargetRepoState(repoVersion, targetReadStatus)
   const targetRepoStatusId = ['loading', 'failed'].includes(targetRepoState) ? TARGET_REPO_STATUS_ID : undefined
 
   const isDisabled =
@@ -220,7 +220,7 @@ const AutoMatchDialog = ({
                   <ErrorOutlineIcon fontSize='small' />
                   {t('map_project.auto_match_target_repository_failed')}
                 </Typography>
-                <Button size='small' sx={{textTransform: 'none', marginLeft: '8px'}} onClick={onRetryVersions}>
+                <Button size='small' sx={{textTransform: 'none', marginLeft: '8px'}} onClick={onRetryTargetReads}>
                   {t('common.try_again')}
                 </Button>
               </>

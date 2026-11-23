@@ -12,6 +12,7 @@ import {
   getTargetRepoVersionBadges,
   getTargetRepoVersionFromUrl,
   getTargetRepoVersionId,
+  getTargetReadStatus,
   getTargetRepoState,
   getTargetRepoVersionReleaseDate,
   getVersionsFromResponse,
@@ -272,6 +273,14 @@ test('getVersionsFromResponse gives null for a failed read', () => {
   assert.equal(getVersionsFromResponse(undefined), null)
   // A raw read resolves with the error itself, a 429 among them.
   assert.equal(getVersionsFromResponse({ message: 'Request failed with status code 429', response: { status: 429, data: {} } }), null)
+})
+
+test('getTargetReadStatus: loading while either read runs, failed if either failed', () => {
+  assert.equal(getTargetReadStatus(null, 'loading'), 'loading')
+  assert.equal(getTargetReadStatus('failed', 'loading'), 'loading')
+  assert.equal(getTargetReadStatus('failed', null), 'failed')
+  assert.equal(getTargetReadStatus(null, 'failed'), 'failed')
+  assert.equal(getTargetReadStatus(null, null), null)
 })
 
 const LOINC_281_URL = { ...LOINC_VERSIONS[0], version_url: '/orgs/Regenstrief/sources/LOINC/2.81/' }
