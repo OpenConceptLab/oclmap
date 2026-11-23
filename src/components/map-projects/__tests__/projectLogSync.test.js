@@ -19,9 +19,10 @@ const SAVED = {
 
 // A page with a fake log read and POST. `answers` are the reads' results in
 // turn: the saved log, or null for a read that failed.
-const pageWith = (answers = [SAVED]) => {
+const pageWith = (answers = [SAVED], retryDelaysMs = [0, 0, 0]) => {
   const page = {rowLogs: {}, projectLogs: [], posts: [], reads: 0, pending: []}
   page.loader = createProjectLogsLoader({
+    retryDelaysMs,
     read: url => {
       assert.equal(url, URL_)
       const answer = answers[Math.min(page.reads, answers.length - 1)]
@@ -43,9 +44,17 @@ const pageWith = (answers = [SAVED]) => {
       page.posts.push({row_logs: page.rowLogs, project_logs: page.projectLogs})
   }
   page.save = () => page.projectLog('Saved again')
+  // Answers the reads, retries included, until none is left.
   page.answer = async () => {
-    page.pending.splice(0).forEach(resolve => resolve())
-    await new Promise(resolve => setTimeout(resolve, 0))
+    for(let idle = 0; idle < 3;) {
+      await new Promise(resolve => setTimeout(resolve, 5))
+      if(page.pending.length) {
+        idle = 0
+        page.pending.splice(0).forEach(resolve => resolve())
+      } else {
+        idle++
+      }
+    }
   }
   return page
 }
@@ -106,6 +115,56 @@ test('a failed log read sends nothing, and the next entry reads it again', async
   assert.deepEqual(page.posts.map(p => p.project_logs.map(e => e.action)), [['Opened', 'Saved again', 'Saved', 'Created']])
 })
 
+test('a read that fails while an entry waits is read again after a wait', async () => {
+  const page = pageWith([null, null, SAVED])
+  page.loader.load(URL_)
+  page.projectLog('downloaded')
+  await page.answer()
+
+  assert.equal(page.reads, 3)
+  assert.deepEqual(page.posts.map(p => p.project_logs.map(e => e.action)), [['Opened', 'downloaded', 'Saved', 'Created']])
+})
+
+test('reads that keep failing stop after the waits run out, and the next entry starts them again', async () => {
+  const page = pageWith([null])
+  page.loader.load(URL_)
+  page.projectLog('downloaded')
+  await page.answer()
+  // The first read and three more.
+  assert.equal(page.reads, 4)
+  assert.deepEqual(page.posts, [])
+
+  page.save()
+  await page.answer()
+  assert.equal(page.reads, 8)
+  assert.deepEqual(page.posts, [])
+})
+
+test('a page left behind sends nothing once the project is open in a newer page', async () => {
+  const left = pageWith()
+  left.loader.load(URL_)
+  left.projectLog('downloaded')
+
+  const reopened = pageWith()
+  reopened.loader.load(URL_)
+  await reopened.answer()
+  reopened.projectLog('downloaded again')
+
+  await left.answer()
+  assert.deepEqual(left.posts, [])
+  assert.equal(left.loader.isLoaded(), false)
+  assert.deepEqual(reopened.posts.map(p => p.project_logs.map(e => e.action)), [['downloaded again', 'Opened', 'Saved', 'Created']])
+})
+
+test('a page left before its log loaded still sends what it held back, if the project isn\'t open again', async () => {
+  // As a save on leave does: the page is gone, but its read and send go on.
+  const left = pageWith()
+  left.loader.load(URL_)
+  left.save()
+  await left.answer()
+  assert.deepEqual(left.posts.map(p => p.project_logs.map(e => e.action)), [['Opened', 'Saved again', 'Saved', 'Created']])
+})
+
 test('one read at a time: entries while the log loads ask for no second read', async () => {
   const page = pageWith()
   page.loader.load(URL_)
@@ -142,9 +201,11 @@ test('a new project has no saved log to wait for', () => {
 test('mergeSavedLogs keeps a saved log that has no rows or no entries', () => {
   assert.deepEqual(mergeSavedLogs({}, {row_logs: {1: [{action: 'mapped'}]}, project_logs: [{action: 'Opened'}]}),
     {row_logs: {1: [{action: 'mapped'}]}, project_logs: [{action: 'Opened'}]})
-  // The API has answered a log with no rows as a list.
+  // The API has kept row logs as a list, by row index.
   assert.deepEqual(mergeSavedLogs({row_logs: [], project_logs: null}, {row_logs: {}, project_logs: []}),
     {row_logs: {}, project_logs: []})
+  assert.deepEqual(mergeSavedLogs({row_logs: [[{action: 'approved'}], null, [{action: 'mapped'}]]}, {row_logs: {2: [{action: 'rejected'}]}}).row_logs,
+    {0: [{action: 'approved'}], 1: null, 2: [{action: 'rejected'}, {action: 'mapped'}]})
 })
 
 // MapProject can't be mounted here (these tests run without a JSX transform),

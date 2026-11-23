@@ -346,7 +346,7 @@ const MapProject = () => {
   if(!projectLogsLoaderRef.current)
     projectLogsLoaderRef.current = createProjectLogsLoader({
       loaded: !params.projectId,
-      read: url => readProjectLogs(url),
+      read: (url, isCancelled) => readProjectLogs(url, isCancelled),
       onLoaded: (saved, {url, send}) => onProjectLogsLoaded(saved, url, send)
     })
   const autoMatchAIDefaultAppliedRef = React.useRef(false)
@@ -1915,10 +1915,11 @@ const MapProject = () => {
       postProjectLogs(project.url, {row_logs: logsRef.current, project_logs: newLogs})
   }
 
-  // A throttled or failed read settles, and leaving the project stops it.
-  const readProjectLogs = url => requestWithCapacityRetry(
+  // A throttled or failed read settles. It stops once the project is open in
+  // a newer page.
+  const readProjectLogs = (url, isCancelled) => requestWithCapacityRetry(
     () => APIService.new().overrideURL(url).appendToUrl('logs/').request('GET', null, null, {handlesThrottle: true, timeout: LIGHT_REQUEST_TIMEOUT_MS}),
-    {maxWaitMs: INTERACTIVE_WAIT_CAP_MS, isCancelled: () => !isMountedRef.current}
+    {maxWaitMs: INTERACTIVE_WAIT_CAP_MS, isCancelled}
   ).then(result => result.ok ? (result.response?.data?.logs || {}) : null)
 
   // The saved log goes under what this page logged while it loaded, and is
