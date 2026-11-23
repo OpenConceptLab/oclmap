@@ -104,6 +104,16 @@ test('a repository\'s HEAD is one version, at its own URL or at HEAD/', async ()
   assert.deepEqual(lists, [10, 10])
 })
 
+test('a version id the API encodes in its URL is the same version as the bare id', async () => {
+  const api = fakeAPI(10)
+  const read = readerFor(api)
+  read(`${CIEL}v1%40build/`, () => {})
+  read(`${CIEL}v1@build/`, () => {})
+  await api.settle()
+
+  assert.deepEqual(api.reads, [`${CIEL}v1%40build/#1`])
+})
+
 test('a failed page gives what was read so far and is read again on the next ask', async () => {
   let failing = true
   const api = fakeAPI(50, (_, page) => failing && page === 2 ? httpError(404) : undefined)
@@ -153,6 +163,18 @@ test('a network error or a 5xx is tried again, at most twice', async () => {
   await failing.settle()
   assert.equal(failing.reads.length, 3)
   assert.deepEqual(failed, [0])
+})
+
+test('a page isn\'t tried again once no read waits for it', async () => {
+  const api = fakeAPI(10, () => httpError(503))
+  const read = readerFor(api)
+  const stopBridge = read(CIEL_RELEASE, () => {})
+  const stopTarget = read(CIEL_RELEASE, () => {})
+  stopBridge()
+  stopTarget()
+  await api.settle()
+
+  assert.equal(api.reads.length, 1)
 })
 
 test('a stopped read gives nothing more', async () => {
@@ -285,6 +307,8 @@ test('the target version and the bridge probe read through the one shared reader
   assert.deepEqual(readers, ['createMappedSourcesReader(fetchMappedSourcesPage)'])
   assert.deepEqual(reads, [['version.version_url', 'setMappedSources']])
   assert.match(source, /readMappedSources,\n/)
+  // Leaving the project stops the target's read.
+  assert.match(source, /React\.useEffect\(\(\) => \(\) => stopTargetMappedSourcesRef\.current\(\), \[\]\)/)
   // Nothing reads the list around the reader, and a throttled read settles.
   assert.equal(source.match(/appendToUrl\('mapped-sources\/'\)/g).length, 1)
   assert.match(source, /appendToUrl\('mapped-sources\/'\)\.get\(null, null, \{[^}]*\}, true\)/)

@@ -502,6 +502,7 @@ const MapProject = () => {
   // One read of each version's list, shared by the target and the bridge probe.
   const [readMappedSources] = React.useState(() => createMappedSourcesReader(fetchMappedSourcesPage))
   const stopTargetMappedSourcesRef = React.useRef(() => {})
+  React.useEffect(() => () => stopTargetMappedSourcesRef.current(), [])
   const [locales, setLocales] = React.useState([])
   const [versions, setVersions] = React.useState([])
   const [conceptCache, setConceptCache] = React.useState({})

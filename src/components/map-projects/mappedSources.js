@@ -25,43 +25,68 @@ const withRetry = (request, {isCancelled, ...retry}) => retryWithBackoff(
 
 const versionURL = url => `${String(url || '').replace(/\/+$/, '')}/`
 
-// A repository's HEAD is listed at its own URL and at <repository>/HEAD/.
-const versionKey = url => versionURL(url).replace(/^(\/(?:orgs|users)\/[^/]+\/(?:sources|collections)\/[^/]+\/)HEAD\/$/, '$1')
+const decoded = url => {
+  try {
+    return decodeURIComponent(url)
+  } catch {
+    return url
+  }
+}
+
+// The API encodes a version's id in its URL, and the bridge's URL is built
+// from the bare id. A repository's HEAD is listed at its own URL and at
+// <repository>/HEAD/.
+const versionKey = url => decoded(versionURL(url)).replace(/^(\/(?:orgs|users)\/[^/]+\/(?:sources|collections)\/[^/]+\/)HEAD\/$/, '$1')
 
 // fetchPage(url, page) answers as APIService does in raw mode: a response with
 // the page in `data` and the total in the `num_found` header, or the error. A
-// page that fails isn't kept, so the next ask reads it again.
+// page that fails isn't kept, so the next ask reads it again, and a page is
+// tried again only while a read still waits for it.
 //
 // The reader returned, read(url, onList), gives onList the list so far after
 // each page, and returns a function that stops it.
 export const createMappedSourcesReader = (fetchPage, retry = RETRY) => {
   const pages = new Map()
 
-  const readPage = (url, page) => {
+  const readPage = (url, page, waiter) => {
     const key = `${versionKey(url)}#${page}`
-    if(!pages.has(key))
-      pages.set(key, withRetry(() => fetchPage(url, page), retry).then(response => {
+    if(!pages.has(key)) {
+      const waiting = new Set()
+      const request = withRetry(() => fetchPage(url, page), {...retry, isCancelled: () => !waiting.size}).then(response => {
         if(!Array.isArray(response?.data))
           pages.delete(key)
         return response
-      }))
-    return pages.get(key)
+      })
+      pages.set(key, {request, waiting})
+    }
+    const {request, waiting} = pages.get(key)
+    waiting.add(waiter)
+    return {request: request.finally(() => waiting.delete(waiter)), stop: () => waiting.delete(waiter)}
   }
 
   return (url, onList) => {
     const versionUrl = versionURL(url)
+    const waiter = {}
     let stopped = false
-    const read = (page, soFar) => readPage(versionUrl, page).then(response => {
-      if(stopped)
-        return
-      const data = Array.isArray(response?.data) ? response.data : []
-      const list = [...soFar, ...data]
-      onList(list)
-      if(data.length && list.length < parseInt(response?.headers?.num_found || 0))
-        read(page + 1, list)
-    })
+    let stopWaiting = () => {}
+    const read = (page, soFar) => {
+      const {request, stop} = readPage(versionUrl, page, waiter)
+      stopWaiting = stop
+      request.then(response => {
+        if(stopped)
+          return
+        const data = Array.isArray(response?.data) ? response.data : []
+        const list = [...soFar, ...data]
+        onList(list)
+        if(data.length && list.length < parseInt(response?.headers?.num_found || 0))
+          read(page + 1, list)
+      })
+    }
     read(1, [])
-    return () => { stopped = true }
+    return () => {
+      stopped = true
+      stopWaiting()
+    }
   }
 }
 
