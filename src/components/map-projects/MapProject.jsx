@@ -125,6 +125,7 @@ import { normalizeLookupConfig } from './lookupConfigFields'
 import { getDeclaredLocales, getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getSavedTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId } from './projectTargetRepo'
 import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, findTargetRowView, formatBridgeTargetDownloadEntry, resolveAICandidateID, getScoreDetails, getAIAnalysisCandidateIDs, getAIIndicatorTooltip, withCachedConcept, withCandidateNames, buildMatchEntries, restoredNote, withOwnNames, withSavedMatch } from './viewBuilders.js'
 import { formatClockTime, getCapacityWaitLabel, mergeCapacityWaits } from './rowProgress.js'
+import { createMappedSourcesReader, MAPPED_SOURCES_PAGE_SIZE, probeBridgeMappedSources } from './mappedSources'
 
 import './MapProject.scss'
 import '../common/ResizablePanel.scss'
@@ -152,6 +153,11 @@ import '../common/ResizablePanel.scss'
 
 const NEW_PROJECT_BLOCK_ERROR_CODES = {access: 'mapper_access_denied', projects_not_entitled: 'mapper_projects_not_entitled', projects: 'mapper_projects_limit_reached'}
 const MAPPER_QUOTA_SURFACE = {match_operations: 'auto_match', ai_assistant_calls: 'auto_match', projects: 'new_project', rows: 'import'}
+
+// Raw, so a failed or throttled read settles and isn't kept.
+const fetchMappedSourcesPage = (url, page) => APIService.new().overrideURL(url).appendToUrl('mapped-sources/').get(null, null, {
+  excludeSelf: false, brief: true, limit: MAPPED_SOURCES_PAGE_SIZE, offset: (page - 1) * MAPPED_SOURCES_PAGE_SIZE, page
+}, true)
 
 const MapProject = () => {
   const { t } = useTranslation();
@@ -493,6 +499,10 @@ const MapProject = () => {
   const [showTargetRepoVersionError, setShowTargetRepoVersionError] = React.useState(false)
   const [mappedSources, setMappedSources] = React.useState([])
   const [bridgeMappedSources, setBridgeMappedSources] = React.useState({})
+  // One read of each version's list, shared by the target and the bridge probe.
+  const [readMappedSources] = React.useState(() => createMappedSourcesReader(fetchMappedSourcesPage))
+  const stopTargetMappedSourcesRef = React.useRef(() => {})
+  React.useEffect(() => () => stopTargetMappedSourcesRef.current(), [])
   const [locales, setLocales] = React.useState([])
   const [versions, setVersions] = React.useState([])
   const [conceptCache, setConceptCache] = React.useState({})
@@ -870,38 +880,21 @@ const MapProject = () => {
     }
   }, [repoVersion, project])
 
-  React.useEffect(() => {
-    if(!bridgeProbeAlgo?.id)
-      return
-
-    const bridgeUrl = bridgeProbeAlgo?.target_repo_url
-    if(!bridgeUrl)
-      return
-
-    if(bridgeProbeAlgo.target_repo_version) {
-      fetchMappedSources(bridgeUrl + bridgeProbeAlgo.target_repo_version + '/', sources =>
-        setBridgeMappedSources(prev => ({...prev, [bridgeUrl]: sources})))
-      return
-    }
-
-    const resolveNamespace = namespace || get(project, 'owner_url') || owner
-    APIService.new()
+  // Runs again only when an input it uses changes, not on every project change.
+  const bridgeNamespace = namespace || get(project, 'owner_url') || owner
+  React.useEffect(() => probeBridgeMappedSources({
+    algo: bridgeProbeAlgo,
+    selected: bridgeEnabled,
+    namespace: bridgeNamespace,
+    resolveVersion: (bridgeUrl, resolveNamespace) => APIService.new()
       .overrideURL('/$resolveReference/')
-      .post([{url: bridgeUrl}], currentUserToken(), null, resolveNamespace ? {namespace: resolveNamespace} : undefined)
-      .then(response => {
-        const resolvedVersion = get(response, 'data.0.result.version', '')
-        if(!resolvedVersion)
-          return
-
-        if(bridgeEnabled)
-          setAlgosSelected(prev => prev.map(algo =>
-            algo?.id === bridgeProbeAlgo.id ? {...algo, target_repo_version: resolvedVersion} : algo
-          ))
-        fetchMappedSources(bridgeUrl + resolvedVersion + '/', sources =>
-          setBridgeMappedSources(prev => ({...prev, [bridgeUrl]: sources})))
-      })
-      .catch(() => {})
-  }, [bridgeProbeAlgo?.id, bridgeProbeAlgo?.target_repo_url, bridgeProbeAlgo?.target_repo_version, bridgeEnabled, namespace, project, owner])
+      .post([{url: bridgeUrl}], currentUserToken(), null, resolveNamespace ? {namespace: resolveNamespace} : undefined, true),
+    readMappedSources,
+    pinVersion: (algoId, version) => setAlgosSelected(prev => prev.map(algo =>
+      algo?.id === algoId ? {...algo, target_repo_version: version} : algo
+    )),
+    onSources: (bridgeUrl, sources) => setBridgeMappedSources(prev => ({...prev, [bridgeUrl]: sources}))
+  }), [bridgeProbeAlgo?.id, bridgeProbeAlgo?.target_repo_url, bridgeProbeAlgo?.target_repo_version, bridgeEnabled, bridgeNamespace])
 
 
   const createProjectFromTemplate = () => {
@@ -2170,40 +2163,15 @@ const MapProject = () => {
 
   const fetchRepo = (url, _repo) => APIService.new().overrideURL(url).get().then(response => setRepo(response.data?.id ? response.data : _repo))
 
-  const fetchMappedSources = (url, setter) => {
-    let limit = 25
-
-    const recurse = (offset, page, fetchedSoFar, accumulated) => {
-      _fetchMappedSources(url, limit, offset, page, response => {
-        const data = response?.data || []
-        const updated = [...accumulated, ...data]
-
-        setter(updated)
-
-        const fetched = fetchedSoFar + data.length
-        const numFound = parseInt(response?.headers?.num_found || 0)
-
-        if (fetched < numFound) {
-          recurse(offset + limit, page + 1, fetched, updated)
-        }
-      })
-    }
-
-    recurse(0, 1, 0, [])
-  }
-
-  const _fetchMappedSources = (
-    url, limit, offset, page, callback
-  ) => {
-    APIService.new().overrideURL(url).appendToUrl('mapped-sources/').get(null, null, {excludeSelf: false, brief: true, limit: limit || 25, offset: offset || 0, page: page || 1}).then(callback)
-  }
-
   const onRepoVersionChange = version => {
     setRepoVersion(version || false)
     setShowTargetRepoVersionError(false)
+    // A slower read of an earlier version doesn't overwrite this one's list.
+    stopTargetMappedSourcesRef.current()
+    stopTargetMappedSourcesRef.current = () => {}
     if(version?.version_url) {
       setLocales(getDeclaredLocales(version))
-      fetchMappedSources(version.version_url, setMappedSources)
+      stopTargetMappedSourcesRef.current = readMappedSources(version.version_url, setMappedSources)
       updateAlgosByRepoVersion(version)
     } else {
       setMappedSources([])
@@ -3063,7 +3031,7 @@ const MapProject = () => {
   const fetchVersions = (url, savedVersion) => {
     const request = ++versionsRequestRef.current
     APIService.new().overrideURL(dropVersion(url)).appendToUrl('versions/?verbose=true').get().then(response => {
-      if(request !== versionsRequestRef.current)
+      if(request !== versionsRequestRef.current || !isMountedRef.current)
         return
       let _versions = response.data
       setVersions(_versions)
