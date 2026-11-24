@@ -79,6 +79,17 @@ export const getDefaultBridgeRepoVersion = versions => {
   return versions.find(isLLMBridgeRepoVersion) || false
 }
 
+// A bridge algorithm's source canonical URL, looked up for `request` (the
+// algorithm's key, its bridge source URL and its canonical URL when asked),
+// applied to the latest algorithms: only while that algorithm still bridges
+// from that source, and not over a canonical URL entered while it was asked.
+export const applyBridgeCanonical = (algos, request, canonical) => {
+  const current = request.key && algos?.find(algo => algo?.__key === request.key)
+  if(!canonical || !current || current.target_repo_url !== request.url || (current.bridge_repo?.canonical_url || '') !== (request.canonical || ''))
+    return algos
+  return algos.map(algo => algo === current ? {...algo, bridge_repo: {canonical_url: canonical, canonical_url_source: 'repo'}} : algo)
+}
+
 export const getLatestReleasedBridgeVersion = versions => {
   if(!Array.isArray(versions) || versions.length === 0)
     return null

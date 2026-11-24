@@ -42,6 +42,7 @@ import { getRequestLimits, getRequestSettings } from './requestLimits'
 import { dropVersion } from '../../common/utils'
 import { LockedFields, useEditLock } from '../common/NoticeLock'
 import {
+  applyBridgeCanonical,
   getDefaultBridgeRepoVersion,
   getLatestReleasedBridgeVersion,
   isLLMBridgeRepoVersion
@@ -99,7 +100,8 @@ const fetchBridgeVersions = (url) => {
  *     token?: string,
  *   }>
  *
- * - onChange: (nextValue) => void
+ * - onChange: (nextValue) => void, a state setter: a lookup that settles
+ *   later passes it an updater (algos => nextValue)
  *
  * Optional:
  * - title?: string
@@ -237,15 +239,14 @@ export default function MultiAlgoSelector({
       if(!url) continue
       if(syncedBridgeUrlRef.current.get(sel.__key) === url) continue
       syncedBridgeUrlRef.current.set(sel.__key, url)
+      // The reply lands on the algorithms as they are then, not as read here.
+      const request = { key: sel.__key, url, canonical: sel.bridge_repo?.canonical_url }
       fetchBridgeCanonical(url).then(canonical => {
         if(disabledRef.current) {
           syncedBridgeUrlRef.current.delete(sel.__key)
           return
         }
-        if(!canonical) return
-        updateSelected(sel.__key, {
-          bridge_repo: { canonical_url: canonical, canonical_url_source: 'repo' }
-        })
+        onChange(algos => applyBridgeCanonical(algos, request, canonical))
       })
     }
   }, [value, disabled])
