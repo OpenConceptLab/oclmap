@@ -71,8 +71,8 @@ const HeaderAutocomplete = ({headers, isValid, ...rest}) => {
 
 
 const TargetSourceAutoComplete = ({sources, possibleValue, selected, onChange, disabled, ...rest}) => {
-  // The likely source is picked for a field that has none, once the project
-  // can be changed: on mount, or when its lock ends.
+  // The likely source is picked for a field that has none, unless the
+  // project can't be changed.
   React.useEffect(() => {
     if(possibleValue && !selected && !disabled) {
       const possibleSource = find(sources, source => {
@@ -84,7 +84,7 @@ const TargetSourceAutoComplete = ({sources, possibleValue, selected, onChange, d
       if(possibleSource?.url)
         onChange(possibleSource?.url)
     }
-  }, [disabled])
+  }, [])
   return <Autocomplete
            autoHighlight
            autoComplete
