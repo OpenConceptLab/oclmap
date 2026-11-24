@@ -169,6 +169,12 @@ export const getResourceNoticeEffect = ({loaded, notice}, shownFromRoute) => {
   return shownFromRoute ? 'clear' : null
 }
 
+// A save refused as read-only locks the project until a newer word on it: an
+// answer from the notices route asked for after the refusal (`requestedAt`
+// and `refusedAt` read from one clock), that locks nothing.
+export const supersedesRefusal = ({loaded, notice, requestedAt}, refusedAt) =>
+  Boolean(loaded) && typeof refusedAt === 'number' && typeof requestedAt === 'number' && requestedAt > refusedAt && !locksEditing(notice)
+
 // GET /capabilities/notices/?resource=<relative url> on the API: the notices
 // for one repository or map project. An API without the route answers 404,
 // and nothing shows.

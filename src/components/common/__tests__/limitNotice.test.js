@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 
 const {
   READ_ONLY_ERROR_CODE, getLocks, getNotice, getNoticeDetail, getNoticeIcon, getNoticeTone, getNotices,
-  getResourceNoticeEffect, getResourceNoticesRequest, isReadOnlyRefusal, locksEditing, normalizeNotice, orderActions, safeURL, toLimitRefusal,
+  getResourceNoticeEffect, getResourceNoticesRequest, isReadOnlyRefusal, locksEditing, normalizeNotice, orderActions, safeURL, supersedesRefusal, toLimitRefusal,
 } = await import('../limitNotice.js')
 
 const NOTICE = {
@@ -177,4 +177,17 @@ test('the notices route\'s answer: a pending one changes nothing, an empty one t
   assert.equal(getResourceNoticeEffect({loaded: true, notice: showing}, true), 'show')
   assert.equal(getResourceNoticeEffect({loaded: true, notice: null}, true), 'clear')
   assert.equal(getResourceNoticeEffect({loaded: true, notice: null}, false), null, 'nothing from the route to take back')
+})
+
+test('the notices route\'s answer asked for after a read-only refusal, locking nothing, ends that read-only state', () => {
+  const locking = normalizeNotice(NOTICE)
+  const showing = normalizeNotice({...NOTICE, locks: ['delete']})
+  const refusedAt = 100
+  assert.equal(supersedesRefusal({loaded: true, notice: null, requestedAt: 150}, refusedAt), true, 'an empty answer asked for later')
+  assert.equal(supersedesRefusal({loaded: true, notice: showing, requestedAt: 150}, refusedAt), true, 'a strip that locks nothing')
+  assert.equal(supersedesRefusal({loaded: true, notice: locking, requestedAt: 150}, refusedAt), false, 'a later answer that still locks editing')
+  assert.equal(supersedesRefusal({loaded: true, notice: null, requestedAt: 50}, refusedAt), false, 'an answer asked for before the refusal is older news')
+  assert.equal(supersedesRefusal({loaded: true, notice: null, requestedAt: 100}, refusedAt), false, 'nor at the same moment')
+  assert.equal(supersedesRefusal({loaded: false, notice: null}, refusedAt), false, 'pending, failed or no such route')
+  assert.equal(supersedesRefusal({loaded: true, notice: null, requestedAt: 150}, null), false, 'no refusal to end')
 })
