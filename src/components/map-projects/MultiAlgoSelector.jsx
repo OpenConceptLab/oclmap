@@ -295,8 +295,10 @@ export default function MultiAlgoSelector({
     });
   };
 
+  // A lock that lands while the picker is open closes it (LockedFields
+  // replaces it), and a pick made as it lands adds nothing.
   const addAlgo = (algoId) => {
-    if (!algoId) return;
+    if (!algoId || disabled) return;
     const algo = algosById.get(algoId);
     if (!algo) return;
 
