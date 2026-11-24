@@ -2029,8 +2029,10 @@ const MapProject = () => {
 
   // Edits kept back while it was read-only are queued for autosave once it
   // isn't, while the page is open: a save that lands after the user left
-  // mustn't send the edits they chose to discard.
+  // mustn't send the edits they chose to discard. A prompt to discard them,
+  // open as it ends, closes: leaving now saves them.
   const requeueUnsavedEdits = () => {
+    setLeaveTarget(prev => prev?.readOnlyEdits ? null : prev)
     if(isMountedRef.current && editTrackerRef.current.hasUnsaved())
       autosaveSchedulerRef.current.schedule('read_only_ended')
   }
