@@ -19,17 +19,14 @@ export const LockTooltip = ({ title, children, placement = 'bottom', display = '
   </Tooltip> :
   children
 
-// A group of locked fields says why on hover over it, except over a button or
-// link that still works (showing a token, closing a panel). Its wrapper has
+// A group of locked fields says why on hover anywhere over it. Its wrapper has
 // no box and is there whether or not the project is locked, so the fields lay
 // out as without it and keep their state as a lock lands or ends.
 export const LockedFields = ({ children }) => {
   const lock = useEditLock()
-  const [overLocked, setOverLocked] = React.useState(false)
-  const onMouseOver = event => lock && setOverLocked(!event.target.closest?.('button:not(:disabled), a[href]'))
   return (
-    <Tooltip title={lock || ''} open={Boolean(lock) && overLocked} followCursor disableHoverListener disableFocusListener disableTouchListener>
-      <span style={{display: 'contents'}} onMouseOver={onMouseOver} onMouseLeave={() => setOverLocked(false)}>{children}</span>
+    <Tooltip title={lock || ''} followCursor>
+      <span style={{display: 'contents'}}>{children}</span>
     </Tooltip>
   )
 }
