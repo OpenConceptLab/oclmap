@@ -126,6 +126,7 @@ import { getDeclaredLocales, getDefaultTargetRepoVersion, getProjectTargetRepoVe
 import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, findTargetRowView, formatBridgeTargetDownloadEntry, resolveAICandidateID, getScoreDetails, getAIAnalysisCandidateIDs, getAIIndicatorTooltip, withCachedConcept, withCandidateNames, buildMatchEntries, restoredNote, withOwnNames, withSavedMatch } from './viewBuilders.js'
 import { formatClockTime, getCapacityWaitLabel, mergeCapacityWaits } from './rowProgress.js'
 import { createLatestRead, getRetryAt, isSameTargetRepo, settleRepoRead } from './targetReads'
+import { createProjectLogsLoader, mergeSavedLogs, savedLogsFromResult } from './projectLogSync'
 import { createMappedSourcesReader, MAPPED_SOURCES_PAGE_SIZE, probeBridgeMappedSources } from './mappedSources'
 
 import './MapProject.scss'
@@ -345,8 +346,19 @@ const MapProject = () => {
   const logsRef = React.useRef({})
   const projectLogsRef = React.useRef([])
   // A saved project's logs load after it opens. Until they have, AutoMatch
-  // can't tell a project's first run from a later one.
-  const projectLogsLoadedRef = React.useRef(!params.projectId)
+  // can't tell a project's first run from a later one, and the page sends no
+  // log: the API would replace the saved one with the page's entries alone
+  // (OpenConceptLab/ocl_issues#3068).
+  const projectLogsLoaderRef = React.useRef(null)
+  if(!projectLogsLoaderRef.current)
+    projectLogsLoaderRef.current = createProjectLogsLoader({
+      loaded: !params.projectId,
+      read: (url, isCancelled) => readProjectLogs(url, isCancelled),
+      onLoaded: (saved, {url, send}) => onProjectLogsLoaded(saved, url, send)
+    })
+  React.useEffect(() => {
+    projectLogsLoaderRef.current.opened(params.projectId ? ['', params.ownerType, params.owner, 'map-projects', params.projectId, ''].join('/') : null)
+  }, [])
   const autoMatchAIDefaultAppliedRef = React.useRef(false)
   const configSnapshotOnOpenRef = React.useRef(null)
   const getConfigurationSnapshotRef = React.useRef(null)
@@ -946,18 +958,8 @@ const MapProject = () => {
       }
       refreshMapperQuotaCache()
       setFilters(response.data?.filters || {})
-      if(response.data?.url) {
-        APIService.new().overrideURL(response.data.url).appendToUrl('logs/').get().then(response => {
-          const rowLogs = response.data.logs?.row_logs || []
-          const savedProjectLogs = response.data.logs?.project_logs || []
-          logsRef.current = rowLogs
-          projectLogsRef.current = savedProjectLogs
-          setLogs(rowLogs)
-          setProjectLogs(savedProjectLogs)
-          projectLogsLoadedRef.current = true
-          projectLog({action: 'Opened'})
-        })
-      }
+      if(response.data?.url)
+        projectLogsLoaderRef.current.load(response.data.url)
       if(response.data?.file_url) {
         fetch(response.data.file_url).then(res => res.text()).then(csvText => {
           const workbook = XLSX.read(csvText, { type: "string", raw: true });
@@ -1871,7 +1873,8 @@ const MapProject = () => {
         if(!isAutoSave)
           baseSetAlert({severity: 'success', message: t('map_project.successfully_saved'), duration: 2000})
 
-        postProjectLogs(response.data.url, {row_logs: savedRowLogs, project_logs: savedProjectLogs})
+        if(projectLogsLoaderRef.current.canSend(response.data.url))
+          postProjectLogs(response.data.url, {row_logs: savedRowLogs, project_logs: savedProjectLogs})
         lastSaveFailedRef.current = false
         return true
       }
@@ -1914,8 +1917,28 @@ const MapProject = () => {
     const newLogs = [newLog, ...projectLogsRef.current]
     projectLogsRef.current = newLogs
     setProjectLogs(newLogs)
-    if(project?.url)
+    if(project?.url && projectLogsLoaderRef.current.canSend(project.url))
       postProjectLogs(project.url, {row_logs: logsRef.current, project_logs: newLogs})
+  }
+
+  // A throttled or failed read settles, and a refused one (a 4xx) isn't
+  // retried on a timer. It stops once the project is open in a newer page.
+  const readProjectLogs = (url, isCancelled) => requestWithCapacityRetry(
+    () => APIService.new().overrideURL(url).appendToUrl('logs/').request('GET', null, null, {handlesThrottle: true, timeout: LIGHT_REQUEST_TIMEOUT_MS}),
+    {maxWaitMs: INTERACTIVE_WAIT_CAP_MS, isCancelled}
+  ).then(savedLogsFromResult)
+
+  // The saved log goes under what this page logged while it loaded, and is
+  // sent with it if the page held an entry back.
+  const onProjectLogsLoaded = (saved, url, send) => {
+    const opened = {action: 'Opened', created_at: moment().toDate(), user: user.username || user.id}
+    const merged = mergeSavedLogs(saved, {row_logs: logsRef.current, project_logs: [opened, ...projectLogsRef.current]})
+    logsRef.current = merged.row_logs
+    projectLogsRef.current = merged.project_logs
+    setLogs(merged.row_logs)
+    setProjectLogs(merged.project_logs)
+    if(send)
+      postProjectLogs(url, merged)
   }
 
   // POSTs the project's logs, waiting out a busy server. One POST at a time
@@ -3207,7 +3230,7 @@ const MapProject = () => {
       const { runAI, applied } = getAutoMatchAIOnOpen({
         current: autoRunAIAnalysis,
         applied: autoMatchAIDefaultAppliedRef.current,
-        logsLoaded: projectLogsLoadedRef.current,
+        logsLoaded: projectLogsLoaderRef.current.isLoaded(),
         projectLogs: projectLogsRef.current,
         aiOnByDefault: aiOnByDefault(),
       })
