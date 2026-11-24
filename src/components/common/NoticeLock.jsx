@@ -13,16 +13,22 @@ export const useEditLock = () => React.useContext(EditLockContext)
 
 // A locked control is disabled and says why on hover. A disabled control emits
 // no pointer events, so the tooltip goes on a wrapping span.
-export const LockTooltip = ({ title, children, placement = 'bottom', display = 'inline-flex', style, followCursor }) => title ?
-  <Tooltip title={title} placement={placement} followCursor={followCursor}>
+export const LockTooltip = ({ title, children, placement = 'bottom', display = 'inline-flex', style }) => title ?
+  <Tooltip title={title} placement={placement}>
     <span style={{display, ...style}}>{children}</span>
   </Tooltip> :
   children
 
-// A group of locked fields says why on hover anywhere over it.
-export const LockedFields = ({ children, style }) => {
+// A group of locked fields says why on hover anywhere over it. Its wrapper has
+// no box and is there whether or not the project is locked, so the fields lay
+// out as without it and keep their state as a lock lands or ends.
+export const LockedFields = ({ children }) => {
   const lock = useEditLock()
-  return <LockTooltip title={lock} display='block' style={style} followCursor>{children}</LockTooltip>
+  return (
+    <Tooltip title={lock || ''} followCursor>
+      <span style={{display: 'contents'}}>{children}</span>
+    </Tooltip>
+  )
 }
 
 export const LockMark = ({ sx }) => <LockIcon fontSize='inherit' sx={{color: 'secondary.main', ...sx}} />

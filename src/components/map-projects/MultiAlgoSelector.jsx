@@ -304,8 +304,8 @@ export default function MultiAlgoSelector({
     });
   };
 
-  // A lock that lands while the picker is open closes it (LockedFields
-  // replaces it), and a pick made as it lands adds nothing.
+  // A lock that lands while the picker is open closes it (its key changes),
+  // and a pick made as it lands adds nothing.
   const addAlgo = (algoId) => {
     if (!algoId || disabled) return;
     const algo = algosById.get(algoId);
@@ -810,8 +810,8 @@ export default function MultiAlgoSelector({
               <AddRoundedIcon />
             </Box>
 
-            <LockedFields style={{width: '100%'}}>
-            <FormControl fullWidth size="small" disabled={disabled || !canAddMore}>
+            <FormControl key={disabled ? 'locked' : 'open'} fullWidth size="small" disabled={disabled || !canAddMore}>
+              <LockedFields>
               <Select
                 displayEmpty
                 value=""
@@ -850,8 +850,8 @@ export default function MultiAlgoSelector({
                   })
                 }
               </Select>
+              </LockedFields>
             </FormControl>
-            </LockedFields>
           </Stack>
         </Paper>
       </Stack>
