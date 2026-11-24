@@ -157,6 +157,18 @@ export const toLimitRefusal = value => {
 // is refused.
 export const locksEditing = notice => getLocks([notice]).includes('edit')
 
+// What the latest answer about a project from the notices route does: 'lock'
+// (read-only, with its strip), 'show' (the strip only), 'clear' (an empty
+// answer takes back what an earlier answer showed), or null while none has
+// come (pending, failed, or no such route) and when there's nothing to change.
+export const getResourceNoticeEffect = ({loaded, notice}, shownFromRoute) => {
+  if(!loaded)
+    return null
+  if(notice)
+    return locksEditing(notice) ? 'lock' : 'show'
+  return shownFromRoute ? 'clear' : null
+}
+
 // GET /capabilities/notices/?resource=<relative url> on the API: the notices
 // for one repository or map project. An API without the route answers 404,
 // and nothing shows.

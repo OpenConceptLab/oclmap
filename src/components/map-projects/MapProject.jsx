@@ -114,7 +114,7 @@ import QuotaDialog from '../common/QuotaDialog'
 import { getQuotaError } from '../common/quotaErrors'
 import LimitNotice from '../common/LimitNotice.jsx'
 import useResourceNotice from '../common/useResourceNotice'
-import { locksEditing, toLimitRefusal } from '../common/limitNotice.js'
+import { getResourceNoticeEffect, toLimitRefusal } from '../common/limitNotice.js'
 import MapperQuotaChip from './MapperQuotaChip'
 import MapProjectBreadcrumb from './MapProjectBreadcrumb'
 import { getPreviewLimitError, isAIPreviewLimitError, isPreviewLimitError } from './previewLimits'
@@ -382,8 +382,10 @@ const MapProject = () => {
   // refuses every save, so nothing autosaves or saves on leave. A save that
   // goes through clears it.
   const readOnlyRef = React.useRef(false)
-  // The strip at the top of the project: {notice, detail}, or null.
+  // The strip at the top of the project: {notice, detail}, or null, and
+  // whether the notices route sent it (an empty answer takes it back).
   const [projectNotice, setProjectNotice] = React.useState(null)
+  const projectNoticeFromRouteRef = React.useRef(false)
   // The edits no save has kept yet, which leaving a read-only project loses.
   const editTrackerRef = React.useRef(null)
   if(!editTrackerRef.current)
@@ -1995,15 +1997,27 @@ const MapProject = () => {
   // The project turns read-only, from a refusal or from the API's notice for
   // it: the pending autosave is dropped, and nothing autosaves until a save
   // goes through.
-  const enterReadOnly = shown => {
+  const enterReadOnly = ({notice, detail}, fromRoute = false) => {
     readOnlyRef.current = true
     autosaveSchedulerRef.current.cancel()
-    setProjectNotice(shown)
+    projectNoticeFromRouteRef.current = fromRoute
+    setProjectNotice({notice, detail})
   }
 
   const leaveReadOnly = () => {
     if(!readOnlyRef.current)
       return
+    readOnlyRef.current = false
+    projectNoticeFromRouteRef.current = false
+    setProjectNotice(null)
+  }
+
+  // Takes back what the notices route showed: its strip, and the read-only
+  // state it began.
+  const clearRouteNotice = () => {
+    if(!projectNoticeFromRouteRef.current)
+      return
+    projectNoticeFromRouteRef.current = false
     readOnlyRef.current = false
     setProjectNotice(null)
   }
@@ -2020,14 +2034,22 @@ const MapProject = () => {
 
   // The API's notice for this project (none from an API without the route): a
   // read-only project shows its strip and saves nothing from the start.
+  // An empty answer takes back what an earlier one showed; a pending or failed
+  // one changes nothing.
   const resourceNotice = useResourceNotice(project?.url || null)
   React.useEffect(() => {
-    if(!resourceNotice)
-      return
-    if(locksEditing(resourceNotice))
-      enterReadOnly({notice: resourceNotice})
-    else
-      setProjectNotice({notice: resourceNotice})
+    const effect = getResourceNoticeEffect(resourceNotice, projectNoticeFromRouteRef.current)
+    if(effect === 'lock')
+      enterReadOnly({notice: resourceNotice.notice}, true)
+    else if(effect === 'clear')
+      clearRouteNotice()
+    else if(effect === 'show') {
+      clearRouteNotice()
+      if(!readOnlyRef.current) {
+        projectNoticeFromRouteRef.current = true
+        setProjectNotice({notice: resourceNotice.notice})
+      }
+    }
   }, [resourceNotice])
 
   // The strip's height, taken off the table's so the page doesn't scroll.

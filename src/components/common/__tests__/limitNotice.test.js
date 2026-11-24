@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 
 const {
   READ_ONLY_ERROR_CODE, getLocks, getNotice, getNoticeDetail, getNoticeIcon, getNoticeTone, getNotices,
-  getResourceNoticesRequest, isReadOnlyRefusal, locksEditing, normalizeNotice, orderActions, safeURL, toLimitRefusal,
+  getResourceNoticeEffect, getResourceNoticesRequest, isReadOnlyRefusal, locksEditing, normalizeNotice, orderActions, safeURL, toLimitRefusal,
 } = await import('../limitNotice.js')
 
 const NOTICE = {
@@ -166,4 +166,15 @@ test('the notices route is asked about one resource, signed in, in the UI langua
   assert.equal(getResourceNoticesRequest({baseURL: 'https://api.example.org', token: undefined, resource: '/users/someone/map-projects/7/'}), null)
   assert.equal(getResourceNoticesRequest({baseURL: '', token: 'personal-token', resource: '/users/someone/map-projects/7/'}), null)
   assert.equal(getResourceNoticesRequest({baseURL: 'https://api.example.org', token: 'personal-token', resource: null}), null)
+})
+
+test('the notices route\'s answer: a pending one changes nothing, an empty one takes back what it showed', () => {
+  const locking = normalizeNotice(NOTICE)
+  const showing = normalizeNotice({...NOTICE, locks: ['delete']})
+  for(const shown of [true, false])
+    assert.equal(getResourceNoticeEffect({loaded: false, notice: null}, shown), null, 'pending')
+  assert.equal(getResourceNoticeEffect({loaded: true, notice: locking}, false), 'lock')
+  assert.equal(getResourceNoticeEffect({loaded: true, notice: showing}, true), 'show')
+  assert.equal(getResourceNoticeEffect({loaded: true, notice: null}, true), 'clear')
+  assert.equal(getResourceNoticeEffect({loaded: true, notice: null}, false), null, 'nothing from the route to take back')
 })
