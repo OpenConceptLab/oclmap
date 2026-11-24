@@ -7283,7 +7283,7 @@ const MapProject = () => {
         <DialogTitle>{t('map_project.leave_while_running_title')}</DialogTitle>
         <DialogContent>
           <Typography component='p' sx={{fontSize: '14px', color: 'surface.dark'}}>
-            {t(project?.id ? 'map_project.leave_while_running_body' : 'map_project.leave_while_running_body_unsaved')}
+            {t(!project?.id ? 'map_project.leave_while_running_body_unsaved' : isReadOnly ? 'map_project.leave_while_running_body_read_only' : 'map_project.leave_while_running_body')}
           </Typography>
         </DialogContent>
         <DialogActions>

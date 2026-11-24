@@ -367,6 +367,7 @@
     "leave_while_running_title": "自动匹配正在运行",
     "leave_while_running_body": "离开此项目会立即停止运行。已匹配的结果会被保存。",
     "leave_while_running_body_unsaved": "此项目尚未保存。离开会立即停止运行，并丢弃该项目及其结果。",
+    "leave_while_running_body_read_only": "离开此项目会立即停止运行。此项目为只读，已匹配的结果不会被保存。",
     "stay": "留下",
     "stop_and_leave": "停止并离开",
     "leave_unsaved_title": "不保存就离开？",
