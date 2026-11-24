@@ -34,7 +34,11 @@ const Propose = ({onChange, proposed, onSubmit, repo, row, columns}) => {
 
   const [state, setState] = React.useState({})
 
+  // A read-only project's proposal is shown, not changed
+  // (OpenConceptLab/ocl_online#424).
   const _onChange = event => {
+    if(lock)
+      return
     event.persist()
     let newState;
     if(event.target.id.includes('attributes.')) {
@@ -84,22 +88,22 @@ const Propose = ({onChange, proposed, onSubmit, repo, row, columns}) => {
   return (
     <div className='col-xs-12 padding-0' style={{margin: '12px 0'}}>
       <div className='col-xs-12 padding-0'>
-        <TextField id='source' sx={{width: 'calc(50% - 12px)', margin: '4px 6px'}} label={t('map_project.target_source')} value={state.source || ''} onChange={_onChange}/>
-        <TextField id='id' sx={{width: 'calc(50% - 12px)', margin: '4px 6px'}} label={t('map_project.concept_id')} value={state?.id || ''} onChange={_onChange}/>
-        <TextField id='name' sx={{width: 'calc(50% - 12px)', margin: '4px 6px',}} label={t('common.name')} value={state?.name || ''} onChange={_onChange}/>
-        <TextField id='map_type' sx={{width: 'calc(50% - 12px)', margin: '4px 6px',}} label={t('map_project.map_type')} value={state?.map_type || 'SAME-AS'} onChange={_onChange}/>
+        <TextField id='source' sx={{width: 'calc(50% - 12px)', margin: '4px 6px'}} label={t('map_project.target_source')} value={state.source || ''} onChange={_onChange} disabled={Boolean(lock)}/>
+        <TextField id='id' sx={{width: 'calc(50% - 12px)', margin: '4px 6px'}} label={t('map_project.concept_id')} value={state?.id || ''} onChange={_onChange} disabled={Boolean(lock)}/>
+        <TextField id='name' sx={{width: 'calc(50% - 12px)', margin: '4px 6px',}} label={t('common.name')} value={state?.name || ''} onChange={_onChange} disabled={Boolean(lock)}/>
+        <TextField id='map_type' sx={{width: 'calc(50% - 12px)', margin: '4px 6px',}} label={t('map_project.map_type')} value={state?.map_type || 'SAME-AS'} onChange={_onChange} disabled={Boolean(lock)}/>
         <Typography sx={{fontWeight: 'bold', margin: '10px 10px 4px'}}>{t('common.attributes')}</Typography>
         {
           times(attributes, i => {
             return (
               <div className='col-xs-12 padding-0' key={i}>
-                <TextField id={`attributes.${i}.name`} sx={{width: 'calc(50% - 12px)', margin: '4px 6px'}} label={t('map_project.attribute_name')} value={get(state, `attributes.${i}.name`) || ''} onChange={_onChange}/>
-                <TextField id={`attributes.${i}.value`} sx={{width: 'calc(50% - 12px)', margin: '4px 6px'}} label={t('map_project.attribute_value')} value={get(state, `attributes.${i}.value`) || ''} onChange={_onChange}/>
+                <TextField id={`attributes.${i}.name`} sx={{width: 'calc(50% - 12px)', margin: '4px 6px'}} label={t('map_project.attribute_name')} value={get(state, `attributes.${i}.name`) || ''} onChange={_onChange} disabled={Boolean(lock)}/>
+                <TextField id={`attributes.${i}.value`} sx={{width: 'calc(50% - 12px)', margin: '4px 6px'}} label={t('map_project.attribute_value')} value={get(state, `attributes.${i}.value`) || ''} onChange={_onChange} disabled={Boolean(lock)}/>
               </div>
             )
           })
         }
-        <Button sx={{marginLeft: '8px', textTransform: 'none'}} size='small' variant='text' onClick={() => setAttributes(attributes + 1)}>
+        <Button sx={{marginLeft: '8px', textTransform: 'none'}} size='small' variant='text' onClick={() => setAttributes(attributes + 1)} disabled={Boolean(lock)}>
           {t('map_project.add_more')}
         </Button>
       </div>
@@ -112,6 +116,7 @@ const Propose = ({onChange, proposed, onSubmit, repo, row, columns}) => {
           rows={5}
           value={state?.note || ''}
           onChange={_onChange}
+          disabled={Boolean(lock)}
         />
       </div>
       <div className='col-xs-12 padding-0' style={{margin: '16px 0', display: 'flex', alignItems: 'center'}}>

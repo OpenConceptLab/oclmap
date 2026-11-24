@@ -5880,7 +5880,11 @@ const MapProject = () => {
     return returnSelf ? (cached || concept) : cached
   }
 
-  const onProposedUpdate = proposedState => setProposed(prev => ({...prev, [rowIndex]: {...proposedState}}))
+  // A read-only project's proposal isn't changed (OpenConceptLab/ocl_online#424).
+  const onProposedUpdate = proposedState => {
+    if(!readOnlyRef.current)
+      setProposed(prev => ({...prev, [rowIndex]: {...proposedState}}))
+  }
 
   const doubleClickCallback = useDoubleClick(onCSVRowSelect, () => {});
 
@@ -7174,6 +7178,8 @@ const MapProject = () => {
                       onChange={onProposedUpdate}
                       proposed={proposed[rowIndex]}
                       onSubmit={(event, state) => {
+                        if(readOnlyRef.current)
+                          return
                         if(state)
                           setProposed(prev => ({...prev, [rowIndex]: {...state}}))
                         onDecisionChange(event, 'propose')
