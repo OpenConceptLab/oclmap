@@ -93,7 +93,7 @@ import DataGridControls from './DataGridControls'
 import { getPreviewEligibleRowIndexes, getRowsToProcess, countAIOnlyRows, getAutoMatchAIOnOpen, takeRunRows, clearRunRowStatuses, canRunAlgorithm, spendsMatchQuota, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, AI_LOOKUP_WAIT_MS, RERANK_LOOKUP_WAIT_MS, RERANK_MAX_IN_FLIGHT, isScispacyWarmingUp } from './autoMatchRows'
 import { aiOnByDefault, getMaxRunRows, getMapperSettings } from '@openconceptlab/oclmap-extensions'
 import { createAutosaveScheduler, createLatestSender, saveOnLeave, sendAfter, trackSave, whenSaved, installUnloadGuard, SAVE_SKIPPED } from './autosave'
-import { blockLeaving, continueLeaving, createRunClosers, isUnsavedNewProject, shouldAskBeforeLeaving, shouldWarnBeforeUnload } from './leaveGuard'
+import { blockLeaving, continueLeaving, createEditTracker, createRunClosers, isUnsavedNewProject, shouldAskBeforeLeaving, shouldWarnBeforeUnload } from './leaveGuard'
 import MatchSummaryCard from './MatchSummaryCard'
 import MappingDecisionResult from './MappingDecisionResult'
 import DecisionSelector from './DecisionSelector'
@@ -114,7 +114,7 @@ import QuotaDialog from '../common/QuotaDialog'
 import { getQuotaError } from '../common/quotaErrors'
 import LimitNotice from '../common/LimitNotice.jsx'
 import useResourceNotice from '../common/useResourceNotice'
-import { isReadOnlyRefusal, locksEditing, toLimitRefusal } from '../common/limitNotice.js'
+import { locksEditing, toLimitRefusal } from '../common/limitNotice.js'
 import MapperQuotaChip from './MapperQuotaChip'
 import MapProjectBreadcrumb from './MapProjectBreadcrumb'
 import { getPreviewLimitError, isAIPreviewLimitError, isPreviewLimitError } from './previewLimits'
@@ -384,6 +384,10 @@ const MapProject = () => {
   const readOnlyRef = React.useRef(false)
   // The strip at the top of the project: {notice, detail}, or null.
   const [projectNotice, setProjectNotice] = React.useState(null)
+  // The edits no save has kept yet, which leaving a read-only project loses.
+  const editTrackerRef = React.useRef(null)
+  if(!editTrackerRef.current)
+    editTrackerRef.current = createEditTracker()
   if(!autosaveSchedulerRef.current)
     autosaveSchedulerRef.current = createAutosaveScheduler({
       getProjectId: () => projectIdRef.current,
@@ -493,6 +497,8 @@ const MapProject = () => {
         runActive: isRunActiveRef.current,
         projectId: projectIdRef.current,
         hasInput: hasInputRef.current,
+        readOnly: readOnlyRef.current,
+        unsavedEdits: editTrackerRef.current.hasUnsaved(),
       })
       if(!warn)
         return
@@ -1764,6 +1770,7 @@ const MapProject = () => {
     }
     const rowLogsForSave = options.logs || logsRef.current
     const projectLogsForSave = options.projectLogs || projectLogsRef.current
+    const editsInSave = editTrackerRef.current.saving()
     setIsSaving(true)
     const f = getFileObjectFromRows()
     const selected = buildMatchEntries(map(data, row => row.__index), mapSelected, notes, (data, i) => {
@@ -1886,6 +1893,7 @@ const MapProject = () => {
         if(!isAutoSave)
           baseSetAlert({severity: 'success', message: t('map_project.successfully_saved'), duration: 2000})
 
+        editTrackerRef.current.saved(editsInSave)
         // A save that went through ends read-only first, so its log is posted.
         leaveReadOnly()
         if(projectLogsLoaderRef.current.canSend(response.data.url))
@@ -1893,9 +1901,7 @@ const MapProject = () => {
         lastSaveFailedRef.current = false
         return true
       }
-      // A read-only refusal leaves nothing that a later save could keep, so
-      // it isn't an unsaved change to warn about.
-      lastSaveFailedRef.current = !(status === 403 && isReadOnlyRefusal(errorData))
+      lastSaveFailedRef.current = true
       if(options.leaving && status !== 401) {
         // The user has left the project, so no dialog can show: say so once.
         baseSetAlert({severity: 'error', message: t('map_project.leave_save_failed', {name: name || project?.name, detail: errorData?.detail || t('unknown_error')}), duration: 12000})
@@ -1976,9 +1982,13 @@ const MapProject = () => {
   }
 
   // Not after unmount: frozen state plus a late run's refs would save an
-  // inconsistent project. Not while it's read-only: the API refuses it.
+  // inconsistent project. Not while it's read-only: the API refuses it, and
+  // the edit stays unsaved.
   const scheduleAutoSave = reason => {
-    if(isMountedRef.current && !readOnlyRef.current)
+    if(!isMountedRef.current)
+      return
+    editTrackerRef.current.edited()
+    if(!readOnlyRef.current)
       autosaveSchedulerRef.current.schedule(reason)
   }
 
@@ -1988,7 +1998,6 @@ const MapProject = () => {
   const enterReadOnly = shown => {
     readOnlyRef.current = true
     autosaveSchedulerRef.current.cancel()
-    lastSaveFailedRef.current = false
     setProjectNotice(shown)
   }
 

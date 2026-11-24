@@ -11,9 +11,25 @@ export const shouldAskBeforeLeaving = ({runActive, projectId, hasInput}) =>
 
 // Closing the tab or opening another site gets no unmount save: ask while a
 // change waits for autosave, a save is in flight, the last save failed, or
-// Configure is open with changes.
-export const shouldWarnBeforeUnload = ({pendingAutosave, saveInFlight, saveFailed, configChanged, runActive, projectId, hasInput}) =>
-  Boolean(pendingAutosave || saveInFlight || saveFailed || configChanged) || shouldAskBeforeLeaving({runActive, projectId, hasInput})
+// Configure is open with changes. A read-only project saves nothing
+// (OpenConceptLab/ocl_online#424), so it asks while it has edits no save kept,
+// the refused one's included, and a refusal alone never asks.
+export const shouldWarnBeforeUnload = ({pendingAutosave, saveInFlight, saveFailed, configChanged, runActive, projectId, hasInput, readOnly, unsavedEdits}) =>
+  Boolean(saveInFlight || configChanged || (readOnly ? unsavedEdits : (pendingAutosave || saveFailed))) || shouldAskBeforeLeaving({runActive, projectId, hasInput})
+
+// Which edits a save kept: edited() counts an edit, saving() marks the edits a
+// save's payload holds as it's built, and saved(mark) once that save went
+// through. hasUnsaved() while an edit came after the last save kept.
+export const createEditTracker = () => {
+  let edits = 0
+  let kept = 0
+  return {
+    edited: () => { edits += 1 },
+    saving: () => edits,
+    saved: mark => { kept = Math.max(kept, mark) },
+    hasUnsaved: () => edits > kept,
+  }
+}
 
 // Holds in-app navigation, unless isAllowed, and hands it to onBlocked as
 // {location, action}. Returns the unblock function.
