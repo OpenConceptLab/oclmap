@@ -267,3 +267,13 @@ test('in-app navigation asks before leaving a read-only project with edits no sa
         `both guards agree: readOnly ${readOnly}, unsavedEdits ${unsavedEdits}`
       )
 })
+
+test('a comment whose manual save was refused is an edit leaving would lose', () => {
+  const edits = createEditTracker()
+  edits.edited() // the comment: kept in the row log until a save posts it
+  edits.saving() // a manual save, refused as read-only: saved() is never called
+  const state = {runActive: false, projectId: 42, hasInput: true, readOnly: true, unsavedEdits: edits.hasUnsaved()}
+  assert.equal(state.unsavedEdits, true)
+  assert.equal(shouldAskBeforeLeaving(state), true)
+  assert.equal(shouldWarnBeforeUnload({...state, pendingAutosave: false, saveInFlight: false, saveFailed: true}), true)
+})

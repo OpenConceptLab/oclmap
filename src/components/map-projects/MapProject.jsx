@@ -1947,6 +1947,13 @@ const MapProject = () => {
     setLogs(nextLogs)
   }
 
+  // A comment is kept in the row log, which the next save posts: until then
+  // it's an edit no save kept.
+  const onComment = comment => {
+    editTrackerRef.current.edited()
+    log({action: 'commented', description: comment})
+  }
+
   const projectLog = data => {
     const newLog = {...data, created_at: moment().toDate(), user: user.username || user.id}
     const newLogs = [newLog, ...projectLogsRef.current]
@@ -7219,7 +7226,7 @@ const MapProject = () => {
                 }
                 {
                   decisionTab === 'discuss' && isSplitView &&
-                    <Discuss logs={logs[rowIndex]} onAdd={comment => comment ? log({action: 'commented', description: comment}) : null} />
+                    <Discuss logs={logs[rowIndex]} onAdd={comment => comment ? onComment(comment) : null} />
                 }
               </div>
             </> :
