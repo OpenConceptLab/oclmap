@@ -223,9 +223,14 @@ export default function MultiAlgoSelector({
   // even when the repo has a real canonical (e.g. CIEL -> CIELterminology.org).
   // User-typed values are preserved: the sync only runs once per (key, url),
   // so editing the canonical field afterwards is sticky until the source URL
-  // changes.
+  // changes. A locked selector's bridge settings are left as saved, a lookup
+  // that settles under the lock included, and filled in once it can be
+  // changed (OpenConceptLab/ocl_online#424).
+  const disabledRef = React.useRef(disabled)
+  disabledRef.current = disabled
   const syncedBridgeUrlRef = React.useRef(new Map())
   React.useEffect(() => {
+    if(disabled) return
     for (const sel of value || []) {
       if(!sel?.type?.includes('bridge')) continue
       const url = sel.target_repo_url
@@ -233,13 +238,17 @@ export default function MultiAlgoSelector({
       if(syncedBridgeUrlRef.current.get(sel.__key) === url) continue
       syncedBridgeUrlRef.current.set(sel.__key, url)
       fetchBridgeCanonical(url).then(canonical => {
+        if(disabledRef.current) {
+          syncedBridgeUrlRef.current.delete(sel.__key)
+          return
+        }
         if(!canonical) return
         updateSelected(sel.__key, {
           bridge_repo: { canonical_url: canonical, canonical_url_source: 'repo' }
         })
       })
     }
-  }, [value])
+  }, [value, disabled])
 
   React.useEffect(() => {
     for (const sel of value || []) {
@@ -250,7 +259,7 @@ export default function MultiAlgoSelector({
       const loadedVersions = bridgeVersionsByUrl[baseUrl]
       if(Array.isArray(loadedVersions)) {
         const selectedVersion = loadedVersions.find(version => version?.id === sel?.target_repo_version)
-        if(!selectedVersion) {
+        if(!selectedVersion && !disabled) {
           const defaultVersion = getDefaultBridgeRepoVersion(loadedVersions)
           if(defaultVersion?.id && defaultVersion.id !== sel?.target_repo_version) {
             const previousVersion = sel?.target_repo_version
@@ -273,7 +282,7 @@ export default function MultiAlgoSelector({
         setBridgeVersionsLoadedByUrl(prev => ({...prev, [baseUrl]: true}))
       })
     }
-  }, [value, bridgeVersionsByUrl])
+  }, [value, bridgeVersionsByUrl, disabled])
 
   const removeSelected = (key) => {
     const next = (value || []).filter((v) => v.__key !== key);
