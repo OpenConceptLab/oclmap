@@ -1,3 +1,5 @@
+import { isReadOnlyRefusal } from '../common/limitNotice.js'
+
 export const AUTOSAVE_DELAY_MS = 5000
 
 /**
@@ -124,6 +126,21 @@ export const sendAfter = (after, send, isBlocked = () => false) => {
     return send()
   const go = () => isBlocked() ? SAVE_SKIPPED : send()
   return Promise.resolve(after).then(go, go)
+}
+
+/**
+ * The first thing a finished save's handler does: a refusal of a write to
+ * read-only content (OpenConceptLab/ocl_online#424) is recorded with
+ * onReadOnly(body) before the refusal is shown, or not shown as the page
+ * closes, so a save queued behind this one sees it. Returns whether it was one.
+ */
+export const recordReadOnlyRefusal = (response, onReadOnly) => {
+  const status = response?.response?.status || response?.status
+  const body = response?.response?.data || response?.data
+  if(status !== 403 || !isReadOnlyRefusal(body))
+    return false
+  onReadOnly(body)
+  return true
 }
 
 // Saves still in flight, by project id. A save on leave outlives the page that

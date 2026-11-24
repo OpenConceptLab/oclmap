@@ -13,7 +13,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { createAutosaveScheduler, createLatestSender, saveOnLeave, sendAfter, trackSave, whenSaved, hasSaveInFlight, AUTOSAVE_DELAY_MS, SAVE_SKIPPED } from '../autosave.js'
+import { createAutosaveScheduler, createLatestSender, recordReadOnlyRefusal, saveOnLeave, sendAfter, trackSave, whenSaved, hasSaveInFlight, AUTOSAVE_DELAY_MS, SAVE_SKIPPED } from '../autosave.js'
 
 // Virtual clock standing in for setTimeout/clearTimeout. Timers scheduled
 // while the clock is being advanced land in a later window, as real timers
@@ -279,6 +279,45 @@ test('sendAfter: a queued save still sends after the save in flight fails for an
   inFlight.reject(new Error('network'))
   assert.equal(await result, 'response')
   assert.deepEqual(sent, ['queued'])
+})
+
+const READ_ONLY_REFUSAL = {response: {status: 403, data: {error_code: 'content_read_only', detail: 'Example detail.'}}}
+
+test('recordReadOnlyRefusal: records a read-only refusal, and nothing else', () => {
+  const recorded = []
+  assert.equal(recordReadOnlyRefusal(READ_ONLY_REFUSAL, body => recorded.push(body.detail)), true)
+  assert.equal(recordReadOnlyRefusal({status: 403, data: {error_code: 'content_read_only', detail: 'Other detail.'}}, body => recorded.push(body.detail)), true)
+  assert.deepEqual(recorded, ['Example detail.', 'Other detail.'])
+  for(const response of [
+    {response: {status: 403, data: {error_code: 'example_limit_reached'}}},
+    {response: {status: 400, data: {error_code: 'content_read_only'}}},
+    {status: 200, data: {id: 7}},
+    undefined,
+  ])
+    assert.equal(recordReadOnlyRefusal(response, () => recorded.push('no')), false, JSON.stringify(response))
+  assert.equal(recorded.length, 2)
+})
+
+test('two leave saves: once the first is refused as read-only, the one queued behind it isn\'t sent', async () => {
+  const state = { readOnly: false }
+  const sent = []
+  const shown = []
+  // onSave's response handler for a save on leave: the refusal is recorded
+  // first, then shown as the page closes (a message, never the dialog)
+  const handle = response => {
+    if(response === SAVE_SKIPPED)
+      return 'skipped'
+    recordReadOnlyRefusal(response, () => { state.readOnly = true })
+    shown.push('leave message')
+    return false
+  }
+  const save = (after, name) => sendAfter(after, () => { sent.push(name); return Promise.resolve(READ_ONLY_REFUSAL) }, () => state.readOnly).then(handle)
+  const first = save(null, 'first')
+  const second = save(first, 'second')
+  assert.equal(await first, false)
+  assert.equal(await second, 'skipped')
+  assert.deepEqual(sent, ['first'], 'only the first save is sent')
+  assert.deepEqual(shown, ['leave message'], 'the refusal is told once')
 })
 
 test('sendAfter: with nothing in flight it sends at once', () => {
