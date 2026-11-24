@@ -32,6 +32,10 @@ const MapButton = ({options, isMapped, onClick, selected, sx, color, variant, si
     event.preventDefault()
     event.stopPropagation()
     event.persist()
+    if(disabled) {
+      setOpen(false)
+      return
+    }
 
     setMapType(newMapType || 'SAME-AS');
     setOpen(false);
@@ -58,6 +62,12 @@ const MapButton = ({options, isMapped, onClick, selected, sx, color, variant, si
   React.useEffect(() => {
     setMapType(selected || 'SAME-AS')
   }, [selected])
+
+  // A menu open as the project turns read-only closes (OpenConceptLab/ocl_online#424).
+  React.useEffect(() => {
+    if(disabled)
+      setOpen(false)
+  }, [disabled])
 
   const usedOptions = options?.filter(option => usedMapTypes?.includes(option))
   const recommendedOptions = options?.filter(option => !usedMapTypes?.includes(option) && ['SAME-AS', 'BROADER-THAN', 'NARROWER-THAN'].includes(option))

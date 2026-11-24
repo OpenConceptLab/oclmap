@@ -3421,6 +3421,12 @@ const MapProject = () => {
   const onGetCandidatesSubmit = (event, selectedAlgos) => {
     event.stopPropagation()
     event.preventDefault()
+    // Not on a read-only project, from a dialog opened before it turned
+    // read-only (OpenConceptLab/ocl_online#424).
+    if(readOnlyRef.current) {
+      setMatchDialog(false)
+      return
+    }
     setAlert(false)
     const algoWithoutKey = find(algosSelected, algo => selectedAlgos.includes(algo.id) && needsSessionToken(algo))
     const run = hasAutoMatchWork(selectedAlgos) ? getAutoMatchRunRows(data, selectedAlgos) : null
@@ -4102,9 +4108,20 @@ const MapProject = () => {
     setBulkDecisionAction('')
   }, [])
 
+  // Turning read-only closes the dialogs that would change the project: a bulk
+  // decision's confirmation, and AutoMatch's.
+  React.useEffect(() => {
+    if(!isReadOnly)
+      return
+    closeBulkConfirm()
+    setMatchDialog(false)
+  }, [isReadOnly])
+
+  // A read-only project's bulk decisions aren't applied, from a menu or a
+  // dialog that was open as it turned read-only (OpenConceptLab/ocl_online#424).
   const onBulkDecisionChange = event => {
     const action = event.target.value
-    if(!action)
+    if(!action || readOnlyRef.current)
       return
     setBulkDecisionAction(action)
     openBulkConfirm(action)
@@ -4113,7 +4130,7 @@ const MapProject = () => {
   const onBulkMapTypeChange = event => {
     const nextMapType = event.target.value
     const indexes = getSelectedRowIndexes()
-    if(!indexes.length || nextMapType === bulkMapType)
+    if(!indexes.length || nextMapType === bulkMapType || readOnlyRef.current)
       return
     setBulkConfirm({action: 'map_type', count: indexes.length, mapType: nextMapType})
   }
@@ -4124,6 +4141,10 @@ const MapProject = () => {
   }
 
   const onBulkActionConfirm = () => {
+    if(readOnlyRef.current) {
+      closeBulkConfirm()
+      return
+    }
     const action = bulkConfirm?.action
     const indexes = getSelectedRowIndexes()
     GAService.recordActionEvent('MapProject', `bulk_${action}`, undefined, {
