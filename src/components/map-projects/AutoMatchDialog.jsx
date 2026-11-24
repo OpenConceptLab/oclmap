@@ -221,7 +221,7 @@ const AutoMatchDialog = ({
                 <Typography id={TARGET_REPO_STATUS_ID} role='alert' variant='body2' sx={{display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '12px', color: 'error.main'}}>
                   <ErrorOutlineIcon fontSize='small' />
                   {/* Read out, and as Submit's description, it says what didn't load. */}
-                  <Box component='span' sx={visuallyHidden}>{t('map_project.auto_match_target_repository')}</Box>
+                  <Box component='span' sx={visuallyHidden}>{`${t('map_project.auto_match_target_repository')} `}</Box>
                   {t('map_project.auto_match_target_repository_failed')}
                 </Typography>
                 {/* Waits out a rate-limited read's countdown. */}
