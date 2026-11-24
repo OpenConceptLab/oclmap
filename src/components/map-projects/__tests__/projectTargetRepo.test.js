@@ -12,7 +12,9 @@ import {
   getTargetRepoVersionBadges,
   getTargetRepoVersionFromUrl,
   getTargetRepoVersionId,
+  getTargetRepoState,
   getTargetRepoVersionReleaseDate,
+  getVersionsFromResponse,
   hasSelectedTargetRepoVersion,
   needsSemanticSearchWarning
 } from '../projectTargetRepo.js'
@@ -252,4 +254,44 @@ test('needsSemanticSearchWarning stays quiet on a version that runs Semantic Sea
 
 test('needsSemanticSearchWarning waits for a version to be chosen', () => {
   assert.equal(needsSemanticSearchWarning(false, [SEMANTIC_ALGO]), false)
+})
+
+// OpenConceptLab/ocl_issues#3067: the AutoMatch dialog shows the target
+// repository loading, loaded or failed.
+test('getVersionsFromResponse reads the list from a reply', () => {
+  assert.deepEqual(getVersionsFromResponse({ data: LOINC_VERSIONS }), LOINC_VERSIONS)
+  assert.deepEqual(getVersionsFromResponse({ data: [] }), [])
+})
+
+test('getVersionsFromResponse gives null for a failed read', () => {
+  // A 401 resolves with undefined while the session renews.
+  assert.equal(getVersionsFromResponse(undefined), null)
+  // A raw read resolves with the error itself, a 429 among them.
+  assert.equal(getVersionsFromResponse({ message: 'Request failed with status code 429', response: { status: 429, data: {} } }), null)
+})
+
+const LOINC_281_URL = { ...LOINC_VERSIONS[0], version_url: '/orgs/Regenstrief/sources/LOINC/2.81/' }
+
+// getTargetRepoState(repoVersion, repoStatus, versionsStatus)
+test('getTargetRepoState: loading while either read runs', () => {
+  assert.equal(getTargetRepoState(false, null, 'loading'), 'loading')
+  assert.equal(getTargetRepoState(false, 'loading', null), 'loading')
+  assert.equal(getTargetRepoState(false, 'failed', 'loading'), 'loading')
+  // A version still set from before the read waits for the new one.
+  assert.equal(getTargetRepoState(LOINC_281_URL, null, 'loading'), 'loading')
+})
+
+test('getTargetRepoState: loaded once both reads are in and a version is chosen', () => {
+  assert.equal(getTargetRepoState(LOINC_281_URL, null, null), 'loaded')
+})
+
+test('getTargetRepoState: failed when either read failed', () => {
+  assert.equal(getTargetRepoState(false, null, 'failed'), 'failed')
+  // The repository's read failed, its versions' didn't: Submit still waits.
+  assert.equal(getTargetRepoState(LOINC_281_URL, 'failed', null), 'failed')
+})
+
+test('getTargetRepoState: none chosen and nothing loading', () => {
+  assert.equal(getTargetRepoState(false, null, null), null)
+  assert.equal(getTargetRepoState({ id: '2.81' }, null, null), null)
 })

@@ -311,7 +311,7 @@ test('the target version and the bridge probe read through the one shared reader
   assert.match(source, /readMappedSources,\n/)
   // Leaving the project stops the target's read, and a versions answer that
   // lands after it starts none.
-  assert.match(source, /if\(request !== versionsRequestRef\.current \|\| !isMountedRef\.current\)\n\s*return\n\s*let _versions/)
+  assert.match(source, /appendToUrl\('versions\/\?verbose=true'\)[^\n]*\.then\(response => \{\n\s*if\(!isLatest\(\) \|\| !isMountedRef\.current\)\n\s*return\n/)
   assert.match(source, /React\.useEffect\(\(\) => \(\) => stopTargetMappedSourcesRef\.current\(\), \[\]\)/)
   // Nothing reads the list around the reader, and a throttled read settles.
   assert.equal(source.match(/appendToUrl\('mapped-sources\/'\)/g).length, 1)

@@ -1,4 +1,21 @@
 export const getTargetRepoVersionId = repoVersion => repoVersion?.id || repoVersion?.version || ''
+
+// The versions in a reply to GET versions/, or null when the read failed:
+// APIService resolves a failed read with the error (raw), its body or its
+// message, not with a response holding a list.
+export const getVersionsFromResponse = response => Array.isArray(response?.data) ? response.data : null
+
+// What the AutoMatch dialog shows for the target repository
+// (OpenConceptLab/ocl_issues#3067), given its reads' statuses (the repository
+// and its versions): 'loading' while any runs, 'failed' if any failed,
+// 'loaded' once a version is chosen, and null when none is.
+export const getTargetRepoState = (repoVersion, ...readStatuses) => {
+  if(readStatuses.includes('loading'))
+    return 'loading'
+  if(readStatuses.includes('failed'))
+    return 'failed'
+  return repoVersion?.version_url ? 'loaded' : null
+}
 export const getTargetRepoVersionFromUrl = url => {
   const parts = (url || '').split('/').filter(Boolean)
   return parts[4] || ''

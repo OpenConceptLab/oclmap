@@ -15,9 +15,13 @@ import FormLabel from '@mui/material/FormLabel';
 import Chip from '@mui/material/Chip'
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
+import { visuallyHidden } from '@mui/utils';
 import Tooltip from '@mui/material/Tooltip';
+import CircularProgress from '@mui/material/CircularProgress';
+import Typography from '@mui/material/Typography';
 
 import DoubleArrowIcon from '@mui/icons-material/DoubleArrow';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutlineOutlined';
 
 import map from 'lodash/map'
 
@@ -31,6 +35,10 @@ import useAutoMatchCheck from '@openconceptlab/oclmap-extensions'
 
 // Lines an option's sub-text up with its checkbox label.
 const SUBTEXT_SX = {margin: '-6px 0 0 32px'}
+
+// Describes the disabled Submit while the target repository loads or after it
+// failed to load.
+const TARGET_REPO_STATUS_ID = 'automatch-target-repo-status'
 
 const AutoMatchDialog = ({
   open,
@@ -48,6 +56,9 @@ const AutoMatchDialog = ({
   promptTemplate,
   setPromptTemplate,
   repoVersion,
+  targetRepoState,
+  onRetryTargetReads,
+  retryTargetReadsWaiting,
   onSubmit,
   inAIAssistantGroup,
   algosSelected,
@@ -167,8 +178,11 @@ const AutoMatchDialog = ({
 
   notices.push(...(check.notices || []))
 
+  const targetRepoSettling = ['loading', 'failed'].includes(targetRepoState)
+  const targetRepoStatusId = targetRepoSettling ? TARGET_REPO_STATUS_ID : undefined
+
   const isDisabled =
-    !repoVersion?.version_url ||
+    targetRepoState !== 'loaded' ||
     Boolean(blocker) ||
     notices.some(notice => notice.blocks || (notice.confirm && !confirmed[notice.key]))
 
@@ -193,10 +207,31 @@ const AutoMatchDialog = ({
         <CloseIconButton onClick={onClose} />
       </DialogTitle>
       <DialogContent sx={{paddingBottom: '12px'}}>
-        <div className='col-xs-12 padding-0' style={{display: 'flex', alignItems: 'center', fontSize: '1rem'}}>
+        {/* As tall as the chip, so the chip arriving moves nothing. */}
+        <div className='col-xs-12 padding-0' style={{display: 'flex', alignItems: 'center', fontSize: '1rem', minHeight: '36px'}}>
           {t('map_project.auto_match_target_repository')}
           {
-            repoVersion?.id &&
+            targetRepoState === 'loading' &&
+              // The footer's status line says it's loading; hidden here so it's read once.
+              <CircularProgress size={20} sx={{marginLeft: '12px'}} aria-hidden='true' />
+          }
+          {
+            targetRepoState === 'failed' &&
+              <>
+                <Typography id={TARGET_REPO_STATUS_ID} role='alert' variant='body2' sx={{display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '12px', color: 'error.main'}}>
+                  <ErrorOutlineIcon fontSize='small' />
+                  {/* Read out, and as Submit's description, it says what didn't load. */}
+                  <Box component='span' sx={visuallyHidden}>{`${t('map_project.auto_match_target_repository')} `}</Box>
+                  {t('map_project.auto_match_target_repository_failed')}
+                </Typography>
+                {/* Waits out a rate-limited read's countdown. */}
+                <Button size='small' sx={{textTransform: 'none', marginLeft: '8px'}} disabled={Boolean(retryTargetReadsWaiting)} onClick={onRetryTargetReads}>
+                  {t('common.try_again')}
+                </Button>
+              </>
+          }
+          {
+            !targetRepoSettling && repoVersion?.id &&
               <RepoChip repo={repoVersion} hideType sx={{marginLeft: '12px'}} />
           }
         </div>
@@ -335,16 +370,26 @@ const AutoMatchDialog = ({
         }
         <Box sx={{display: 'flex', alignItems: 'flex-end', flexWrap: 'wrap', gap: '12px'}}>
           {check.summary && <Box sx={{flex: '1 1 300px', minWidth: 0}}>{check.summary}</Box>}
-          <Button
-            variant='contained'
-            size='small'
-            sx={{textTransform: 'none', marginLeft: 'auto'}}
-            endIcon={<DoubleArrowIcon />}
-            disabled={isDisabled}
-            onClick={event => onSubmit(event, retrieveCandidates ? map(runnableAlgos, val => val?.id) : [])}
-          >
-            {t('common.submit')}
-          </Button>
+          <Box sx={{display: 'flex', alignItems: 'center', gap: '12px', marginLeft: 'auto', minWidth: 0}}>
+            {/* One line, so the footer keeps its height when it goes. */}
+            {
+              targetRepoState === 'loading' &&
+                <Typography id={TARGET_REPO_STATUS_ID} role='status' variant='body2' noWrap sx={{fontSize: '13px', color: 'text.secondary'}}>
+                  {t('map_project.auto_match_target_repository_loading')}
+                </Typography>
+            }
+            <Button
+              variant='contained'
+              size='small'
+              sx={{textTransform: 'none'}}
+              endIcon={<DoubleArrowIcon />}
+              disabled={isDisabled}
+              aria-describedby={targetRepoStatusId}
+              onClick={event => onSubmit(event, retrieveCandidates ? map(runnableAlgos, val => val?.id) : [])}
+            >
+              {t('common.submit')}
+            </Button>
+          </Box>
         </Box>
       </Box>
     </Dialog>
