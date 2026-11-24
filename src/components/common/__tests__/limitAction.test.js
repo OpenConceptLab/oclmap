@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-const { getLimitActionRequest, getLimitSubject, toLimitAction } = await import('../limitAction.js')
+const { getLimitActionRequest, getLimitSubject, getRefusalOwner, toLimitAction } = await import('../limitAction.js')
 const { PREVIEW_LIMIT_ERROR_CODES } = await import('../../map-projects/previewLimits.js')
 
 const ACTION = {kind: 'example', url: 'https://online.example.org/next', label: 'Next step', message: 'A message from the service.'}
@@ -67,4 +67,22 @@ test('no action, or one that is not a usable link, shows nothing', () => {
   assert.equal(toLimitAction({action: {...ACTION, url: 'javascript:void(0)'}}), null)
   assert.equal(toLimitAction({action: {...ACTION, url: 'data:text/html,hi'}}), null)
   assert.equal(toLimitAction({action: {...ACTION, url: 42}}), null)
+})
+
+// OpenConceptLab/ocl_online#701
+test('the next step is asked for whose limit it was, when the refusal says', () => {
+  assert.deepEqual(
+    getLimitActionRequest({baseURL: 'https://online.example.org', token: 'personal-token', errorCode: 'example_limit_reached', capability: 'example.capability', owner: '/orgs/Example/', lang: 'en'}).params,
+    {context: 'limit', capability: 'example.capability', owner: '/orgs/Example/', lang: 'en'}
+  )
+  assert.equal('owner' in getLimitActionRequest({baseURL: 'https://online.example.org', token: 'personal-token', errorCode: 'mapper_access_denied', owner: null, lang: 'en'}).params, false)
+})
+
+test('a refusal\'s owner is a user\'s or an organization\'s relative URL', () => {
+  assert.equal(getRefusalOwner({quota: {owner: '/users/someone/'}}), '/users/someone/')
+  assert.equal(getRefusalOwner({quota: {owner: '/orgs/Example/'}}), '/orgs/Example/')
+  for(const owner of [undefined, null, '', 'someone', '/users/someone', '/sources/x/', 'https://example.org/orgs/Example/', '/orgs/Example/sources/', 7])
+    assert.equal(getRefusalOwner({quota: {owner}}), null, String(owner))
+  assert.equal(getRefusalOwner({}), null)
+  assert.equal(getRefusalOwner(null), null)
 })

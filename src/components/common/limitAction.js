@@ -26,12 +26,21 @@ const LIMIT_SUBJECTS = {
 export const getLimitSubject = (errorCode, capability) =>
   typeof capability === 'string' && capability ? {capability} : (LIMIT_SUBJECTS[errorCode] || {})
 
-export const getLimitActionRequest = ({baseURL, token, errorCode, capability, lang}) => {
+// Whose limit refused: a user's or an organization's relative URL, from the
+// refusal's `quota` (OpenConceptLab/ocl_online#701).
+const OWNER_URL = /^\/(users|orgs)\/[^/]+\/$/
+export const getRefusalOwner = body => {
+  const owner = body?.quota?.owner
+  return typeof owner === 'string' && OWNER_URL.test(owner) ? owner : null
+}
+
+// The next step is asked for whose limit it was, when the refusal says.
+export const getLimitActionRequest = ({baseURL, token, errorCode, capability, owner, lang}) => {
   if(!baseURL || !token)
     return null
   return {
     url: `${baseURL.replace(/\/+$/, '')}/billing/plan/`,
-    params: {context: 'limit', ...getLimitSubject(errorCode, capability), lang},
+    params: {context: 'limit', ...getLimitSubject(errorCode, capability), ...(owner ? {owner} : {}), lang},
     headers: {Authorization: `Token ${token}`},
   }
 }
