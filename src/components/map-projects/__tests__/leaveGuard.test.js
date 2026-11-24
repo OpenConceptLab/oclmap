@@ -6,7 +6,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { blockLeaving, continueLeaving, createEditTracker, createRunClosers, getPageKey, hasReadOnlyEdits, isUnsavedNewProject, shouldAskBeforeLeaving, shouldWarnBeforeUnload } from '../leaveGuard.js'
+import { blockLeaving, continueLeaving, createEditTracker, createRunClosers, getPageKey, getRunLeaveMessageKey, hasReadOnlyEdits, isUnsavedNewProject, shouldAskBeforeLeaving, shouldWarnBeforeUnload } from '../leaveGuard.js'
 
 // Stands in for a history v4 object: block's prompt decides each transition.
 const createFakeHistory = () => {
@@ -276,4 +276,10 @@ test('a comment whose manual save was refused is an edit leaving would lose', ()
   assert.equal(state.unsavedEdits, true)
   assert.equal(shouldAskBeforeLeaving(state), true)
   assert.equal(shouldWarnBeforeUnload({...state, pendingAutosave: false, saveInFlight: false, saveFailed: true}), true)
+})
+
+test('leaving a run on a read-only project says its matches can\'t be saved, not that they are', () => {
+  assert.equal(getRunLeaveMessageKey({projectId: 42, readOnly: false}), 'map_project.leave_while_running_body', 'an editable project saves them as the run stops')
+  assert.equal(getRunLeaveMessageKey({projectId: 42, readOnly: true}), 'map_project.leave_while_running_body_read_only', 'the paused autosave skips that save')
+  assert.equal(getRunLeaveMessageKey({projectId: undefined, readOnly: false}), 'map_project.leave_while_running_body_unsaved')
 })

@@ -93,7 +93,7 @@ import DataGridControls from './DataGridControls'
 import { getPreviewEligibleRowIndexes, getRowsToProcess, countAIOnlyRows, getAutoMatchAIOnOpen, takeRunRows, clearRunRowStatuses, canRunAlgorithm, spendsMatchQuota, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, AI_LOOKUP_WAIT_MS, RERANK_LOOKUP_WAIT_MS, RERANK_MAX_IN_FLIGHT, isScispacyWarmingUp } from './autoMatchRows'
 import { aiOnByDefault, getMaxRunRows, getMapperSettings } from '@openconceptlab/oclmap-extensions'
 import { createAutosaveScheduler, createLatestSender, isToldOnLeave, recordReadOnlyRefusal, saveOnLeave, sendAfter, trackSave, whenSaved, installUnloadGuard, SAVE_SKIPPED } from './autosave'
-import { blockLeaving, continueLeaving, createEditTracker, createRunClosers, isUnsavedNewProject, shouldAskBeforeLeaving, shouldWarnBeforeUnload } from './leaveGuard'
+import { blockLeaving, continueLeaving, createEditTracker, createRunClosers, getRunLeaveMessageKey, isUnsavedNewProject, shouldAskBeforeLeaving, shouldWarnBeforeUnload } from './leaveGuard'
 import MatchSummaryCard from './MatchSummaryCard'
 import MappingDecisionResult from './MappingDecisionResult'
 import DecisionSelector from './DecisionSelector'
@@ -7297,7 +7297,7 @@ const MapProject = () => {
         <DialogTitle>{t('map_project.leave_while_running_title')}</DialogTitle>
         <DialogContent>
           <Typography component='p' sx={{fontSize: '14px', color: 'surface.dark'}}>
-            {t(project?.id ? 'map_project.leave_while_running_body' : 'map_project.leave_while_running_body_unsaved')}
+            {t(getRunLeaveMessageKey({projectId: project?.id, readOnly: isReadOnly}))}
           </Typography>
         </DialogContent>
         <DialogActions>

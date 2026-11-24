@@ -24,6 +24,15 @@ export const shouldWarnBeforeUnload = ({pendingAutosave, saveInFlight, saveFaile
   Boolean(saveInFlight || configChanged || (!readOnly && (pendingAutosave || saveFailed))) ||
   shouldAskBeforeLeaving({runActive, projectId, hasInput, readOnly, unsavedEdits})
 
+// What the dialog for leaving a running AutoMatch says becomes of its
+// matches: a new project's are discarded with it, a read-only project's can't
+// be saved, and an editable project's are saved as it stops.
+export const getRunLeaveMessageKey = ({projectId, readOnly}) => {
+  if(!projectId)
+    return 'map_project.leave_while_running_body_unsaved'
+  return readOnly ? 'map_project.leave_while_running_body_read_only' : 'map_project.leave_while_running_body'
+}
+
 // Which edits a save kept: edited() counts an edit, saving() marks the edits a
 // save's payload holds as it's built, and saved(mark) once that save went
 // through. hasUnsaved() while an edit came after the last save kept.

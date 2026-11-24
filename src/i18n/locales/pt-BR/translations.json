@@ -372,6 +372,7 @@
     "leave_while_running_title": "O Auto Match está em execução",
     "leave_while_running_body": "Sair deste projeto interrompe a execução agora. O que já foi correspondido é salvo.",
     "leave_while_running_body_unsaved": "Este projeto ainda não foi salvo. Sair interrompe a execução agora e descarta o projeto e seus resultados.",
+    "leave_while_running_body_read_only": "Sair deste projeto interrompe a execução agora. O projeto é somente leitura, então o que foi correspondido não é salvo.",
     "stay": "Ficar",
     "stop_and_leave": "Parar e sair",
     "leave_unsaved_title": "Sair sem salvar?",
