@@ -6,7 +6,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { blockLeaving, continueLeaving, createRunClosers, getPageKey, isUnsavedNewProject, shouldAskBeforeLeaving, shouldWarnBeforeUnload } from '../leaveGuard.js'
+import { blockLeaving, continueLeaving, createEditTracker, createRunClosers, getPageKey, hasReadOnlyEdits, isUnsavedNewProject, shouldAskBeforeLeaving, shouldWarnBeforeUnload } from '../leaveGuard.js'
 
 // Stands in for a history v4 object: block's prompt decides each transition.
 const createFakeHistory = () => {
@@ -215,4 +215,65 @@ test('closing the tab also warns while a change waits to be saved', () => {
   assert.equal(shouldWarnBeforeUnload({pendingAutosave: false, saveInFlight: false, runActive: false, projectId: null, hasInput: true}), true)
   assert.equal(shouldWarnBeforeUnload({...saved, pendingAutosave: false, saveInFlight: false, saveFailed: true}), true, 'a failed save still has a change to lose')
   assert.equal(shouldWarnBeforeUnload({...saved, pendingAutosave: false, saveInFlight: false, configChanged: true}), true, 'Configure open with changes has them to lose')
+})
+
+// A read-only project saves nothing (OpenConceptLab/ocl_online#424).
+test('closing a read-only project warns while it has edits no save kept', () => {
+  const readOnly = {runActive: false, projectId: 42, hasInput: true, readOnly: true, pendingAutosave: false, saveInFlight: false}
+  assert.equal(shouldWarnBeforeUnload({...readOnly, unsavedEdits: true, saveFailed: true}), true, 'the edit whose save was refused')
+  assert.equal(shouldWarnBeforeUnload({...readOnly, unsavedEdits: true, saveFailed: false}), true, 'an edit made once it was read-only')
+})
+
+test('closing a read-only project with no edits doesn\'t warn, refused save or not', () => {
+  const readOnly = {runActive: false, projectId: 42, hasInput: true, readOnly: true, pendingAutosave: false, saveInFlight: false, unsavedEdits: false}
+  assert.equal(shouldWarnBeforeUnload({...readOnly, saveFailed: true}), false, 'a refusal alone adds no warning')
+  assert.equal(shouldWarnBeforeUnload({...readOnly, saveFailed: false}), false)
+  assert.equal(shouldWarnBeforeUnload({...readOnly, configChanged: true}), true, 'Configure open with changes still has them to lose')
+  assert.equal(shouldWarnBeforeUnload({...readOnly, readOnly: false, saveFailed: true}), true, 'an editable project still warns after a failed save')
+})
+
+test('the edit tracker knows which edits a save kept', () => {
+  const edits = createEditTracker()
+  assert.equal(edits.hasUnsaved(), false, 'no edits')
+
+  edits.edited()
+  const refused = edits.saving()
+  assert.equal(edits.hasUnsaved(), true)
+  // the save is refused: saved() is never called
+  assert.equal(edits.hasUnsaved(), true, 'a refused save keeps nothing')
+  assert.equal(refused, 1)
+
+  const kept = edits.saving()
+  edits.edited() // made while that save was in flight
+  edits.saved(kept)
+  assert.equal(edits.hasUnsaved(), true, 'an edit after the payload was built is still unsaved')
+
+  const later = edits.saving()
+  edits.saved(later)
+  edits.saved(kept) // an older save landing late doesn't bring the edit back
+  assert.equal(edits.hasUnsaved(), false)
+})
+
+test('in-app navigation asks before leaving a read-only project with edits no save kept, as closing the tab does', () => {
+  const saved = {runActive: false, projectId: 42, hasInput: true}
+  assert.equal(shouldAskBeforeLeaving({...saved, readOnly: true, unsavedEdits: true}), true)
+  assert.equal(shouldAskBeforeLeaving({...saved, readOnly: true, unsavedEdits: false}), false, 'nothing to lose')
+  assert.equal(shouldAskBeforeLeaving({...saved, readOnly: false, unsavedEdits: true}), false, 'an editable project saves on leave')
+  for(const readOnly of [true, false])
+    for(const unsavedEdits of [true, false])
+      assert.equal(
+        shouldWarnBeforeUnload({...saved, readOnly, unsavedEdits, pendingAutosave: false, saveInFlight: false, saveFailed: false}),
+        hasReadOnlyEdits({readOnly, unsavedEdits}),
+        `both guards agree: readOnly ${readOnly}, unsavedEdits ${unsavedEdits}`
+      )
+})
+
+test('a comment whose manual save was refused is an edit leaving would lose', () => {
+  const edits = createEditTracker()
+  edits.edited() // the comment: kept in the row log until a save posts it
+  edits.saving() // a manual save, refused as read-only: saved() is never called
+  const state = {runActive: false, projectId: 42, hasInput: true, readOnly: true, unsavedEdits: edits.hasUnsaved()}
+  assert.equal(state.unsavedEdits, true)
+  assert.equal(shouldAskBeforeLeaving(state), true)
+  assert.equal(shouldWarnBeforeUnload({...state, pendingAutosave: false, saveInFlight: false, saveFailed: true}), true)
 })

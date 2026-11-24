@@ -14,6 +14,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import { createAutosaveScheduler, createLatestSender, isToldOnLeave, recordReadOnlyRefusal, saveOnLeave, sendAfter, trackSave, whenSaved, hasSaveInFlight, AUTOSAVE_DELAY_MS, SAVE_SKIPPED } from '../autosave.js'
+import { createEditTracker, shouldAskBeforeLeaving, shouldWarnBeforeUnload } from '../leaveGuard.js'
 
 // Virtual clock standing in for setTimeout/clearTimeout. Timers scheduled
 // while the clock is being advanced land in a later window, as real timers
@@ -239,6 +240,80 @@ test('autosave paused: scheduling works again once the project is editable', () 
   clock.tick(DELAY)
 
   assert.deepEqual(saves, [['bulk_decision']], 'only what was scheduled while editable is saved')
+})
+
+// The edit locks can't cover an edit made before the project turned read-only:
+// the notice that lands inside the autosave window, or the save refused as
+// read-only. Wired as MapProject.jsx wires them: each edit is counted as it
+// schedules, the lock cancels the pending autosave, and the lock's end
+// requeues what no save kept.
+const setupReadOnlyEdits = () => {
+  const { scheduler, clock, state, saves } = setup()
+  const edits = createEditTracker()
+  const edit = reason => {
+    edits.edited()
+    scheduler.schedule(reason)
+  }
+  const lock = () => {
+    state.paused = true
+    scheduler.cancel()
+  }
+  const unlock = () => {
+    state.paused = false
+    if(edits.hasUnsaved())
+      scheduler.schedule('read_only_ended')
+  }
+  const leaveState = () => ({runActive: false, projectId: state.projectId, hasInput: true, readOnly: state.paused, unsavedEdits: edits.hasUnsaved()})
+  const unloadState = () => ({...leaveState(), pendingAutosave: scheduler.hasPending(), saveInFlight: false, saveFailed: false})
+  return { scheduler, clock, saves, edits, edit, lock, unlock, leaveState, unloadState }
+}
+
+test('a notice that locks the project inside the autosave window keeps the edit, and both guards ask before leaving', () => {
+  const { scheduler, clock, saves, edit, lock, leaveState, unloadState } = setupReadOnlyEdits()
+
+  edit('note_change')
+  lock()
+  clock.tick(DELAY)
+
+  assert.equal(saves.length, 0, 'the lock dropped the autosave')
+  assert.equal(scheduler.takePending(), null, 'so leaving has nothing to save')
+  assert.equal(shouldAskBeforeLeaving(leaveState()), true, 'in-app navigation asks')
+  assert.equal(shouldWarnBeforeUnload(unloadState()), true, 'closing or reloading the tab warns')
+})
+
+test('a save refused as read-only keeps its edits once the refusal is dismissed, and both guards ask', () => {
+  const { edits, edit, lock, leaveState, unloadState } = setupReadOnlyEdits()
+
+  edit('decision_change')
+  edits.saving() // the autosave's payload, refused: saved() is never called
+  lock()
+
+  assert.equal(shouldAskBeforeLeaving(leaveState()), true)
+  assert.equal(shouldWarnBeforeUnload({...unloadState(), saveFailed: true}), true)
+})
+
+test('once the lock ends, the edits it kept back autosave, and leaving asks nothing more', () => {
+  const { clock, saves, edits, edit, lock, unlock, leaveState } = setupReadOnlyEdits()
+
+  edit('note_change')
+  lock()
+  unlock()
+  clock.tick(DELAY)
+
+  assert.deepEqual(saves, [['read_only_ended']])
+  edits.saved(edits.saving())
+  assert.equal(shouldAskBeforeLeaving(leaveState()), false)
+})
+
+test('a lock with no edit before it asks nothing on leave', () => {
+  const { lock, unlock, clock, saves, leaveState, unloadState } = setupReadOnlyEdits()
+
+  lock()
+  assert.equal(shouldAskBeforeLeaving(leaveState()), false)
+  assert.equal(shouldWarnBeforeUnload(unloadState()), false)
+  unlock()
+  clock.tick(DELAY)
+  assert.equal(saves.length, 0, 'nothing to requeue')
 })
 
 const nextTick = () => new Promise(resolve => setTimeout(resolve, 0))
