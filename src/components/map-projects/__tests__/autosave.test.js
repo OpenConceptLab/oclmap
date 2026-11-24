@@ -13,7 +13,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { createAutosaveScheduler, createLatestSender, saveOnLeave, trackSave, whenSaved, hasSaveInFlight, AUTOSAVE_DELAY_MS } from '../autosave.js'
+import { createAutosaveScheduler, createLatestSender, saveOnLeave, sendAfter, trackSave, whenSaved, hasSaveInFlight, AUTOSAVE_DELAY_MS, SAVE_SKIPPED } from '../autosave.js'
 
 // Virtual clock standing in for setTimeout/clearTimeout. Timers scheduled
 // while the clock is being advanced land in a later window, as real timers
@@ -243,6 +243,50 @@ test('autosave paused: scheduling works again once the project is editable', () 
 
 const nextTick = () => new Promise(resolve => setTimeout(resolve, 0))
 
+const deferred = () => {
+  let resolve, reject
+  const promise = new Promise((res, rej) => { resolve = res; reject = rej })
+  return { promise, resolve, reject }
+}
+
+test('sendAfter: a queued save sends once the save in flight settles, and not before', async () => {
+  const inFlight = deferred()
+  const sent = []
+  const result = sendAfter(inFlight.promise, () => { sent.push('queued'); return 'response' })
+  await nextTick()
+  assert.deepEqual(sent, [], 'waits for the save in flight')
+  inFlight.resolve()
+  assert.equal(await result, 'response')
+  assert.deepEqual(sent, ['queued'])
+})
+
+test('sendAfter: a queued save is dropped when the save before it turned the project read-only', async () => {
+  const inFlight = deferred()
+  const state = { readOnly: false }
+  const sent = []
+  const result = sendAfter(inFlight.promise, () => sent.push('queued'), () => state.readOnly)
+  // the save in flight is refused as read-only, which turns the project read-only, then settles
+  state.readOnly = true
+  inFlight.resolve({ status: 403 })
+  assert.equal(await result, SAVE_SKIPPED)
+  assert.deepEqual(sent, [], 'no second save once read-only')
+})
+
+test('sendAfter: a queued save still sends after the save in flight fails for another reason', async () => {
+  const inFlight = deferred()
+  const sent = []
+  const result = sendAfter(inFlight.promise, () => { sent.push('queued'); return 'response' }, () => false)
+  inFlight.reject(new Error('network'))
+  assert.equal(await result, 'response')
+  assert.deepEqual(sent, ['queued'])
+})
+
+test('sendAfter: with nothing in flight it sends at once', () => {
+  const sent = []
+  assert.equal(sendAfter(null, () => { sent.push('now'); return 'response' }, () => true), 'response')
+  assert.deepEqual(sent, ['now'], 'the immediate path is gated by the caller, not here')
+})
+
 test('saveOnLeave: saves a pending change as the page closes instead of dropping it', async () => {
   const { scheduler, clock, saves } = setup()
   const leaveSaves = []
@@ -379,12 +423,6 @@ test('trackSave: an older save settling does not untrack a newer one for the sam
 // that waited out a 429 could land after a newer one and overwrite it; so one
 // POST at a time, and triggers during it coalesce into one more, which reads
 // the log as it is then.
-
-const deferred = () => {
-  let resolve
-  const promise = new Promise(r => { resolve = r })
-  return {promise, resolve}
-}
 
 test('createLatestSender: one trigger sends once', async () => {
   let sends = 0

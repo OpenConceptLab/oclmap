@@ -92,7 +92,7 @@ import Controls from './Controls'
 import DataGridControls from './DataGridControls'
 import { getPreviewEligibleRowIndexes, getRowsToProcess, countAIOnlyRows, getAutoMatchAIOnOpen, takeRunRows, clearRunRowStatuses, canRunAlgorithm, spendsMatchQuota, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, AI_LOOKUP_WAIT_MS, RERANK_LOOKUP_WAIT_MS, RERANK_MAX_IN_FLIGHT, isScispacyWarmingUp } from './autoMatchRows'
 import { aiOnByDefault, getMaxRunRows, getMapperSettings } from '@openconceptlab/oclmap-extensions'
-import { createAutosaveScheduler, createLatestSender, saveOnLeave, trackSave, whenSaved, installUnloadGuard } from './autosave'
+import { createAutosaveScheduler, createLatestSender, saveOnLeave, sendAfter, trackSave, whenSaved, installUnloadGuard, SAVE_SKIPPED } from './autosave'
 import { blockLeaving, continueLeaving, createRunClosers, isUnsavedNewProject, shouldAskBeforeLeaving, shouldWarnBeforeUnload } from './leaveGuard'
 import MatchSummaryCard from './MatchSummaryCard'
 import MappingDecisionResult from './MappingDecisionResult'
@@ -1833,8 +1833,9 @@ const MapProject = () => {
       return service.post(formData, null, {"Content-Type": "multipart/form-data"}, undefined, true)
     }
     // options.after: a save still in flight. This payload is built now and
-    // sent once that settles, so the older one can't land after it.
-    const service = options.after ? Promise.resolve(options.after).then(send, send) : send()
+    // sent once that settles, so the older one can't land after it, unless
+    // that one turned the project read-only.
+    const service = sendAfter(options.after, send, () => isAutoSave && readOnlyRef.current)
 
     // Where the user was when saving: a save that lands once they went
     // elsewhere mustn't pull them back.
@@ -1842,6 +1843,8 @@ const MapProject = () => {
     // Resolves true once the project saved.
     const request = service.then(response => {
       setIsSaving(false)
+      if(response === SAVE_SKIPPED)
+        return false
       const status = response?.response?.status || response?.status
       const errorData = response?.response?.data || (response?.data?.id ? null : response?.data)
       if(response?.data?.id) {

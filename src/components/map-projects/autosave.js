@@ -110,6 +110,22 @@ export const saveOnLeave = ({ scheduler, inFlightSave, save }) => {
   return true
 }
 
+// What sendAfter resolves to when it didn't send.
+export const SAVE_SKIPPED = 'save_skipped'
+
+/**
+ * Sends a save built now once `after`, the save still in flight, settles, so
+ * the older payload can't land after it; at once with nothing in flight. A
+ * queued save is dropped if isBlocked() is true when its turn comes: the save
+ * before it may have turned the project read-only (OpenConceptLab/ocl_online#424).
+ */
+export const sendAfter = (after, send, isBlocked = () => false) => {
+  if(!after)
+    return send()
+  const go = () => isBlocked() ? SAVE_SKIPPED : send()
+  return Promise.resolve(after).then(go, go)
+}
+
 // Saves still in flight, by project id. A save on leave outlives the page that
 // started it: reopening that project must wait for it, or the stale copy loads
 // and its next autosave overwrites the save, and closing the tab must warn.
