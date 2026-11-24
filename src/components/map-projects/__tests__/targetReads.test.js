@@ -1,67 +1,77 @@
 /**
- * The AutoMatch dialog follows the target repository's reads, the repository
- * and its versions (OpenConceptLab/ocl_issues#3067): loading while they run,
- * failed if one fails, and Try again repeats the failed one, so a new
- * project's draft survives a failed read and Submit waits for both.
- *
- * MapProject can't be mounted here (these tests run without a JSX transform),
- * so this reads its source.
+ * The target repository's reads, as the AutoMatch dialog follows them
+ * (OpenConceptLab/ocl_issues#3067): only the latest read applies, Try again
+ * repeats the last one, the saved rows' repository stands in only for the
+ * project's own target, and a rate-limited read waits out its countdown.
  */
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import babel from '@babel/core'
 
-const source = readFileSync(new URL('../MapProject.jsx', import.meta.url), 'utf8')
-const ast = babel.parseSync(source, {babelrc: false, configFile: false, parserOpts: {plugins: ['jsx']}})
-const code = node => source.slice(node.start, node.end)
+import { createLatestRead, getRetryAt, isSameTargetRepo, settleRepoRead } from '../targetReads.js'
 
-const functionSource = name => {
-  let body
-  babel.traverse(ast, {
-    VariableDeclarator({node}) {
-      if(node.id.name === name)
-        body = code(node.init)
-    }
-  })
-  assert.ok(body, `${name} is defined`)
-  return body
-}
-
-for (const [name, requestRef, argsRef, args, setStatus] of [
-  ['fetchVersions', 'versionsRequestRef', 'versionsArgsRef', '[url, savedVersion]', 'setVersionsStatus'],
-  ['fetchRepo', 'repoRequestRef', 'repoArgsRef', '[url, _repo]', 'setRepoStatus'],
-]) {
-  const body = functionSource(name)
-
-  test(`${name} starts loading and keeps its arguments for Try again`, () => {
-    assert.match(body, new RegExp(`${argsRef}\\.current = ${args.replace(/[[\]]/g, '\\$&')}\\s*${setStatus}\\('loading'\\)`))
-  })
-
-  test(`${name} settles a rate-limited reply`, () => {
-    // Raw: a 429 settles after the app's countdown instead of never.
-    assert.match(body, /\.get\(undefined, undefined, undefined, true\)\.then\(/)
-  })
-
-  test(`only ${name}'s latest read sets anything`, () => {
-    const reply = body.slice(body.indexOf('.then('))
-    // The versions read also ignores an answer after the page has left (OpenConceptLab/ocl_issues#3064).
-    assert.match(reply, new RegExp(`^\\.then\\(response => \\{\\s*if\\(request !== ${requestRef}\\.current( \\|\\| !isMountedRef\\.current)?\\)\\s*return\\n`))
-    assert.match(reply, new RegExp(`${setStatus}\\(fetched\\w+ \\? null : 'failed'\\)`))
-  })
-}
-
-test('Try again repeats whichever read failed', () => {
-  const retry = functionSource('retryTargetReads')
-  assert.match(retry, /if\(repoStatus === 'failed'\)\s*fetchRepo\(\.\.\.repoArgsRef\.current\)/)
-  assert.match(retry, /if\(versionsStatus === 'failed'\)\s*fetchVersions\(\.\.\.versionsArgsRef\.current\)/)
+test('createLatestRead: only the latest read applies', () => {
+  const read = createLatestRead()
+  const first = read.begin('/orgs/A/sources/A/')
+  const second = read.begin('/orgs/B/sources/B/')
+  assert.equal(first(), false)
+  assert.equal(second(), true)
 })
 
-test('the dialog gets both reads\' state and Try again', () => {
-  assert.match(source, /targetRepoState: getTargetRepoState\(repoVersion, repoStatus, versionsStatus\),\s*onRetryTargetReads: retryTargetReads,/)
+test('createLatestRead: invalidate drops the running read', () => {
+  const read = createLatestRead()
+  const running = read.begin('/orgs/A/sources/A/')
+  read.invalidate()
+  assert.equal(running(), false)
 })
 
-test('choosing another repository drops an older repository read', () => {
-  assert.match(functionSource('onRepoChange'), /repoRequestRef\.current \+= 1\s*setRepo\(newRepo\)\s*setRepoStatus\(null\)/)
+test('createLatestRead: keeps the last read\'s arguments for Try again', () => {
+  const read = createLatestRead()
+  assert.equal(read.lastArgs(), null)
+  read.begin('/orgs/A/sources/A/', 'v1')
+  read.begin('/orgs/B/sources/B/', undefined)
+  assert.deepEqual(read.lastArgs(), ['/orgs/B/sources/B/', undefined])
+  // Invalidating keeps them: Try again repeats what was asked for.
+  read.invalidate()
+  assert.deepEqual(read.lastArgs(), ['/orgs/B/sources/B/', undefined])
+})
+
+const CIEL = { id: 'CIEL', version: '', url: undefined }
+
+test('isSameTargetRepo: compares the row\'s repository URL, any version', () => {
+  assert.equal(isSameTargetRepo(CIEL, '/orgs/CIEL/sources/CIEL/v2026-09-24/', '/orgs/CIEL/sources/CIEL/'), true)
+  assert.equal(isSameTargetRepo(CIEL, '/orgs/CIEL/sources/CIEL/', '/orgs/CIEL/sources/CIEL/v2026-09-24/'), true)
+  // The target changed since the rows were mapped.
+  assert.equal(isSameTargetRepo(CIEL, '/orgs/CIEL/sources/CIEL/v1/', '/orgs/Regenstrief/sources/LOINC/'), false)
+  // Same id, other owner.
+  assert.equal(isSameTargetRepo(CIEL, '/orgs/Other/sources/CIEL/', '/orgs/CIEL/sources/CIEL/'), false)
+})
+
+test('isSameTargetRepo: rows without a repository URL compare its id', () => {
+  assert.equal(isSameTargetRepo(CIEL, '', '/orgs/CIEL/sources/CIEL/'), true)
+  assert.equal(isSameTargetRepo(CIEL, undefined, '/orgs/Regenstrief/sources/LOINC/'), false)
+})
+
+test('isSameTargetRepo: nothing to stand in', () => {
+  assert.equal(isSameTargetRepo(null, '/orgs/CIEL/sources/CIEL/', '/orgs/CIEL/sources/CIEL/'), false)
+  assert.equal(isSameTargetRepo(CIEL, '/orgs/CIEL/sources/CIEL/', ''), false)
+})
+
+test('settleRepoRead: a reply with the repository loads it', () => {
+  const repo = { id: 'CIEL', url: '/orgs/CIEL/sources/CIEL/' }
+  assert.deepEqual(settleRepoRead({ data: repo }, CIEL), { repo, status: null })
+})
+
+test('settleRepoRead: a failed read takes the fallback, else fails', () => {
+  const rateLimited = { message: 'Request failed with status code 429', response: { status: 429, data: {} } }
+  assert.deepEqual(settleRepoRead(rateLimited, CIEL), { repo: CIEL, status: null })
+  assert.deepEqual(settleRepoRead(rateLimited, null), { repo: null, status: 'failed' })
+  // A 401 resolves with undefined while the session renews.
+  assert.deepEqual(settleRepoRead(undefined, undefined), { repo: null, status: 'failed' })
+})
+
+test('getRetryAt: waits out the countdown, or not at all', () => {
+  assert.equal(getRetryAt(30, 1000), 31000)
+  assert.equal(getRetryAt(0, 1000), 0)
+  assert.equal(getRetryAt(undefined, 1000), 0)
 })

@@ -400,6 +400,7 @@
     "auto_match_target_repository": "目标存储库：",
     "auto_match_target_repository_loading": "正在加载目标存储库...",
     "auto_match_target_repository_failed": "无法加载。",
+    "target_repository_not_loaded": "目标存储库未加载，因此无法获取候选项。请打开 AutoMatch 重试。",
     "auto_match_input_rows": "要匹配的输入行：<b>{{rows}}</b> / 共 <b>{{total}}</b> 行",
     "auto_match_scope_selected": "仅已选行",
     "auto_match_scope_unmapped": "仅未映射的行",

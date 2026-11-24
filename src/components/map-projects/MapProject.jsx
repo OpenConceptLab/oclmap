@@ -69,7 +69,7 @@ import pick from 'lodash/pick'
 
 import { OperationsContext } from '../app/LayoutContext';
 
-import APIService, { isTransientNetworkError, retryWithBackoff } from '../../services/APIService';
+import APIService, { getThrottlingDetails, isTransientNetworkError, retryWithBackoff } from '../../services/APIService';
 import { matchToken, lookupTokenFor, needsSessionToken, needsSessionLookupToken, withoutTokens, withSavedTokenURL, withoutLocalKeys, isAbsoluteURL } from '../../services/tokenScope'
 import { buildAttributionHeaders, buildConfigSnapshot, summarizeRunCompletion, matchesOnOCL } from '../../services/attribution'
 import { CAPACITY_LIMIT, RATE_LIMIT, CAPACITY_WAIT_CAP_MS, HEAVY_REQUEST_TIMEOUT_MS, LIGHT_REQUEST_TIMEOUT_MS, createCapacityGate, createLimiter, isRetryableError, requestWithCapacityRetry, sleepUnlessCancelled, untilCancelled } from '../../services/capacity'
@@ -125,6 +125,7 @@ import { normalizeLookupConfig } from './lookupConfigFields'
 import { getDeclaredLocales, getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getSavedTargetRepoVersion, getTargetRepoState, getTargetRepoVersionFromUrl, getTargetRepoVersionId, getVersionsFromResponse } from './projectTargetRepo'
 import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, findTargetRowView, formatBridgeTargetDownloadEntry, resolveAICandidateID, getScoreDetails, getAIAnalysisCandidateIDs, getAIIndicatorTooltip, withCachedConcept, withCandidateNames, buildMatchEntries, restoredNote, withOwnNames, withSavedMatch } from './viewBuilders.js'
 import { formatClockTime, getCapacityWaitLabel, mergeCapacityWaits } from './rowProgress.js'
+import { createLatestRead, getRetryAt, isSameTargetRepo, settleRepoRead } from './targetReads'
 import { createMappedSourcesReader, MAPPED_SOURCES_PAGE_SIZE, probeBridgeMappedSources } from './mappedSources'
 
 import './MapProject.scss'
@@ -1560,6 +1561,8 @@ const MapProject = () => {
     let _mapTypes = {}
     let _proposed = {}
     let _repo = null
+    // The URL of the repository _repo came from, read from its own row.
+    let _repoRowURL = ''
     let _states = {...rowStatuses}
     const savedMatches = keyBy(compact(projectData?.matches), 'rowIndex')
     const repoVersionURL = data['__Repo URL__'] || data['__map_repo_url__']
@@ -1588,6 +1591,7 @@ const MapProject = () => {
         if(concept?.id) {
           _mapSelected[index] = withSavedMatch(concept, savedMatches[index])
           _repo = repo
+          _repoRowURL = data['__Repo URL__'] || data['__map_repo_url__'] || ''
         }
         let rowStateLabel = data['__State__'] || data['__row_status__'] || data['__row_map_status__']
         let state = keys(pickBy(VIEWS, info => info.label === rowStateLabel))[0]
@@ -1612,7 +1616,9 @@ const MapProject = () => {
       let repoURL = projectData?.target_repo_url || _repo?.url
       let repoVersion = getProjectTargetRepoVersion(projectData) || _repo?.version || ''
       if(repoURL) {
-        fetchRepo(repoURL, _repo)
+        // The saved rows' repository stands in for a failed read only if it's
+        // this project's target.
+        fetchRepo(repoURL, isSameTargetRepo(_repo, _repoRowURL, repoURL) ? _repo : null)
         fetchVersions(repoURL, repoVersion)
       }
     }
@@ -2166,20 +2172,20 @@ const MapProject = () => {
   }
 
   // Only the latest read may set the repository. A failed read falls back to
-  // the repository the saved rows name, if any. Raw, so a rate-limited read
-  // settles too.
-  const repoRequestRef = React.useRef(0)
-  const repoArgsRef = React.useRef(null)
-  const fetchRepo = (url, _repo) => {
-    const request = ++repoRequestRef.current
-    repoArgsRef.current = [url, _repo]
+  // fallbackRepo, if given. Raw, so a rate-limited read settles too.
+  const repoReadRef = React.useRef(null)
+  if(!repoReadRef.current)
+    repoReadRef.current = createLatestRead()
+  const fetchRepo = (url, fallbackRepo) => {
+    const isLatest = repoReadRef.current.begin(url, fallbackRepo)
     setRepoStatus('loading')
     APIService.new().overrideURL(url).get(undefined, undefined, undefined, true).then(response => {
-      if(request !== repoRequestRef.current)
+      if(!isLatest() || !isMountedRef.current)
         return
-      const fetchedRepo = response?.data?.id ? response.data : _repo
-      setRepo(fetchedRepo)
-      setRepoStatus(fetchedRepo ? null : 'failed')
+      const settled = settleRepoRead(response, fallbackRepo)
+      setRepo(settled.repo)
+      setRepoStatus(settled.status)
+      noteTargetReadThrottle(response)
     })
   }
 
@@ -3044,44 +3050,59 @@ const MapProject = () => {
 
   // Only the latest request may set the version: a slower response is for a
   // repository no longer chosen.
-  const versionsRequestRef = React.useRef(0)
-  // The last read's arguments, for the AutoMatch dialog's Try again.
-  const versionsArgsRef = React.useRef(null)
+  const versionsReadRef = React.useRef(null)
+  if(!versionsReadRef.current)
+    versionsReadRef.current = createLatestRead()
 
+  // A rate-limited target read can be tried again once the app's countdown
+  // ends; until then the dialog's Try again waits.
+  const [targetReadsRetryAt, setTargetReadsRetryAt] = React.useState(0)
+  const noteTargetReadThrottle = response => {
+    if(response?.response?.status === 429)
+      setTargetReadsRetryAt(getRetryAt(getThrottlingDetails(response.response).retryAfter, Date.now()))
+  }
+  React.useEffect(() => {
+    if(!targetReadsRetryAt)
+      return
+    const timer = setTimeout(() => setTargetReadsRetryAt(0), Math.max(targetReadsRetryAt - Date.now(), 0))
+    return () => clearTimeout(timer)
+  }, [targetReadsRetryAt])
+
+  // The AutoMatch dialog's Try again repeats whichever read failed.
   const retryTargetReads = () => {
     if(repoStatus === 'failed')
-      fetchRepo(...repoArgsRef.current)
+      fetchRepo(...repoReadRef.current.lastArgs())
     if(versionsStatus === 'failed')
-      fetchVersions(...versionsArgsRef.current)
+      fetchVersions(...versionsReadRef.current.lastArgs())
   }
 
   // A newly chosen repository gets the default version. A saved project
   // passes its own version and keeps it (OpenConceptLab/ocl_issues#2906).
   const fetchVersions = (url, savedVersion) => {
-    const request = ++versionsRequestRef.current
-    versionsArgsRef.current = [url, savedVersion]
+    const isLatest = versionsReadRef.current.begin(url, savedVersion)
     setVersionsStatus('loading')
-    // Raw, so a rate-limited read settles as failed after the app's countdown
-    // instead of loading forever.
+    // Raw, so a rate-limited read settles as failed instead of loading
+    // forever; the app shows its countdown.
     APIService.new().overrideURL(dropVersion(url)).appendToUrl('versions/?verbose=true').get(undefined, undefined, undefined, true).then(response => {
-      if(request !== versionsRequestRef.current || !isMountedRef.current)
+      if(!isLatest() || !isMountedRef.current)
         return
       const fetchedVersions = getVersionsFromResponse(response)
       setVersions(fetchedVersions || [])
       setVersionsStatus(fetchedVersions ? null : 'failed')
+      noteTargetReadThrottle(response)
       onRepoVersionChange(savedVersion === undefined ? getDefaultTargetRepoVersion(fetchedVersions) : getSavedTargetRepoVersion(fetchedVersions, savedVersion))
     })
   }
 
   const onRepoChange = (newRepo) => {
-    repoRequestRef.current += 1
+    repoReadRef.current.invalidate()
     setRepo(newRepo)
     setRepoStatus(null)
     onRepoVersionChange(false)
     if(newRepo?.url) {
       fetchVersions(newRepo.url)
     } else {
-      versionsRequestRef.current += 1
+      versionsReadRef.current.invalidate()
       setVersions([])
       setVersionsStatus(null)
     }
@@ -4211,6 +4232,12 @@ const MapProject = () => {
   const fetchAllCandidatesForRow = (algoId, _row, offset=0, _retired, scrollToBottom, _filters, forceReload=false, keepAlert=false) => {
     if(loadingMatches)
       return
+    // Matching needs the target repository, which may still be loading or
+    // may have failed to load (OpenConceptLab/ocl_issues#3067).
+    if(!repo?.id) {
+      setAlert({message: t('map_project.target_repository_not_loaded'), severity: 'error'})
+      return
+    }
     if(!keepAlert)
       setAlert(false)
     if(isAnyValidColumn()) {
@@ -6824,6 +6851,7 @@ const MapProject = () => {
               repoVersion,
               targetRepoState: getTargetRepoState(repoVersion, repoStatus, versionsStatus),
               onRetryTargetReads: retryTargetReads,
+              retryTargetReadsWaiting: targetReadsRetryAt > 0,
               inAIAssistantGroup,
               algosSelected,
               runnableAlgos,

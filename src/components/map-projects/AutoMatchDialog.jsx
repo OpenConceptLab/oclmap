@@ -15,6 +15,7 @@ import FormLabel from '@mui/material/FormLabel';
 import Chip from '@mui/material/Chip'
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
+import { visuallyHidden } from '@mui/utils';
 import Tooltip from '@mui/material/Tooltip';
 import CircularProgress from '@mui/material/CircularProgress';
 import Typography from '@mui/material/Typography';
@@ -57,6 +58,7 @@ const AutoMatchDialog = ({
   repoVersion,
   targetRepoState,
   onRetryTargetReads,
+  retryTargetReadsWaiting,
   onSubmit,
   inAIAssistantGroup,
   algosSelected,
@@ -210,16 +212,20 @@ const AutoMatchDialog = ({
           {t('map_project.auto_match_target_repository')}
           {
             targetRepoState === 'loading' &&
-              <CircularProgress size={20} sx={{marginLeft: '12px'}} aria-label={t('map_project.auto_match_target_repository_loading')} />
+              // The footer's status line says it's loading; hidden here so it's read once.
+              <CircularProgress size={20} sx={{marginLeft: '12px'}} aria-hidden='true' />
           }
           {
             targetRepoState === 'failed' &&
               <>
                 <Typography id={TARGET_REPO_STATUS_ID} role='alert' variant='body2' sx={{display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '12px', color: 'error.main'}}>
                   <ErrorOutlineIcon fontSize='small' />
+                  {/* Read out, and as Submit's description, it says what didn't load. */}
+                  <Box component='span' sx={visuallyHidden}>{t('map_project.auto_match_target_repository')}</Box>
                   {t('map_project.auto_match_target_repository_failed')}
                 </Typography>
-                <Button size='small' sx={{textTransform: 'none', marginLeft: '8px'}} onClick={onRetryTargetReads}>
+                {/* Waits out a rate-limited read's countdown. */}
+                <Button size='small' sx={{textTransform: 'none', marginLeft: '8px'}} disabled={Boolean(retryTargetReadsWaiting)} onClick={onRetryTargetReads}>
                   {t('common.try_again')}
                 </Button>
               </>
