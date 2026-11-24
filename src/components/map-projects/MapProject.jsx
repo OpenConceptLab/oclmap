@@ -1883,10 +1883,11 @@ const MapProject = () => {
         if(!isAutoSave)
           baseSetAlert({severity: 'success', message: t('map_project.successfully_saved'), duration: 2000})
 
+        // A save that went through ends read-only first, so its log is posted.
+        leaveReadOnly()
         if(projectLogsLoaderRef.current.canSend(response.data.url))
           postProjectLogs(response.data.url, {row_logs: savedRowLogs, project_logs: savedProjectLogs})
         lastSaveFailedRef.current = false
-        leaveReadOnly()
         return true
       }
       // A read-only refusal leaves nothing that a later save could keep, so
