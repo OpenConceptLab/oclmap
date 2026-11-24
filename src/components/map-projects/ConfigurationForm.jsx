@@ -48,6 +48,7 @@ import RerankerConfig from './RerankerConfig'
 import AIAssistantSelectorPanel from './AIAssistantSelectorPanel'
 import { getTargetRepoVersionBadges, getTargetRepoVersionReleaseDate, hasSelectedTargetRepoVersion, needsSemanticSearchWarning } from './projectTargetRepo'
 import { getPreviewAlgorithmOptions, getPreviewConfigAccessErrors } from './previewConfig'
+import { LockMark, LockTooltip, useEditLock } from '../common/NoticeLock'
 
 const VisuallyHiddenInput = styled('input')({
   clip: 'rect(0 0 0 0)',
@@ -76,6 +77,7 @@ const getSuggestedRepos = () => (window.REPO_SUGGESTIONS || process.env.REPO_SUG
 
 const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, name, setName, description, setDescription, repo, onRepoChange, repoVersion, setRepoVersion, showTargetRepoVersionError, versions, mappedSources, targetSourcesFromRows, algosSelected, setAlgosSelected, sx, algos, validColumns, columns, isValidColumnValue, updateColumn, configure, setConfigure, columnVisibilityModel, setColumnVisibilityModel, onSave, isSaving, candidatesScore, onScoreChange, includeDefaultFilter, setIncludeDefaultFilter, filters, setFilters, locales, setAIAssistantColumns, AIAssistantColumns, inAIAssistantGroup, lookupConfig, setLookupConfig, encoderModel, setEncoderModel, isCoreUser, requestLimits, canSelectAIModel, canSetAIOutputLocale, canBridge, canScispacy, canUseOrgProjects=true, canUseCustomAlgorithms=true, promptTemplates, promptTemplate, onPromptTemplateChange, AIModels, AIModel, setAIModel, namespace, setNamespace, promptOutputLocale, setPromptOutputLocale, inputLocale, setInputLocale, oclLocales, useLexicalVariants, setUseLexicalVariants }) => {
   const { t } = useTranslation();
+  const lock = useEditLock()
   const user = getCurrentUser()
   const isLLMAlgoNotAllowed = !repoVersion?.match_algorithms?.includes('llm')
   const appliedLocales = filters?.locale ? filters?.locale?.split(',') : []
@@ -563,14 +565,15 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
           </Alert>
       }
       <div className='col-xs-12 padding-0' style={{textAlign: 'right'}}>
+      <LockTooltip title={lock}>
       <Button
         variant='contained'
         color='primary'
         size='small'
         sx={{textTransform: 'none', margin: '20px 5px 5px 0px'}}
-        startIcon={<SaveIcon />}
+        startIcon={lock ? <LockMark /> : <SaveIcon />}
         onClick={onSave}
-        disabled={!name || !file?.name || !owner || hasConfigErrors || hasAccessErrors}
+        disabled={Boolean(lock) || !name || !file?.name || !owner || hasConfigErrors || hasAccessErrors}
         loading={isSaving}
         loadingPosition="start"
       >
@@ -578,6 +581,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
           isSaving ? t('map_project.saving') : t('map_project.save_and_close')
         }
       </Button>
+      </LockTooltip>
         </div>
     </div>
   )

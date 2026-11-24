@@ -594,6 +594,7 @@
   "unknown_error": "Error desconocido",
   "limit_notice": {
     "fallback_title": "No se completó la solicitud",
+    "read_only": "Solo lectura",
     "restricted": "Restringido",
     "still_works": "Sigue funcionando"
   },

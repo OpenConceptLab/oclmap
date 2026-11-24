@@ -6,9 +6,11 @@ import { find, forEach} from 'lodash'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import Button from '@mui/material/Button'
+import { LockMark, LockTooltip, useEditLock } from '../common/NoticeLock'
 
 const Propose = ({onChange, proposed, onSubmit, repo, row, columns}) => {
   const { t } = useTranslation();
+  const lock = useEditLock()
   const [attributes, setAttributes] = React.useState(1)
   const repoLabel = `${repo?.short_code || repo?.id}:${repo?.version || repo.id}`
 
@@ -113,9 +115,11 @@ const Propose = ({onChange, proposed, onSubmit, repo, row, columns}) => {
         />
       </div>
       <div className='col-xs-12 padding-0' style={{margin: '16px 0', display: 'flex', alignItems: 'center'}}>
-        <Button color='primary' onClick={_onSubmit} variant='contained' sx={{textTransform: 'none'}}>
+        <LockTooltip title={lock}>
+        <Button color='primary' onClick={_onSubmit} disabled={Boolean(lock)} startIcon={lock ? <LockMark /> : undefined} variant='contained' sx={{textTransform: 'none'}}>
           {t('map_project.propose')}
         </Button>
+        </LockTooltip>
       </div>
     </div>
   )

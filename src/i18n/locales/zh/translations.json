@@ -593,6 +593,7 @@
   "unknown_error": "未知错误",
   "limit_notice": {
     "fallback_title": "请求未完成",
+    "read_only": "只读",
     "restricted": "受限",
     "still_works": "仍可使用"
   },

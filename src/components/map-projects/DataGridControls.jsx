@@ -22,6 +22,7 @@ import without from 'lodash/without'
 import { SURFACE_COLORS, WHITE } from '../../common/colors';
 import ScoreBucketButton from './ScoreBucketButton'
 import SearchField from './SearchField'
+import { LockMark, LockTooltip, useEditLock } from '../common/NoticeLock'
 
 const getBulkActionMeta = (action, t) => {
   if(action === 'approve')
@@ -59,6 +60,7 @@ const DataGridControls = ({
   searchValue
 }) => {
   const { t } = useTranslation();
+  const lock = useEditLock()
   const raisedBulkSelectSx = {
     height: '34px',
     backgroundColor: '#7F7AF8',
@@ -179,8 +181,10 @@ const DataGridControls = ({
           <div className='col-xs-12' style={{padding: '8px 14px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', backgroundColor: '#e9e4ff', borderTop: 'solid 1px rgba(76, 53, 255, 0.15)', borderBottom: 'solid 1px rgba(76, 53, 255, 0.15)'}}>
             <Typography component='span' sx={{fontSize: '14px', fontWeight: 600, color: 'surface.dark', marginRight: '8px'}}>
               {t('map_project.bulk_selected', {count: selectedRowsCount})}
+              {lock && <LockMark sx={{ml: 0.5, verticalAlign: '-2px'}} />}
             </Typography>
-            <FormControl size='small' variant='outlined'>
+            <LockTooltip title={lock}>
+            <FormControl size='small' variant='outlined' disabled={Boolean(lock)}>
               <Select
                 displayEmpty
                 value={bulkDecisionAction}
@@ -220,7 +224,9 @@ const DataGridControls = ({
                 }
               </Select>
             </FormControl>
-            <FormControl size='small' variant='outlined'>
+            </LockTooltip>
+            <LockTooltip title={lock}>
+            <FormControl size='small' variant='outlined' disabled={Boolean(lock)}>
               <Select
                 value={bulkConfirm?.action === 'map_type' ? bulkConfirm?.mapType : bulkMapType}
                 onChange={onBulkMapTypeChange}
@@ -238,6 +244,7 @@ const DataGridControls = ({
                 }
               </Select>
             </FormControl>
+            </LockTooltip>
           </div>
       }
     </>

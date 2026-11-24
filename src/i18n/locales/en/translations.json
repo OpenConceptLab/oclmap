@@ -594,6 +594,7 @@
   "unknown_error": "Unknown error",
   "limit_notice": {
     "fallback_title": "Request not completed",
+    "read_only": "Read-only",
     "restricted": "Restricted",
     "still_works": "Still works"
   },

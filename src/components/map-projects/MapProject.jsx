@@ -113,6 +113,7 @@ import PreviewLimitDialog from './PreviewLimitDialog'
 import QuotaDialog from '../common/QuotaDialog'
 import { getQuotaError } from '../common/quotaErrors'
 import LimitNotice from '../common/LimitNotice.jsx'
+import { EditLockContext, LockMark, LockTooltip } from '../common/NoticeLock'
 import useResourceNotice from '../common/useResourceNotice'
 import { getResourceNoticeEffect, toLimitRefusal } from '../common/limitNotice.js'
 import MapperQuotaChip from './MapperQuotaChip'
@@ -6583,7 +6584,13 @@ const MapProject = () => {
     return minFactor
   }
 
+  // A read-only project locks every control that writes it, with its notice's
+  // reason (OpenConceptLab/ocl_online#424). Viewing, filters, export and
+  // delete stay open.
+  const editLock = isReadOnly ? (projectNotice?.notice?.tooltip || t('limit_notice.read_only')) : null
+
   return permissionDenied ? <Error403/> : newProjectBlockReason ? <Redirect to={{pathname: '/', state: {newProjectBlock: newProjectBlockReason}}} /> : (
+    <EditLockContext.Provider value={editLock}>
     <div className='col-xs-12 padding-0' style={{borderRadius: '10px', width: 'calc(100vw - 32px)'}}>
       {
         (() => {
@@ -7113,15 +7120,21 @@ const MapProject = () => {
                   }}
                 />
                 <div className='col-xs-12' style={{padding: '0 0 8px 78px'}}>
-                  <Button size='small' disabled={rowStatuses.reviewed.includes(rowIndex) || decisions[rowIndex] === 'none' || !decisions[rowIndex]} color='primary' onClick={() => onReviewDone(true)} variant='contained' sx={{textTransform: 'none'}}>
+                  <LockTooltip title={editLock}>
+                  <Button size='small' disabled={Boolean(editLock) || rowStatuses.reviewed.includes(rowIndex) || decisions[rowIndex] === 'none' || !decisions[rowIndex]} startIcon={editLock ? <LockMark /> : undefined} color='primary' onClick={() => onReviewDone(true)} variant='contained' sx={{textTransform: 'none'}}>
                     {t('map_project.approve_and_next')}
                   </Button>
-                  <Button size='small' disabled={rowStatuses.reviewed.includes(rowIndex) || decisions[rowIndex] === 'none' || !decisions[rowIndex]} color='primary' onClick={() => onReviewDone(false)} variant='outlined' sx={{textTransform: 'none', marginLeft: '8px'}}>
+                  </LockTooltip>
+                  <LockTooltip title={editLock}>
+                  <Button size='small' disabled={Boolean(editLock) || rowStatuses.reviewed.includes(rowIndex) || decisions[rowIndex] === 'none' || !decisions[rowIndex]} startIcon={editLock ? <LockMark /> : undefined} color='primary' onClick={() => onReviewDone(false)} variant='outlined' sx={{textTransform: 'none', marginLeft: '8px'}}>
                     {t('map_project.approve')}
                   </Button>
-                  <Button size='small' disabled={decisions[rowIndex] === 'none' || !decisions[rowIndex]} color='error' onClick={(event) => onDecisionChange(event, 'rejected')} variant='outlined' sx={{textTransform: 'none', marginLeft: '8px'}}>
+                  </LockTooltip>
+                  <LockTooltip title={editLock}>
+                  <Button size='small' disabled={Boolean(editLock) || decisions[rowIndex] === 'none' || !decisions[rowIndex]} startIcon={editLock ? <LockMark /> : undefined} color='error' onClick={(event) => onDecisionChange(event, 'rejected')} variant='outlined' sx={{textTransform: 'none', marginLeft: '8px'}}>
                     {t('map_project.reject')}
                   </Button>
+                  </LockTooltip>
                 </div>
                 <Divider sx={{width: '100%'}} />
                 <div className='col-xs-12 padding-0'>
@@ -7320,6 +7333,7 @@ const MapProject = () => {
         onClose={() => setOpenImportToCollection(false)}
       />
     </div>
+    </EditLockContext.Provider>
   )
 }
 
