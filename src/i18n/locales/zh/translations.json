@@ -588,6 +588,11 @@
     "api_version": "API 版本"
   },
   "unknown_error": "未知错误",
+  "limit_notice": {
+    "fallback_title": "请求未完成",
+    "restricted": "受限",
+    "still_works": "仍可使用"
+  },
   "quota": {
     "title_quota": "您已达到配额上限",
     "title_cap": "您已达到使用上限",

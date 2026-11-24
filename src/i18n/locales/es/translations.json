@@ -589,6 +589,11 @@
     "global_registry": "Registro global"
   },
   "unknown_error": "Error desconocido",
+  "limit_notice": {
+    "fallback_title": "No se completó la solicitud",
+    "restricted": "Restringido",
+    "still_works": "Sigue funcionando"
+  },
   "quota": {
     "title_quota": "Ha alcanzado su cuota",
     "title_cap": "Ha alcanzado su límite",

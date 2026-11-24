@@ -589,6 +589,11 @@
     "api_version": "Versão API"
   },
   "unknown_error": "Erro desconhecido",
+  "limit_notice": {
+    "fallback_title": "A solicitação não foi concluída",
+    "restricted": "Restrito",
+    "still_works": "Continua funcionando"
+  },
   "quota": {
     "title_quota": "Você atingiu sua cota",
     "title_cap": "Você atingiu seu limite",
