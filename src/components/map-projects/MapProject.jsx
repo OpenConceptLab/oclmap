@@ -2022,6 +2022,13 @@ const MapProject = () => {
     setProjectNotice({notice, detail})
   }
 
+  // Edits kept back while it was read-only are queued for autosave once it
+  // isn't.
+  const requeueUnsavedEdits = () => {
+    if(editTrackerRef.current.hasUnsaved())
+      autosaveSchedulerRef.current.schedule('read_only_ended')
+  }
+
   const leaveReadOnly = () => {
     if(!readOnlyRef.current)
       return
@@ -2029,6 +2036,7 @@ const MapProject = () => {
     setIsReadOnly(false)
     projectNoticeFromRouteRef.current = false
     setProjectNotice(null)
+    requeueUnsavedEdits()
   }
 
   // Takes back what the notices route showed: its strip, and the read-only
@@ -2040,6 +2048,7 @@ const MapProject = () => {
     readOnlyRef.current = false
     setIsReadOnly(false)
     setProjectNotice(null)
+    requeueUnsavedEdits()
   }
 
   // Opens the dialog for a refusal (a 403 body): its notice when it sends one,
