@@ -6,7 +6,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { blockLeaving, continueLeaving, createEditTracker, createRunClosers, getPageKey, isUnsavedNewProject, shouldAskBeforeLeaving, shouldWarnBeforeUnload } from '../leaveGuard.js'
+import { blockLeaving, continueLeaving, createEditTracker, createRunClosers, getPageKey, hasReadOnlyEdits, isUnsavedNewProject, shouldAskBeforeLeaving, shouldWarnBeforeUnload } from '../leaveGuard.js'
 
 // Stands in for a history v4 object: block's prompt decides each transition.
 const createFakeHistory = () => {
@@ -252,4 +252,18 @@ test('the edit tracker knows which edits a save kept', () => {
   edits.saved(later)
   edits.saved(kept) // an older save landing late doesn't bring the edit back
   assert.equal(edits.hasUnsaved(), false)
+})
+
+test('in-app navigation asks before leaving a read-only project with edits no save kept, as closing the tab does', () => {
+  const saved = {runActive: false, projectId: 42, hasInput: true}
+  assert.equal(shouldAskBeforeLeaving({...saved, readOnly: true, unsavedEdits: true}), true)
+  assert.equal(shouldAskBeforeLeaving({...saved, readOnly: true, unsavedEdits: false}), false, 'nothing to lose')
+  assert.equal(shouldAskBeforeLeaving({...saved, readOnly: false, unsavedEdits: true}), false, 'an editable project saves on leave')
+  for(const readOnly of [true, false])
+    for(const unsavedEdits of [true, false])
+      assert.equal(
+        shouldWarnBeforeUnload({...saved, readOnly, unsavedEdits, pendingAutosave: false, saveInFlight: false, saveFailed: false}),
+        hasReadOnlyEdits({readOnly, unsavedEdits}),
+        `both guards agree: readOnly ${readOnly}, unsavedEdits ${unsavedEdits}`
+      )
 })

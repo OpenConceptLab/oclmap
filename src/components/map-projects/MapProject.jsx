@@ -382,6 +382,7 @@ const MapProject = () => {
   // refuses every save, so nothing autosaves or saves on leave. A save that
   // goes through clears it.
   const readOnlyRef = React.useRef(false)
+  const [isReadOnly, setIsReadOnly] = React.useState(false)
   // The strip at the top of the project: {notice, detail}, or null, and
   // whether the notices route sent it (an empty answer takes it back).
   const [projectNotice, setProjectNotice] = React.useState(null)
@@ -496,11 +497,7 @@ const MapProject = () => {
         saveInFlight: inFlightSaveRef.current,
         saveFailed: lastSaveFailedRef.current,
         configChanged: hasUnsavedConfiguration(),
-        runActive: isRunActiveRef.current,
-        projectId: projectIdRef.current,
-        hasInput: hasInputRef.current,
-        readOnly: readOnlyRef.current,
-        unsavedEdits: editTrackerRef.current.hasUnsaved(),
+        ...getLeaveState(),
       })
       if(!warn)
         return
@@ -510,6 +507,16 @@ const MapProject = () => {
     window.addEventListener('beforeunload', warnIfUnsaved)
     return () => window.removeEventListener('beforeunload', warnIfUnsaved)
   }, [])
+
+  // What leaving would lose, read as the user leaves, for the in-app guard and
+  // the unload one alike.
+  const getLeaveState = () => ({
+    runActive: isRunActiveRef.current,
+    projectId: projectIdRef.current,
+    hasInput: hasInputRef.current,
+    readOnly: readOnlyRef.current,
+    unsavedEdits: editTrackerRef.current.hasUnsaved(),
+  })
 
   // Closing the tab stops a run too, and closes its record.
   React.useEffect(() => {
@@ -2002,6 +2009,7 @@ const MapProject = () => {
   // goes through.
   const enterReadOnly = ({notice, detail}, fromRoute = false) => {
     readOnlyRef.current = true
+    setIsReadOnly(true)
     autosaveSchedulerRef.current.cancel()
     projectNoticeFromRouteRef.current = fromRoute
     setProjectNotice({notice, detail})
@@ -2011,6 +2019,7 @@ const MapProject = () => {
     if(!readOnlyRef.current)
       return
     readOnlyRef.current = false
+    setIsReadOnly(false)
     projectNoticeFromRouteRef.current = false
     setProjectNotice(null)
   }
@@ -2022,6 +2031,7 @@ const MapProject = () => {
       return
     projectNoticeFromRouteRef.current = false
     readOnlyRef.current = false
+    setIsReadOnly(false)
     setProjectNotice(null)
   }
 
@@ -3124,19 +3134,24 @@ const MapProject = () => {
   const isUnsavedNew = isUnsavedNewProject({projectId: project?.id, hasInput: file})
   const askBeforeLeaving = shouldAskBeforeLeaving({runActive: isRunActive, projectId: project?.id, hasInput: file})
   const unblockLeavingRef = React.useRef(null)
+  // A read-only project asks only when leaving would discard edits, known
+  // only as the user leaves (OpenConceptLab/ocl_online#424).
   React.useEffect(() => {
-    if(!askBeforeLeaving)
+    if(!askBeforeLeaving && !isReadOnly)
       return
     const unblock = blockLeaving(history, {
-      isAllowed: () => ownNavigationRef.current,
-      onBlocked: setLeaveTarget,
+      isAllowed: () => ownNavigationRef.current || !shouldAskBeforeLeaving(getLeaveState()),
+      onBlocked: next => {
+        const state = getLeaveState()
+        setLeaveTarget({...next, readOnlyEdits: !state.runActive && !isUnsavedNewProject(state)})
+      },
     })
     unblockLeavingRef.current = unblock
     return () => {
       unblockLeavingRef.current = null
       unblock()
     }
-  }, [askBeforeLeaving])
+  }, [askBeforeLeaving, isReadOnly])
 
   const onStopRunAndLeave = () => {
     const target = leaveTarget
@@ -7213,7 +7228,7 @@ const MapProject = () => {
         }
     </Paper>
     </Split>
-      <Dialog open={Boolean(leaveTarget) && isUnsavedNew && !isRunActive} onClose={() => !isSavingToLeave && setLeaveTarget(null)} maxWidth='xs' fullWidth>
+      <Dialog open={Boolean(leaveTarget) && !leaveTarget.readOnlyEdits && isUnsavedNew && !isRunActive} onClose={() => !isSavingToLeave && setLeaveTarget(null)} maxWidth='xs' fullWidth>
         <DialogTitle>{t('map_project.leave_unsaved_title')}</DialogTitle>
         <DialogContent>
           <Typography component='p' sx={{fontSize: '14px', color: 'surface.dark'}}>
@@ -7232,7 +7247,23 @@ const MapProject = () => {
           </Button>
         </DialogActions>
       </Dialog>
-      <Dialog open={Boolean(leaveTarget) && (isRunActive || !isUnsavedNew)} onClose={() => setLeaveTarget(null)} maxWidth='xs' fullWidth>
+      <Dialog open={Boolean(leaveTarget?.readOnlyEdits)} onClose={() => setLeaveTarget(null)} maxWidth='xs' fullWidth>
+        <DialogTitle>{t('map_project.leave_read_only_title')}</DialogTitle>
+        <DialogContent>
+          <Typography component='p' sx={{fontSize: '14px', color: 'surface.dark'}}>
+            {t('map_project.leave_read_only_body')}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setLeaveTarget(null)} color='secondary' sx={{textTransform: 'none'}}>
+            {t('map_project.stay')}
+          </Button>
+          <Button onClick={onLeaveUnsaved} color='error' variant='contained' sx={{textTransform: 'none'}}>
+            {t('map_project.leave')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={Boolean(leaveTarget) && !leaveTarget.readOnlyEdits && (isRunActive || !isUnsavedNew)} onClose={() => setLeaveTarget(null)} maxWidth='xs' fullWidth>
         <DialogTitle>{t('map_project.leave_while_running_title')}</DialogTitle>
         <DialogContent>
           <Typography component='p' sx={{fontSize: '14px', color: 'surface.dark'}}>

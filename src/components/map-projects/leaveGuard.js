@@ -4,18 +4,25 @@
 // its file loaded discards it. A saved project autosaves instead.
 export const isUnsavedNewProject = ({projectId, hasInput}) => !projectId && Boolean(hasInput)
 
+// A read-only project saves nothing (OpenConceptLab/ocl_online#424): leaving it
+// discards the edits no save kept, the refused one's included. A refusal alone
+// leaves nothing to lose.
+export const hasReadOnlyEdits = ({readOnly, unsavedEdits}) => Boolean(readOnly && unsavedEdits)
+
 // In-app navigation unmounts the page, which saves a saved project's pending
-// change, so only a run or an unsaved new project needs asking first.
-export const shouldAskBeforeLeaving = ({runActive, projectId, hasInput}) =>
-  Boolean(runActive) || isUnsavedNewProject({projectId, hasInput})
+// change, so only a run, an unsaved new project or a read-only project's edits
+// need asking first.
+export const shouldAskBeforeLeaving = ({runActive, projectId, hasInput, readOnly, unsavedEdits}) =>
+  Boolean(runActive) || isUnsavedNewProject({projectId, hasInput}) || hasReadOnlyEdits({readOnly, unsavedEdits})
 
 // Closing the tab or opening another site gets no unmount save: ask while a
 // change waits for autosave, a save is in flight, the last save failed, or
-// Configure is open with changes. A read-only project saves nothing
-// (OpenConceptLab/ocl_online#424), so it asks while it has edits no save kept,
-// the refused one's included, and a refusal alone never asks.
+// Configure is open with changes, and as in-app navigation does. A read-only
+// project's pending autosave and failed save are its edits, asked about
+// through them.
 export const shouldWarnBeforeUnload = ({pendingAutosave, saveInFlight, saveFailed, configChanged, runActive, projectId, hasInput, readOnly, unsavedEdits}) =>
-  Boolean(saveInFlight || configChanged || (readOnly ? unsavedEdits : (pendingAutosave || saveFailed))) || shouldAskBeforeLeaving({runActive, projectId, hasInput})
+  Boolean(saveInFlight || configChanged || (!readOnly && (pendingAutosave || saveFailed))) ||
+  shouldAskBeforeLeaving({runActive, projectId, hasInput, readOnly, unsavedEdits})
 
 // Which edits a save kept: edited() counts an edit, saving() marks the edits a
 // save's payload holds as it's built, and saved(mark) once that save went
