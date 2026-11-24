@@ -14,9 +14,9 @@ const DecisionSelector = ({selected, onChange, disabledMap, disabledPropsed}) =>
     <div className='col-xs-12 padding-0' style={{display: 'flex', margin: '8px 0', alignItems: 'center'}}>
       <Typography component='span' sx={{color: 'surface.dark', fontWeight: 600, marginRight: '24px', fontSize: '14px'}}>
         {t('map_project.decision')}
-        {lock && <LockMark sx={{ml: 0.5, verticalAlign: '-2px'}} />}
       </Typography>
       <div style={{display: 'flex', alignItems: 'center', width: 'calc(100% - 80px)'}}>
+        {lock && <LockMark sx={{fontSize: '18px', mr: 0.5}} />}
         {locked(<Chip
           size='small'
           sx={{...styles, margin: '0 2px 0 0'}}
