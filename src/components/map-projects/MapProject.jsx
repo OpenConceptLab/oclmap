@@ -509,13 +509,13 @@ const MapProject = () => {
   }, [])
 
   // What leaving would lose, read as the user leaves, for the in-app guard and
-  // the unload one alike.
+  // the unload one alike. Configure's changes count before it closes.
   const getLeaveState = () => ({
     runActive: isRunActiveRef.current,
     projectId: projectIdRef.current,
     hasInput: hasInputRef.current,
     readOnly: readOnlyRef.current,
-    unsavedEdits: editTrackerRef.current.hasUnsaved(),
+    unsavedEdits: editTrackerRef.current.hasUnsaved() || hasUnsavedConfiguration(),
   })
 
   // Closing the tab stops a run too, and closes its record.
