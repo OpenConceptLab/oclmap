@@ -13,7 +13,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { createAutosaveScheduler, createLatestSender, recordReadOnlyRefusal, saveOnLeave, sendAfter, trackSave, whenSaved, hasSaveInFlight, AUTOSAVE_DELAY_MS, SAVE_SKIPPED } from '../autosave.js'
+import { createAutosaveScheduler, createLatestSender, isToldOnLeave, recordReadOnlyRefusal, saveOnLeave, sendAfter, trackSave, whenSaved, hasSaveInFlight, AUTOSAVE_DELAY_MS, SAVE_SKIPPED } from '../autosave.js'
 
 // Virtual clock standing in for setTimeout/clearTimeout. Timers scheduled
 // while the clock is being advanced land in a later window, as real timers
@@ -318,6 +318,38 @@ test('two leave saves: once the first is refused as read-only, the one queued be
   assert.equal(await second, 'skipped')
   assert.deepEqual(sent, ['first'], 'only the first save is sent')
   assert.deepEqual(shown, ['leave message'], 'the refusal is told once')
+})
+
+test('a save in flight as the user left, refused as read-only, is told once; the save queued behind it isn\'t sent', async () => {
+  const state = { readOnly: false, mounted: true }
+  const sent = []
+  const told = []
+  // onSave's response handler: the refusal is recorded first, then told in a
+  // message when no dialog can show
+  const handle = leaving => response => {
+    if(response === SAVE_SKIPPED)
+      return 'skipped'
+    const readOnlyRefused = recordReadOnlyRefusal(response, () => { state.readOnly = true })
+    if(isToldOnLeave({leaving, mounted: state.mounted, readOnlyRefused}))
+      told.push('leave message')
+    return false
+  }
+  const inFlight = deferred()
+  // an autosave in flight, then the user leaves with another edit: a save on leave queued behind it
+  const autosave = sendAfter(null, () => { sent.push('autosave'); return inFlight.promise }).then(handle(false))
+  const leaveSave = sendAfter(autosave, () => { sent.push('leave'); return Promise.resolve(READ_ONLY_REFUSAL) }, () => state.readOnly).then(handle(true))
+  state.mounted = false
+  inFlight.resolve(READ_ONLY_REFUSAL)
+  assert.equal(await leaveSave, 'skipped')
+  assert.deepEqual(sent, ['autosave'])
+  assert.deepEqual(told, ['leave message'], 'told once, by the save in flight')
+})
+
+test('isToldOnLeave: a save on leave, or a read-only refusal once the page is gone', () => {
+  assert.equal(isToldOnLeave({leaving: true, mounted: false, readOnlyRefused: false}), true)
+  assert.equal(isToldOnLeave({leaving: false, mounted: false, readOnlyRefused: true}), true)
+  assert.equal(isToldOnLeave({leaving: false, mounted: true, readOnlyRefused: true}), false, 'the page shows its dialog')
+  assert.equal(isToldOnLeave({leaving: false, mounted: false, readOnlyRefused: false}), false, 'other autosave failures stay quiet, as before')
 })
 
 test('sendAfter: with nothing in flight it sends at once', () => {

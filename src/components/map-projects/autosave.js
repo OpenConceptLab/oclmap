@@ -143,6 +143,12 @@ export const recordReadOnlyRefusal = (response, onReadOnly) => {
   return true
 }
 
+// A refusal no dialog can show, because the page is gone, is told in a
+// message: a save on leave's, and a read-only refusal of a save the user left
+// while it was in flight. The save queued behind it is dropped (sendAfter),
+// so it's told once.
+export const isToldOnLeave = ({leaving, mounted, readOnlyRefused}) => Boolean(leaving || (readOnlyRefused && !mounted))
+
 // Saves still in flight, by project id. A save on leave outlives the page that
 // started it: reopening that project must wait for it, or the stale copy loads
 // and its next autosave overwrites the save, and closing the tab must warn.

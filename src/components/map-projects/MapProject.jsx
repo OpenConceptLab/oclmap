@@ -92,7 +92,7 @@ import Controls from './Controls'
 import DataGridControls from './DataGridControls'
 import { getPreviewEligibleRowIndexes, getRowsToProcess, countAIOnlyRows, getAutoMatchAIOnOpen, takeRunRows, clearRunRowStatuses, canRunAlgorithm, spendsMatchQuota, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, AI_LOOKUP_WAIT_MS, RERANK_LOOKUP_WAIT_MS, RERANK_MAX_IN_FLIGHT, isScispacyWarmingUp } from './autoMatchRows'
 import { aiOnByDefault, getMaxRunRows, getMapperSettings } from '@openconceptlab/oclmap-extensions'
-import { createAutosaveScheduler, createLatestSender, recordReadOnlyRefusal, saveOnLeave, sendAfter, trackSave, whenSaved, installUnloadGuard, SAVE_SKIPPED } from './autosave'
+import { createAutosaveScheduler, createLatestSender, isToldOnLeave, recordReadOnlyRefusal, saveOnLeave, sendAfter, trackSave, whenSaved, installUnloadGuard, SAVE_SKIPPED } from './autosave'
 import { blockLeaving, continueLeaving, createEditTracker, createRunClosers, isUnsavedNewProject, shouldAskBeforeLeaving, shouldWarnBeforeUnload } from './leaveGuard'
 import MatchSummaryCard from './MatchSummaryCard'
 import MappingDecisionResult from './MappingDecisionResult'
@@ -1913,8 +1913,8 @@ const MapProject = () => {
       lastSaveFailedRef.current = true
       // Recorded before it's shown, or not shown as the page closes, so a save
       // queued behind this one isn't sent.
-      recordReadOnlyRefusal(response, body => enterReadOnly(toLimitRefusal(body)))
-      if(options.leaving && status !== 401) {
+      const readOnlyRefused = recordReadOnlyRefusal(response, body => enterReadOnly(toLimitRefusal(body)))
+      if(isToldOnLeave({leaving: options.leaving, mounted: isMountedRef.current, readOnlyRefused}) && status !== 401) {
         // The user has left the project, so no dialog can show: say so once.
         baseSetAlert({severity: 'error', message: t('map_project.leave_save_failed', {name: name || project?.name, detail: errorData?.detail || t('unknown_error')}), duration: 12000})
       } else if(status === 403 && errorData?.error_code) {
