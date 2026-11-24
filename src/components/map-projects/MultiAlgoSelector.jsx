@@ -105,6 +105,7 @@ const fetchBridgeVersions = (url) => {
  * - subtitle?: string
  * - allowDuplicateTypes?: boolean (default false)
  * - getAlgoIcon?: (algo) => ReactNode
+ * - disabled?: boolean: the selection and its settings are shown, not changed
  */
 export default function MultiAlgoSelector({
   algos,
@@ -114,6 +115,7 @@ export default function MultiAlgoSelector({
   repo,
   isCoreUser,
   requestLimits=getRequestLimits(null),
+  disabled=false,
 }) {
   const { t } = useTranslation()
   // Non-core users get at most 10 rows per batch, and early-access users 5
@@ -190,12 +192,14 @@ export default function MultiAlgoSelector({
     onChange: e => updateSelected(sel.__key, { batch_size: clampInt(e.target.value, 1, requestLimits.batchSize) }),
     helperText: getLimitHelperText(requestLimits.batchSize),
     slotProps: {htmlInput: {min: 1, max: requestLimits.batchSize}},
+    disabled,
   })
   const getConcurrentRequestsProps = (sel, algo) => ({
     value: getRequestFieldsSettings(sel, algo).concurrentRequests,
     onChange: e => updateSelected(sel.__key, { concurrent_requests: clampInt(e.target.value, 1, requestLimits.concurrentRequests) }),
     helperText: getLimitHelperText(requestLimits.concurrentRequests),
     slotProps: {htmlInput: {min: 1, max: requestLimits.concurrentRequests}},
+    disabled,
   })
 
   const updateSelected = (key, patch) => {
@@ -477,12 +481,15 @@ export default function MultiAlgoSelector({
                 </Box>
 
                 <Tooltip title={t('common.remove')}>
+                  <span>
                   <IconButton
                     onClick={() => removeSelected(sel.__key)}
                     color='error'
+                    disabled={disabled}
                   >
                     <DeleteOutlineRoundedIcon />
                   </IconButton>
+                  </span>
                 </Tooltip>
               </Box>
 
@@ -507,6 +514,7 @@ export default function MultiAlgoSelector({
                           <TextField
                             fullWidth
                             required
+                            disabled={disabled}
                             label={t('map_project.api_url')}
                             value={sel.url || ""}
                             onChange={(e) => {
@@ -532,6 +540,7 @@ export default function MultiAlgoSelector({
                           <TextField
                             fullWidth
                             required={Boolean(customMeta.tokenRequired || needsSessionToken(sel))}
+                            disabled={disabled}
                             type='password'
                             label={t('map_project.api_token')}
                             value={sel.token || ""}
@@ -556,7 +565,7 @@ export default function MultiAlgoSelector({
                                 <>
                                   {customMeta.tokenRequired && !sel.token ? 'Authentication is required for this algorithm.' : t('map_project.api_token_saved')}
                                   {needsSessionToken(sel) && (
-                                    <Button size='small' variant='text' sx={{textTransform: 'none', minWidth: 0, padding: '0 4px'}} onClick={() => updateSelected(sel.__key, removeSavedToken(sel))}>
+                                    <Button size='small' variant='text' sx={{textTransform: 'none', minWidth: 0, padding: '0 4px'}} onClick={() => updateSelected(sel.__key, removeSavedToken(sel))} disabled={disabled}>
                                       {t('map_project.remove_saved_token')}
                                     </Button>
                                   )}
@@ -568,6 +577,7 @@ export default function MultiAlgoSelector({
                             <TextField
                               sx={{width: '50%'}}
                               required
+                              disabled={disabled}
                               label={t('common.id')}
                               value={sel.id || ''}
                               onChange={(e) =>
@@ -579,6 +589,7 @@ export default function MultiAlgoSelector({
                             <TextField
                               sx={{width: '50%'}}
                               required
+                              disabled={disabled}
                               label={t('common.name')}
                               value={sel.name || ''}
                               onChange={(e) =>
@@ -592,6 +603,7 @@ export default function MultiAlgoSelector({
                           </Stack>
                           <TextField
                             fullWidth
+                            disabled={disabled}
                             label={t('common.description')}
                             value={sel.description || ''}
                             onChange={(e) =>
@@ -601,6 +613,7 @@ export default function MultiAlgoSelector({
                           <TextField
                             fullWidth
                             required
+                            disabled={disabled}
                             label={t('map_project.algo_canonical_url', 'Canonical URL')}
                             value={sel.canonical_url || ''}
                             onChange={(e) => updateSelected(sel.__key, { canonical_url: e.target.value || '' })}
@@ -673,6 +686,7 @@ export default function MultiAlgoSelector({
                                 <>
                             <TextField
                               fullWidth
+                              disabled={disabled}
                               label={t('map_project.bridge_source_url', 'Bridge Source URL')}
                               value={bridgeSourceUrl}
                               onChange={(e) => updateSelected(sel.__key, { target_repo_url: e.target.value, target_repo_version: '' })}
@@ -681,6 +695,7 @@ export default function MultiAlgoSelector({
                             />
                             <TextField
                               fullWidth
+                              disabled={disabled}
                               label={t('map_project.bridge_canonical_url', 'Bridge Canonical URL')}
                               value={sel.bridge_repo?.canonical_url || ''}
                               onChange={(e) => updateSelected(sel.__key, {
@@ -695,6 +710,7 @@ export default function MultiAlgoSelector({
                             />
                             <RepoVersionSearchAutocomplete
                               versions={bridgeVersions}
+                              disabled={disabled}
                               label={t('common.version')}
                               size='small'
                               value={selectedBridgeVersion}
@@ -741,7 +757,7 @@ export default function MultiAlgoSelector({
                           onChange={(e) => updateSelected(sel.__key, { id: e.target.value || '' })}
                           error={Boolean(errors[sel.__key]?.id)}
                           helperText={errors[sel.__key]?.id ? t('map_project.algo_conflicting_id') : ''}
-                          disabled={algo.provider === 'ocl'}
+                          disabled={disabled || algo.provider === 'ocl'}
                         />
                         <TextField
                           label={t('map_project.batch_size')}
@@ -771,7 +787,7 @@ export default function MultiAlgoSelector({
             borderRadius: 2,
             p: 1.25,
             borderStyle: "dashed",
-            opacity: canAddMore ? 1 : 0.6,
+            opacity: canAddMore && !disabled ? 1 : 0.6,
           }}
         >
           <Stack direction="row" spacing={1} sx={{alignItems: 'center'}}>
@@ -779,7 +795,7 @@ export default function MultiAlgoSelector({
               <AddRoundedIcon />
             </Box>
 
-            <FormControl fullWidth size="small" disabled={!canAddMore}>
+            <FormControl fullWidth size="small" disabled={disabled || !canAddMore}>
               <Select
                 displayEmpty
                 value=""

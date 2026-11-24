@@ -10,7 +10,7 @@ import UpIcon from '@mui/icons-material/ArrowDropUp';
 import DownIcon from '@mui/icons-material/ArrowDropDown';
 
 
-const AdvancedSettings = ({ namespaceValue, setNamespace, defaultNamespace, isCoreUser, useLexicalVariants, setUseLexicalVariants }) => {
+const AdvancedSettings = ({ namespaceValue, setNamespace, defaultNamespace, isCoreUser, useLexicalVariants, setUseLexicalVariants, disabled }) => {
   const { t } = useTranslation()
   const [open, setOpen] = React.useState(false)
 
@@ -24,6 +24,7 @@ const AdvancedSettings = ({ namespaceValue, setNamespace, defaultNamespace, isCo
           <TextField
             fullWidth
             size='small'
+            disabled={disabled}
             sx={{marginTop: '4px'}}
             label={t('map_project.resolution_namespace', 'Resolution Namespace')}
             value={namespaceValue}
@@ -42,6 +43,7 @@ const AdvancedSettings = ({ namespaceValue, setNamespace, defaultNamespace, isCo
                   control={
                     <Checkbox
                       size='small'
+                      disabled={disabled}
                       checked={Boolean(useLexicalVariants)}
                       onChange={event => setUseLexicalVariants(event.target.checked)}
                     />

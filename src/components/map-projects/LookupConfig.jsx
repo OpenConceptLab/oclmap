@@ -14,7 +14,7 @@ import { lookupTokenHasSpaces, normalizeLookupConfig } from './lookupConfigField
 import { isOCLAPILookupURL, getTokenFlag, tokenInputValue, removeSavedToken } from '../../services/tokenScope'
 import { getAPIURL } from '../../common/utils'
 
-const LookupConfig = ({value, onChange}) => {
+const LookupConfig = ({value, onChange, disabled}) => {
   const { t } = useTranslation()
   const [open, setOpen] = React.useState(false)
   const [showToken, setShowToken] = React.useState(false)
@@ -30,7 +30,7 @@ const LookupConfig = ({value, onChange}) => {
     return (
       <>
         {t('map_project.lookup_configuration_token_saved')}
-        <Button size='small' variant='text' sx={{textTransform: 'none', minWidth: 0, padding: '0 4px'}} onClick={() => onChange(removeSavedToken(value))}>
+        <Button size='small' variant='text' sx={{textTransform: 'none', minWidth: 0, padding: '0 4px'}} onClick={() => onChange(removeSavedToken(value))} disabled={disabled}>
           {t('map_project.remove_saved_token')}
         </Button>
       </>
@@ -52,6 +52,7 @@ const LookupConfig = ({value, onChange}) => {
               label={t('map_project.lookup_configuration_url')}
               fullWidth
               required
+              disabled={disabled}
               value={value?.url || ''}
               onChange={event => {
                 const url = event.target.value.trim()
@@ -64,6 +65,7 @@ const LookupConfig = ({value, onChange}) => {
               type={showToken ? 'text' : 'password'}
               label={t('map_project.lookup_configuration_token')}
               fullWidth
+              disabled={disabled}
               value={value?.token || ''}
               onChange={event => onChange({...value, token: tokenInputValue(value, event.target.value)})}
               onBlur={() => onChange(normalizeLookupConfig(value))}

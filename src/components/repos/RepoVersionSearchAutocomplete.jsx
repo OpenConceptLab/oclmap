@@ -18,7 +18,8 @@ const RepoVersionSearchAutocomplete = ({
   helperText,
   getOptionDisabled,
   getOptionRightText,
-  getOptionBadges
+  getOptionBadges,
+  disabled
 }) => {
   const [open, setOpen] = React.useState(false)
 
@@ -33,6 +34,7 @@ const RepoVersionSearchAutocomplete = ({
   return (
     <Autocomplete
       sx={sx}
+      disabled={disabled}
       filterOptions={x => x}
       openOnFocus
       blurOnSelect
