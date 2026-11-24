@@ -125,7 +125,7 @@ import { normalizeLookupConfig } from './lookupConfigFields'
 import { getDeclaredLocales, getDefaultTargetRepoVersion, getProjectTargetRepoVersion, getSavedTargetRepoVersion, getTargetRepoVersionFromUrl, getTargetRepoVersionId } from './projectTargetRepo'
 import { buildBridgeTargetDownloadEntries, buildQualityRowViews, conceptBelongsToTargetRepo, conceptForMapping, findTargetRowView, formatBridgeTargetDownloadEntry, resolveAICandidateID, getScoreDetails, getAIAnalysisCandidateIDs, getAIIndicatorTooltip, withCachedConcept, withCandidateNames, buildMatchEntries, restoredNote, withOwnNames, withSavedMatch } from './viewBuilders.js'
 import { formatClockTime, getCapacityWaitLabel, mergeCapacityWaits } from './rowProgress.js'
-import { createProjectLogsLoader, mergeSavedLogs } from './projectLogSync'
+import { createProjectLogsLoader, mergeSavedLogs, savedLogsFromResult } from './projectLogSync'
 import { createMappedSourcesReader, MAPPED_SOURCES_PAGE_SIZE, probeBridgeMappedSources } from './mappedSources'
 
 import './MapProject.scss'
@@ -1911,12 +1911,12 @@ const MapProject = () => {
       postProjectLogs(project.url, {row_logs: logsRef.current, project_logs: newLogs})
   }
 
-  // A throttled or failed read settles. It stops once the project is open in
-  // a newer page.
+  // A throttled or failed read settles, and a refused one (a 4xx) isn't
+  // retried on a timer. It stops once the project is open in a newer page.
   const readProjectLogs = (url, isCancelled) => requestWithCapacityRetry(
     () => APIService.new().overrideURL(url).appendToUrl('logs/').request('GET', null, null, {handlesThrottle: true, timeout: LIGHT_REQUEST_TIMEOUT_MS}),
     {maxWaitMs: INTERACTIVE_WAIT_CAP_MS, isCancelled}
-  ).then(result => result.ok ? (result.response?.data?.logs || {}) : null)
+  ).then(savedLogsFromResult)
 
   // The saved log goes under what this page logged while it loaded, and is
   // sent with it if the page held an entry back.

@@ -9,7 +9,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import babel from '@babel/core'
 
-import { createProjectLogsLoader, mergeSavedLogs } from '../projectLogSync.js'
+import { createProjectLogsLoader, mergeSavedLogs, savedLogsFromResult } from '../projectLogSync.js'
 
 const URL_ = '/users/jontest1/map-projects/7/'
 const SAVED = {
@@ -18,13 +18,15 @@ const SAVED = {
 }
 
 // A page with a fake log read and POST. `answers` are the reads' results in
-// turn: the saved log, or null for a read that failed.
+// turn: the saved log, null for a read that failed, or false for one refused.
 const ROUTE = '/users/jontest1/map-projects/7/'
-const pageWith = (answers = [SAVED], maxRetries = 3, route = ROUTE) => {
-  const page = {rowLogs: {}, projectLogs: [], posts: [], reads: 0, pending: []}
+const pageWith = (answers = [SAVED], maxRetries = 3, route = ROUTE, options = {}) => {
+  const page = {rowLogs: {}, projectLogs: [], posts: [], reads: 0, pending: [], warnings: []}
   page.loader = createProjectLogsLoader({
     delayMs: () => 0,
     maxRetries,
+    warn: message => page.warnings.push(message),
+    ...options,
     read: url => {
       assert.equal(url, URL_)
       const answer = answers[Math.min(page.reads, answers.length - 1)]
@@ -146,6 +148,62 @@ test('reads that keep failing stop after the waits run out, and the next entry s
   await page.answer()
   assert.equal(page.reads, 8)
   assert.deepEqual(page.posts, [])
+  // Said once, not on every round.
+  assert.equal(page.warnings.length, 1)
+})
+
+test('an entry made while a retry waits doesn\'t start the waits over', async () => {
+  const delays = []
+  const page = pageWith([null], 3, ROUTE, {delayMs: retry => { delays.push(retry); return 0 }})
+  page.loader.load(URL_)
+  page.projectLog('downloaded')
+  for(let round = 0; round < 3; round++) {
+    await new Promise(resolve => setTimeout(resolve, 5))
+    page.pending.splice(0).forEach(resolve => resolve())
+    await new Promise(resolve => setTimeout(resolve, 5))
+    page.projectLog('downloaded again')
+  }
+  await page.answer()
+
+  assert.deepEqual(delays, [0, 1, 2])
+  assert.equal(page.reads, 4)
+  assert.equal(page.warnings.length, 1)
+})
+
+test('a refused read isn\'t read again on a timer, says so once, and the next entry reads it again', async () => {
+  const page = pageWith([false, SAVED])
+  page.loader.load(URL_)
+  page.projectLog('downloaded')
+  await page.answer()
+  assert.equal(page.reads, 1)
+  assert.deepEqual(page.posts, [])
+  assert.equal(page.warnings.length, 1)
+
+  page.save()
+  await page.answer()
+  assert.equal(page.reads, 2)
+  assert.deepEqual(page.posts.map(p => p.project_logs.map(e => e.action)), [['Opened', 'Saved again', 'downloaded', 'Saved', 'Created']])
+})
+
+test('a refused read with no entry waiting says nothing', async () => {
+  const page = pageWith([false])
+  page.loader.load(URL_)
+  await page.answer()
+  assert.equal(page.reads, 1)
+  assert.deepEqual(page.warnings, [])
+})
+
+test('savedLogsFromResult: the saved log, null for a failure worth a wait, false for a refusal', () => {
+  const failed = (reason, status) => ({ok: false, reason, error: status ? {response: {status}} : new Error('network')})
+  assert.deepEqual(savedLogsFromResult({ok: true, response: {data: {logs: SAVED}}}), SAVED)
+  assert.deepEqual(savedLogsFromResult({ok: true, response: {data: {}}}), {})
+  assert.equal(savedLogsFromResult(failed('error', 403)), false)
+  assert.equal(savedLogsFromResult(failed('error', 404)), false)
+  assert.equal(savedLogsFromResult(failed('error', 500)), null)
+  assert.equal(savedLogsFromResult(failed('error', 503)), null)
+  assert.equal(savedLogsFromResult(failed('error')), null)
+  assert.equal(savedLogsFromResult(failed('throttled', 429)), null)
+  assert.equal(savedLogsFromResult({ok: false, reason: 'cancelled'}), null)
 })
 
 test('a page left behind sends nothing once the project is open in a newer page', async () => {
@@ -251,34 +309,64 @@ test('mergeSavedLogs keeps a saved log that has no rows or no entries', () => {
 })
 
 // MapProject can't be mounted here (these tests run without a JSX transform),
-// so this reads its source.
+// so these check its syntax tree, ignoring layout.
 const source = readFileSync(new URL('../MapProject.jsx', import.meta.url), 'utf8')
 const ast = babel.parseSync(source, {babelrc: false, configFile: false, parserOpts: {plugins: ['jsx']}})
-const code = node => source.slice(node.start, node.end)
+const flat = node => source.slice(node.start, node.end).replace(/\s+/g, '')
+const find = (type, match, root = null) => {
+  const found = []
+  const visitor = {[type](path) { if(match(path.node)) found.push(path) }}
+  if(root)
+    root.traverse(visitor)
+  else
+    babel.traverse(ast, visitor)
+  return found
+}
+const callsTo = (callee, root) => find('CallExpression', node => flat(node.callee) === callee, root)
+const declared = name => {
+  const [path] = find('VariableDeclarator', node => node.id.name === name)
+  assert.ok(path, `${name} is declared`)
+  return path
+}
 
 test('MapProject sends the project\'s log only through the loader\'s check', () => {
-  const posts = []
-  babel.traverse(ast, {
-    CallExpression(path) {
-      if(path.node.callee.name !== 'postProjectLogs')
-        return
-      const guard = path.findParent(p => p.isIfStatement())
-      posts.push(guard ? code(guard.node.test) : null)
-    }
+  const guards = callsTo('postProjectLogs').map(path => {
+    const guard = path.findParent(p => p.isIfStatement())
+    return guard ? flat(guard.node.test) : null
   })
-  assert.deepEqual(posts.sort(), [
-    'project?.url && projectLogsLoaderRef.current.canSend(project.url)',
+  assert.deepEqual(guards.sort(), [
+    'project?.url&&projectLogsLoaderRef.current.canSend(project.url)',
     'projectLogsLoaderRef.current.canSend(response.data.url)',
     'send',
   ])
 })
 
 test('MapProject marks when the page opens, with its route, so a page opened later takes the project\'s log', () => {
-  assert.match(source, /React\.useEffect\(\(\) => \{\s*projectLogsLoaderRef\.current\.opened\(params\.projectId \? \['', params\.ownerType, params\.owner, 'map-projects', params\.projectId, ''\]\.join\('\/'\) : null\)\s*\}, \[\]\)/)
+  const opened = callsTo('projectLogsLoaderRef.current.opened')
+  assert.equal(opened.length, 1)
+  const effect = opened[0].findParent(p => p.isCallExpression() && flat(p.node.callee) === 'React.useEffect')
+  assert.ok(effect, 'opened() runs in an effect')
+  assert.equal(flat(effect.node.arguments[1]), '[]')
+  // The route, or null for a new project, is the URL the page reads its project from.
+  const route = opened[0].node.arguments[0]
+  assert.equal(route.type, 'ConditionalExpression')
+  assert.equal(flat(route.test), 'params.projectId')
+  assert.equal(route.alternate.type, 'NullLiteral')
+  const [projectUrl] = find('VariableDeclarator', node => node.id.name === 'url', declared('fetchAndSetProject'))
+  assert.equal(flat(route.consequent), flat(projectUrl.node.init))
 })
 
 test('MapProject reads the saved log through the loader, settling a throttled or failed read', () => {
-  assert.equal(source.match(/appendToUrl\('logs\/'\)\.request\('GET'/g)?.length, 1)
-  assert.match(source, /projectLogsLoaderRef\.current\.load\(response\.data\.url\)/)
-  assert.match(source, /result\.ok \? \(result\.response\?\.data\?\.logs \|\| \{\}\) : null/)
+  const gets = find('CallExpression', node => node.callee.property?.name === 'request' &&
+    node.arguments[0]?.value === 'GET' && flat(node.callee.object).endsWith(".appendToUrl('logs/')"))
+  assert.equal(gets.length, 1)
+  const reader = declared('readProjectLogs')
+  assert.ok(gets[0].findParent(p => p === reader), 'the one read is readProjectLogs')
+  // Its result goes through savedLogsFromResult.
+  const body = reader.node.init.body
+  assert.equal(body.callee.property.name, 'then')
+  assert.equal(flat(body.arguments[0]), 'savedLogsFromResult')
+  assert.equal(flat(callsTo('requestWithCapacityRetry', reader)[0].node), flat(body.callee.object))
+  const loads = callsTo('projectLogsLoaderRef.current.load')
+  assert.deepEqual(loads.map(path => flat(path.node.arguments[0])), ['response.data.url'])
 })

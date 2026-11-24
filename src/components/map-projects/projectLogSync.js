@@ -18,9 +18,10 @@ export const mergeSavedLogs = (saved, local) => {
   }
 }
 
-// The latest page on each project. A page left behind sends nothing once the
-// project is open again in this tab: its log would replace the one the newer
-// page keeps. A page takes its route when it opens, and the project's URL
+// The latest page on each project. A page left behind before its saved log
+// loads sends nothing once the project is open again in this tab: its log
+// would replace the one the newer page keeps. (A page that had loaded still
+// sends, as a save on leave does; OpenConceptLab/ocl_online#751.) A page takes its route when it opens, and the project's URL
 // from the API when its details arrive, unless a page opened later has it:
 // the route catches a reopen at once, the URL any other route to the project.
 const latestByRoute = new Map()
@@ -32,24 +33,40 @@ let pagesOpened = 0
 const retryDelayMs = retry => Math.min(10000 * 3 ** retry, 120000)
 const MAX_RETRIES = 10
 
+// What a log read (services/capacity.js requestWithCapacityRetry) comes to:
+// the saved log; null for a failure that may clear, so worth reading again
+// after a wait; or false for a refusal that won't (a 4xx), read again only
+// when the page next wants to send.
+export const savedLogsFromResult = result => {
+  if(result?.ok)
+    return result.response?.data?.logs || {}
+  const status = result?.error?.response?.status
+  return result?.reason === 'error' && status >= 400 && status < 500 ? false : null
+}
+
 // opened(route) runs when the page opens, with its route (null for a new
 // project).
 //
-// read(url, isCancelled) resolves the saved log, or null when the read failed.
-// One read runs at a time. A failed read is read again when the page next
-// wants to send, and, while an entry waits, after the waits above.
+// read(url, isCancelled) resolves the saved log, null when the read failed,
+// or false when it was refused (see savedLogsFromResult). One read runs at a
+// time. A failed or refused read is read again when the page next wants to
+// send, and a failed one, while an entry waits, after the waits above.
+//
+// warn(message) runs once, the first time an entry waits on a read that was
+// refused or ran out of waits, so a log that can't be sent shows up.
 //
 // onLoaded(saved, {url, send}) runs once, when the saved log loads. `send` is
 // true when the page held back an entry while it waited, so the merged log
 // should go now. A page that left still sends what it held back, unless the
 // project has been opened again since.
-export const createProjectLogsLoader = ({loaded = false, read, onLoaded, delayMs = retryDelayMs, maxRetries = MAX_RETRIES}) => {
+export const createProjectLogsLoader = ({loaded = false, read, onLoaded, delayMs = retryDelayMs, maxRetries = MAX_RETRIES, warn = message => console.warn(message)}) => {
   const page = {order: 0, route: null}
   let projectUrl = null
   let isLoaded = loaded
   let busy = false
   let heldBack = false
   let retries = 0
+  let warned = false
 
   const isSuperseded = () => (page.route !== null && latestByRoute.get(page.route) !== page) ||
     (projectUrl !== null && latestByUrl.get(projectUrl) !== page)
@@ -63,12 +80,15 @@ export const createProjectLogsLoader = ({loaded = false, read, onLoaded, delayMs
       const send = heldBack
       heldBack = false
       onLoaded(saved, {url: projectUrl, send})
-    } else if(heldBack && retries < maxRetries) {
+    } else if(heldBack && saved === null && retries < maxRetries) {
       busy = true
       setTimeout(() => {
         busy = false
         load(projectUrl)
       }, delayMs(retries++))
+    } else if(heldBack && !warned) {
+      warned = true
+      warn(`Mapper: the project's saved log at ${projectUrl} didn't load, so this page's log entries aren't sent yet`)
     }
   }
 
@@ -99,7 +119,9 @@ export const createProjectLogsLoader = ({loaded = false, read, onLoaded, delayMs
     if(isLoaded)
       return true
     heldBack = true
-    retries = 0
+    // A retry already waiting keeps its place in the waits.
+    if(!busy)
+      retries = 0
     load(url)
     return false
   }
