@@ -93,7 +93,7 @@ import DataGridControls from './DataGridControls'
 import { getPreviewEligibleRowIndexes, getRowsToProcess, countAIOnlyRows, getAutoMatchAIOnOpen, takeRunRows, clearRunRowStatuses, canRunAlgorithm, spendsMatchQuota, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, AI_LOOKUP_WAIT_MS, RERANK_LOOKUP_WAIT_MS, RERANK_MAX_IN_FLIGHT, isScispacyWarmingUp } from './autoMatchRows'
 import { aiOnByDefault, getMaxRunRows, getMapperSettings } from '@openconceptlab/oclmap-extensions'
 import { createAutosaveScheduler, createLatestSender, isToldOnLeave, recordReadOnlyRefusal, saveOnLeave, sendAfter, trackSave, whenSaved, installUnloadGuard, SAVE_SKIPPED } from './autosave'
-import { blockLeaving, continueLeaving, createEditTracker, createRunClosers, isUnsavedNewProject, shouldAskBeforeLeaving, shouldWarnBeforeUnload } from './leaveGuard'
+import { blockLeaving, continueLeaving, createRunClosers, isUnsavedNewProject, shouldAskBeforeLeaving, shouldWarnBeforeUnload } from './leaveGuard'
 import MatchSummaryCard from './MatchSummaryCard'
 import MappingDecisionResult from './MappingDecisionResult'
 import DecisionSelector from './DecisionSelector'
@@ -388,10 +388,6 @@ const MapProject = () => {
   // whether the notices route sent it (an empty answer takes it back).
   const [projectNotice, setProjectNotice] = React.useState(null)
   const projectNoticeFromRouteRef = React.useRef(false)
-  // The edits no save has kept yet, which leaving a read-only project loses.
-  const editTrackerRef = React.useRef(null)
-  if(!editTrackerRef.current)
-    editTrackerRef.current = createEditTracker()
   if(!autosaveSchedulerRef.current)
     autosaveSchedulerRef.current = createAutosaveScheduler({
       getProjectId: () => projectIdRef.current,
@@ -498,7 +494,9 @@ const MapProject = () => {
         saveInFlight: inFlightSaveRef.current,
         saveFailed: lastSaveFailedRef.current,
         configChanged: hasUnsavedConfiguration(),
-        ...getLeaveState(),
+        runActive: isRunActiveRef.current,
+        projectId: projectIdRef.current,
+        hasInput: hasInputRef.current,
       })
       if(!warn)
         return
@@ -508,16 +506,6 @@ const MapProject = () => {
     window.addEventListener('beforeunload', warnIfUnsaved)
     return () => window.removeEventListener('beforeunload', warnIfUnsaved)
   }, [])
-
-  // What leaving would lose, read as the user leaves, for the in-app guard and
-  // the unload one alike. Configure's changes count before it closes.
-  const getLeaveState = () => ({
-    runActive: isRunActiveRef.current,
-    projectId: projectIdRef.current,
-    hasInput: hasInputRef.current,
-    readOnly: readOnlyRef.current,
-    unsavedEdits: editTrackerRef.current.hasUnsaved() || hasUnsavedConfiguration(),
-  })
 
   // Closing the tab stops a run too, and closes its record.
   React.useEffect(() => {
@@ -1780,7 +1768,6 @@ const MapProject = () => {
     }
     const rowLogsForSave = options.logs || logsRef.current
     const projectLogsForSave = options.projectLogs || projectLogsRef.current
-    const editsInSave = editTrackerRef.current.saving()
     setIsSaving(true)
     const f = getFileObjectFromRows()
     const selected = buildMatchEntries(map(data, row => row.__index), mapSelected, notes, (data, i) => {
@@ -1903,7 +1890,6 @@ const MapProject = () => {
         if(!isAutoSave)
           baseSetAlert({severity: 'success', message: t('map_project.successfully_saved'), duration: 2000})
 
-        editTrackerRef.current.saved(editsInSave)
         // A save that went through ends read-only first, so its log is posted.
         leaveReadOnly()
         if(projectLogsLoaderRef.current.canSend(response.data.url))
@@ -1911,10 +1897,11 @@ const MapProject = () => {
         lastSaveFailedRef.current = false
         return true
       }
-      lastSaveFailedRef.current = true
       // Recorded before it's shown, or not shown as the page closes, so a save
-      // queued behind this one isn't sent.
+      // queued behind this one isn't sent. Nothing can be edited once it's
+      // read-only, so it isn't an unsaved change to warn about.
       const readOnlyRefused = recordReadOnlyRefusal(response, body => enterReadOnly(toLimitRefusal(body)))
+      lastSaveFailedRef.current = !readOnlyRefused
       if(isToldOnLeave({leaving: options.leaving, mounted: isMountedRef.current, readOnlyRefused}) && status !== 401) {
         // The user has left the project, so no dialog can show: say so once.
         baseSetAlert({severity: 'error', message: t('map_project.leave_save_failed', {name: name || project?.name, detail: errorData?.detail || t('unknown_error')}), duration: 12000})
@@ -1946,13 +1933,6 @@ const MapProject = () => {
     const nextLogs = {...logsRef.current, [idx]: [{created_at: moment().toDate(), user: user.username || user.id, ...data}, ...(logsRef.current[idx] || [])]}
     logsRef.current = nextLogs
     setLogs(nextLogs)
-  }
-
-  // A comment is kept in the row log, which the next save posts: until then
-  // it's an edit no save kept.
-  const onComment = comment => {
-    editTrackerRef.current.edited()
-    log({action: 'commented', description: comment})
   }
 
   const projectLog = data => {
@@ -2002,13 +1982,9 @@ const MapProject = () => {
   }
 
   // Not after unmount: frozen state plus a late run's refs would save an
-  // inconsistent project. Not while it's read-only: the API refuses it, and
-  // the edit stays unsaved.
+  // inconsistent project. Not while it's read-only: the API refuses it.
   const scheduleAutoSave = reason => {
-    if(!isMountedRef.current)
-      return
-    editTrackerRef.current.edited()
-    if(!readOnlyRef.current)
+    if(isMountedRef.current && !readOnlyRef.current)
       autosaveSchedulerRef.current.schedule(reason)
   }
 
@@ -2023,13 +1999,6 @@ const MapProject = () => {
     setProjectNotice({notice, detail})
   }
 
-  // Edits kept back while it was read-only are queued for autosave once it
-  // isn't.
-  const requeueUnsavedEdits = () => {
-    if(editTrackerRef.current.hasUnsaved())
-      autosaveSchedulerRef.current.schedule('read_only_ended')
-  }
-
   const leaveReadOnly = () => {
     if(!readOnlyRef.current)
       return
@@ -2037,7 +2006,6 @@ const MapProject = () => {
     setIsReadOnly(false)
     projectNoticeFromRouteRef.current = false
     setProjectNotice(null)
-    requeueUnsavedEdits()
   }
 
   // Takes back what the notices route showed: its strip, and the read-only
@@ -2049,7 +2017,6 @@ const MapProject = () => {
     readOnlyRef.current = false
     setIsReadOnly(false)
     setProjectNotice(null)
-    requeueUnsavedEdits()
   }
 
   // Opens the dialog for a refusal (a 403 body): its notice when it sends one,
@@ -3151,24 +3118,19 @@ const MapProject = () => {
   const isUnsavedNew = isUnsavedNewProject({projectId: project?.id, hasInput: file})
   const askBeforeLeaving = shouldAskBeforeLeaving({runActive: isRunActive, projectId: project?.id, hasInput: file})
   const unblockLeavingRef = React.useRef(null)
-  // A read-only project asks only when leaving would discard edits, known
-  // only as the user leaves (OpenConceptLab/ocl_online#424).
   React.useEffect(() => {
-    if(!askBeforeLeaving && !isReadOnly)
+    if(!askBeforeLeaving)
       return
     const unblock = blockLeaving(history, {
-      isAllowed: () => ownNavigationRef.current || !shouldAskBeforeLeaving(getLeaveState()),
-      onBlocked: next => {
-        const state = getLeaveState()
-        setLeaveTarget({...next, readOnlyEdits: !state.runActive && !isUnsavedNewProject(state)})
-      },
+      isAllowed: () => ownNavigationRef.current,
+      onBlocked: setLeaveTarget,
     })
     unblockLeavingRef.current = unblock
     return () => {
       unblockLeavingRef.current = null
       unblock()
     }
-  }, [askBeforeLeaving, isReadOnly])
+  }, [askBeforeLeaving])
 
   const onStopRunAndLeave = () => {
     const target = leaveTarget
@@ -7248,7 +7210,7 @@ const MapProject = () => {
                 }
                 {
                   decisionTab === 'discuss' && isSplitView &&
-                    <Discuss logs={logs[rowIndex]} onAdd={comment => comment ? onComment(comment) : null} />
+                    <Discuss logs={logs[rowIndex]} onAdd={comment => comment ? log({action: 'commented', description: comment}) : null} />
                 }
               </div>
             </> :
@@ -7257,7 +7219,7 @@ const MapProject = () => {
         }
     </Paper>
     </Split>
-      <Dialog open={Boolean(leaveTarget) && !leaveTarget.readOnlyEdits && isUnsavedNew && !isRunActive} onClose={() => !isSavingToLeave && setLeaveTarget(null)} maxWidth='xs' fullWidth>
+      <Dialog open={Boolean(leaveTarget) && isUnsavedNew && !isRunActive} onClose={() => !isSavingToLeave && setLeaveTarget(null)} maxWidth='xs' fullWidth>
         <DialogTitle>{t('map_project.leave_unsaved_title')}</DialogTitle>
         <DialogContent>
           <Typography component='p' sx={{fontSize: '14px', color: 'surface.dark'}}>
@@ -7276,27 +7238,11 @@ const MapProject = () => {
           </Button>
         </DialogActions>
       </Dialog>
-      <Dialog open={Boolean(leaveTarget?.readOnlyEdits)} onClose={() => setLeaveTarget(null)} maxWidth='xs' fullWidth>
-        <DialogTitle>{t('map_project.leave_read_only_title')}</DialogTitle>
-        <DialogContent>
-          <Typography component='p' sx={{fontSize: '14px', color: 'surface.dark'}}>
-            {t('map_project.leave_read_only_body')}
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setLeaveTarget(null)} color='secondary' sx={{textTransform: 'none'}}>
-            {t('map_project.stay')}
-          </Button>
-          <Button onClick={onLeaveUnsaved} color='error' variant='contained' sx={{textTransform: 'none'}}>
-            {t('map_project.leave')}
-          </Button>
-        </DialogActions>
-      </Dialog>
-      <Dialog open={Boolean(leaveTarget) && !leaveTarget.readOnlyEdits && (isRunActive || !isUnsavedNew)} onClose={() => setLeaveTarget(null)} maxWidth='xs' fullWidth>
+      <Dialog open={Boolean(leaveTarget) && (isRunActive || !isUnsavedNew)} onClose={() => setLeaveTarget(null)} maxWidth='xs' fullWidth>
         <DialogTitle>{t('map_project.leave_while_running_title')}</DialogTitle>
         <DialogContent>
           <Typography component='p' sx={{fontSize: '14px', color: 'surface.dark'}}>
-            {t(!project?.id ? 'map_project.leave_while_running_body_unsaved' : isReadOnly ? 'map_project.leave_while_running_body_read_only' : 'map_project.leave_while_running_body')}
+            {t(project?.id ? 'map_project.leave_while_running_body' : 'map_project.leave_while_running_body_unsaved')}
           </Typography>
         </DialogContent>
         <DialogActions>
@@ -7309,9 +7255,8 @@ const MapProject = () => {
         </DialogActions>
       </Dialog>
       {
-        // Once the project is deleted, the dialog's own redirect leaves without asking.
         deleteProject && project?.id &&
-          <MapProjectDeleteConfirmDialog open={deleteProject} onClose={() => setDeleteProject(false)} onDeleted={() => { autosaveSchedulerRef.current.cancel(); ownNavigationRef.current = true; refreshMapperQuotaCache() }} project={project} />
+          <MapProjectDeleteConfirmDialog open={deleteProject} onClose={() => setDeleteProject(false)} onDeleted={() => { autosaveSchedulerRef.current.cancel(); refreshMapperQuotaCache() }} project={project} />
       }
       <ConceptDetailsPanel
         payload={showItem}
