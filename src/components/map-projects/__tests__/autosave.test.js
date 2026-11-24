@@ -49,13 +49,14 @@ const createFakeClock = () => {
 
 // Mirrors how MapProject.jsx wires the scheduler: project id and isSaving are
 // read through getters backed by refs, so the test can move them mid-window.
-const setup = ({ projectId = 'project-1', saving = false } = {}) => {
+const setup = ({ projectId = 'project-1', saving = false, paused = false } = {}) => {
   const clock = createFakeClock()
-  const state = { projectId, saving }
+  const state = { projectId, saving, paused }
   const saves = []
   const scheduler = createAutosaveScheduler({
     getProjectId: () => state.projectId,
     isSaving: () => state.saving,
+    isPaused: () => state.paused,
     onFire: reasons => saves.push(reasons),
     setTimeoutFn: clock.setTimeoutFn,
     clearTimeoutFn: clock.clearTimeoutFn
@@ -192,6 +193,52 @@ test('autosave: takePending() is null with nothing pending, or once the project 
   state.projectId = null
   assert.equal(scheduler.takePending(), null, 'no save without a project id')
   assert.equal(scheduler.hasPending(), false)
+})
+
+// A read-only project refuses every save (OpenConceptLab/ocl_online#424).
+
+test('autosave paused: scheduling is a no-op while the project is read-only', () => {
+  const { scheduler, clock, saves } = setup({ paused: true })
+
+  scheduler.schedule('decision_change')
+
+  assert.equal(scheduler.hasPending(), false)
+  clock.tick(DELAY * 2)
+  assert.equal(saves.length, 0, 'a read-only project must never autosave')
+})
+
+test('autosave paused: a pending autosave doesn\'t fire once the project turns read-only', () => {
+  const { scheduler, clock, state, saves } = setup()
+
+  scheduler.schedule('decision_change')
+  state.paused = true
+  clock.tick(DELAY)
+
+  assert.equal(saves.length, 0, 'no save once read-only')
+  assert.deepEqual(scheduler.pendingReasons(), [], 'queued reasons must be cleared')
+})
+
+test('autosave paused: nothing is handed back to save on leave', () => {
+  const { scheduler, clock, state, saves } = setup()
+
+  scheduler.schedule('auto_match')
+  state.paused = true
+
+  assert.equal(scheduler.takePending(), null)
+  assert.equal(saveOnLeave({ scheduler, inFlightSave: null, save: reasons => saves.push(reasons) }), false)
+  clock.tick(DELAY * 2)
+  assert.equal(saves.length, 0)
+})
+
+test('autosave paused: scheduling works again once the project is editable', () => {
+  const { scheduler, clock, state, saves } = setup({ paused: true })
+
+  scheduler.schedule('decision_change')
+  state.paused = false
+  scheduler.schedule('bulk_decision')
+  clock.tick(DELAY)
+
+  assert.deepEqual(saves, [['bulk_decision']], 'only what was scheduled while editable is saved')
 })
 
 const nextTick = () => new Promise(resolve => setTimeout(resolve, 0))

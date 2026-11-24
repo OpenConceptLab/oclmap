@@ -112,6 +112,9 @@ import AutoMatchDialog from './AutoMatchDialog'
 import PreviewLimitDialog from './PreviewLimitDialog'
 import QuotaDialog from '../common/QuotaDialog'
 import { getQuotaError } from '../common/quotaErrors'
+import LimitNotice from '../common/LimitNotice.jsx'
+import useResourceNotice from '../common/useResourceNotice'
+import { isReadOnlyRefusal, locksEditing, toLimitRefusal } from '../common/limitNotice.js'
 import MapperQuotaChip from './MapperQuotaChip'
 import MapProjectBreadcrumb from './MapProjectBreadcrumb'
 import { getPreviewLimitError, isAIPreviewLimitError, isPreviewLimitError } from './previewLimits'
@@ -317,7 +320,7 @@ const MapProject = () => {
   const ownNavigationRef = React.useRef(false)
   const refreshRowStageSnapshotRef = React.useRef({});
 
-  const [previewLimit, setPreviewLimit] = React.useState(null) // {errorCode, capability, phase} or null
+  const [previewLimit, setPreviewLimit] = React.useState(null) // {errorCode, capability, owner, notice, detail, readOnly, phase} or null
   const previewLimitQuota = previewLimit ? getQuotaError({error_code: previewLimit.errorCode}) : null
 
   const [row, setRow] = React.useState(false)
@@ -375,10 +378,17 @@ const MapProject = () => {
   const autosaveSchedulerRef = React.useRef(null)
   // Set when a save fails, cleared when one succeeds: the change is still unsaved.
   const lastSaveFailedRef = React.useRef(false)
+  // Set while the project is read-only (OpenConceptLab/ocl_online#424): the API
+  // refuses every save, so nothing autosaves or saves on leave. A save that
+  // goes through clears it.
+  const readOnlyRef = React.useRef(false)
+  // The strip at the top of the project: {notice, detail}, or null.
+  const [projectNotice, setProjectNotice] = React.useState(null)
   if(!autosaveSchedulerRef.current)
     autosaveSchedulerRef.current = createAutosaveScheduler({
       getProjectId: () => projectIdRef.current,
       isSaving: () => Boolean(inFlightSaveRef.current),
+      isPaused: () => readOnlyRef.current,
       onFire: reasons => onSaveRef.current({source: 'auto', closeConfigure: false, reasons})
     })
   const [filterModel, setFilterModel] = React.useState({ items: [] });
@@ -1735,7 +1745,7 @@ const MapProject = () => {
 
   const onSave = (options = {}) => {
     const isAutoSave = options.source === 'auto'
-    if(isAutoSave && !project?.id)
+    if(isAutoSave && (!project?.id || readOnlyRef.current))
       return
     if(!isAutoSave)
       autosaveSchedulerRef.current.cancel()
@@ -1876,14 +1886,17 @@ const MapProject = () => {
         if(projectLogsLoaderRef.current.canSend(response.data.url))
           postProjectLogs(response.data.url, {row_logs: savedRowLogs, project_logs: savedProjectLogs})
         lastSaveFailedRef.current = false
+        leaveReadOnly()
         return true
       }
-      lastSaveFailedRef.current = true
+      // A read-only refusal leaves nothing that a later save could keep, so
+      // it isn't an unsaved change to warn about.
+      lastSaveFailedRef.current = !(status === 403 && isReadOnlyRefusal(errorData))
       if(options.leaving && status !== 401) {
         // The user has left the project, so no dialog can show: say so once.
         baseSetAlert({severity: 'error', message: t('map_project.leave_save_failed', {name: name || project?.name, detail: errorData?.detail || t('unknown_error')}), duration: 12000})
       } else if(status === 403 && errorData?.error_code) {
-        setPreviewLimit({errorCode: errorData.error_code, capability: errorData.capability})
+        showLimitRefusal(errorData)
       } else if(!isAutoSave && status !== 429 && status !== 401) {
         baseSetAlert({severity: 'error', message: errorData?.detail || t('unknown_error'), duration: 8000})
       }
@@ -1945,9 +1958,10 @@ const MapProject = () => {
   // per project: each sends the whole log, so an older one that waited out a
   // 429 mustn't land after a newer one, and a retry sends the latest log
   // triggered for that project, never another project's (ocl_issues#2849).
-  // Best effort, like before.
+  // Best effort, like before. Not while the project is read-only: the API
+  // refuses it, and the next save that goes through sends the whole log.
   const postProjectLogs = (url, logs) => {
-    if(!url)
+    if(!url || readOnlyRef.current)
       return
     if(!logsSendersRef.current.has(url))
       logsSendersRef.current.set(url, createLatestSender(getPayload => requestWithCapacityRetry(
@@ -1958,11 +1972,66 @@ const MapProject = () => {
   }
 
   // Not after unmount: frozen state plus a late run's refs would save an
-  // inconsistent project.
+  // inconsistent project. Not while it's read-only: the API refuses it.
   const scheduleAutoSave = reason => {
-    if(isMountedRef.current)
+    if(isMountedRef.current && !readOnlyRef.current)
       autosaveSchedulerRef.current.schedule(reason)
   }
+
+  // The project turns read-only, from a refusal or from the API's notice for
+  // it: the pending autosave is dropped, and nothing autosaves until a save
+  // goes through.
+  const enterReadOnly = shown => {
+    readOnlyRef.current = true
+    autosaveSchedulerRef.current.cancel()
+    lastSaveFailedRef.current = false
+    setProjectNotice(shown)
+  }
+
+  const leaveReadOnly = () => {
+    if(!readOnlyRef.current)
+      return
+    readOnlyRef.current = false
+    setProjectNotice(null)
+  }
+
+  // Opens the dialog for a refusal (a 403 body): its notice when it sends one,
+  // else today's limit dialog. A read-only refusal also turns the project
+  // read-only.
+  const showLimitRefusal = (body, phase) => {
+    const refusal = toLimitRefusal(body)
+    if(refusal.readOnly)
+      enterReadOnly({notice: refusal.notice, detail: refusal.detail})
+    setPreviewLimit({...refusal, phase})
+  }
+
+  // The API's notice for this project (none from an API without the route): a
+  // read-only project shows its strip and saves nothing from the start.
+  const resourceNotice = useResourceNotice(project?.url || null)
+  React.useEffect(() => {
+    if(!resourceNotice)
+      return
+    if(locksEditing(resourceNotice))
+      enterReadOnly({notice: resourceNotice})
+    else
+      setProjectNotice({notice: resourceNotice})
+  }, [resourceNotice])
+
+  // The strip's height, taken off the table's so the page doesn't scroll.
+  const projectNoticeRef = React.useRef(null)
+  const [projectNoticeHeight, setProjectNoticeHeight] = React.useState(0)
+  React.useLayoutEffect(() => {
+    const el = projectNoticeRef.current
+    if(!el) {
+      setProjectNoticeHeight(0)
+      return undefined
+    }
+    const update = () => setProjectNoticeHeight(el.offsetHeight)
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [projectNotice])
 
   // ── Waiting out a busy server (ocl_issues#2849) ───────────────────────────
   // The gate for a request's server, shared by every request this tab sends it.
@@ -2150,7 +2219,7 @@ const MapProject = () => {
         abortRef.current = true
         setLoadingMatches(false)
         setIsLoadingInDecisionView(false)
-        setPreviewLimit({errorCode: data.error_code, capability: data.capability})
+        showLimitRefusal(data)
         return
       }
       projectLog({action: 'automatch_run_create_failed', extras: {status: status || 'no-id', ...(result.ok ? {} : {reason: result.reason, error: result.error?.message || null})}})
@@ -4170,7 +4239,7 @@ const MapProject = () => {
       if(isNumber(rowId))
         refreshMapperQuotaCache()
     }
-    setPreviewLimit({errorCode: response.error_code, capability: response.capability, phase: stopPhase})
+    showLimitRefusal(response, stopPhase)
     return true
   }
 
@@ -6613,8 +6682,14 @@ const MapProject = () => {
           </div>
         </Paper>
         {
+          projectNotice && !isConfigFormInline &&
+            <div ref={projectNoticeRef} className='col-xs-12 padding-0' style={{minWidth: '665px'}}>
+              <LimitNotice size='strip' notice={projectNotice.notice} detail={projectNotice.detail} onDismiss={() => setProjectNotice(null)} />
+            </div>
+        }
+        {
           (Boolean(rows?.length) || ROW_STATES.includes(selectedRowStatus) || searchText) &&
-            <div className='col-xs-12' style={{padding: '0', width: '100%', height: 'calc(var(--app-height) - 170px)', minWidth: '665px'}}>
+            <div className='col-xs-12' style={{padding: '0', width: '100%', height: `calc(var(--app-height) - ${170 + projectNoticeHeight}px)`, minWidth: '665px'}}>
               <div className='col-xs-12' style={{padding: '0 12px', display: 'flex', backgroundColor: SURFACE_COLORS.main, overflowX: 'auto'}}>
                 {
                   map(VIEWS, (state, view) => {
@@ -6888,12 +6963,25 @@ const MapProject = () => {
             }}
           />
           {
+            // A refusal's notice, or a read-only refusal's own sentence, in
+            // place of the limit dialog's (OpenConceptLab/ocl_online#702).
+            (previewLimit?.notice || previewLimit?.readOnly) ?
+              <LimitNotice
+                open
+                onClose={() => setPreviewLimit(null)}
+                notice={previewLimit.notice}
+                detail={previewLimit.detail}
+                errorCode={previewLimit.errorCode}
+                capability={previewLimit.capability}
+                owner={previewLimit.owner}
+              /> :
             previewLimitQuota ?
               <QuotaDialog
                 open
                 onClose={() => setPreviewLimit(null)}
                 errorCode={previewLimitQuota.errorCode}
                 capability={previewLimit.capability}
+                owner={previewLimit.owner}
                 meter={previewLimitQuota.meter}
                 surface={MAPPER_QUOTA_SURFACE[previewLimitQuota.meter]}
               /> :
@@ -6902,6 +6990,7 @@ const MapProject = () => {
                 onClose={() => setPreviewLimit(null)}
                 errorCode={previewLimit?.errorCode}
                 capability={previewLimit?.capability}
+                owner={previewLimit?.owner}
                 phase={previewLimit?.phase}
               />
           }

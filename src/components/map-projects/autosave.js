@@ -11,6 +11,10 @@ export const AUTOSAVE_DELAY_MS = 5000
  * here is what previously let a pending autosave wedge behind a save that
  * had already completed.
  *
+ * isPaused: while true, nothing is scheduled, a pending autosave doesn't fire
+ * and nothing is handed back to save on leave: a read-only project refuses
+ * every save (OpenConceptLab/ocl_online#424).
+ *
  * setTimeoutFn/clearTimeoutFn are injectable so tests can drive a virtual
  * clock instead of waiting out the real debounce window.
  */
@@ -18,6 +22,7 @@ export const createAutosaveScheduler = ({
   getProjectId,
   isSaving,
   onFire,
+  isPaused = () => false,
   delay = AUTOSAVE_DELAY_MS,
   setTimeoutFn = setTimeout,
   clearTimeoutFn = clearTimeout
@@ -43,11 +48,11 @@ export const createAutosaveScheduler = ({
     timer = null
     const pending = reasons
     reasons = []
-    return getProjectId() ? pending : null
+    return getProjectId() && !isPaused() ? pending : null
   }
 
   const schedule = reason => {
-    if(!getProjectId())
+    if(!getProjectId() || isPaused())
       return
 
     reasons = [...new Set([...reasons, reason])]
@@ -56,7 +61,7 @@ export const createAutosaveScheduler = ({
 
     timer = setTimeoutFn(() => {
       timer = null
-      if(!getProjectId()) {
+      if(!getProjectId() || isPaused()) {
         reasons = []
         return
       }
