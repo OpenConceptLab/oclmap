@@ -13,6 +13,7 @@ import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import { lookupTokenHasSpaces, normalizeLookupConfig } from './lookupConfigFields'
 import { isOCLAPILookupURL, getTokenFlag, tokenInputValue, removeSavedToken } from '../../services/tokenScope'
 import { getAPIURL } from '../../common/utils'
+import { LockedFields } from '../common/NoticeLock'
 
 const LookupConfig = ({value, onChange, disabled}) => {
   const { t } = useTranslation()
@@ -43,6 +44,7 @@ const LookupConfig = ({value, onChange, disabled}) => {
           {t('map_project.lookup_configuration')}
         </Button>
       <Collapse in={open}>
+        <LockedFields>
         <div className='col-xs-12 padding-0'>
           <FormHelperText sx={{marginBottom: '12px', marginTop: '-4px', paddingLeft: '4px'}}>
             {t('map_project.lookup_configuration_description')}
@@ -86,6 +88,7 @@ const LookupConfig = ({value, onChange, disabled}) => {
             />
           </div>
         </div>
+        </LockedFields>
       </Collapse>
     </div>
   )

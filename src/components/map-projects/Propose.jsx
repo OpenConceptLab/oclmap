@@ -6,7 +6,7 @@ import { find, forEach} from 'lodash'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import Button from '@mui/material/Button'
-import { LockMark, LockTooltip, useEditLock } from '../common/NoticeLock'
+import { LockedFields, LockMark, LockTooltip, useEditLock } from '../common/NoticeLock'
 
 const Propose = ({onChange, proposed, onSubmit, repo, row, columns}) => {
   const { t } = useTranslation();
@@ -87,6 +87,7 @@ const Propose = ({onChange, proposed, onSubmit, repo, row, columns}) => {
 
   return (
     <div className='col-xs-12 padding-0' style={{margin: '12px 0'}}>
+      <LockedFields>
       <div className='col-xs-12 padding-0'>
         <TextField id='source' sx={{width: 'calc(50% - 12px)', margin: '4px 6px'}} label={t('map_project.target_source')} value={state.source || ''} onChange={_onChange} disabled={Boolean(lock)}/>
         <TextField id='id' sx={{width: 'calc(50% - 12px)', margin: '4px 6px'}} label={t('map_project.concept_id')} value={state?.id || ''} onChange={_onChange} disabled={Boolean(lock)}/>
@@ -119,6 +120,7 @@ const Propose = ({onChange, proposed, onSubmit, repo, row, columns}) => {
           disabled={Boolean(lock)}
         />
       </div>
+      </LockedFields>
       <div className='col-xs-12 padding-0' style={{margin: '16px 0', display: 'flex', alignItems: 'center'}}>
         <LockTooltip title={lock}>
         <Button color='primary' onClick={_onSubmit} disabled={Boolean(lock)} startIcon={lock ? <LockMark /> : undefined} variant='contained' sx={{textTransform: 'none'}}>

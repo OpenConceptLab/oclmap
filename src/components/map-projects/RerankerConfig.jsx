@@ -9,6 +9,7 @@ import ListItemText from '@mui/material/ListItemText'
 import UpIcon from '@mui/icons-material/ArrowDropUp';
 import DownIcon from '@mui/icons-material/ArrowDropDown';
 import { CUSTOM_ENCODER_MODEL_OPTION, DEFAULT_ENCODER_MODEL, ENCODER_MODEL_OPTIONS } from './rerankerModels'
+import { LockedFields } from '../common/NoticeLock'
 
 const RerankerConfig = ({ value, onChange, disabled }) => {
   const { t } = useTranslation()
@@ -42,6 +43,7 @@ const RerankerConfig = ({ value, onChange, disabled }) => {
         {t('map_project.reranker_configuration')}
       </Button>
       <Collapse in={open}>
+        <LockedFields>
         <div className='col-xs-12 padding-0'>
           <FormHelperText sx={{ marginBottom: '12px', marginTop: '-4px', paddingLeft: '4px' }}>
             {t('map_project.reranker_configuration_description')}
@@ -93,6 +95,7 @@ const RerankerConfig = ({ value, onChange, disabled }) => {
               />
           }
         </div>
+        </LockedFields>
       </Collapse>
     </div>
   )

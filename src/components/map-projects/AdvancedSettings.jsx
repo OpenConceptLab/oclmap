@@ -8,6 +8,7 @@ import Checkbox from '@mui/material/Checkbox'
 import FormHelperText from '@mui/material/FormHelperText'
 import UpIcon from '@mui/icons-material/ArrowDropUp';
 import DownIcon from '@mui/icons-material/ArrowDropDown';
+import { LockedFields } from '../common/NoticeLock'
 
 
 const AdvancedSettings = ({ namespaceValue, setNamespace, defaultNamespace, isCoreUser, useLexicalVariants, setUseLexicalVariants, disabled }) => {
@@ -20,6 +21,7 @@ const AdvancedSettings = ({ namespaceValue, setNamespace, defaultNamespace, isCo
         {t('map_project.advanced_settings')}
       </Button>
       <Collapse in={open}>
+        <LockedFields>
         <div className='col-xs-12 padding-0' style={{marginTop: '4px'}}>
           <TextField
             fullWidth
@@ -54,6 +56,7 @@ const AdvancedSettings = ({ namespaceValue, setNamespace, defaultNamespace, isCo
               </>
           }
         </div>
+        </LockedFields>
       </Collapse>
     </div>
   )

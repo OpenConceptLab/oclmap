@@ -40,6 +40,7 @@ import APIService from '../../services/APIService';
 import { needsSessionToken, getTokenFlag, tokenInputValue, removeSavedToken } from '../../services/tokenScope';
 import { getRequestLimits, getRequestSettings } from './requestLimits'
 import { dropVersion } from '../../common/utils'
+import { LockedFields, useEditLock } from '../common/NoticeLock'
 import {
   getDefaultBridgeRepoVersion,
   getLatestReleasedBridgeVersion,
@@ -118,6 +119,7 @@ export default function MultiAlgoSelector({
   disabled=false,
 }) {
   const { t } = useTranslation()
+  const lock = useEditLock()
   // Non-core users get at most 10 rows per batch, and early-access users 5
   // concurrent requests, preview users 2 (ocl_online#274, ocl_issues#2849).
   const { setAlert } = React.useContext(OperationsContext)
@@ -480,7 +482,7 @@ export default function MultiAlgoSelector({
                   </Tooltip>
                 </Box>
 
-                <Tooltip title={t('common.remove')}>
+                <Tooltip title={(disabled && lock) || t('common.remove')}>
                   <span>
                   <IconButton
                     onClick={() => removeSelected(sel.__key)}
@@ -495,6 +497,7 @@ export default function MultiAlgoSelector({
 
               <Collapse in={isOpen} timeout="auto" unmountOnExit>
                 <Divider />
+                <LockedFields>
                 <Box sx={{ p: 2 }}>
                   {/* Common config */}
                   <Stack spacing={2}>
@@ -775,6 +778,7 @@ export default function MultiAlgoSelector({
                     )}
                   </Stack>
                 </Box>
+                </LockedFields>
               </Collapse>
             </Paper>
           );
@@ -795,6 +799,7 @@ export default function MultiAlgoSelector({
               <AddRoundedIcon />
             </Box>
 
+            <LockedFields style={{width: '100%'}}>
             <FormControl fullWidth size="small" disabled={disabled || !canAddMore}>
               <Select
                 displayEmpty
@@ -835,6 +840,7 @@ export default function MultiAlgoSelector({
                 }
               </Select>
             </FormControl>
+            </LockedFields>
           </Stack>
         </Paper>
       </Stack>
