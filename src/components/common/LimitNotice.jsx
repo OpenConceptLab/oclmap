@@ -26,7 +26,6 @@ import GAService from '../../services/GAService'
 import Dialog from './Dialog'
 import DialogTitle from './DialogTitle'
 import CloseIconButton from './CloseIconButton'
-import LimitDialog from './LimitDialog'
 import { getLimitSubject } from './limitAction'
 import { getNoticeIcon, getNoticeTone, orderActions } from './limitNotice.js'
 
@@ -200,6 +199,27 @@ const NoticeDialog = ({open, onClose, notice, errorCode, capability}) => {
   )
 }
 
+// No notice: a neutral title, the API's detail and Close, and nothing asked of
+// a connected service.
+const FallbackDialog = ({open, onClose, detail, errorCode, capability}) => {
+  const { t } = useTranslation()
+  useNoticeEvents(open, errorCode, capability)
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth='sm' fullWidth>
+      <DialogTitle sx={{display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1.5}}>
+        {t('limit_notice.fallback_title')}
+        <CloseIconButton onClick={onClose} aria-label={t('common.close')} sx={{mt: -0.5, mr: -1, ml: 'auto'}} />
+      </DialogTitle>
+      <DialogContent sx={{px: 0, pb: 0}}>
+        <Typography variant='body1' sx={{my: 2}}>{detail || t('unknown_error')}</Typography>
+      </DialogContent>
+      <DialogActions disableSpacing sx={{p: 0, pt: 3, justifyContent: 'flex-end'}}>
+        <Button onClick={onClose} sx={{textTransform: 'none'}}>{t('common.close')}</Button>
+      </DialogActions>
+    </Dialog>
+  )
+}
+
 const Strip = ({notice, detail, onDismiss, sx}) => {
   const { t } = useTranslation()
   const colours = toneOf(getNoticeTone(notice))
@@ -280,22 +300,15 @@ const Inline = ({notice, detail, sx}) => {
   )
 }
 
-// size: 'dialog' (with open and onClose), 'strip' or 'inline'. A dialog with no
-// notice is today's limit dialog, titled neutrally, with `detail` as its text
-// and any next step the connected service sends for the refusal.
-const LimitNotice = ({size = 'dialog', notice, detail, open, onClose, onDismiss, errorCode, capability, owner, sx}) => {
-  const { t } = useTranslation()
+// size: 'dialog' (with open and onClose), 'strip' or 'inline'.
+const LimitNotice = ({size = 'dialog', notice, detail, open, onClose, onDismiss, errorCode, capability, sx}) => {
   if(size === 'strip')
     return <Strip notice={notice} detail={detail} onDismiss={onDismiss} sx={sx} />
   if(size === 'inline')
     return <Inline notice={notice} detail={detail} sx={sx} />
   if(notice)
     return <NoticeDialog open={Boolean(open)} onClose={onClose} notice={notice} errorCode={errorCode} capability={capability} />
-  return (
-    <LimitDialog open={Boolean(open)} onClose={onClose} errorCode={errorCode} capability={capability} owner={owner} title={t('limit_notice.fallback_title')}>
-      {detail || t('unknown_error')}
-    </LimitDialog>
-  )
+  return <FallbackDialog open={Boolean(open)} onClose={onClose} detail={detail} errorCode={errorCode} capability={capability} />
 }
 
 export default LimitNotice

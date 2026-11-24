@@ -6986,7 +6986,6 @@ const MapProject = () => {
                 detail={previewLimit.detail}
                 errorCode={previewLimit.errorCode}
                 capability={previewLimit.capability}
-                owner={previewLimit.owner}
               /> :
             previewLimitQuota ?
               <QuotaDialog
