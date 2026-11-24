@@ -46,7 +46,8 @@ for (const [name, requestRef, argsRef, args, setStatus] of [
 
   test(`only ${name}'s latest read sets anything`, () => {
     const reply = body.slice(body.indexOf('.then('))
-    assert.match(reply, new RegExp(`^\\.then\\(response => \\{\\s*if\\(request !== ${requestRef}\\.current\\)\\s*return\\n`))
+    // The versions read also ignores an answer after the page has left (OpenConceptLab/ocl_issues#3064).
+    assert.match(reply, new RegExp(`^\\.then\\(response => \\{\\s*if\\(request !== ${requestRef}\\.current( \\|\\| !isMountedRef\\.current)?\\)\\s*return\\n`))
     assert.match(reply, new RegExp(`${setStatus}\\(fetched\\w+ \\? null : 'failed'\\)`))
   })
 }
