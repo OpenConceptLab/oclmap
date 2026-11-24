@@ -7296,8 +7296,9 @@ const MapProject = () => {
         </DialogActions>
       </Dialog>
       {
+        // Once the project is deleted, the dialog's own redirect leaves without asking.
         deleteProject && project?.id &&
-          <MapProjectDeleteConfirmDialog open={deleteProject} onClose={() => setDeleteProject(false)} onDeleted={() => { autosaveSchedulerRef.current.cancel(); refreshMapperQuotaCache() }} project={project} />
+          <MapProjectDeleteConfirmDialog open={deleteProject} onClose={() => setDeleteProject(false)} onDeleted={() => { autosaveSchedulerRef.current.cancel(); ownNavigationRef.current = true; refreshMapperQuotaCache() }} project={project} />
       }
       <ConceptDetailsPanel
         payload={showItem}
