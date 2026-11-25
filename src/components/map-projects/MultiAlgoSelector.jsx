@@ -40,6 +40,7 @@ import APIService from '../../services/APIService';
 import { needsSessionToken, getTokenFlag, tokenInputValue, removeSavedToken } from '../../services/tokenScope';
 import { getRequestLimits, getRequestSettings } from './requestLimits'
 import { dropVersion } from '../../common/utils'
+import { patchSelected, isStaleReply } from './selectedAlgos'
 import {
   getDefaultBridgeRepoVersion,
   getLatestReleasedBridgeVersion,
@@ -132,6 +133,17 @@ export default function MultiAlgoSelector({
     if (normalizedValue.some((v, i) => v !== value[i])) onChange(normalizedValue);
   }, [normalizedValue]);
 
+  // The list as it is now. Replies to pending requests and effects from an
+  // earlier render read it, so they don't overwrite edits made since
+  // (ocl_online#786). Each change sets it straight away, so changes made
+  // before the parent re-renders build on each other.
+  const latestValueRef = React.useRef(normalizedValue)
+  latestValueRef.current = normalizedValue
+  const commitValue = next => {
+    latestValueRef.current = next
+    onChange(next)
+  }
+
   const algosById = useMemo(() => {
     const m = new Map();
     (algos || []).forEach((a) => m.set(a.id, a));
@@ -199,10 +211,10 @@ export default function MultiAlgoSelector({
   })
 
   const updateSelected = (key, patch) => {
-    const next = normalizedValue.map(v => (v.__key === key ? { ...v, ...patch } : v));
-    onChange(next);
+    const current = latestValueRef.current
+    commitValue(patchSelected(current, key, patch));
     if((patch.id || patch.name)) {
-      if(filter(value, patch).length > 0)
+      if(filter(current, patch).length > 0)
         setErrors(prev => ({...prev, [key]: {...prev[key], ...patch}}))
       else if (patch.id)
         setErrors(prev => ({...prev, [key]: {...omit(prev[key], 'id')}}))
@@ -270,8 +282,8 @@ export default function MultiAlgoSelector({
   }, [value, bridgeVersionsByUrl])
 
   const removeSelected = (key) => {
-    const next = (value || []).filter((v) => v.__key !== key);
-    onChange(next);
+    commitValue((latestValueRef.current || []).filter((v) => v.__key !== key));
+    delete customCheckIdRef.current[key];
     setCustomAlgoMeta(prev => omit(prev, [key]));
 
     setExpanded((prev) => {
@@ -316,7 +328,7 @@ export default function MultiAlgoSelector({
       __key: Math.random(100).toString()
     };
 
-    onChange([...(value || []), defaults]);
+    commitValue([...(latestValueRef.current || []), defaults]);
     setExpanded((prev) => {
       const n = new Map(prev);
       n.set(defaults.__key, algo.type === 'custom' || algo.type?.includes('bridge'));
@@ -344,18 +356,33 @@ export default function MultiAlgoSelector({
     setCustomAlgoMeta(prev => ({...prev, [key]: {...prev[key], ...patch}}));
   };
 
+  // The newest check for each algorithm; replies to older checks are dropped.
+  const customCheckIdRef = React.useRef({})
   const verifyCustomAlgorithm = async (key, tokenOverride) => {
-    const selected = normalizedValue.find(v => v.__key === key);
+    const selected = latestValueRef.current.find(v => v.__key === key);
     if(!selected?.url)
       return;
+    const url = selected.url;
+    const checkId = (customCheckIdRef.current[key] || 0) + 1;
+    customCheckIdRef.current[key] = checkId;
 
     const token = tokenOverride ?? selected?.token;
     setCustomAlgoState(key, {isLoading: true, requestError: '', requestSuccess: '', tokenRequired: false});
 
     const service = APIService.new();
-    service.URL = selected.url;
+    service.URL = url;
 
     const response = await service.get(token || false, {}, undefined, true);
+    // A newer check owns this algorithm's state.
+    if(customCheckIdRef.current[key] !== checkId)
+      return;
+    // Removed or pointed at another URL while the check was pending: the
+    // reply is for an algorithm that is no longer there.
+    if(isStaleReply(latestValueRef.current, key, url)) {
+      if(find(latestValueRef.current, {__key: key}))
+        setCustomAlgoState(key, {isLoading: false});
+      return;
+    }
     const status = response?.response?.status || response?.status;
 
     if([401, 403].includes(status)) {
