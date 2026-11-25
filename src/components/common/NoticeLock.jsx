@@ -24,8 +24,11 @@ export const LockTooltip = ({ title, children, placement = 'bottom', display = '
 // out as without it and keep their state as a lock lands or ends.
 export const LockedFields = ({ children }) => {
   const lock = useEditLock()
+  // Unlocked, the tooltip listens to nothing, so the fields behave as without it (MUI's touch
+  // handler would otherwise also run beside a field's own tooltip).
+  const off = !lock
   return (
-    <Tooltip title={lock || ''} followCursor>
+    <Tooltip title={lock || ''} followCursor disableHoverListener={off} disableFocusListener={off} disableTouchListener={off}>
       <span style={{display: 'contents'}}>{children}</span>
     </Tooltip>
   )
