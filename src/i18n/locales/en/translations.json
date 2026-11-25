@@ -328,7 +328,7 @@
     "preview_quota_projects": "Projects",
     "preview_quota_rows": "Rows per project",
     "preview_quota_rows_cap": "first {{limit}} rows of each project",
-    "preview_quota_match_operations": "Match operations",
+    "preview_quota_match_operations": "Rows matched",
     "preview_quota_ai_calls": "OCL AI Assistant calls",
     "preview_quota_ai_tokens": "OCL AI Assistant tokens",
     "preview_quota_used_of_limit": "{{used}} of {{limit}} used",
