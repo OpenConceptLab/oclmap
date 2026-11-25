@@ -101,7 +101,8 @@ const fetchBridgeVersions = (url) => {
  *     token?: string,
  *   }>
  *
- * - onChange: (nextValue) => void
+ * - onChange: (nextValue) => void, a state setter: a lookup that settles
+ *   later passes it an updater (algos => nextValue)
  *
  * Optional:
  * - title?: string
@@ -259,10 +260,10 @@ export default function MultiAlgoSelector({
           syncedBridgeUrlRef.current.delete(sel.__key)
           return
         }
-        const current = latestValueRef.current
-        const next = applyBridgeCanonical(current, request, canonical)
-        if(next !== current)
-          commitValue(next)
+        // Through the parent's setter: Configure may have closed (and a new
+        // selector changed the list) before the reply, so this one's list can
+        // be out of date.
+        onChange(algos => applyBridgeCanonical(algos, request, canonical))
       })
     }
   }, [value, disabled])
