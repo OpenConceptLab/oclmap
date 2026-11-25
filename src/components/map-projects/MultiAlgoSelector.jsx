@@ -40,7 +40,7 @@ import APIService from '../../services/APIService';
 import { needsSessionToken, getTokenFlag, tokenInputValue, removeSavedToken } from '../../services/tokenScope';
 import { getRequestLimits, getRequestSettings } from './requestLimits'
 import { dropVersion } from '../../common/utils'
-import { patchSelected, isStaleReply } from './selectedAlgos'
+import { patchSelected, isStaleReply, customCheckReply } from './selectedAlgos'
 import {
   getDefaultBridgeRepoVersion,
   getLatestReleasedBridgeVersion,
@@ -138,7 +138,9 @@ export default function MultiAlgoSelector({
   // (ocl_online#786). Each change sets it straight away, so changes made
   // before the parent re-renders build on each other.
   const latestValueRef = React.useRef(normalizedValue)
-  latestValueRef.current = normalizedValue
+  React.useLayoutEffect(() => {
+    latestValueRef.current = normalizedValue
+  }, [normalizedValue])
   const commitValue = next => {
     latestValueRef.current = next
     onChange(next)
@@ -239,7 +241,8 @@ export default function MultiAlgoSelector({
       if(syncedBridgeUrlRef.current.get(sel.__key) === url) continue
       syncedBridgeUrlRef.current.set(sel.__key, url)
       fetchBridgeCanonical(url).then(canonical => {
-        if(!canonical) return
+        // Removed or pointed at another repo while the fetch was pending.
+        if(!canonical || isStaleReply(latestValueRef.current, sel.__key, {target_repo_url: url})) return
         updateSelected(sel.__key, {
           bridge_repo: { canonical_url: canonical, canonical_url_source: 'repo' }
         })
@@ -373,14 +376,19 @@ export default function MultiAlgoSelector({
     service.URL = url;
 
     const response = await service.get(token || false, {}, undefined, true);
-    // A newer check owns this algorithm's state.
-    if(customCheckIdRef.current[key] !== checkId)
+    const reply = customCheckReply({
+      list: latestValueRef.current,
+      key,
+      sent: {url, token: selected.token},
+      checkId,
+      latestCheckId: customCheckIdRef.current[key],
+    });
+    if(reply === 'ignore')
       return;
-    // Removed or pointed at another URL while the check was pending: the
-    // reply is for an algorithm that is no longer there.
-    if(isStaleReply(latestValueRef.current, key, url)) {
-      if(find(latestValueRef.current, {__key: key}))
-        setCustomAlgoState(key, {isLoading: false});
+    // The URL or token changed while the check was pending: the reply is for
+    // an algorithm that is no longer there.
+    if(reply === 'clear') {
+      setCustomAlgoState(key, {isLoading: false});
       return;
     }
     const status = response?.response?.status || response?.status;
