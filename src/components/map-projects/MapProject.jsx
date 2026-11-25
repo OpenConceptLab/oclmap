@@ -94,6 +94,7 @@ import { getPreviewEligibleRowIndexes, getRowsToProcess, countAIOnlyRows, getAut
 import { aiOnByDefault, getMaxRunRows, getMapperSettings } from '@openconceptlab/oclmap-extensions'
 import { createAutosaveScheduler, createLatestSender, saveOnLeave, trackSave, whenSaved, installUnloadGuard } from './autosave'
 import { blockLeaving, continueLeaving, createRunClosers, isUnsavedNewProject, shouldAskBeforeLeaving, shouldWarnBeforeUnload } from './leaveGuard'
+import { editProposed, getColumnsSnapshot } from './unsavedEdits'
 import MatchSummaryCard from './MatchSummaryCard'
 import MappingDecisionResult from './MappingDecisionResult'
 import DecisionSelector from './DecisionSelector'
@@ -2261,13 +2262,7 @@ const MapProject = () => {
     prompt_output_locale: promptOutputLocale || '',
     input_locale: inputLocale || '',
     use_lexical_variants: Boolean(useLexicalVariants),
-    columns: map(columns, col => ({
-      dataKey: col.dataKey,
-      mapped: col.mapped,
-      hidden: columnVisibilityModel[col.dataKey] === false,
-      width: columnWidth[col.dataKey] || undefined,
-      ai_assistant_hidden: AIAssistantColumns[col.dataKey] === false
-    }))
+    columns: getColumnsSnapshot(columns, {columnVisibilityModel, columnWidth, AIAssistantColumns})
   })
 
   const closeConfiguration = () => {
@@ -5730,7 +5725,7 @@ const MapProject = () => {
     return returnSelf ? (cached || concept) : cached
   }
 
-  const onProposedUpdate = proposedState => setProposed(prev => ({...prev, [rowIndex]: {...proposedState}}))
+  const onProposedUpdate = proposedState => editProposed({rowIndex, state: proposedState, setProposed, scheduleAutoSave})
 
   const doubleClickCallback = useDoubleClick(onCSVRowSelect, () => {});
 
