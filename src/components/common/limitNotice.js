@@ -127,12 +127,9 @@ export const getNoticeIcon = notice => {
     return 'lock'
   if(notice?.kind === 'not_included')
     return 'info'
-  const tone = getNoticeTone(notice)
-  return tone === 'info' ? 'info' : tone
+  return getNoticeTone(notice)
 }
 
-// The write actions any of a resource's notices lock
-export const getLocks = notices => [...new Set((notices || []).flatMap(notice => notice?.locks || []))]
 
 // The Mapper's part (OpenConceptLab/ocl_online#424, #701): a refusal's notice,
 // its detail and whose limit it was, and the notices route for one project.
@@ -155,7 +152,7 @@ export const toLimitRefusal = value => {
 
 // A map project is read-only while its notice locks `edit`: every save of it
 // is refused.
-export const locksEditing = notice => getLocks([notice]).includes('edit')
+export const locksEditing = notice => Array.isArray(notice?.locks) && notice.locks.includes('edit')
 
 // What the latest answer about a project from the notices route does: 'lock'
 // (read-only, with its strip), 'show' (the strip only), 'clear' (an empty

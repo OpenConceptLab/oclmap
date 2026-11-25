@@ -4,16 +4,13 @@
 // its file loaded discards it. A saved project autosaves instead.
 export const isUnsavedNewProject = ({projectId, hasInput}) => !projectId && Boolean(hasInput)
 
-// A read-only project saves nothing (OpenConceptLab/ocl_online#424): leaving it
-// discards the edits no save kept, the refused one's included. A refusal alone
-// leaves nothing to lose.
-export const hasReadOnlyEdits = ({readOnly, unsavedEdits}) => Boolean(readOnly && unsavedEdits)
-
 // In-app navigation unmounts the page, which saves a saved project's pending
 // change, so only a run, an unsaved new project or a read-only project's edits
-// need asking first.
+// need asking first. A read-only project saves nothing (OpenConceptLab/ocl_online#424):
+// leaving it discards the edits no save kept, the refused one's included. A
+// refusal alone leaves nothing to lose.
 export const shouldAskBeforeLeaving = ({runActive, projectId, hasInput, readOnly, unsavedEdits}) =>
-  Boolean(runActive) || isUnsavedNewProject({projectId, hasInput}) || hasReadOnlyEdits({readOnly, unsavedEdits})
+  Boolean(runActive) || isUnsavedNewProject({projectId, hasInput}) || Boolean(readOnly && unsavedEdits)
 
 // Closing the tab or opening another site gets no unmount save: ask while a
 // change waits for autosave, a save is in flight, the last save failed, or

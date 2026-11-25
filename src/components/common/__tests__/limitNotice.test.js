@@ -6,7 +6,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 const {
-  READ_ONLY_ERROR_CODE, getLocks, getNotice, getNoticeDetail, getNoticeIcon, getNoticeTone, getNotices,
+  READ_ONLY_ERROR_CODE, getNotice, getNoticeDetail, getNoticeIcon, getNoticeTone, getNotices,
   getResourceNoticeEffect, getResourceNoticesRequest, isReadOnlyRefusal, locksEditing, normalizeNotice, orderActions, safeURL, supersedesRefusal, toLimitRefusal,
 } = await import('../limitNotice.js')
 
@@ -100,10 +100,9 @@ test('the notices route answer keeps usable notices only', () => {
     assert.deepEqual(getNotices(data), [], JSON.stringify(data))
 })
 
-test('the way out leads: first in strips and inline notices, rightmost in dialogs', () => {
+test('the way out leads: first in strips, rightmost in dialogs', () => {
   const actions = normalizeNotice(NOTICE).actions
   assert.deepEqual(orderActions(actions, 'strip').map(action => action.kind), ['primary', 'secondary', 'text'])
-  assert.deepEqual(orderActions(actions, 'inline').map(action => action.kind), ['primary', 'secondary', 'text'])
   assert.deepEqual(orderActions(actions, 'dialog').map(action => action.kind), ['text', 'secondary', 'primary'])
   assert.deepEqual(orderActions(undefined, 'dialog'), [])
 })
@@ -119,7 +118,6 @@ test('tone and icon come from the payload', () => {
 })
 
 test('a project is read-only while its notice locks edit', () => {
-  assert.deepEqual(getLocks([normalizeNotice(NOTICE), {locks: ['publish', 'edit']}]), ['edit', 'delete', 'publish'])
   assert.equal(locksEditing(normalizeNotice(NOTICE)), true)
   assert.equal(locksEditing(normalizeNotice({...NOTICE, locks: ['delete']})), false)
   assert.equal(locksEditing(normalizeNotice({...NOTICE, locks: undefined})), false)

@@ -29,8 +29,8 @@ import CloseIconButton from './CloseIconButton'
 import { getLimitSubject } from './limitAction'
 import { getNoticeIcon, getNoticeTone, orderActions } from './limitNotice.js'
 
-// The one slot for a limit notice (OpenConceptLab/ocl_online#702): a dialog, a
-// strip or an inline notice, as in TBv3. It takes a notice from
+// The one slot for a limit notice (OpenConceptLab/ocl_online#702): a dialog or
+// a strip, as in TBv3. It takes a notice from
 // normalizeNotice and renders each field it has, in the colour its tone names.
 // Without a notice it shows the API's `detail` and nothing else.
 //
@@ -121,11 +121,11 @@ const Reset = ({notice}) => notice.reset ? (
   </Box>
 ) : null
 
-const Meter = ({notice, labelSize}) => notice.meter ? (
+const Meter = ({notice}) => notice.meter ? (
   <Box sx={{display: 'flex', flexDirection: 'column', gap: 1}}>
     {
       notice.meter.label &&
-        <Typography component='div' sx={{fontSize: labelSize, fontWeight: 500, color: 'surface.dark', fontVariantNumeric: 'tabular-nums'}}>
+        <Typography component='div' sx={{fontSize: '15px', fontWeight: 500, color: 'surface.dark', fontVariantNumeric: 'tabular-nums'}}>
           {notice.meter.label}
         </Typography>
     }
@@ -133,8 +133,8 @@ const Meter = ({notice, labelSize}) => notice.meter ? (
   </Box>
 ) : null
 
-// Restricted, still works and who manages the plan, each with its icon.
-const Rows = ({notice, labelled}) => {
+// Restricted, still works and who manages it, each with its icon.
+const Rows = ({notice}) => {
   const { t } = useTranslation()
   const colours = toneOf(getNoticeTone(notice))
   const rows = [
@@ -146,7 +146,7 @@ const Rows = ({notice, labelled}) => {
     <Box key={key} sx={{display: 'flex', gap: 1.25, alignItems: 'flex-start'}}>
       <Icon sx={{fontSize: '20px', mt: '1px', color: colour}} />
       <div>
-        {labelled && label && <Typography component='span' sx={{display: 'block', fontSize: '12px', fontWeight: 700, color: 'secondary.main', mb: '1px'}}>{label}</Typography>}
+        {label && <Typography component='span' sx={{display: 'block', fontSize: '12px', fontWeight: 700, color: 'secondary.main', mb: '1px'}}>{label}</Typography>}
         {text}
       </div>
     </Box>
@@ -179,12 +179,12 @@ const NoticeDialog = ({open, onClose, notice, errorCode, capability}) => {
         {
           (notice.meter || notice.reset) &&
             <Box sx={{mt: 2, backgroundColor: 'white', borderRadius: '16px', px: 2, py: 1.75, display: 'flex', flexDirection: 'column', gap: 1}}>
-              <Meter notice={notice} labelSize='15px' />
+              <Meter notice={notice} />
               <Reset notice={notice} />
             </Box>
         }
         <Box sx={{mt: 2, display: 'flex', flexDirection: 'column', gap: 1.5, fontSize: '14.5px', lineHeight: 1.5, color: 'surface.contrastText'}}>
-          <Rows notice={notice} labelled />
+          <Rows notice={notice} />
         </Box>
       </DialogContent>
       <DialogActions disableSpacing sx={{p: 0, pt: 3, gap: 1, flexWrap: 'wrap', justifyContent: 'flex-end', flexDirection: {xs: 'column-reverse', sm: 'row'}, alignItems: {xs: 'stretch', sm: 'center'}}}>
@@ -268,44 +268,10 @@ const Strip = ({notice, detail, onDismiss, sx}) => {
   )
 }
 
-const Inline = ({notice, detail, sx}) => {
-  const colours = toneOf(getNoticeTone(notice))
-  const frame = {display: 'flex', gap: 1.5, alignItems: 'flex-start', backgroundColor: colours.bg, border: '1px solid', borderColor: colours.border, borderRadius: '12px', px: 1.75, py: 1.5, ...sx}
-  if(!notice)
-    return detail ? (
-      <Box role='status' sx={frame}>
-        <InfoOutlinedIcon sx={{color: colours.main, fontSize: '22px'}} />
-        <Typography sx={{fontSize: '13.5px', color: 'surface.contrastText'}}>{detail}</Typography>
-      </Box>
-    ) : null
-  const actions = orderActions(notice.actions, 'inline')
-  return (
-    <Box role='status' sx={frame}>
-      <NoticeIcon notice={notice} sx={{color: colours.main, fontSize: '22px'}} />
-      <Box sx={{flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1, fontSize: '13.5px', lineHeight: 1.45, color: 'surface.contrastText'}}>
-        {notice.title && <Typography sx={{fontWeight: 600, fontSize: '14.5px', lineHeight: 1.35, color: 'surface.dark'}}>{notice.title}</Typography>}
-        <Scope notice={notice} sx={{fontSize: '12.5px', mt: -0.5}} />
-        <Meter notice={notice} labelSize='13px' />
-        <Reset notice={notice} />
-        <Rows notice={notice} />
-        {
-          (actions.length > 0 || notice.help) &&
-            <Box sx={{display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap'}}>
-              {actions.map((action, i) => <ActionButton key={i} action={action} size='small' />)}
-              {notice.help && <HelpLink help={notice.help} />}
-            </Box>
-        }
-      </Box>
-    </Box>
-  )
-}
-
-// size: 'dialog' (with open and onClose), 'strip' or 'inline'.
+// size: 'dialog' (with open and onClose) or 'strip'.
 const LimitNotice = ({size = 'dialog', notice, detail, open, onClose, onDismiss, errorCode, capability, sx}) => {
   if(size === 'strip')
     return <Strip notice={notice} detail={detail} onDismiss={onDismiss} sx={sx} />
-  if(size === 'inline')
-    return <Inline notice={notice} detail={detail} sx={sx} />
   if(notice)
     return <NoticeDialog open={Boolean(open)} onClose={onClose} notice={notice} errorCode={errorCode} capability={capability} />
   return <FallbackDialog open={Boolean(open)} onClose={onClose} detail={detail} errorCode={errorCode} capability={capability} />

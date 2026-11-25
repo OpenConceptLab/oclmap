@@ -6,7 +6,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { blockLeaving, continueLeaving, createEditTracker, createRunClosers, getPageKey, getRunLeaveMessageKey, hasReadOnlyEdits, isUnsavedNewProject, shouldAskBeforeLeaving, shouldWarnBeforeUnload } from '../leaveGuard.js'
+import { blockLeaving, continueLeaving, createEditTracker, createRunClosers, getPageKey, getRunLeaveMessageKey, isUnsavedNewProject, shouldAskBeforeLeaving, shouldWarnBeforeUnload } from '../leaveGuard.js'
 
 // Stands in for a history v4 object: block's prompt decides each transition.
 const createFakeHistory = () => {
@@ -263,7 +263,7 @@ test('in-app navigation asks before leaving a read-only project with edits no sa
     for(const unsavedEdits of [true, false])
       assert.equal(
         shouldWarnBeforeUnload({...saved, readOnly, unsavedEdits, pendingAutosave: false, saveInFlight: false, saveFailed: false}),
-        hasReadOnlyEdits({readOnly, unsavedEdits}),
+        readOnly && unsavedEdits,
         `both guards agree: readOnly ${readOnly}, unsavedEdits ${unsavedEdits}`
       )
 })
