@@ -56,7 +56,7 @@ test('editProposed: leaving before the autosave runs is caught', () => {
   assert.deepEqual(saved, [[PROPOSAL_CHANGE]])
 })
 
-test('editProposed: keeps a copy, not the editor\'s object', () => {
+test('editProposed: keeps a copy of the editor\'s top-level fields', () => {
   const store = setupProposed({})
   const state = { id: 'A' }
   editProposed({ rowIndex: 1, state, setProposed: store.setProposed, scheduleAutoSave: () => {} })
