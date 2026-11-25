@@ -102,7 +102,7 @@ const fetchBridgeVersions = (url) => {
  *   }>
  *
  * - onChange: (nextValue) => void, a state setter: a lookup that settles
- *   later passes it an updater (algos => nextValue)
+ *   after the selector has unmounted passes it an updater (algos => nextValue)
  *
  * Optional:
  * - title?: string
@@ -151,6 +151,13 @@ export default function MultiAlgoSelector({
     latestValueRef.current = next
     onChange(next)
   }
+  const mountedRef = React.useRef(false)
+  React.useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
 
   const algosById = useMemo(() => {
     const m = new Map();
@@ -260,10 +267,18 @@ export default function MultiAlgoSelector({
           syncedBridgeUrlRef.current.delete(sel.__key)
           return
         }
-        // Through the parent's setter: Configure may have closed (and a new
-        // selector changed the list) before the reply, so this one's list can
-        // be out of date.
-        onChange(algos => applyBridgeCanonical(algos, request, canonical))
+        // Mounted, on the list as it is now, like every other change here.
+        // Once Configure has closed (and a new selector may have changed the
+        // list), this one's list can be out of date: through the parent's
+        // setter instead.
+        if(!mountedRef.current) {
+          onChange(algos => applyBridgeCanonical(algos, request, canonical))
+          return
+        }
+        const current = latestValueRef.current
+        const next = applyBridgeCanonical(current, request, canonical)
+        if(next !== current)
+          commitValue(next)
       })
     }
   }, [value, disabled])
