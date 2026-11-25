@@ -45,8 +45,10 @@ const Propose = ({onChange, proposed, onSubmit, repo, row, columns}) => {
       const idParts = event.target.id.split('.')
       const attributeIndex = parseInt(idParts[1])
       const attributeType = idParts[2]
+      // A copy of the edited attribute: the one in state is also the one in
+      // the project's saved proposal.
       const newAttributes = [...state.attributes]
-      newAttributes[attributeIndex][attributeType] = event.target.value
+      newAttributes[attributeIndex] = {...newAttributes[attributeIndex], [attributeType]: event.target.value}
       newState = {...state, attributes: newAttributes}
       setState(newState)
     } else {

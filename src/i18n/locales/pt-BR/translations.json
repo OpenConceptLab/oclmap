@@ -328,7 +328,7 @@
     "preview_quota_projects": "Projetos",
     "preview_quota_rows": "Linhas por projeto",
     "preview_quota_rows_cap": "primeiras {{limit}} linhas de cada projeto",
-    "preview_quota_match_operations": "Operações de correspondência",
+    "preview_quota_match_operations": "Linhas correspondidas",
     "preview_quota_ai_calls": "Chamadas do Assistente de IA do OCL",
     "preview_quota_ai_tokens": "Tokens do Assistente de IA do OCL",
     "preview_quota_used_of_limit": "{{used}} de {{limit}} usado(s)",

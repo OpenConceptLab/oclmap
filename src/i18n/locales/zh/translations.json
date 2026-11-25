@@ -321,7 +321,7 @@
     "preview_quota_projects": "项目",
     "preview_quota_rows": "每个项目的行数",
     "preview_quota_rows_cap": "每个项目的前 {{limit}} 行",
-    "preview_quota_match_operations": "匹配操作",
+    "preview_quota_match_operations": "已匹配行数",
     "preview_quota_ai_calls": "OCL AI 助手调用",
     "preview_quota_ai_tokens": "OCL AI 助手 Token",
     "preview_quota_used_of_limit": "已用 {{used}} / {{limit}}",
