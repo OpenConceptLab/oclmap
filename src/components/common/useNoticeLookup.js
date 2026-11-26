@@ -4,7 +4,7 @@ import { getNotices, watchReturns } from './limitNotice.js'
 
 const PENDING = {loaded: false, notice: null}
 
-// The latest answer about one resource from the notices route
+// [answer, askAgain]: the latest answer about one resource from the notices route
 // (OpenConceptLab/ocl_online#702), asked once per `key` with ask(): a promise
 // of the route's response, or null when nothing can be asked. {loaded,
 // notice, requestedAt}: loaded once the latest request is answered, with its
@@ -12,6 +12,7 @@ const PENDING = {loaded: false, notice: null}
 // while it waits, and never when the request fails. While `recheck` is true it
 // is asked again each time the person comes back to the page: a notice's link
 // can send them to another tab, where they may change what it says.
+// askAgain() asks again at once.
 const useNoticeLookup = (key, ask, recheck) => {
   const [reply, setReply] = React.useState({key: null, ...PENDING})
   const [round, setRound] = React.useState(0)
@@ -31,9 +32,10 @@ const useNoticeLookup = (key, ask, recheck) => {
     }
   }, [key, round])
 
-  React.useEffect(() => recheck ? watchReturns(window, document, () => setRound(value => value + 1)) : undefined, [recheck])
+  const askAgain = React.useCallback(() => setRound(value => value + 1), [])
+  React.useEffect(() => recheck ? watchReturns(window, document, askAgain) : undefined, [recheck, askAgain])
 
-  return reply.key === key ? reply : PENDING
+  return [reply.key === key ? reply : PENDING, askAgain]
 }
 
 export default useNoticeLookup

@@ -13,9 +13,11 @@ import { getResourceNoticeEffect, supersedesRefusal } from '../common/limitNotic
  *   or null;
  * - onLock() as it turns read-only: the pending autosave is dropped;
  * - onUnlock() as read-only ends, or a strip from the route is taken back:
- *   the edits kept back are queued.
+ *   the edits kept back are queued;
+ * - onRefused() after a refusal turned it read-only: the route is asked
+ *   again, so an answer asked for after the refusal can end it.
  */
-export const createReadOnlyLock = ({onChange, onLock, onUnlock, now = () => performance.now()}) => {
+export const createReadOnlyLock = ({onChange, onLock, onUnlock, onRefused = () => {}, now = () => performance.now()}) => {
   let readOnly = false
   let strip = null
   // whether the notices route sent the strip: an empty answer takes it back
@@ -37,6 +39,8 @@ export const createReadOnlyLock = ({onChange, onLock, onUnlock, now = () => perf
     strip = {notice, detail}
     tell()
     onLock()
+    if(!byRoute)
+      onRefused()
   }
 
   const end = () => {
@@ -89,11 +93,15 @@ export const createReadOnlyLock = ({onChange, onLock, onUnlock, now = () => perf
     applyAnswer,
     // Taken as a save is sent: the lock it was sent under.
     stampSend: () => generation,
-    // A save sent under `stamp` went through: read-only ends, unless it turned
-    // read-only again after the save was sent. That newer word stands.
-    releaseAfterSave: stamp => {
-      if(stamp === generation)
-        leave()
+    // A save sent under `stamp` went through: onSaved() marks what it kept,
+    // then read-only ends. Not while it turned read-only again after the save
+    // was sent: that newer word stands, and what the save kept stays unsaved
+    // until a save after it ends (its log can't be sent meanwhile).
+    releaseAfterSave: (stamp, onSaved) => {
+      if(readOnly && stamp !== generation)
+        return
+      onSaved()
+      leave()
     },
   }
 }

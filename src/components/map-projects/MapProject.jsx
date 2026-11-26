@@ -388,6 +388,8 @@ const MapProject = () => {
   const readOnlyRef = React.useRef(false)
   const [isReadOnly, setIsReadOnly] = React.useState(false)
   const [projectNotice, setProjectNotice] = React.useState(null)
+  // Asks the notices route again (useResourceNotice): after a refusal
+  const askNoticeAgainRef = React.useRef(() => {})
   const readOnlyLockRef = React.useRef(null)
   if(!readOnlyLockRef.current)
     readOnlyLockRef.current = createReadOnlyLock({
@@ -398,6 +400,7 @@ const MapProject = () => {
       },
       onLock: () => autosaveSchedulerRef.current.cancel(),
       onUnlock: () => requeueUnsavedEdits(),
+      onRefused: () => askNoticeAgainRef.current(),
     })
   // The edits no save has kept yet, which leaving a read-only project loses.
   const editTrackerRef = React.useRef(null)
@@ -1917,10 +1920,10 @@ const MapProject = () => {
         if(!isAutoSave)
           baseSetAlert({severity: 'success', message: t('map_project.successfully_saved'), duration: 2000})
 
-        editTrackerRef.current.saved(editsInSave)
-        // A save that went through ends read-only first, so its log is posted,
-        // unless it turned read-only again after this save was sent.
-        readOnlyLockRef.current.releaseAfterSave(sentUnder)
+        // A save that went through ends read-only first, so its log is posted:
+        // not while it turned read-only again after this save was sent. Its
+        // edits then stay unsaved, and are queued once read-only ends.
+        readOnlyLockRef.current.releaseAfterSave(sentUnder, () => editTrackerRef.current.saved(editsInSave))
         if(projectLogsLoaderRef.current.canSend(response.data.url))
           postProjectLogs(response.data.url, {row_logs: savedRowLogs, project_logs: savedProjectLogs})
         lastSaveFailedRef.current = false
@@ -2049,9 +2052,11 @@ const MapProject = () => {
 
   // The API's notice for this project (none from an API without the route),
   // applied to the read-only lock (applyAnswer), and asked again when the user
-  // comes back to the page while it shows a strip or is read-only: access may
-  // have been restored in another tab.
-  const resourceNotice = useResourceNotice(project?.url || null, isReadOnly || Boolean(projectNotice))
+  // comes back to the page while it shows a strip or is read-only (access may
+  // have been restored in another tab), and after a refusal turned it
+  // read-only, so an answer asked for after the refusal can end it.
+  const [resourceNotice, askNoticeAgain] = useResourceNotice(project?.url || null, isReadOnly || Boolean(projectNotice))
+  askNoticeAgainRef.current = askNoticeAgain
   React.useEffect(() => {
     readOnlyLockRef.current.applyAnswer(resourceNotice)
   }, [resourceNotice])

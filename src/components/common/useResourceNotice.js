@@ -5,9 +5,10 @@ import { currentUserToken, getAPIURL } from '../../common/utils'
 import { getResourceNoticesRequest } from './limitNotice.js'
 import useNoticeLookup from './useNoticeLookup.js'
 
-// The API's answer about one repository or map project (`resource`, its
-// relative URL), asked for once per resource and language, and again on each
-// return to the page while `recheck` is true (useNoticeLookup). Never loaded
+// [answer, askAgain]: the API's answer about one repository or map project
+// (`resource`, its relative URL), asked for once per resource and language,
+// and again on each return to the page while `recheck` is true, or when
+// askAgain() is called (useNoticeLookup). Never loaded
 // when the API refuses (401), fails or has no such route (404). axios
 // directly, not APIService, so a missing route skips its sign-out and
 // throttling handling.

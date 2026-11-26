@@ -53,6 +53,7 @@ const mountProject = () => {
     const [isReadOnly, setIsReadOnly] = React.useState(false)
     const [strip, setStrip] = React.useState(null)
     const inFlightSaveRef = React.useRef(null)
+    const askAgainRef = React.useRef(() => {})
     const ref = React.useRef(null)
     if(!ref.current) {
       const tracker = createEditTracker()
@@ -63,6 +64,7 @@ const mountProject = () => {
         },
         onLock: () => scheduler.cancel(),
         onUnlock: () => tracker.hasUnsaved() && scheduler.schedule('read_only_ended'),
+        onRefused: () => askAgainRef.current(),
       })
       const scheduler = createAutosaveScheduler({
         getProjectId: () => 1,
@@ -75,16 +77,15 @@ const mountProject = () => {
       const save = ({source = 'manual', reasons} = {}) => {
         if(source === 'auto' && lock.isReadOnly())
           return
+        if(source !== 'auto')
+          scheduler.cancel()
         const editsInSave = tracker.saving()
         let sentUnder = null
         const request = sendAfter(inFlightSaveRef.current, () => {
           sentUnder = lock.stampSend()
           return requests.send({kind: 'save', source, reasons})
         }, () => source === 'auto' && lock.isReadOnly()).then(
-          () => {
-            tracker.saved(editsInSave)
-            lock.releaseAfterSave(sentUnder)
-          },
+          () => lock.releaseAfterSave(sentUnder, () => tracker.saved(editsInSave)),
           error => recordReadOnlyRefusal(error, body => lock.enter({notice: null, detail: body.detail}))
         ).finally(() => {
           if(inFlightSaveRef.current === request)
@@ -105,10 +106,11 @@ const mountProject = () => {
       }
     }
     const { lock } = ref.current
-    const answer = useNoticeLookup(JSON.stringify([PROJECT, 'en']), () => {
+    const [answer, askAgain] = useNoticeLookup(JSON.stringify([PROJECT, 'en']), () => {
       asked.push(PROJECT)
       return requests.send({kind: 'notices'})
     }, isReadOnly || Boolean(strip))
+    askAgainRef.current = askAgain
     React.useEffect(() => {
       lock.applyAnswer(answer)
     }, [answer])
@@ -166,7 +168,7 @@ test('a locked project unlocks when the user comes back and the lookup answers e
   assert.deepEqual(autosave.what, {kind: 'save', source: 'auto', reasons: ['read_only_ended']})
 })
 
-test('a save refused as read-only unlocks when the user comes back and the lookup answers empty', async () => {
+test('a save refused as read-only asks the route again at once; an empty answer asked after it ends the lock', async () => {
   const project = mountProject()
   await project.answer('notices', EMPTY)
   await act(async () => project.handles.edit())
@@ -174,9 +176,29 @@ test('a save refused as read-only unlocks when the user comes back and the looku
   await project.answer('save', REFUSED)
   assert.equal(project.shown.readOnly, true)
   assert.equal(project.shown.strip.detail, 'Example refusal')
+  assert.equal(project.asked.length, 2)
 
+  await project.answer('notices', EMPTY)
+  assert.equal(project.shown.readOnly, false)
+  assert.deepEqual(project.requests.take('save').what.reasons, ['read_only_ended'])
+})
+
+test('a refusal that arrives after a recheck was sent asks again; the answer asked after it ends the lock', async () => {
+  const project = mountProject()
+  // the user edits and saves; then the lookup locks the project
+  await act(async () => {
+    project.handles.edit()
+    project.handles.save()
+  })
+  await project.answer('notices', LOCKED)
+  // the user comes back after restoring access elsewhere: the recheck goes out, then the save's refusal arrives
   await project.leaveAndReturn()
   assert.equal(project.asked.length, 2)
+  await project.answer('save', REFUSED)
+  assert.equal(project.asked.length, 3)
+  // the recheck sent before the refusal no longer answers; the one asked after it does
+  await project.answer('notices', EMPTY)
+  assert.equal(project.shown.readOnly, true)
   await project.answer('notices', EMPTY)
   assert.equal(project.shown.readOnly, false)
   assert.deepEqual(project.requests.take('save').what.reasons, ['read_only_ended'])
@@ -191,17 +213,24 @@ test('a project with no strip asks nothing when the user comes back', async () =
 
 test('a save sent before a newer lock arrived leaves that lock in place when it goes through', async () => {
   const project = mountProject()
-  // the user saves while the lookup is still on its way
-  await act(async () => project.handles.save())
+  // the user edits (a row comment, say) and saves while the lookup is still on its way
+  await act(async () => {
+    project.handles.edit()
+    project.handles.save()
+  })
   // the lookup locks the project before the save's answer comes back
   await project.answer('notices', LOCKED)
   assert.equal(project.shown.readOnly, true)
-  await act(async () => project.handles.edit())
   await project.answer('save', {id: 1})
   assert.equal(project.shown.readOnly, true, 'the newer lock stands')
   assert.equal(project.shown.strip.notice.title, 'Example read-only notice')
   await settle()
   assert.equal(project.requests.count('save'), 0, 'nothing is requeued for autosave')
+  // what it kept stays unsaved (its log can't be sent while read-only), and saves once the lock ends
+  assert.equal(project.handles.hasUnsaved(), true)
+  await project.leaveAndReturn()
+  await project.answer('notices', EMPTY)
+  assert.deepEqual(project.requests.take('save').what.reasons, ['read_only_ended'])
 })
 
 test('a save sent under a lock ends it when it goes through: access was restored', async () => {
@@ -211,6 +240,7 @@ test('a save sent under a lock ends it when it goes through: access was restored
   await project.answer('save', {id: 1})
   assert.equal(project.shown.readOnly, false)
   assert.equal(project.shown.strip, null)
+  assert.equal(project.handles.hasUnsaved(), false)
 })
 
 test('a recheck that still locks, answered after a save sent under the earlier lock, stands', async () => {
