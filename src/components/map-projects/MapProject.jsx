@@ -388,8 +388,8 @@ const MapProject = () => {
   const readOnlyRef = React.useRef(false)
   const [isReadOnly, setIsReadOnly] = React.useState(false)
   const [projectNotice, setProjectNotice] = React.useState(null)
-  // Asks the notices route again (useResourceNotice): after a refusal
-  const askNoticeAgainRef = React.useRef(() => {})
+  // Renews a lookup of the notices route in flight (useResourceNotice): after a refusal
+  const renewNoticeRef = React.useRef(() => {})
   const readOnlyLockRef = React.useRef(null)
   if(!readOnlyLockRef.current)
     readOnlyLockRef.current = createReadOnlyLock({
@@ -400,7 +400,7 @@ const MapProject = () => {
       },
       onLock: () => autosaveSchedulerRef.current.cancel(),
       onUnlock: () => requeueUnsavedEdits(),
-      onRefused: () => askNoticeAgainRef.current(),
+      onRefused: () => renewNoticeRef.current(),
     })
   // The edits no save has kept yet, which leaving a read-only project loses.
   const editTrackerRef = React.useRef(null)
@@ -2053,10 +2053,10 @@ const MapProject = () => {
   // The API's notice for this project (none from an API without the route),
   // applied to the read-only lock (applyAnswer), and asked again when the user
   // comes back to the page while it shows a strip or is read-only (access may
-  // have been restored in another tab), and after a refusal turned it
-  // read-only, so an answer asked for after the refusal can end it.
-  const [resourceNotice, askNoticeAgain] = useResourceNotice(project?.url || null, isReadOnly || Boolean(projectNotice))
-  askNoticeAgainRef.current = askNoticeAgain
+  // have been restored in another tab), and when a refusal turns it read-only
+  // while a lookup is in flight, so an answer asked for after it can end it.
+  const [resourceNotice, renewNotice] = useResourceNotice(project?.url || null, isReadOnly || Boolean(projectNotice))
+  renewNoticeRef.current = renewNotice
   React.useEffect(() => {
     readOnlyLockRef.current.applyAnswer(resourceNotice)
   }, [resourceNotice])

@@ -168,7 +168,13 @@ export const getResourceNoticeEffect = ({loaded, notice}, shownFromRoute) => {
 
 // A save refused as read-only locks the project until a newer word on it: an
 // answer from the notices route asked for after the refusal (`requestedAt`
-// and `refusedAt` read from one clock), that locks nothing.
+// and `refusedAt` from nextNoticeSequence()), that locks nothing.
+// Orders the notices route's requests and the refusals that lock a project
+// (supersedesRefusal): each call is later than the one before, where two
+// clock readings can be equal.
+let noticeSequence = 0
+export const nextNoticeSequence = () => ++noticeSequence
+
 export const supersedesRefusal = ({loaded, notice, requestedAt}, refusedAt) =>
   Boolean(loaded) && typeof refusedAt === 'number' && typeof requestedAt === 'number' && requestedAt > refusedAt && !locksEditing(notice)
 

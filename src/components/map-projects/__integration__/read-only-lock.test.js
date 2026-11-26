@@ -168,7 +168,7 @@ test('a locked project unlocks when the user comes back and the lookup answers e
   assert.deepEqual(autosave.what, {kind: 'save', source: 'auto', reasons: ['read_only_ended']})
 })
 
-test('a save refused as read-only asks the route again at once; an empty answer asked after it ends the lock', async () => {
+test('a save refused as read-only unlocks when the user comes back and the lookup answers empty', async () => {
   const project = mountProject()
   await project.answer('notices', EMPTY)
   await act(async () => project.handles.edit())
@@ -176,14 +176,36 @@ test('a save refused as read-only asks the route again at once; an empty answer 
   await project.answer('save', REFUSED)
   assert.equal(project.shown.readOnly, true)
   assert.equal(project.shown.strip.detail, 'Example refusal')
-  assert.equal(project.asked.length, 2)
+  // no lookup was in flight: nothing more is asked until the user comes back
+  assert.equal(project.asked.length, 1)
 
+  await project.leaveAndReturn()
+  assert.equal(project.asked.length, 2)
   await project.answer('notices', EMPTY)
   assert.equal(project.shown.readOnly, false)
-  assert.deepEqual(project.requests.take('save').what.reasons, ['read_only_ended'])
+  const autosave = project.requests.take('save')
+  assert.deepEqual(autosave.what.reasons, ['read_only_ended'])
+
+  // the save is refused again (the route and the save disagree): it stays read-only, with nothing more asked
+  await act(async () => autosave.reject(REFUSED))
+  await settle()
+  assert.equal(project.shown.readOnly, true)
+  assert.equal(project.asked.length, 2)
+  assert.equal(project.requests.pending.length, 0)
 })
 
 test('a refusal that arrives after a recheck was sent asks again; the answer asked after it ends the lock', async () => {
+  // the refusal and the lookups read the same clock reading: they're ordered all the same
+  const now = performance.now
+  performance.now = () => 1000
+  try {
+    await refusalAfterRecheck()
+  } finally {
+    performance.now = now
+  }
+})
+
+const refusalAfterRecheck = async () => {
   const project = mountProject()
   // the user edits and saves; then the lookup locks the project
   await act(async () => {
@@ -202,7 +224,7 @@ test('a refusal that arrives after a recheck was sent asks again; the answer ask
   await project.answer('notices', EMPTY)
   assert.equal(project.shown.readOnly, false)
   assert.deepEqual(project.requests.take('save').what.reasons, ['read_only_ended'])
-})
+}
 
 test('a project with no strip asks nothing when the user comes back', async () => {
   const project = mountProject()

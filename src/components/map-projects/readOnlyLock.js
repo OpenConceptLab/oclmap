@@ -1,4 +1,4 @@
-import { getResourceNoticeEffect, supersedesRefusal } from '../common/limitNotice.js'
+import { getResourceNoticeEffect, nextNoticeSequence, supersedesRefusal } from '../common/limitNotice.js'
 
 /**
  * A map project's read-only state (OpenConceptLab/ocl_online#424, #702) and
@@ -14,15 +14,17 @@ import { getResourceNoticeEffect, supersedesRefusal } from '../common/limitNotic
  * - onLock() as it turns read-only: the pending autosave is dropped;
  * - onUnlock() as read-only ends, or a strip from the route is taken back:
  *   the edits kept back are queued;
- * - onRefused() after a refusal turned it read-only: the route is asked
- *   again, so an answer asked for after the refusal can end it.
+ * - onRefused() after a refusal turned it read-only: a lookup of the route
+ *   still in flight is asked again, since its answer can't end the refusal
+ *   (useNoticeLookup's renew). With none in flight nothing is asked, so a
+ *   route and a save that disagree can't keep retrying: the user's return asks.
  */
-export const createReadOnlyLock = ({onChange, onLock, onUnlock, onRefused = () => {}, now = () => performance.now()}) => {
+export const createReadOnlyLock = ({onChange, onLock, onUnlock, onRefused = () => {}, next = nextNoticeSequence}) => {
   let readOnly = false
   let strip = null
   // whether the notices route sent the strip: an empty answer takes it back
   let fromRoute = false
-  // when a refusal last made it read-only (now()), or null: a route answer
+  // when a refusal last made it read-only (next()), or null: a route answer
   // asked for after it, that locks nothing, ends it (supersedesRefusal)
   let refusedAt = null
   // counts the times it turned read-only, so a save knows whether a lock came
@@ -35,7 +37,7 @@ export const createReadOnlyLock = ({onChange, onLock, onUnlock, onRefused = () =
     readOnly = true
     generation += 1
     fromRoute = byRoute
-    refusedAt = byRoute ? null : now()
+    refusedAt = byRoute ? null : next()
     strip = {notice, detail}
     tell()
     onLock()
