@@ -184,3 +184,30 @@ export const getResourceNoticesRequest = ({baseURL, token, resource, lang}) => {
     headers: {Authorization: `Token ${token}`},
   }
 }
+
+// Calls onReturn once each time the person comes back to this page from
+// another tab or window: once it's shown and focused again, after it was
+// hidden or lost focus. Returns the function that stops watching.
+export const watchReturns = (win, doc, onReturn) => {
+  let away = doc.visibilityState === 'hidden' || !doc.hasFocus()
+  const leave = () => {
+    away = true
+  }
+  // back once the page is both shown and focused: shown in a window that
+  // isn't focused yet, it waits for the focus
+  const back = () => {
+    if(!away || doc.visibilityState === 'hidden' || !doc.hasFocus())
+      return
+    away = false
+    onReturn()
+  }
+  const onVisibilityChange = () => doc.visibilityState === 'hidden' ? leave() : back()
+  win.addEventListener('blur', leave)
+  win.addEventListener('focus', back)
+  doc.addEventListener('visibilitychange', onVisibilityChange)
+  return () => {
+    win.removeEventListener('blur', leave)
+    win.removeEventListener('focus', back)
+    doc.removeEventListener('visibilitychange', onVisibilityChange)
+  }
+}

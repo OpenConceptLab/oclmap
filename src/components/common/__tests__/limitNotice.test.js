@@ -8,6 +8,7 @@ import assert from 'node:assert/strict'
 const {
   READ_ONLY_ERROR_CODE, getNotice, getNoticeDetail, getNoticeIcon, getNoticeTone, getNotices,
   getResourceNoticeEffect, getResourceNoticesRequest, isReadOnlyRefusal, locksEditing, normalizeNotice, orderActions, safeURL, supersedesRefusal, toLimitRefusal,
+  watchReturns,
 } = await import('../limitNotice.js')
 
 const NOTICE = {
@@ -188,4 +189,79 @@ test('the notices route\'s answer asked for after a read-only refusal, locking n
   assert.equal(supersedesRefusal({loaded: true, notice: null, requestedAt: 100}, refusedAt), false, 'nor at the same moment')
   assert.equal(supersedesRefusal({loaded: false, notice: null}, refusedAt), false, 'pending, failed or no such route')
   assert.equal(supersedesRefusal({loaded: true, notice: null, requestedAt: 150}, null), false, 'no refusal to end')
+})
+
+// A window and document that can be left and returned to, as the browser does
+// it: leaving hides the page or blurs the window, coming back shows it and
+// focuses it
+const makePage = ({hidden = false, focused = true} = {}) => {
+  const win = new EventTarget()
+  const doc = Object.assign(new EventTarget(), {visibilityState: hidden ? 'hidden' : 'visible', hasFocus: () => focused})
+  const setVisibility = state => {
+    doc.visibilityState = state
+    doc.dispatchEvent(new Event('visibilitychange'))
+  }
+  const blur = () => {
+    focused = false
+    win.dispatchEvent(new Event('blur'))
+  }
+  const focus = () => {
+    focused = true
+    win.dispatchEvent(new Event('focus'))
+  }
+  return {
+    win,
+    doc,
+    leaveTab: () => {
+      setVisibility('hidden')
+      blur()
+    },
+    showUnfocused: () => setVisibility('visible'),
+    returnToTab: () => {
+      setVisibility('visible')
+      focus()
+    },
+    leaveWindow: blur,
+    returnToWindow: focus,
+  }
+}
+
+test('a return to the page, from another tab or window, is told once; nothing else is', () => {
+  const page = makePage()
+  let returns = 0
+  const stop = watchReturns(page.win, page.doc, () => returns++)
+  page.returnToWindow()
+  assert.equal(returns, 0)
+  page.leaveTab()
+  page.returnToTab()
+  assert.equal(returns, 1)
+  page.leaveWindow()
+  page.returnToWindow()
+  assert.equal(returns, 2)
+  stop()
+  page.leaveTab()
+  page.returnToTab()
+  assert.equal(returns, 2)
+})
+
+test('watching starts while the user is away: their return is told', () => {
+  const hidden = makePage({hidden: true, focused: false})
+  const blurred = makePage({focused: false})
+  let returns = 0
+  watchReturns(hidden.win, hidden.doc, () => returns++)
+  watchReturns(blurred.win, blurred.doc, () => returns++)
+  hidden.returnToTab()
+  blurred.returnToWindow()
+  assert.equal(returns, 2)
+})
+
+test('a page shown in a window that is not focused yet waits for the focus: that is the return', () => {
+  const page = makePage()
+  let returns = 0
+  watchReturns(page.win, page.doc, () => returns++)
+  page.leaveTab()
+  page.showUnfocused()
+  assert.equal(returns, 0)
+  page.returnToWindow()
+  assert.equal(returns, 1)
 })

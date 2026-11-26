@@ -116,7 +116,8 @@ import { getQuotaError } from '../common/quotaErrors'
 import LimitNotice from '../common/LimitNotice.jsx'
 import { EditLockContext, LockMark, LockTooltip } from '../common/NoticeLock'
 import useResourceNotice from '../common/useResourceNotice'
-import { getResourceNoticeEffect, supersedesRefusal, toLimitRefusal } from '../common/limitNotice.js'
+import { createReadOnlyLock } from './readOnlyLock'
+import { toLimitRefusal } from '../common/limitNotice.js'
 import MapperQuotaChip from './MapperQuotaChip'
 import MapProjectBreadcrumb from './MapProjectBreadcrumb'
 import { getPreviewLimitError, isAIPreviewLimitError, isPreviewLimitError } from './previewLimits'
@@ -382,15 +383,22 @@ const MapProject = () => {
   const lastSaveFailedRef = React.useRef(false)
   // Set while the project is read-only (OpenConceptLab/ocl_online#424): the API
   // refuses every save, so nothing autosaves or saves on leave. A save that
-  // goes through clears it.
+  // goes through clears it. readOnlyLockRef keeps it (createReadOnlyLock),
+  // with the strip at the top of the project: {notice, detail}, or null.
   const readOnlyRef = React.useRef(false)
   const [isReadOnly, setIsReadOnly] = React.useState(false)
-  // The strip at the top of the project: {notice, detail}, or null, and
-  // whether the notices route sent it (an empty answer takes it back).
   const [projectNotice, setProjectNotice] = React.useState(null)
-  const projectNoticeFromRouteRef = React.useRef(false)
-  // When a refusal last made it read-only (performance.now()), or null.
-  const refusedAtRef = React.useRef(null)
+  const readOnlyLockRef = React.useRef(null)
+  if(!readOnlyLockRef.current)
+    readOnlyLockRef.current = createReadOnlyLock({
+      onChange: ({readOnly, strip}) => {
+        readOnlyRef.current = readOnly
+        setIsReadOnly(readOnly)
+        setProjectNotice(strip)
+      },
+      onLock: () => autosaveSchedulerRef.current.cancel(),
+      onUnlock: () => requeueUnsavedEdits(),
+    })
   // The edits no save has kept yet, which leaving a read-only project loses.
   const editTrackerRef = React.useRef(null)
   if(!editTrackerRef.current)
@@ -1845,7 +1853,10 @@ const MapProject = () => {
     const isUpdate = Boolean(project?.id)
     if(!isAutoSave)
       GAService.recordUpsertEvent('MapProject', isUpdate, 'map_project')
+    // The read-only lock this save was sent under (readOnlyLockRef)
+    let sentUnder = null
     const send = () => {
+      sentUnder = readOnlyLockRef.current.stampSend()
       const service = APIService.new().overrideURL(owner).appendToUrl('map-projects/')
       if(isUpdate)
         return service.appendToUrl(project.id + '/')
@@ -1907,8 +1918,9 @@ const MapProject = () => {
           baseSetAlert({severity: 'success', message: t('map_project.successfully_saved'), duration: 2000})
 
         editTrackerRef.current.saved(editsInSave)
-        // A save that went through ends read-only first, so its log is posted.
-        leaveReadOnly()
+        // A save that went through ends read-only first, so its log is posted,
+        // unless it turned read-only again after this save was sent.
+        readOnlyLockRef.current.releaseAfterSave(sentUnder)
         if(projectLogsLoaderRef.current.canSend(response.data.url))
           postProjectLogs(response.data.url, {row_logs: savedRowLogs, project_logs: savedProjectLogs})
         lastSaveFailedRef.current = false
@@ -1917,12 +1929,12 @@ const MapProject = () => {
       lastSaveFailedRef.current = true
       // Recorded before it's shown, or not shown as the page closes, so a save
       // queued behind this one isn't sent.
-      const readOnlyRefused = recordReadOnlyRefusal(response, body => enterReadOnly(toLimitRefusal(body)))
+      const readOnlyRefused = recordReadOnlyRefusal(response, body => readOnlyLockRef.current.enter(toLimitRefusal(body)))
       if(isToldOnLeave({leaving: options.leaving, mounted: isMountedRef.current, readOnlyRefused}) && status !== 401) {
         // The user has left the project, so no dialog can show: say so once.
         baseSetAlert({severity: 'error', message: t('map_project.leave_save_failed', {name: name || project?.name, detail: errorData?.detail || t('unknown_error')}), duration: 12000})
       } else if(status === 403 && errorData?.error_code) {
-        showLimitRefusal(errorData)
+        setPreviewLimit(toLimitRefusal(errorData))
       } else if(!isAutoSave && status !== 429 && status !== 401) {
         baseSetAlert({severity: 'error', message: errorData?.detail || t('unknown_error'), duration: 8000})
       }
@@ -2015,19 +2027,6 @@ const MapProject = () => {
       autosaveSchedulerRef.current.schedule(reason)
   }
 
-  // The project turns read-only, from a refusal or from the API's notice for
-  // it: the pending autosave is dropped, and nothing autosaves until a save
-  // goes through. A refusal's is stamped, so the route's answer asked for
-  // after it can end it (supersedesRefusal).
-  const enterReadOnly = ({notice, detail}, fromRoute = false) => {
-    readOnlyRef.current = true
-    setIsReadOnly(true)
-    autosaveSchedulerRef.current.cancel()
-    projectNoticeFromRouteRef.current = fromRoute
-    refusedAtRef.current = fromRoute ? null : performance.now()
-    setProjectNotice({notice, detail})
-  }
-
   // Edits kept back while it was read-only are queued for autosave once it
   // isn't, while the page is open: a save that lands after the user left
   // mustn't send the edits they chose to discard. A prompt to discard them,
@@ -2038,62 +2037,23 @@ const MapProject = () => {
       autosaveSchedulerRef.current.schedule('read_only_ended')
   }
 
-  const leaveReadOnly = () => {
-    if(!readOnlyRef.current)
-      return
-    readOnlyRef.current = false
-    setIsReadOnly(false)
-    projectNoticeFromRouteRef.current = false
-    refusedAtRef.current = null
-    setProjectNotice(null)
-    requeueUnsavedEdits()
-  }
-
-  // Takes back what the notices route showed: its strip, and the read-only
-  // state it began.
-  const clearRouteNotice = () => {
-    if(!projectNoticeFromRouteRef.current)
-      return
-    projectNoticeFromRouteRef.current = false
-    refusedAtRef.current = null
-    readOnlyRef.current = false
-    setIsReadOnly(false)
-    setProjectNotice(null)
-    requeueUnsavedEdits()
-  }
-
   // Opens the dialog for a refusal (a 403 body): its notice when it sends one,
   // else today's limit dialog. A read-only refusal also turns the project
   // read-only.
   const showLimitRefusal = (body, phase) => {
     const refusal = toLimitRefusal(body)
     if(refusal.readOnly)
-      enterReadOnly({notice: refusal.notice, detail: refusal.detail})
+      readOnlyLockRef.current.enter({notice: refusal.notice, detail: refusal.detail})
     setPreviewLimit({...refusal, phase})
   }
 
-  // The API's notice for this project (none from an API without the route): a
-  // read-only project shows its strip and saves nothing from the start.
-  // An empty answer takes back what an earlier one showed; a pending or failed
-  // one changes nothing. An answer asked for after a save was refused as
-  // read-only, that locks nothing, ends that read-only state too: the next
-  // refused save shows its refusal again.
-  const resourceNotice = useResourceNotice(project?.url || null)
+  // The API's notice for this project (none from an API without the route),
+  // applied to the read-only lock (applyAnswer), and asked again when the user
+  // comes back to the page while it shows a strip or is read-only: access may
+  // have been restored in another tab.
+  const resourceNotice = useResourceNotice(project?.url || null, isReadOnly || Boolean(projectNotice))
   React.useEffect(() => {
-    if(supersedesRefusal(resourceNotice, refusedAtRef.current))
-      leaveReadOnly()
-    const effect = getResourceNoticeEffect(resourceNotice, projectNoticeFromRouteRef.current)
-    if(effect === 'lock')
-      enterReadOnly({notice: resourceNotice.notice}, true)
-    else if(effect === 'clear')
-      clearRouteNotice()
-    else if(effect === 'show') {
-      clearRouteNotice()
-      if(!readOnlyRef.current) {
-        projectNoticeFromRouteRef.current = true
-        setProjectNotice({notice: resourceNotice.notice})
-      }
-    }
+    readOnlyLockRef.current.applyAnswer(resourceNotice)
   }, [resourceNotice])
 
   // The strip's height, taken off the table's so the page doesn't scroll.
