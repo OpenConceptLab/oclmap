@@ -9,8 +9,9 @@ import ListItemText from '@mui/material/ListItemText'
 import UpIcon from '@mui/icons-material/ArrowDropUp';
 import DownIcon from '@mui/icons-material/ArrowDropDown';
 import { CUSTOM_ENCODER_MODEL_OPTION, DEFAULT_ENCODER_MODEL, ENCODER_MODEL_OPTIONS } from './rerankerModels'
+import { LockedFields } from '../common/NoticeLock'
 
-const RerankerConfig = ({ value, onChange }) => {
+const RerankerConfig = ({ value, onChange, disabled }) => {
   const { t } = useTranslation()
   const [open, setOpen] = React.useState(false)
   const presetOptions = ENCODER_MODEL_OPTIONS.map(model => ({
@@ -42,12 +43,14 @@ const RerankerConfig = ({ value, onChange }) => {
         {t('map_project.reranker_configuration')}
       </Button>
       <Collapse in={open}>
+        <LockedFields>
         <div className='col-xs-12 padding-0'>
           <FormHelperText sx={{ marginBottom: '12px', marginTop: '-4px', paddingLeft: '4px' }}>
             {t('map_project.reranker_configuration_description')}
           </FormHelperText>
           <Autocomplete
             disableClearable
+            disabled={disabled}
             options={options}
             value={selectedOption || null}
             getOptionLabel={option => option?.id || ''}
@@ -84,6 +87,7 @@ const RerankerConfig = ({ value, onChange }) => {
                 label={t('map_project.reranker_configuration_custom_model')}
                 fullWidth
                 required
+                disabled={disabled}
                 error={!value}
                 value={value || ''}
                 placeholder={t('map_project.reranker_configuration_placeholder')}
@@ -91,6 +95,7 @@ const RerankerConfig = ({ value, onChange }) => {
               />
           }
         </div>
+        </LockedFields>
       </Collapse>
     </div>
   )

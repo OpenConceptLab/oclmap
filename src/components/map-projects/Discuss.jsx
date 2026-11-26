@@ -12,6 +12,7 @@ import Typography from '@mui/material/Typography';
 import Tooltip from '@mui/material/Tooltip';
 import TextField from '@mui/material/TextField';
 import Button from '@mui/material/Button'
+import { LockMark, LockTooltip, useEditLock } from '../common/NoticeLock'
 import CommentIcon from '@mui/icons-material/Message';
 import MapIcon from '@mui/icons-material/Link';
 import UnmapIcon from '@mui/icons-material/LinkOff';
@@ -35,6 +36,7 @@ import { canSeeAIInternals } from './aiVisibility'
 
 const Discuss = ({ logs, onAdd }) => {
   const { t } = useTranslation();
+  const lock = useEditLock()
   const [comment, setComment] = React.useState('')
   // An AI recommendation's model, prompt template and template URI are
   // staff-only (ocl_online#254).
@@ -220,6 +222,7 @@ const Discuss = ({ logs, onAdd }) => {
       </div>
       <div className='col-xs-12' style={{padding: '4px 16px'}}>
         <TextField
+          disabled={Boolean(lock)}
           autoFocus
           fullWidth
           multiline
@@ -239,9 +242,11 @@ const Discuss = ({ logs, onAdd }) => {
           }}
         />
     <div className='col-xs-12 padding-0' style={{textAlign: 'right'}}>
-          <Button onClick={onClick} sx={{textTransform: 'none', marginTop: '8px'}} variant='outlined' color='primary' size='small'>
-            {t('map_project.comment')}
-          </Button>
+          <LockTooltip title={lock}>
+            <Button onClick={onClick} disabled={Boolean(lock)} startIcon={lock ? <LockMark /> : undefined} sx={{textTransform: 'none', marginTop: '8px'}} variant='outlined' color='primary' size='small'>
+              {t('map_project.comment')}
+            </Button>
+          </LockTooltip>
         </div>
       </div>
     </>

@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  applyBridgeCanonical,
   getDeclaredLocales,
   getDefaultBridgeRepoVersion,
   getDefaultTargetRepoVersion,
@@ -294,4 +295,55 @@ test('getTargetRepoState: failed when either read failed', () => {
 test('getTargetRepoState: none chosen and nothing loading', () => {
   assert.equal(getTargetRepoState(false, null, null), null)
   assert.equal(getTargetRepoState({ id: '2.81' }, null, null), null)
+})
+
+// A bridge algorithm's source canonical URL arrives after the algorithms were
+// read for the lookup (OpenConceptLab/ocl_online#424).
+const BRIDGE_URL = '/orgs/Example/sources/ExampleBridge/'
+const bridgeAlgos = () => [
+  { __key: 'b', type: 'ocl-bridge', target_repo_url: BRIDGE_URL, target_repo_version: 'v1' },
+  { __key: 'c', type: 'custom', batch_size: 5 },
+]
+const lookUpLater = () => {
+  let settle
+  const reply = new Promise(resolve => { settle = resolve })
+  return { reply, settle }
+}
+
+test('applyBridgeCanonical: a delayed lookup keeps the edits made while it was pending', async () => {
+  let algos = bridgeAlgos()
+  const setAlgos = update => { algos = typeof update === 'function' ? update(algos) : update }
+  const request = { key: 'b', url: BRIDGE_URL, canonical: algos[0].bridge_repo?.canonical_url }
+  const { reply, settle } = lookUpLater()
+  const applied = reply.then(canonical => setAlgos(prev => applyBridgeCanonical(prev, request, canonical)))
+
+  setAlgos(prev => prev.map(algo => algo.__key === 'c' ? { ...algo, batch_size: 9 } : algo))
+  settle('https://example.org/bridge')
+  await applied
+
+  assert.equal(algos[1].batch_size, 9)
+  assert.deepEqual(algos[0].bridge_repo, { canonical_url: 'https://example.org/bridge', canonical_url_source: 'repo' })
+  assert.equal(algos[0].target_repo_version, 'v1')
+})
+
+test('applyBridgeCanonical: a canonical URL entered while it was pending is kept', () => {
+  const request = { key: 'b', url: BRIDGE_URL, canonical: undefined }
+  const algos = bridgeAlgos()
+  algos[0] = { ...algos[0], bridge_repo: { canonical_url: 'https://example.org/typed', canonical_url_source: 'repo' } }
+  assert.equal(applyBridgeCanonical(algos, request, 'https://example.org/bridge'), algos)
+})
+
+test('applyBridgeCanonical: not applied once the algorithm bridges from another source, or is gone', () => {
+  const request = { key: 'b', url: BRIDGE_URL, canonical: undefined }
+  const moved = bridgeAlgos()
+  moved[0] = { ...moved[0], target_repo_url: '/orgs/Example/sources/Other/' }
+  assert.equal(applyBridgeCanonical(moved, request, 'https://example.org/bridge'), moved)
+  const removed = bridgeAlgos().slice(1)
+  assert.equal(applyBridgeCanonical(removed, request, 'https://example.org/bridge'), removed)
+})
+
+test('applyBridgeCanonical: no canonical URL, or no algorithm key, changes nothing', () => {
+  const algos = bridgeAlgos()
+  assert.equal(applyBridgeCanonical(algos, { key: 'b', url: BRIDGE_URL }, null), algos)
+  assert.equal(applyBridgeCanonical(algos, { key: undefined, url: BRIDGE_URL }, 'https://example.org/bridge'), algos)
 })

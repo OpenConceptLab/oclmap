@@ -190,6 +190,7 @@ const AIAssistantSelectorPanel = ({
               label={t('map_project.set_ai_assistant_output_language')}
               control={
                 <Checkbox
+                  disabled={disabled}
                   onChange={onCheckLocale}
                   checked={checkLocale} />
               }
@@ -198,6 +199,7 @@ const AIAssistantSelectorPanel = ({
               checkLocale &&
                 <Autocomplete
                   sx={{marginTop: '12px'}}
+                  disabled={disabled}
                   id="promptTemplateLocale"
                   freeSolo
                   blurOnSelect

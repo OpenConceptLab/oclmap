@@ -13,8 +13,9 @@ import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import { lookupTokenHasSpaces, normalizeLookupConfig } from './lookupConfigFields'
 import { isOCLAPILookupURL, getTokenFlag, tokenInputValue, removeSavedToken } from '../../services/tokenScope'
 import { getAPIURL } from '../../common/utils'
+import { LockedFields } from '../common/NoticeLock'
 
-const LookupConfig = ({value, onChange}) => {
+const LookupConfig = ({value, onChange, disabled}) => {
   const { t } = useTranslation()
   const [open, setOpen] = React.useState(false)
   const [showToken, setShowToken] = React.useState(false)
@@ -30,7 +31,7 @@ const LookupConfig = ({value, onChange}) => {
     return (
       <>
         {t('map_project.lookup_configuration_token_saved')}
-        <Button size='small' variant='text' sx={{textTransform: 'none', minWidth: 0, padding: '0 4px'}} onClick={() => onChange(removeSavedToken(value))}>
+        <Button size='small' variant='text' sx={{textTransform: 'none', minWidth: 0, padding: '0 4px'}} onClick={() => onChange(removeSavedToken(value))} disabled={disabled}>
           {t('map_project.remove_saved_token')}
         </Button>
       </>
@@ -43,6 +44,7 @@ const LookupConfig = ({value, onChange}) => {
           {t('map_project.lookup_configuration')}
         </Button>
       <Collapse in={open}>
+        <LockedFields>
         <div className='col-xs-12 padding-0'>
           <FormHelperText sx={{marginBottom: '12px', marginTop: '-4px', paddingLeft: '4px'}}>
             {t('map_project.lookup_configuration_description')}
@@ -52,6 +54,7 @@ const LookupConfig = ({value, onChange}) => {
               label={t('map_project.lookup_configuration_url')}
               fullWidth
               required
+              disabled={disabled}
               value={value?.url || ''}
               onChange={event => {
                 const url = event.target.value.trim()
@@ -64,6 +67,7 @@ const LookupConfig = ({value, onChange}) => {
               type={showToken ? 'text' : 'password'}
               label={t('map_project.lookup_configuration_token')}
               fullWidth
+              disabled={disabled}
               value={value?.token || ''}
               onChange={event => onChange({...value, token: tokenInputValue(value, event.target.value)})}
               onBlur={() => onChange(normalizeLookupConfig(value))}
@@ -84,6 +88,7 @@ const LookupConfig = ({value, onChange}) => {
             />
           </div>
         </div>
+        </LockedFields>
       </Collapse>
     </div>
   )

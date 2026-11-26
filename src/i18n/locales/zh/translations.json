@@ -362,9 +362,12 @@
     "loading_project": "正在加载项目...",
     "stopping_gracefully": "正在优雅地停止...",
     "stop_processing": "停止处理",
+    "leave_read_only_title": "放弃更改并离开？",
+    "leave_read_only_body": "此项目为只读，自上次保存以来的更改无法保存。离开将丢弃这些更改。",
     "leave_while_running_title": "自动匹配正在运行",
     "leave_while_running_body": "离开此项目会立即停止运行。已匹配的结果会被保存。",
     "leave_while_running_body_unsaved": "此项目尚未保存。离开会立即停止运行，并丢弃该项目及其结果。",
+    "leave_while_running_body_read_only": "离开此项目会立即停止运行。此项目为只读，已匹配的结果不会被保存。",
     "stay": "留下",
     "stop_and_leave": "停止并离开",
     "leave_unsaved_title": "不保存就离开？",
@@ -588,6 +591,12 @@
     "api_version": "API 版本"
   },
   "unknown_error": "未知错误",
+  "limit_notice": {
+    "fallback_title": "请求未完成",
+    "read_only": "只读",
+    "restricted": "受限",
+    "still_works": "仍可使用"
+  },
   "quota": {
     "title_quota": "您已达到配额上限",
     "title_cap": "您已达到使用上限",

@@ -1,3 +1,5 @@
+import { isReadOnlyRefusal } from '../common/limitNotice.js'
+
 export const AUTOSAVE_DELAY_MS = 5000
 
 /**
@@ -11,6 +13,10 @@ export const AUTOSAVE_DELAY_MS = 5000
  * here is what previously let a pending autosave wedge behind a save that
  * had already completed.
  *
+ * isPaused: while true, nothing is scheduled, a pending autosave doesn't fire
+ * and nothing is handed back to save on leave: a read-only project refuses
+ * every save (OpenConceptLab/ocl_online#424).
+ *
  * setTimeoutFn/clearTimeoutFn are injectable so tests can drive a virtual
  * clock instead of waiting out the real debounce window.
  */
@@ -18,6 +24,7 @@ export const createAutosaveScheduler = ({
   getProjectId,
   isSaving,
   onFire,
+  isPaused = () => false,
   delay = AUTOSAVE_DELAY_MS,
   setTimeoutFn = setTimeout,
   clearTimeoutFn = clearTimeout
@@ -43,11 +50,11 @@ export const createAutosaveScheduler = ({
     timer = null
     const pending = reasons
     reasons = []
-    return getProjectId() ? pending : null
+    return getProjectId() && !isPaused() ? pending : null
   }
 
   const schedule = reason => {
-    if(!getProjectId())
+    if(!getProjectId() || isPaused())
       return
 
     reasons = [...new Set([...reasons, reason])]
@@ -56,7 +63,7 @@ export const createAutosaveScheduler = ({
 
     timer = setTimeoutFn(() => {
       timer = null
-      if(!getProjectId()) {
+      if(!getProjectId() || isPaused()) {
         reasons = []
         return
       }
@@ -104,6 +111,43 @@ export const saveOnLeave = ({ scheduler, inFlightSave, save }) => {
   }
   return true
 }
+
+// What sendAfter resolves to when it didn't send.
+export const SAVE_SKIPPED = 'save_skipped'
+
+/**
+ * Sends a save built now once `after`, the save still in flight, settles, so
+ * the older payload can't land after it; at once with nothing in flight. A
+ * queued save is dropped if isBlocked() is true when its turn comes: the save
+ * before it may have turned the project read-only (OpenConceptLab/ocl_online#424).
+ */
+export const sendAfter = (after, send, isBlocked = () => false) => {
+  if(!after)
+    return send()
+  const go = () => isBlocked() ? SAVE_SKIPPED : send()
+  return Promise.resolve(after).then(go, go)
+}
+
+/**
+ * The first thing a finished save's handler does: a refusal of a write to
+ * read-only content (OpenConceptLab/ocl_online#424) is recorded with
+ * onReadOnly(body) before the refusal is shown, or not shown as the page
+ * closes, so a save queued behind this one sees it. Returns whether it was one.
+ */
+export const recordReadOnlyRefusal = (response, onReadOnly) => {
+  const status = response?.response?.status || response?.status
+  const body = response?.response?.data || response?.data
+  if(status !== 403 || !isReadOnlyRefusal(body))
+    return false
+  onReadOnly(body)
+  return true
+}
+
+// A refusal no dialog can show, because the page is gone, is told in a
+// message: a save on leave's, and a read-only refusal of a save the user left
+// while it was in flight. The save queued behind it is dropped (sendAfter),
+// so it's told once.
+export const isToldOnLeave = ({leaving, mounted, readOnlyRefused}) => Boolean(leaving || (readOnlyRefused && !mounted))
 
 // Saves still in flight, by project id. A save on leave outlives the page that
 // started it: reopening that project must wait for it, or the stale copy loads

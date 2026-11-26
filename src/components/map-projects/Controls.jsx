@@ -20,15 +20,18 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import CopyIcon from '@mui/icons-material/CopyAll';
 import JSONIcon from '@mui/icons-material/DataObject';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
+import LockIcon from '@mui/icons-material/LockOutlined';
 import { copyToClipboard } from '../../common/utils'
 import RepoIcon from '../repos/RepoIcon'
+import { LockedIcon, LockTooltip, useEditLock } from '../common/NoticeLock'
 import { getToolbarLayout } from './controlsLayout'
 
 const SHRINKABLE_MIN_WIDTH = 48
 
-const IkonButton = ({title, icon, onClick, color, disabled, id}) => {
+// A locked action's tooltip says why (OpenConceptLab/ocl_online#424).
+const IkonButton = ({title, icon, onClick, color, disabled, id, lock}) => {
   return (
-    <Tooltip title={title} placement='bottom'>
+    <Tooltip title={lock || title} placement='bottom'>
       <span>
         <IconButton
           id={id}
@@ -46,8 +49,11 @@ const IkonButton = ({title, icon, onClick, color, disabled, id}) => {
   )
 }
 
-const Controls = ({project, onDownload, onSave, onDelete, owner, file, isSaving, onImport, importResponse, onDownloadImportReport, onProjectLogsClick, isProjectsLogOpen, configure, setConfigure, isCoreUser, loadingMatches, onCopyClick, autoMatch}) => {
+const Controls = ({project, onDownload, onSave, onDelete, owner, file, isSaving, onImport, importResponse, onDownloadImportReport, onProjectLogsClick, isProjectsLogOpen, configure, setConfigure, isCoreUser, loadingMatches, onCopyClick, autoMatch: autoMatchAction}) => {
   const { t } = useTranslation();
+  // A read-only project's AutoMatch and Save are locked (OpenConceptLab/ocl_online#424).
+  const lock = useEditLock()
+  const autoMatch = autoMatchAction && lock ? {...autoMatchAction, disabled: true, lock} : autoMatchAction
   const toolbarRef = React.useRef(null)
   const overflowButtonRef = React.useRef(null)
   const [downloadAnchorEl, setDownloadAnchorEl] = React.useState(null);
@@ -131,10 +137,11 @@ const Controls = ({project, onDownload, onSave, onDelete, owner, file, isSaving,
     save: {
       key: 'save',
       color: 'secondary',
-      disabled: !owner || !file?.name || isSaving || loadingMatches,
-      icon: <SaveIcon />,
+      disabled: Boolean(lock) || !owner || !file?.name || isSaving || loadingMatches,
+      icon: lock ? <LockedIcon icon={<SaveIcon />} /> : <SaveIcon />,
       onClick: onSave,
-      title: t('map_project.save_this_project')
+      title: t('map_project.save_this_project'),
+      lock
     }
   }
 
@@ -152,7 +159,7 @@ const Controls = ({project, onDownload, onSave, onDelete, owner, file, isSaving,
   const autoMatchInMenu = Boolean(autoMatch) && autoMatchMode === 'menu'
   const hasOverflowActions = hasActions && (hasPersistentOverflowActions || overflowSecondaryActions.length > 0 || saveInMenu || autoMatchInMenu)
   const overflowMenuActions = [
-    ...(autoMatchInMenu ? [{key: 'autoMatch', icon: <AutoMatchIcon />, title: autoMatch.label, disabled: autoMatch.disabled || autoMatch.loading, onClick: autoMatch.onClick}] : []),
+    ...(autoMatchInMenu ? [{key: 'autoMatch', icon: autoMatch.lock ? <LockIcon /> : <AutoMatchIcon />, title: autoMatch.label, lock: autoMatch.lock, disabled: autoMatch.disabled || autoMatch.loading, onClick: autoMatch.onClick}] : []),
     ...overflowSecondaryActions,
     ...(saveInMenu ? [actionsByKey.save] : [])
   ]
@@ -176,7 +183,7 @@ const Controls = ({project, onDownload, onSave, onDelete, owner, file, isSaving,
       <div style={{display: 'flex', flexWrap: 'nowrap', alignItems: 'center', justifyContent: 'flex-end', minWidth: 0}}>
         {
           autoMatch && !autoMatchInMenu && (autoMatchMode === 'compact' ?
-            <Tooltip title={autoMatch.label} placement='bottom'>
+            <Tooltip title={autoMatch.lock || autoMatch.label} placement='bottom'>
               <span>
                 <IconButton
                   aria-label={autoMatch.label}
@@ -186,23 +193,25 @@ const Controls = ({project, onDownload, onSave, onDelete, owner, file, isSaving,
                   onClick={autoMatch.onClick}
                   disabled={autoMatch.disabled || autoMatch.loading}
                 >
-                  {autoMatch.loading ? <CircularProgress size={20} /> : <AutoMatchIcon />}
+                  {autoMatch.loading ? <CircularProgress size={20} /> : (autoMatch.lock ? <LockedIcon icon={<AutoMatchIcon />} /> : <AutoMatchIcon />)}
                 </IconButton>
               </span>
             </Tooltip> :
-            <Button
-              variant='contained'
-              size='small'
-              sx={{textTransform: 'none', margin: '5px', whiteSpace: 'nowrap', flexShrink: 0}}
-              endIcon={<DoubleArrowIcon />}
-              startIcon={<AutoMatchIcon />}
-              disabled={autoMatch.disabled}
-              onClick={autoMatch.onClick}
-              loading={autoMatch.loading}
-              loadingPosition='start'
-            >
-              {autoMatch.label}
-            </Button>
+            <LockTooltip title={autoMatch.lock}>
+              <Button
+                variant='contained'
+                size='small'
+                sx={{textTransform: 'none', margin: '5px', whiteSpace: 'nowrap', flexShrink: 0}}
+                endIcon={<DoubleArrowIcon />}
+                startIcon={autoMatch.lock ? <LockIcon /> : <AutoMatchIcon />}
+                disabled={autoMatch.disabled}
+                onClick={autoMatch.onClick}
+                loading={autoMatch.loading}
+                loadingPosition='start'
+              >
+                {autoMatch.label}
+              </Button>
+            </LockTooltip>
           )
         }
         {
@@ -232,6 +241,7 @@ const Controls = ({project, onDownload, onSave, onDelete, owner, file, isSaving,
               color={actionsByKey.save.color}
               onClick={actionsByKey.save.onClick}
               title={actionsByKey.save.title}
+              lock={actionsByKey.save.lock}
               disabled={actionsByKey.save.disabled}
               icon={actionsByKey.save.icon}
             />
@@ -343,10 +353,12 @@ const Controls = ({project, onDownload, onSave, onDelete, owner, file, isSaving,
       >
         {
           overflowMenuActions.map(action => (
-            <MenuItem key={action.key} onClick={onOverflowActionClick(action)} disabled={action.disabled}>
-              <ListItemIcon>{action.icon}</ListItemIcon>
-              <ListItemText>{action.title}</ListItemText>
-            </MenuItem>
+            <LockTooltip key={action.key} title={action.lock} placement='left' display='block'>
+              <MenuItem onClick={onOverflowActionClick(action)} disabled={action.disabled}>
+                <ListItemIcon>{action.icon}</ListItemIcon>
+                <ListItemText>{action.title}</ListItemText>
+              </MenuItem>
+            </LockTooltip>
           ))
         }
         {

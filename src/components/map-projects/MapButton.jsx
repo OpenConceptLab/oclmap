@@ -15,9 +15,13 @@ import MapIcon from '@mui/icons-material/Link';
 import UnmapIcon from '@mui/icons-material/LinkOff';
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 import { useTranslation } from 'react-i18next';
+import { LockMark, LockTooltip, useEditLock } from '../common/NoticeLock'
 
-const MapButton = ({options, isMapped, onClick, selected, sx, color, variant, simple, mapOnly, usedMapTypes, disabled}) => {
+const MapButton = ({options, isMapped, onClick, selected, sx, color, variant, simple, mapOnly, usedMapTypes, disabled: disabledProp}) => {
   const { t } = useTranslation();
+  const lock = useEditLock()
+  const disabled = Boolean(lock) || disabledProp
+  const mapIcon = lock ? <LockMark /> : (isMapped ? <UnmapIcon fontSize='inherit' /> : <MapIcon fontSize='inherit' />)
   const [open, setOpen] = React.useState(false);
   const anchorRef = React.useRef(null);
   const [mapType, setMapType] = React.useState(selected || 'SAME-AS');
@@ -28,6 +32,10 @@ const MapButton = ({options, isMapped, onClick, selected, sx, color, variant, si
     event.preventDefault()
     event.stopPropagation()
     event.persist()
+    if(disabled) {
+      setOpen(false)
+      return
+    }
 
     setMapType(newMapType || 'SAME-AS');
     setOpen(false);
@@ -55,12 +63,19 @@ const MapButton = ({options, isMapped, onClick, selected, sx, color, variant, si
     setMapType(selected || 'SAME-AS')
   }, [selected])
 
+  // A menu open as the project turns read-only closes (OpenConceptLab/ocl_online#424).
+  React.useEffect(() => {
+    if(disabled)
+      setOpen(false)
+  }, [disabled])
+
   const usedOptions = options?.filter(option => usedMapTypes?.includes(option))
   const recommendedOptions = options?.filter(option => !usedMapTypes?.includes(option) && ['SAME-AS', 'BROADER-THAN', 'NARROWER-THAN'].includes(option))
   const otherOptions = options?.filter(option => !usedOptions?.includes(option) && !recommendedOptions.includes(option))
 
   return (
     <React.Fragment>
+      <LockTooltip title={lock}>
       {
         simple ?
           <Button
@@ -70,7 +85,7 @@ const MapButton = ({options, isMapped, onClick, selected, sx, color, variant, si
             variant={variant || "contained"}
             sx={{textTransform: 'none', whiteSpace: 'nowrap', minWidth: '92px', ...sx}}
             onClick={event => onClick(event, !isMapped, mapType)}
-            startIcon={isMapped ? <UnmapIcon fontSize='inherit' /> : <MapIcon fontSize='inherit' />}
+            startIcon={mapIcon}
           >
             {isMapped ? t('map_project.un_map') : t('map_project.map')}
           </Button> :
@@ -83,10 +98,11 @@ const MapButton = ({options, isMapped, onClick, selected, sx, color, variant, si
               aria-label="select merge strategy"
               aria-haspopup="menu"
               onClick={handleToggle}
+              disabled={disabled}
               color='primary'
               variant="contained"
               sx={{textTransform: 'none', whiteSpace: 'nowrap', ...sx}}
-              startIcon={<MapIcon fontSize='inherit' />}
+              startIcon={lock ? <LockMark /> : <MapIcon fontSize='inherit' />}
               endIcon={<ArrowDropDownIcon fontSize='inherit' />}
               ref={anchorRef}
             >
@@ -99,12 +115,13 @@ const MapButton = ({options, isMapped, onClick, selected, sx, color, variant, si
             aria-label="Button group with a nested menu"
             color={color || (isMapped ? 'error' : 'primary')}
             sx={sx}
+            disabled={disabled}
           >
             <Button
               size='small'
               sx={{textTransform: 'none', whiteSpace: 'nowrap'}}
               onClick={event => onClick(event, !isMapped, mapType)}
-              startIcon={isMapped ? <UnmapIcon fontSize='inherit' /> : <MapIcon fontSize='inherit' />}
+              startIcon={mapIcon}
             >
               {mapType}
             </Button>
@@ -121,6 +138,7 @@ const MapButton = ({options, isMapped, onClick, selected, sx, color, variant, si
           </ButtonGroup>
         )
       }
+      </LockTooltip>
       <Popper
         sx={{
           zIndex: 3,

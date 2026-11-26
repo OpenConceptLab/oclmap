@@ -40,8 +40,10 @@ import APIService from '../../services/APIService';
 import { needsSessionToken, getTokenFlag, tokenInputValue, removeSavedToken } from '../../services/tokenScope';
 import { getRequestLimits, getRequestSettings } from './requestLimits'
 import { dropVersion } from '../../common/utils'
-import { patchSelected, isStaleReply, customCheckReply } from './selectedAlgos'
+import { LockedFields, useEditLock } from '../common/NoticeLock'
+import { patchSelected, customCheckReply } from './selectedAlgos'
 import {
+  applyBridgeCanonical,
   getDefaultBridgeRepoVersion,
   getLatestReleasedBridgeVersion,
   isLLMBridgeRepoVersion
@@ -99,13 +101,15 @@ const fetchBridgeVersions = (url) => {
  *     token?: string,
  *   }>
  *
- * - onChange: (nextValue) => void
+ * - onChange: (nextValue) => void, a state setter: a lookup that settles
+ *   after the selector has unmounted passes it an updater (algos => nextValue)
  *
  * Optional:
  * - title?: string
  * - subtitle?: string
  * - allowDuplicateTypes?: boolean (default false)
  * - getAlgoIcon?: (algo) => ReactNode
+ * - disabled?: boolean: the selection and its settings are shown, not changed
  */
 export default function MultiAlgoSelector({
   algos,
@@ -115,8 +119,10 @@ export default function MultiAlgoSelector({
   repo,
   isCoreUser,
   requestLimits=getRequestLimits(null),
+  disabled=false,
 }) {
   const { t } = useTranslation()
+  const lock = useEditLock()
   // Non-core users get at most 10 rows per batch, and early-access users 5
   // concurrent requests, preview users 2 (ocl_online#274, ocl_issues#2849).
   const { setAlert } = React.useContext(OperationsContext)
@@ -145,6 +151,13 @@ export default function MultiAlgoSelector({
     latestValueRef.current = next
     onChange(next)
   }
+  const mountedRef = React.useRef(false)
+  React.useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
 
   const algosById = useMemo(() => {
     const m = new Map();
@@ -204,12 +217,14 @@ export default function MultiAlgoSelector({
     onChange: e => updateSelected(sel.__key, { batch_size: clampInt(e.target.value, 1, requestLimits.batchSize) }),
     helperText: getLimitHelperText(requestLimits.batchSize),
     slotProps: {htmlInput: {min: 1, max: requestLimits.batchSize}},
+    disabled,
   })
   const getConcurrentRequestsProps = (sel, algo) => ({
     value: getRequestFieldsSettings(sel, algo).concurrentRequests,
     onChange: e => updateSelected(sel.__key, { concurrent_requests: clampInt(e.target.value, 1, requestLimits.concurrentRequests) }),
     helperText: getLimitHelperText(requestLimits.concurrentRequests),
     slotProps: {htmlInput: {min: 1, max: requestLimits.concurrentRequests}},
+    disabled,
   })
 
   const updateSelected = (key, patch) => {
@@ -231,24 +246,42 @@ export default function MultiAlgoSelector({
   // even when the repo has a real canonical (e.g. CIEL -> CIELterminology.org).
   // User-typed values are preserved: the sync only runs once per (key, url),
   // so editing the canonical field afterwards is sticky until the source URL
-  // changes.
+  // changes. A locked selector's bridge settings are left as saved, a lookup
+  // that settles under the lock included, and filled in once it can be
+  // changed (OpenConceptLab/ocl_online#424).
+  const disabledRef = React.useRef(disabled)
+  disabledRef.current = disabled
   const syncedBridgeUrlRef = React.useRef(new Map())
   React.useEffect(() => {
+    if(disabled) return
     for (const sel of value || []) {
       if(!sel?.type?.includes('bridge')) continue
       const url = sel.target_repo_url
       if(!url) continue
       if(syncedBridgeUrlRef.current.get(sel.__key) === url) continue
       syncedBridgeUrlRef.current.set(sel.__key, url)
+      // The reply lands on the algorithms as they are then, not as read here.
+      const request = { key: sel.__key, url, canonical: sel.bridge_repo?.canonical_url }
       fetchBridgeCanonical(url).then(canonical => {
-        // Removed or pointed at another repo while the fetch was pending.
-        if(!canonical || isStaleReply(latestValueRef.current, sel.__key, {target_repo_url: url})) return
-        updateSelected(sel.__key, {
-          bridge_repo: { canonical_url: canonical, canonical_url_source: 'repo' }
-        })
+        if(disabledRef.current) {
+          syncedBridgeUrlRef.current.delete(sel.__key)
+          return
+        }
+        // Mounted, on the list as it is now, like every other change here.
+        // Once Configure has closed (and a new selector may have changed the
+        // list), this one's list can be out of date: through the parent's
+        // setter instead.
+        if(!mountedRef.current) {
+          onChange(algos => applyBridgeCanonical(algos, request, canonical))
+          return
+        }
+        const current = latestValueRef.current
+        const next = applyBridgeCanonical(current, request, canonical)
+        if(next !== current)
+          commitValue(next)
       })
     }
-  }, [value])
+  }, [value, disabled])
 
   React.useEffect(() => {
     for (const sel of value || []) {
@@ -259,7 +292,7 @@ export default function MultiAlgoSelector({
       const loadedVersions = bridgeVersionsByUrl[baseUrl]
       if(Array.isArray(loadedVersions)) {
         const selectedVersion = loadedVersions.find(version => version?.id === sel?.target_repo_version)
-        if(!selectedVersion) {
+        if(!selectedVersion && !disabled) {
           const defaultVersion = getDefaultBridgeRepoVersion(loadedVersions)
           if(defaultVersion?.id && defaultVersion.id !== sel?.target_repo_version) {
             const previousVersion = sel?.target_repo_version
@@ -282,7 +315,7 @@ export default function MultiAlgoSelector({
         setBridgeVersionsLoadedByUrl(prev => ({...prev, [baseUrl]: true}))
       })
     }
-  }, [value, bridgeVersionsByUrl])
+  }, [value, bridgeVersionsByUrl, disabled])
 
   const removeSelected = (key) => {
     commitValue((latestValueRef.current || []).filter((v) => v.__key !== key));
@@ -304,8 +337,10 @@ export default function MultiAlgoSelector({
     });
   };
 
+  // A lock that lands while the picker is open closes it (its key changes),
+  // and a pick made as it lands adds nothing.
   const addAlgo = (algoId) => {
-    if (!algoId) return;
+    if (!algoId || disabled) return;
     const algo = algosById.get(algoId);
     if (!algo) return;
 
@@ -511,18 +546,22 @@ export default function MultiAlgoSelector({
                   </Tooltip>
                 </Box>
 
-                <Tooltip title={t('common.remove')}>
+                <Tooltip title={(disabled && lock) || t('common.remove')}>
+                  <span>
                   <IconButton
                     onClick={() => removeSelected(sel.__key)}
                     color='error'
+                    disabled={disabled}
                   >
                     <DeleteOutlineRoundedIcon />
                   </IconButton>
+                  </span>
                 </Tooltip>
               </Box>
 
               <Collapse in={isOpen} timeout="auto" unmountOnExit>
                 <Divider />
+                <LockedFields>
                 <Box sx={{ p: 2 }}>
                   {/* Common config */}
                   <Stack spacing={2}>
@@ -542,6 +581,7 @@ export default function MultiAlgoSelector({
                           <TextField
                             fullWidth
                             required
+                            disabled={disabled}
                             label={t('map_project.api_url')}
                             value={sel.url || ""}
                             onChange={(e) => {
@@ -567,6 +607,7 @@ export default function MultiAlgoSelector({
                           <TextField
                             fullWidth
                             required={Boolean(customMeta.tokenRequired || needsSessionToken(sel))}
+                            disabled={disabled}
                             type='password'
                             label={t('map_project.api_token')}
                             value={sel.token || ""}
@@ -591,7 +632,7 @@ export default function MultiAlgoSelector({
                                 <>
                                   {customMeta.tokenRequired && !sel.token ? 'Authentication is required for this algorithm.' : t('map_project.api_token_saved')}
                                   {needsSessionToken(sel) && (
-                                    <Button size='small' variant='text' sx={{textTransform: 'none', minWidth: 0, padding: '0 4px'}} onClick={() => updateSelected(sel.__key, removeSavedToken(sel))}>
+                                    <Button size='small' variant='text' sx={{textTransform: 'none', minWidth: 0, padding: '0 4px'}} onClick={() => updateSelected(sel.__key, removeSavedToken(sel))} disabled={disabled}>
                                       {t('map_project.remove_saved_token')}
                                     </Button>
                                   )}
@@ -603,6 +644,7 @@ export default function MultiAlgoSelector({
                             <TextField
                               sx={{width: '50%'}}
                               required
+                              disabled={disabled}
                               label={t('common.id')}
                               value={sel.id || ''}
                               onChange={(e) =>
@@ -614,6 +656,7 @@ export default function MultiAlgoSelector({
                             <TextField
                               sx={{width: '50%'}}
                               required
+                              disabled={disabled}
                               label={t('common.name')}
                               value={sel.name || ''}
                               onChange={(e) =>
@@ -627,6 +670,7 @@ export default function MultiAlgoSelector({
                           </Stack>
                           <TextField
                             fullWidth
+                            disabled={disabled}
                             label={t('common.description')}
                             value={sel.description || ''}
                             onChange={(e) =>
@@ -636,6 +680,7 @@ export default function MultiAlgoSelector({
                           <TextField
                             fullWidth
                             required
+                            disabled={disabled}
                             label={t('map_project.algo_canonical_url', 'Canonical URL')}
                             value={sel.canonical_url || ''}
                             onChange={(e) => updateSelected(sel.__key, { canonical_url: e.target.value || '' })}
@@ -708,6 +753,7 @@ export default function MultiAlgoSelector({
                                 <>
                             <TextField
                               fullWidth
+                              disabled={disabled}
                               label={t('map_project.bridge_source_url', 'Bridge Source URL')}
                               value={bridgeSourceUrl}
                               onChange={(e) => updateSelected(sel.__key, { target_repo_url: e.target.value, target_repo_version: '' })}
@@ -716,6 +762,7 @@ export default function MultiAlgoSelector({
                             />
                             <TextField
                               fullWidth
+                              disabled={disabled}
                               label={t('map_project.bridge_canonical_url', 'Bridge Canonical URL')}
                               value={sel.bridge_repo?.canonical_url || ''}
                               onChange={(e) => updateSelected(sel.__key, {
@@ -730,6 +777,7 @@ export default function MultiAlgoSelector({
                             />
                             <RepoVersionSearchAutocomplete
                               versions={bridgeVersions}
+                              disabled={disabled}
                               label={t('common.version')}
                               size='small'
                               value={selectedBridgeVersion}
@@ -776,7 +824,7 @@ export default function MultiAlgoSelector({
                           onChange={(e) => updateSelected(sel.__key, { id: e.target.value || '' })}
                           error={Boolean(errors[sel.__key]?.id)}
                           helperText={errors[sel.__key]?.id ? t('map_project.algo_conflicting_id') : ''}
-                          disabled={algo.provider === 'ocl'}
+                          disabled={disabled || algo.provider === 'ocl'}
                         />
                         <TextField
                           label={t('map_project.batch_size')}
@@ -794,6 +842,7 @@ export default function MultiAlgoSelector({
                     )}
                   </Stack>
                 </Box>
+                </LockedFields>
               </Collapse>
             </Paper>
           );
@@ -806,7 +855,7 @@ export default function MultiAlgoSelector({
             borderRadius: 2,
             p: 1.25,
             borderStyle: "dashed",
-            opacity: canAddMore ? 1 : 0.6,
+            opacity: canAddMore && !disabled ? 1 : 0.6,
           }}
         >
           <Stack direction="row" spacing={1} sx={{alignItems: 'center'}}>
@@ -814,7 +863,8 @@ export default function MultiAlgoSelector({
               <AddRoundedIcon />
             </Box>
 
-            <FormControl fullWidth size="small" disabled={!canAddMore}>
+            <FormControl key={disabled ? 'locked' : 'open'} fullWidth size="small" disabled={disabled || !canAddMore}>
+              <LockedFields>
               <Select
                 displayEmpty
                 value=""
@@ -853,6 +903,7 @@ export default function MultiAlgoSelector({
                   })
                 }
               </Select>
+              </LockedFields>
             </FormControl>
           </Stack>
         </Paper>

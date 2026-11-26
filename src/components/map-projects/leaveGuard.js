@@ -5,15 +5,44 @@
 export const isUnsavedNewProject = ({projectId, hasInput}) => !projectId && Boolean(hasInput)
 
 // In-app navigation unmounts the page, which saves a saved project's pending
-// change, so only a run or an unsaved new project needs asking first.
-export const shouldAskBeforeLeaving = ({runActive, projectId, hasInput}) =>
-  Boolean(runActive) || isUnsavedNewProject({projectId, hasInput})
+// change, so only a run, an unsaved new project or a read-only project's edits
+// need asking first. A read-only project saves nothing (OpenConceptLab/ocl_online#424):
+// leaving it discards the edits no save kept, the refused one's included. A
+// refusal alone leaves nothing to lose.
+export const shouldAskBeforeLeaving = ({runActive, projectId, hasInput, readOnly, unsavedEdits}) =>
+  Boolean(runActive) || isUnsavedNewProject({projectId, hasInput}) || Boolean(readOnly && unsavedEdits)
 
 // Closing the tab or opening another site gets no unmount save: ask while a
 // change waits for autosave, a save is in flight, the last save failed, or
-// Configure is open with changes.
-export const shouldWarnBeforeUnload = ({pendingAutosave, saveInFlight, saveFailed, configChanged, runActive, projectId, hasInput}) =>
-  Boolean(pendingAutosave || saveInFlight || saveFailed || configChanged) || shouldAskBeforeLeaving({runActive, projectId, hasInput})
+// Configure is open with changes, and as in-app navigation does. A read-only
+// project's pending autosave and failed save are its edits, asked about
+// through them.
+export const shouldWarnBeforeUnload = ({pendingAutosave, saveInFlight, saveFailed, configChanged, runActive, projectId, hasInput, readOnly, unsavedEdits}) =>
+  Boolean(saveInFlight || configChanged || (!readOnly && (pendingAutosave || saveFailed))) ||
+  shouldAskBeforeLeaving({runActive, projectId, hasInput, readOnly, unsavedEdits})
+
+// What the dialog for leaving a running AutoMatch says becomes of its
+// matches: a new project's are discarded with it, a read-only project's can't
+// be saved, and an editable project's are saved as it stops.
+export const getRunLeaveMessageKey = ({projectId, readOnly}) => {
+  if(!projectId)
+    return 'map_project.leave_while_running_body_unsaved'
+  return readOnly ? 'map_project.leave_while_running_body_read_only' : 'map_project.leave_while_running_body'
+}
+
+// Which edits a save kept: edited() counts an edit, saving() marks the edits a
+// save's payload holds as it's built, and saved(mark) once that save went
+// through. hasUnsaved() while an edit came after the last save kept.
+export const createEditTracker = () => {
+  let edits = 0
+  let kept = 0
+  return {
+    edited: () => { edits += 1 },
+    saving: () => edits,
+    saved: mark => { kept = Math.max(kept, mark) },
+    hasUnsaved: () => edits > kept,
+  }
+}
 
 // Holds in-app navigation, unless isAllowed, and hands it to onBlocked as
 // {location, action}. Returns the unblock function.

@@ -13,7 +13,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { createAutosaveScheduler, createLatestSender, saveOnLeave, trackSave, whenSaved, hasSaveInFlight, AUTOSAVE_DELAY_MS } from '../autosave.js'
+import { createAutosaveScheduler, createLatestSender, isToldOnLeave, recordReadOnlyRefusal, saveOnLeave, sendAfter, trackSave, whenSaved, hasSaveInFlight, AUTOSAVE_DELAY_MS, SAVE_SKIPPED } from '../autosave.js'
+import { createEditTracker, shouldAskBeforeLeaving, shouldWarnBeforeUnload } from '../leaveGuard.js'
 
 // Virtual clock standing in for setTimeout/clearTimeout. Timers scheduled
 // while the clock is being advanced land in a later window, as real timers
@@ -49,13 +50,14 @@ const createFakeClock = () => {
 
 // Mirrors how MapProject.jsx wires the scheduler: project id and isSaving are
 // read through getters backed by refs, so the test can move them mid-window.
-const setup = ({ projectId = 'project-1', saving = false } = {}) => {
+const setup = ({ projectId = 'project-1', saving = false, paused = false } = {}) => {
   const clock = createFakeClock()
-  const state = { projectId, saving }
+  const state = { projectId, saving, paused }
   const saves = []
   const scheduler = createAutosaveScheduler({
     getProjectId: () => state.projectId,
     isSaving: () => state.saving,
+    isPaused: () => state.paused,
     onFire: reasons => saves.push(reasons),
     setTimeoutFn: clock.setTimeoutFn,
     clearTimeoutFn: clock.clearTimeoutFn
@@ -194,7 +196,242 @@ test('autosave: takePending() is null with nothing pending, or once the project 
   assert.equal(scheduler.hasPending(), false)
 })
 
+// A read-only project refuses every save (OpenConceptLab/ocl_online#424).
+
+test('autosave paused: scheduling is a no-op while the project is read-only', () => {
+  const { scheduler, clock, saves } = setup({ paused: true })
+
+  scheduler.schedule('decision_change')
+
+  assert.equal(scheduler.hasPending(), false)
+  clock.tick(DELAY * 2)
+  assert.equal(saves.length, 0, 'a read-only project must never autosave')
+})
+
+test('autosave paused: a pending autosave doesn\'t fire once the project turns read-only', () => {
+  const { scheduler, clock, state, saves } = setup()
+
+  scheduler.schedule('decision_change')
+  state.paused = true
+  clock.tick(DELAY)
+
+  assert.equal(saves.length, 0, 'no save once read-only')
+  assert.deepEqual(scheduler.pendingReasons(), [], 'queued reasons must be cleared')
+})
+
+test('autosave paused: nothing is handed back to save on leave', () => {
+  const { scheduler, clock, state, saves } = setup()
+
+  scheduler.schedule('auto_match')
+  state.paused = true
+
+  assert.equal(scheduler.takePending(), null)
+  assert.equal(saveOnLeave({ scheduler, inFlightSave: null, save: reasons => saves.push(reasons) }), false)
+  clock.tick(DELAY * 2)
+  assert.equal(saves.length, 0)
+})
+
+test('autosave paused: scheduling works again once the project is editable', () => {
+  const { scheduler, clock, state, saves } = setup({ paused: true })
+
+  scheduler.schedule('decision_change')
+  state.paused = false
+  scheduler.schedule('bulk_decision')
+  clock.tick(DELAY)
+
+  assert.deepEqual(saves, [['bulk_decision']], 'only what was scheduled while editable is saved')
+})
+
+// The edit locks can't cover an edit made before the project turned read-only:
+// the notice that lands inside the autosave window, or the save refused as
+// read-only. Wired as MapProject.jsx wires them: each edit is counted as it
+// schedules, the lock cancels the pending autosave, and the lock's end
+// requeues what no save kept.
+const setupReadOnlyEdits = () => {
+  const { scheduler, clock, state, saves } = setup()
+  const edits = createEditTracker()
+  const edit = reason => {
+    edits.edited()
+    scheduler.schedule(reason)
+  }
+  const lock = () => {
+    state.paused = true
+    scheduler.cancel()
+  }
+  const unlock = () => {
+    state.paused = false
+    if(edits.hasUnsaved())
+      scheduler.schedule('read_only_ended')
+  }
+  const leaveState = () => ({runActive: false, projectId: state.projectId, hasInput: true, readOnly: state.paused, unsavedEdits: edits.hasUnsaved()})
+  const unloadState = () => ({...leaveState(), pendingAutosave: scheduler.hasPending(), saveInFlight: false, saveFailed: false})
+  return { scheduler, clock, saves, edits, edit, lock, unlock, leaveState, unloadState }
+}
+
+test('a notice that locks the project inside the autosave window keeps the edit, and both guards ask before leaving', () => {
+  const { scheduler, clock, saves, edit, lock, leaveState, unloadState } = setupReadOnlyEdits()
+
+  edit('note_change')
+  lock()
+  clock.tick(DELAY)
+
+  assert.equal(saves.length, 0, 'the lock dropped the autosave')
+  assert.equal(scheduler.takePending(), null, 'so leaving has nothing to save')
+  assert.equal(shouldAskBeforeLeaving(leaveState()), true, 'in-app navigation asks')
+  assert.equal(shouldWarnBeforeUnload(unloadState()), true, 'closing or reloading the tab warns')
+})
+
+test('a save refused as read-only keeps its edits once the refusal is dismissed, and both guards ask', () => {
+  const { edits, edit, lock, leaveState, unloadState } = setupReadOnlyEdits()
+
+  edit('decision_change')
+  edits.saving() // the autosave's payload, refused: saved() is never called
+  lock()
+
+  assert.equal(shouldAskBeforeLeaving(leaveState()), true)
+  assert.equal(shouldWarnBeforeUnload({...unloadState(), saveFailed: true}), true)
+})
+
+test('once the lock ends, the edits it kept back autosave, and leaving asks nothing more', () => {
+  const { clock, saves, edits, edit, lock, unlock, leaveState } = setupReadOnlyEdits()
+
+  edit('note_change')
+  lock()
+  unlock()
+  clock.tick(DELAY)
+
+  assert.deepEqual(saves, [['read_only_ended']])
+  edits.saved(edits.saving())
+  assert.equal(shouldAskBeforeLeaving(leaveState()), false)
+})
+
+test('a lock with no edit before it asks nothing on leave', () => {
+  const { lock, unlock, clock, saves, leaveState, unloadState } = setupReadOnlyEdits()
+
+  lock()
+  assert.equal(shouldAskBeforeLeaving(leaveState()), false)
+  assert.equal(shouldWarnBeforeUnload(unloadState()), false)
+  unlock()
+  clock.tick(DELAY)
+  assert.equal(saves.length, 0, 'nothing to requeue')
+})
+
 const nextTick = () => new Promise(resolve => setTimeout(resolve, 0))
+
+const deferred = () => {
+  let resolve, reject
+  const promise = new Promise((res, rej) => { resolve = res; reject = rej })
+  return { promise, resolve, reject }
+}
+
+test('sendAfter: a queued save sends once the save in flight settles, and not before', async () => {
+  const inFlight = deferred()
+  const sent = []
+  const result = sendAfter(inFlight.promise, () => { sent.push('queued'); return 'response' })
+  await nextTick()
+  assert.deepEqual(sent, [], 'waits for the save in flight')
+  inFlight.resolve()
+  assert.equal(await result, 'response')
+  assert.deepEqual(sent, ['queued'])
+})
+
+test('sendAfter: a queued save is dropped when the save before it turned the project read-only', async () => {
+  const inFlight = deferred()
+  const state = { readOnly: false }
+  const sent = []
+  const result = sendAfter(inFlight.promise, () => sent.push('queued'), () => state.readOnly)
+  // the save in flight is refused as read-only, which turns the project read-only, then settles
+  state.readOnly = true
+  inFlight.resolve({ status: 403 })
+  assert.equal(await result, SAVE_SKIPPED)
+  assert.deepEqual(sent, [], 'no second save once read-only')
+})
+
+test('sendAfter: a queued save still sends after the save in flight fails for another reason', async () => {
+  const inFlight = deferred()
+  const sent = []
+  const result = sendAfter(inFlight.promise, () => { sent.push('queued'); return 'response' }, () => false)
+  inFlight.reject(new Error('network'))
+  assert.equal(await result, 'response')
+  assert.deepEqual(sent, ['queued'])
+})
+
+const READ_ONLY_REFUSAL = {response: {status: 403, data: {error_code: 'content_read_only', detail: 'Example detail.'}}}
+
+test('recordReadOnlyRefusal: records a read-only refusal, and nothing else', () => {
+  const recorded = []
+  assert.equal(recordReadOnlyRefusal(READ_ONLY_REFUSAL, body => recorded.push(body.detail)), true)
+  assert.equal(recordReadOnlyRefusal({status: 403, data: {error_code: 'content_read_only', detail: 'Other detail.'}}, body => recorded.push(body.detail)), true)
+  assert.deepEqual(recorded, ['Example detail.', 'Other detail.'])
+  for(const response of [
+    {response: {status: 403, data: {error_code: 'example_limit_reached'}}},
+    {response: {status: 400, data: {error_code: 'content_read_only'}}},
+    {status: 200, data: {id: 7}},
+    undefined,
+  ])
+    assert.equal(recordReadOnlyRefusal(response, () => recorded.push('no')), false, JSON.stringify(response))
+  assert.equal(recorded.length, 2)
+})
+
+test('two leave saves: once the first is refused as read-only, the one queued behind it isn\'t sent', async () => {
+  const state = { readOnly: false }
+  const sent = []
+  const shown = []
+  // onSave's response handler for a save on leave: the refusal is recorded
+  // first, then shown as the page closes (a message, never the dialog)
+  const handle = response => {
+    if(response === SAVE_SKIPPED)
+      return 'skipped'
+    recordReadOnlyRefusal(response, () => { state.readOnly = true })
+    shown.push('leave message')
+    return false
+  }
+  const save = (after, name) => sendAfter(after, () => { sent.push(name); return Promise.resolve(READ_ONLY_REFUSAL) }, () => state.readOnly).then(handle)
+  const first = save(null, 'first')
+  const second = save(first, 'second')
+  assert.equal(await first, false)
+  assert.equal(await second, 'skipped')
+  assert.deepEqual(sent, ['first'], 'only the first save is sent')
+  assert.deepEqual(shown, ['leave message'], 'the refusal is told once')
+})
+
+test('a save in flight as the user left, refused as read-only, is told once; the save queued behind it isn\'t sent', async () => {
+  const state = { readOnly: false, mounted: true }
+  const sent = []
+  const told = []
+  // onSave's response handler: the refusal is recorded first, then told in a
+  // message when no dialog can show
+  const handle = leaving => response => {
+    if(response === SAVE_SKIPPED)
+      return 'skipped'
+    const readOnlyRefused = recordReadOnlyRefusal(response, () => { state.readOnly = true })
+    if(isToldOnLeave({leaving, mounted: state.mounted, readOnlyRefused}))
+      told.push('leave message')
+    return false
+  }
+  const inFlight = deferred()
+  // an autosave in flight, then the user leaves with another edit: a save on leave queued behind it
+  const autosave = sendAfter(null, () => { sent.push('autosave'); return inFlight.promise }).then(handle(false))
+  const leaveSave = sendAfter(autosave, () => { sent.push('leave'); return Promise.resolve(READ_ONLY_REFUSAL) }, () => state.readOnly).then(handle(true))
+  state.mounted = false
+  inFlight.resolve(READ_ONLY_REFUSAL)
+  assert.equal(await leaveSave, 'skipped')
+  assert.deepEqual(sent, ['autosave'])
+  assert.deepEqual(told, ['leave message'], 'told once, by the save in flight')
+})
+
+test('isToldOnLeave: a save on leave, or a read-only refusal once the page is gone', () => {
+  assert.equal(isToldOnLeave({leaving: true, mounted: false, readOnlyRefused: false}), true)
+  assert.equal(isToldOnLeave({leaving: false, mounted: false, readOnlyRefused: true}), true)
+  assert.equal(isToldOnLeave({leaving: false, mounted: true, readOnlyRefused: true}), false, 'the page shows its dialog')
+  assert.equal(isToldOnLeave({leaving: false, mounted: false, readOnlyRefused: false}), false, 'other autosave failures stay quiet, as before')
+})
+
+test('sendAfter: with nothing in flight it sends at once', () => {
+  const sent = []
+  assert.equal(sendAfter(null, () => { sent.push('now'); return 'response' }, () => true), 'response')
+  assert.deepEqual(sent, ['now'], 'the immediate path is gated by the caller, not here')
+})
 
 test('saveOnLeave: saves a pending change as the page closes instead of dropping it', async () => {
   const { scheduler, clock, saves } = setup()
@@ -332,12 +569,6 @@ test('trackSave: an older save settling does not untrack a newer one for the sam
 // that waited out a 429 could land after a newer one and overwrite it; so one
 // POST at a time, and triggers during it coalesce into one more, which reads
 // the log as it is then.
-
-const deferred = () => {
-  let resolve
-  const promise = new Promise(r => { resolve = r })
-  return {promise, resolve}
-}
 
 test('createLatestSender: one trigger sends once', async () => {
   let sends = 0

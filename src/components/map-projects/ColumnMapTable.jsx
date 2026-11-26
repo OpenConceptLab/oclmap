@@ -70,9 +70,11 @@ const HeaderAutocomplete = ({headers, isValid, ...rest}) => {
 }
 
 
-const TargetSourceAutoComplete = ({sources, possibleValue, selected, onChange, ...rest}) => {
+const TargetSourceAutoComplete = ({sources, possibleValue, selected, onChange, disabled, ...rest}) => {
+  // The likely source is picked for a field that has none, unless the
+  // project can't be changed.
   React.useEffect(() => {
-    if(possibleValue && !selected) {
+    if(possibleValue && !selected && !disabled) {
       const possibleSource = find(sources, source => {
         let matched = source.id.toLowerCase().match(possibleValue.toLowerCase())
         if(!matched)
@@ -99,6 +101,7 @@ const TargetSourceAutoComplete = ({sources, possibleValue, selected, onChange, .
            options={orderBy(sources, 'id')}
            value={selected ? find(sources, {url: selected}) || '' : ''}
            onChange={(event, val) => onChange(val?.url)}
+           disabled={disabled}
            {...rest}
          />
 }
@@ -107,7 +110,7 @@ const ColumnMapTable = ({
   validColumns, columns, isValid, onUpdate, sx, mappedSources, targetSourcesFromRows,
   setColumnVisibilityModel, columnVisibilityModel,
   setAIAssistantColumns, AIAssistantColumns,
-  inAIAssistantGroup
+  inAIAssistantGroup, disabled
 }) => {
   const { t } = useTranslation();
   const [random, setRandom] = React.useState(0)
@@ -158,6 +161,7 @@ const ColumnMapTable = ({
                       value={column.label}
                       id={position.toString()}
                       isValid={isValidColumn}
+                      disabled={disabled}
                       onChange={(event, value) => onValChange(position, value?.label || value)}
                     />
                     {
@@ -180,6 +184,7 @@ const ColumnMapTable = ({
                                     sources={mappedSources}
                                     possibleValue={target}
                                     selected={get(column.targetSource, target)}
+                                    disabled={disabled}
                                     onChange={value => onValChange(position, {...column.targetSource, [target]: value}, 'targetSource')}
                                   />
                                 </div>
@@ -198,6 +203,7 @@ const ColumnMapTable = ({
                             sources={mappedSources}
                             possibleValue={targetSourcesFromRows[column.dataKey]}
                             selected={get(column.targetSource, targetSourcesFromRows[column.dataKey])}
+                            disabled={disabled}
                             onChange={value => onValChange(position, {...column.targetSource, [targetSourcesFromRows[column.dataKey]]: value}, 'targetSource')}
                           />
                         </div>
@@ -205,12 +211,12 @@ const ColumnMapTable = ({
                   </>
                 </TableCell>
                 <TableCell align='center'>
-                  <Switch size="small" checked={!isHidden} onChange={() => setColumnVisibilityModel(isHidden ? omit(columnVisibilityModel, [column.dataKey]) : {...columnVisibilityModel, [column.dataKey]: false})}/>
+                  <Switch size="small" disabled={disabled} checked={!isHidden} onChange={() => setColumnVisibilityModel(isHidden ? omit(columnVisibilityModel, [column.dataKey]) : {...columnVisibilityModel, [column.dataKey]: false})}/>
                 </TableCell>
                 {
                   inAIAssistantGroup &&
                     <TableCell align='center'>
-                      <Switch size="small" checked={!sendToAIAssistant} onChange={() => setAIAssistantColumns(sendToAIAssistant ? omit(AIAssistantColumns, [column.dataKey]) : {...AIAssistantColumns, [column.dataKey]: false})}/>
+                      <Switch size="small" disabled={disabled} checked={!sendToAIAssistant} onChange={() => setAIAssistantColumns(sendToAIAssistant ? omit(AIAssistantColumns, [column.dataKey]) : {...AIAssistantColumns, [column.dataKey]: false})}/>
                     </TableCell>
                 }
               </TableRow>

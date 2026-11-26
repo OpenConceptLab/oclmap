@@ -92,8 +92,8 @@ import Controls from './Controls'
 import DataGridControls from './DataGridControls'
 import { getPreviewEligibleRowIndexes, getRowsToProcess, countAIOnlyRows, getAutoMatchAIOnOpen, takeRunRows, clearRunRowStatuses, canRunAlgorithm, spendsMatchQuota, shouldStopAIStep, getAIRequestIdempotencyKey, getCandidatePoolFingerprint, hasCurrentAnalysis, getScispacyRowResults, getPendingRowLookups, waitForLookups, AI_LOOKUP_WAIT_MS, RERANK_LOOKUP_WAIT_MS, RERANK_MAX_IN_FLIGHT, isScispacyWarmingUp } from './autoMatchRows'
 import { aiOnByDefault, getMaxRunRows, getMapperSettings } from '@openconceptlab/oclmap-extensions'
-import { createAutosaveScheduler, createLatestSender, saveOnLeave, trackSave, whenSaved, installUnloadGuard } from './autosave'
-import { blockLeaving, continueLeaving, createRunClosers, isUnsavedNewProject, shouldAskBeforeLeaving, shouldWarnBeforeUnload } from './leaveGuard'
+import { createAutosaveScheduler, createLatestSender, isToldOnLeave, recordReadOnlyRefusal, saveOnLeave, sendAfter, trackSave, whenSaved, installUnloadGuard, SAVE_SKIPPED } from './autosave'
+import { blockLeaving, continueLeaving, createEditTracker, createRunClosers, getRunLeaveMessageKey, isUnsavedNewProject, shouldAskBeforeLeaving, shouldWarnBeforeUnload } from './leaveGuard'
 import { editProposed, getColumnsSnapshot } from './unsavedEdits'
 import MatchSummaryCard from './MatchSummaryCard'
 import MappingDecisionResult from './MappingDecisionResult'
@@ -113,6 +113,11 @@ import AutoMatchDialog from './AutoMatchDialog'
 import PreviewLimitDialog from './PreviewLimitDialog'
 import QuotaDialog from '../common/QuotaDialog'
 import { getQuotaError } from '../common/quotaErrors'
+import LimitNotice from '../common/LimitNotice.jsx'
+import { EditLockContext, LockMark, LockTooltip } from '../common/NoticeLock'
+import useResourceNotice from '../common/useResourceNotice'
+import { createReadOnlyLock } from './readOnlyLock'
+import { toLimitRefusal } from '../common/limitNotice.js'
 import MapperQuotaChip from './MapperQuotaChip'
 import MapProjectBreadcrumb from './MapProjectBreadcrumb'
 import { getPreviewLimitError, isAIPreviewLimitError, isPreviewLimitError } from './previewLimits'
@@ -318,7 +323,7 @@ const MapProject = () => {
   const ownNavigationRef = React.useRef(false)
   const refreshRowStageSnapshotRef = React.useRef({});
 
-  const [previewLimit, setPreviewLimit] = React.useState(null) // {errorCode, capability, phase} or null
+  const [previewLimit, setPreviewLimit] = React.useState(null) // {errorCode, capability, owner, notice, detail, readOnly, phase} or null
   const previewLimitQuota = previewLimit ? getQuotaError({error_code: previewLimit.errorCode}) : null
 
   const [row, setRow] = React.useState(false)
@@ -376,10 +381,36 @@ const MapProject = () => {
   const autosaveSchedulerRef = React.useRef(null)
   // Set when a save fails, cleared when one succeeds: the change is still unsaved.
   const lastSaveFailedRef = React.useRef(false)
+  // Set while the project is read-only (OpenConceptLab/ocl_online#424): the API
+  // refuses every save, so nothing autosaves or saves on leave. A save that
+  // goes through clears it. readOnlyLockRef keeps it (createReadOnlyLock),
+  // with the strip at the top of the project: {notice, detail}, or null.
+  const readOnlyRef = React.useRef(false)
+  const [isReadOnly, setIsReadOnly] = React.useState(false)
+  const [projectNotice, setProjectNotice] = React.useState(null)
+  // Renews a lookup of the notices route in flight (useResourceNotice): after a refusal
+  const renewNoticeRef = React.useRef(() => {})
+  const readOnlyLockRef = React.useRef(null)
+  if(!readOnlyLockRef.current)
+    readOnlyLockRef.current = createReadOnlyLock({
+      onChange: ({readOnly, strip}) => {
+        readOnlyRef.current = readOnly
+        setIsReadOnly(readOnly)
+        setProjectNotice(strip)
+      },
+      onLock: () => autosaveSchedulerRef.current.cancel(),
+      onUnlock: () => requeueUnsavedEdits(),
+      onRefused: () => renewNoticeRef.current(),
+    })
+  // The edits no save has kept yet, which leaving a read-only project loses.
+  const editTrackerRef = React.useRef(null)
+  if(!editTrackerRef.current)
+    editTrackerRef.current = createEditTracker()
   if(!autosaveSchedulerRef.current)
     autosaveSchedulerRef.current = createAutosaveScheduler({
       getProjectId: () => projectIdRef.current,
       isSaving: () => Boolean(inFlightSaveRef.current),
+      isPaused: () => readOnlyRef.current,
       onFire: reasons => onSaveRef.current({source: 'auto', closeConfigure: false, reasons})
     })
   const [filterModel, setFilterModel] = React.useState({ items: [] });
@@ -481,9 +512,7 @@ const MapProject = () => {
         saveInFlight: inFlightSaveRef.current,
         saveFailed: lastSaveFailedRef.current,
         configChanged: hasUnsavedConfiguration(),
-        runActive: isRunActiveRef.current,
-        projectId: projectIdRef.current,
-        hasInput: hasInputRef.current,
+        ...getLeaveState(),
       })
       if(!warn)
         return
@@ -493,6 +522,16 @@ const MapProject = () => {
     window.addEventListener('beforeunload', warnIfUnsaved)
     return () => window.removeEventListener('beforeunload', warnIfUnsaved)
   }, [])
+
+  // What leaving would lose, read as the user leaves, for the in-app guard and
+  // the unload one alike. Configure's changes count before it closes.
+  const getLeaveState = () => ({
+    runActive: isRunActiveRef.current,
+    projectId: projectIdRef.current,
+    hasInput: hasInputRef.current,
+    readOnly: readOnlyRef.current,
+    unsavedEdits: editTrackerRef.current.hasUnsaved() || hasUnsavedConfiguration(),
+  })
 
   // Closing the tab stops a run too, and closes its record.
   React.useEffect(() => {
@@ -1736,7 +1775,7 @@ const MapProject = () => {
 
   const onSave = (options = {}) => {
     const isAutoSave = options.source === 'auto'
-    if(isAutoSave && !project?.id)
+    if(isAutoSave && (!project?.id || readOnlyRef.current))
       return
     if(!isAutoSave)
       autosaveSchedulerRef.current.cancel()
@@ -1755,6 +1794,7 @@ const MapProject = () => {
     }
     const rowLogsForSave = options.logs || logsRef.current
     const projectLogsForSave = options.projectLogs || projectLogsRef.current
+    const editsInSave = editTrackerRef.current.saving()
     setIsSaving(true)
     const f = getFileObjectFromRows()
     const selected = buildMatchEntries(map(data, row => row.__index), mapSelected, notes, (data, i) => {
@@ -1816,7 +1856,10 @@ const MapProject = () => {
     const isUpdate = Boolean(project?.id)
     if(!isAutoSave)
       GAService.recordUpsertEvent('MapProject', isUpdate, 'map_project')
+    // The read-only lock this save was sent under (readOnlyLockRef)
+    let sentUnder = null
     const send = () => {
+      sentUnder = readOnlyLockRef.current.stampSend()
       const service = APIService.new().overrideURL(owner).appendToUrl('map-projects/')
       if(isUpdate)
         return service.appendToUrl(project.id + '/')
@@ -1824,8 +1867,9 @@ const MapProject = () => {
       return service.post(formData, null, {"Content-Type": "multipart/form-data"}, undefined, true)
     }
     // options.after: a save still in flight. This payload is built now and
-    // sent once that settles, so the older one can't land after it.
-    const service = options.after ? Promise.resolve(options.after).then(send, send) : send()
+    // sent once that settles, so the older one can't land after it, unless
+    // that one turned the project read-only.
+    const service = sendAfter(options.after, send, () => isAutoSave && readOnlyRef.current)
 
     // Where the user was when saving: a save that lands once they went
     // elsewhere mustn't pull them back.
@@ -1833,6 +1877,8 @@ const MapProject = () => {
     // Resolves true once the project saved.
     const request = service.then(response => {
       setIsSaving(false)
+      if(response === SAVE_SKIPPED)
+        return false
       const status = response?.response?.status || response?.status
       const errorData = response?.response?.data || (response?.data?.id ? null : response?.data)
       if(response?.data?.id) {
@@ -1874,17 +1920,24 @@ const MapProject = () => {
         if(!isAutoSave)
           baseSetAlert({severity: 'success', message: t('map_project.successfully_saved'), duration: 2000})
 
+        // A save that went through ends read-only first, so its log is posted:
+        // not while it turned read-only again after this save was sent. Its
+        // edits then stay unsaved, and are queued once read-only ends.
+        readOnlyLockRef.current.releaseAfterSave(sentUnder, () => editTrackerRef.current.saved(editsInSave))
         if(projectLogsLoaderRef.current.canSend(response.data.url))
           postProjectLogs(response.data.url, {row_logs: savedRowLogs, project_logs: savedProjectLogs})
         lastSaveFailedRef.current = false
         return true
       }
       lastSaveFailedRef.current = true
-      if(options.leaving && status !== 401) {
+      // Recorded before it's shown, or not shown as the page closes, so a save
+      // queued behind this one isn't sent.
+      const readOnlyRefused = recordReadOnlyRefusal(response, body => readOnlyLockRef.current.enter(toLimitRefusal(body)))
+      if(isToldOnLeave({leaving: options.leaving, mounted: isMountedRef.current, readOnlyRefused}) && status !== 401) {
         // The user has left the project, so no dialog can show: say so once.
         baseSetAlert({severity: 'error', message: t('map_project.leave_save_failed', {name: name || project?.name, detail: errorData?.detail || t('unknown_error')}), duration: 12000})
       } else if(status === 403 && errorData?.error_code) {
-        setPreviewLimit({errorCode: errorData.error_code, capability: errorData.capability})
+        setPreviewLimit(toLimitRefusal(errorData))
       } else if(!isAutoSave && status !== 429 && status !== 401) {
         baseSetAlert({severity: 'error', message: errorData?.detail || t('unknown_error'), duration: 8000})
       }
@@ -1911,6 +1964,13 @@ const MapProject = () => {
     const nextLogs = {...logsRef.current, [idx]: [{created_at: moment().toDate(), user: user.username || user.id, ...data}, ...(logsRef.current[idx] || [])]}
     logsRef.current = nextLogs
     setLogs(nextLogs)
+  }
+
+  // A comment is kept in the row log, which the next save posts: until then
+  // it's an edit no save kept.
+  const onComment = comment => {
+    editTrackerRef.current.edited()
+    log({action: 'commented', description: comment})
   }
 
   const projectLog = data => {
@@ -1946,9 +2006,10 @@ const MapProject = () => {
   // per project: each sends the whole log, so an older one that waited out a
   // 429 mustn't land after a newer one, and a retry sends the latest log
   // triggered for that project, never another project's (ocl_issues#2849).
-  // Best effort, like before.
+  // Best effort, like before. Not while the project is read-only: the API
+  // refuses it, and the next save that goes through sends the whole log.
   const postProjectLogs = (url, logs) => {
-    if(!url)
+    if(!url || readOnlyRef.current)
       return
     if(!logsSendersRef.current.has(url))
       logsSendersRef.current.set(url, createLatestSender(getPayload => requestWithCapacityRetry(
@@ -1959,11 +2020,62 @@ const MapProject = () => {
   }
 
   // Not after unmount: frozen state plus a late run's refs would save an
-  // inconsistent project.
+  // inconsistent project. Not while it's read-only: the API refuses it, and
+  // the edit stays unsaved.
   const scheduleAutoSave = reason => {
-    if(isMountedRef.current)
+    if(!isMountedRef.current)
+      return
+    editTrackerRef.current.edited()
+    if(!readOnlyRef.current)
       autosaveSchedulerRef.current.schedule(reason)
   }
+
+  // Edits kept back while it was read-only are queued for autosave once it
+  // isn't, while the page is open: a save that lands after the user left
+  // mustn't send the edits they chose to discard. A prompt to discard them,
+  // open as it ends, closes: leaving now saves them.
+  const requeueUnsavedEdits = () => {
+    setLeaveTarget(prev => prev?.readOnlyEdits ? null : prev)
+    if(isMountedRef.current && editTrackerRef.current.hasUnsaved())
+      autosaveSchedulerRef.current.schedule('read_only_ended')
+  }
+
+  // Opens the dialog for a refusal (a 403 body): its notice when it sends one,
+  // else today's limit dialog. A read-only refusal also turns the project
+  // read-only.
+  const showLimitRefusal = (body, phase) => {
+    const refusal = toLimitRefusal(body)
+    if(refusal.readOnly)
+      readOnlyLockRef.current.enter({notice: refusal.notice, detail: refusal.detail})
+    setPreviewLimit({...refusal, phase})
+  }
+
+  // The API's notice for this project (none from an API without the route),
+  // applied to the read-only lock (applyAnswer), and asked again when the user
+  // comes back to the page while it shows a strip or is read-only (access may
+  // have been restored in another tab), and when a refusal turns it read-only
+  // while a lookup is in flight, so an answer asked for after it can end it.
+  const [resourceNotice, renewNotice] = useResourceNotice(project?.url || null, isReadOnly || Boolean(projectNotice))
+  renewNoticeRef.current = renewNotice
+  React.useEffect(() => {
+    readOnlyLockRef.current.applyAnswer(resourceNotice)
+  }, [resourceNotice])
+
+  // The strip's height, taken off the table's so the page doesn't scroll.
+  const projectNoticeRef = React.useRef(null)
+  const [projectNoticeHeight, setProjectNoticeHeight] = React.useState(0)
+  React.useLayoutEffect(() => {
+    const el = projectNoticeRef.current
+    if(!el) {
+      setProjectNoticeHeight(0)
+      return undefined
+    }
+    const update = () => setProjectNoticeHeight(el.offsetHeight)
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [projectNotice])
 
   // ── Waiting out a busy server (ocl_issues#2849) ───────────────────────────
   // The gate for a request's server, shared by every request this tab sends it.
@@ -2151,7 +2263,7 @@ const MapProject = () => {
         abortRef.current = true
         setLoadingMatches(false)
         setIsLoadingInDecisionView(false)
-        setPreviewLimit({errorCode: data.error_code, capability: data.capability})
+        showLimitRefusal(data)
         return
       }
       projectLog({action: 'automatch_run_create_failed', extras: {status: status || 'no-id', ...(result.ok ? {} : {reason: result.reason, error: result.error?.message || null})}})
@@ -3012,19 +3124,24 @@ const MapProject = () => {
   const isUnsavedNew = isUnsavedNewProject({projectId: project?.id, hasInput: file})
   const askBeforeLeaving = shouldAskBeforeLeaving({runActive: isRunActive, projectId: project?.id, hasInput: file})
   const unblockLeavingRef = React.useRef(null)
+  // A read-only project asks only when leaving would discard edits, known
+  // only as the user leaves (OpenConceptLab/ocl_online#424).
   React.useEffect(() => {
-    if(!askBeforeLeaving)
+    if(!askBeforeLeaving && !isReadOnly)
       return
     const unblock = blockLeaving(history, {
-      isAllowed: () => ownNavigationRef.current,
-      onBlocked: setLeaveTarget,
+      isAllowed: () => ownNavigationRef.current || !shouldAskBeforeLeaving(getLeaveState()),
+      onBlocked: next => {
+        const state = getLeaveState()
+        setLeaveTarget({...next, readOnlyEdits: !state.runActive && !isUnsavedNewProject(state)})
+      },
     })
     unblockLeavingRef.current = unblock
     return () => {
       unblockLeavingRef.current = null
       unblock()
     }
-  }, [askBeforeLeaving])
+  }, [askBeforeLeaving, isReadOnly])
 
   const onStopRunAndLeave = () => {
     const target = leaveTarget
@@ -3266,6 +3383,12 @@ const MapProject = () => {
   const onGetCandidatesSubmit = (event, selectedAlgos) => {
     event.stopPropagation()
     event.preventDefault()
+    // Not on a read-only project, from a dialog opened before it turned
+    // read-only (OpenConceptLab/ocl_online#424).
+    if(readOnlyRef.current) {
+      setMatchDialog(false)
+      return
+    }
     setAlert(false)
     const algoWithoutKey = find(algosSelected, algo => selectedAlgos.includes(algo.id) && needsSessionToken(algo))
     const run = hasAutoMatchWork(selectedAlgos) ? getAutoMatchRunRows(data, selectedAlgos) : null
@@ -3947,9 +4070,20 @@ const MapProject = () => {
     setBulkDecisionAction('')
   }, [])
 
+  // Turning read-only closes the dialogs that would change the project: a bulk
+  // decision's confirmation, and AutoMatch's.
+  React.useEffect(() => {
+    if(!isReadOnly)
+      return
+    closeBulkConfirm()
+    setMatchDialog(false)
+  }, [isReadOnly])
+
+  // A read-only project's bulk decisions aren't applied, from a menu or a
+  // dialog that was open as it turned read-only (OpenConceptLab/ocl_online#424).
   const onBulkDecisionChange = event => {
     const action = event.target.value
-    if(!action)
+    if(!action || readOnlyRef.current)
       return
     setBulkDecisionAction(action)
     openBulkConfirm(action)
@@ -3958,7 +4092,7 @@ const MapProject = () => {
   const onBulkMapTypeChange = event => {
     const nextMapType = event.target.value
     const indexes = getSelectedRowIndexes()
-    if(!indexes.length || nextMapType === bulkMapType)
+    if(!indexes.length || nextMapType === bulkMapType || readOnlyRef.current)
       return
     setBulkConfirm({action: 'map_type', count: indexes.length, mapType: nextMapType})
   }
@@ -3969,6 +4103,10 @@ const MapProject = () => {
   }
 
   const onBulkActionConfirm = () => {
+    if(readOnlyRef.current) {
+      closeBulkConfirm()
+      return
+    }
     const action = bulkConfirm?.action
     const indexes = getSelectedRowIndexes()
     GAService.recordActionEvent('MapProject', `bulk_${action}`, undefined, {
@@ -4165,7 +4303,7 @@ const MapProject = () => {
       if(isNumber(rowId))
         refreshMapperQuotaCache()
     }
-    setPreviewLimit({errorCode: response.error_code, capability: response.capability, phase: stopPhase})
+    showLimitRefusal(response, stopPhase)
     return true
   }
 
@@ -5725,7 +5863,11 @@ const MapProject = () => {
     return returnSelf ? (cached || concept) : cached
   }
 
-  const onProposedUpdate = proposedState => editProposed({rowIndex, state: proposedState, setProposed, scheduleAutoSave})
+  // A read-only project's proposal isn't changed (OpenConceptLab/ocl_online#424).
+  const onProposedUpdate = proposedState => {
+    if(!readOnlyRef.current)
+      editProposed({rowIndex, state: proposedState, setProposed, scheduleAutoSave})
+  }
 
   const doubleClickCallback = useDoubleClick(onCSVRowSelect, () => {});
 
@@ -6440,7 +6582,13 @@ const MapProject = () => {
     return minFactor
   }
 
+  // A read-only project locks every control that writes it, with its notice's
+  // reason (OpenConceptLab/ocl_online#424). Viewing, filters, export and
+  // delete stay open.
+  const editLock = isReadOnly ? (projectNotice?.notice?.tooltip || t('limit_notice.read_only')) : null
+
   return permissionDenied ? <Error403/> : newProjectBlockReason ? <Redirect to={{pathname: '/', state: {newProjectBlock: newProjectBlockReason}}} /> : (
+    <EditLockContext.Provider value={editLock}>
     <div className='col-xs-12 padding-0' style={{borderRadius: '10px', width: 'calc(100vw - 32px)'}}>
       {
         (() => {
@@ -6608,8 +6756,14 @@ const MapProject = () => {
           </div>
         </Paper>
         {
+          projectNotice && !isConfigFormInline &&
+            <div ref={projectNoticeRef} className='col-xs-12 padding-0' style={{minWidth: '665px'}}>
+              <LimitNotice size='strip' notice={projectNotice.notice} detail={projectNotice.detail} onDismiss={() => setProjectNotice(null)} />
+            </div>
+        }
+        {
           (Boolean(rows?.length) || ROW_STATES.includes(selectedRowStatus) || searchText) &&
-            <div className='col-xs-12' style={{padding: '0', width: '100%', height: 'calc(var(--app-height) - 170px)', minWidth: '665px'}}>
+            <div className='col-xs-12' style={{padding: '0', width: '100%', height: `calc(var(--app-height) - ${170 + projectNoticeHeight}px)`, minWidth: '665px'}}>
               <div className='col-xs-12' style={{padding: '0 12px', display: 'flex', backgroundColor: SURFACE_COLORS.main, overflowX: 'auto'}}>
                 {
                   map(VIEWS, (state, view) => {
@@ -6883,12 +7037,24 @@ const MapProject = () => {
             }}
           />
           {
+            // A refusal's notice, or a read-only refusal's own sentence, in
+            // place of the limit dialog's (OpenConceptLab/ocl_online#702).
+            (previewLimit?.notice || previewLimit?.readOnly) ?
+              <LimitNotice
+                open
+                onClose={() => setPreviewLimit(null)}
+                notice={previewLimit.notice}
+                detail={previewLimit.detail}
+                errorCode={previewLimit.errorCode}
+                capability={previewLimit.capability}
+              /> :
             previewLimitQuota ?
               <QuotaDialog
                 open
                 onClose={() => setPreviewLimit(null)}
                 errorCode={previewLimitQuota.errorCode}
                 capability={previewLimit.capability}
+                owner={previewLimit.owner}
                 meter={previewLimitQuota.meter}
                 surface={MAPPER_QUOTA_SURFACE[previewLimitQuota.meter]}
               /> :
@@ -6897,6 +7063,7 @@ const MapProject = () => {
                 onClose={() => setPreviewLimit(null)}
                 errorCode={previewLimit?.errorCode}
                 capability={previewLimit?.capability}
+                owner={previewLimit?.owner}
                 phase={previewLimit?.phase}
               />
           }
@@ -6951,15 +7118,21 @@ const MapProject = () => {
                   }}
                 />
                 <div className='col-xs-12' style={{padding: '0 0 8px 78px'}}>
-                  <Button size='small' disabled={rowStatuses.reviewed.includes(rowIndex) || decisions[rowIndex] === 'none' || !decisions[rowIndex]} color='primary' onClick={() => onReviewDone(true)} variant='contained' sx={{textTransform: 'none'}}>
+                  <LockTooltip title={editLock}>
+                  <Button size='small' disabled={Boolean(editLock) || rowStatuses.reviewed.includes(rowIndex) || decisions[rowIndex] === 'none' || !decisions[rowIndex]} startIcon={editLock ? <LockMark /> : undefined} color='primary' onClick={() => onReviewDone(true)} variant='contained' sx={{textTransform: 'none'}}>
                     {t('map_project.approve_and_next')}
                   </Button>
-                  <Button size='small' disabled={rowStatuses.reviewed.includes(rowIndex) || decisions[rowIndex] === 'none' || !decisions[rowIndex]} color='primary' onClick={() => onReviewDone(false)} variant='outlined' sx={{textTransform: 'none', marginLeft: '8px'}}>
+                  </LockTooltip>
+                  <LockTooltip title={editLock}>
+                  <Button size='small' disabled={Boolean(editLock) || rowStatuses.reviewed.includes(rowIndex) || decisions[rowIndex] === 'none' || !decisions[rowIndex]} startIcon={editLock ? <LockMark /> : undefined} color='primary' onClick={() => onReviewDone(false)} variant='outlined' sx={{textTransform: 'none', marginLeft: '8px'}}>
                     {t('map_project.approve')}
                   </Button>
-                  <Button size='small' disabled={decisions[rowIndex] === 'none' || !decisions[rowIndex]} color='error' onClick={(event) => onDecisionChange(event, 'rejected')} variant='outlined' sx={{textTransform: 'none', marginLeft: '8px'}}>
+                  </LockTooltip>
+                  <LockTooltip title={editLock}>
+                  <Button size='small' disabled={Boolean(editLock) || decisions[rowIndex] === 'none' || !decisions[rowIndex]} startIcon={editLock ? <LockMark /> : undefined} color='error' onClick={(event) => onDecisionChange(event, 'rejected')} variant='outlined' sx={{textTransform: 'none', marginLeft: '8px'}}>
                     {t('map_project.reject')}
                   </Button>
+                  </LockTooltip>
                 </div>
                 <Divider sx={{width: '100%'}} />
                 <div className='col-xs-12 padding-0'>
@@ -6988,6 +7161,8 @@ const MapProject = () => {
                       onChange={onProposedUpdate}
                       proposed={proposed[rowIndex]}
                       onSubmit={(event, state) => {
+                        if(readOnlyRef.current)
+                          return
                         if(state)
                           setProposed(prev => ({...prev, [rowIndex]: {...state}}))
                         onDecisionChange(event, 'propose')
@@ -7073,7 +7248,7 @@ const MapProject = () => {
                 }
                 {
                   decisionTab === 'discuss' && isSplitView &&
-                    <Discuss logs={logs[rowIndex]} onAdd={comment => comment ? log({action: 'commented', description: comment}) : null} />
+                    <Discuss logs={logs[rowIndex]} onAdd={comment => comment ? onComment(comment) : null} />
                 }
               </div>
             </> :
@@ -7082,7 +7257,7 @@ const MapProject = () => {
         }
     </Paper>
     </Split>
-      <Dialog open={Boolean(leaveTarget) && isUnsavedNew && !isRunActive} onClose={() => !isSavingToLeave && setLeaveTarget(null)} maxWidth='xs' fullWidth>
+      <Dialog open={Boolean(leaveTarget) && !leaveTarget.readOnlyEdits && isUnsavedNew && !isRunActive} onClose={() => !isSavingToLeave && setLeaveTarget(null)} maxWidth='xs' fullWidth>
         <DialogTitle>{t('map_project.leave_unsaved_title')}</DialogTitle>
         <DialogContent>
           <Typography component='p' sx={{fontSize: '14px', color: 'surface.dark'}}>
@@ -7101,11 +7276,27 @@ const MapProject = () => {
           </Button>
         </DialogActions>
       </Dialog>
-      <Dialog open={Boolean(leaveTarget) && (isRunActive || !isUnsavedNew)} onClose={() => setLeaveTarget(null)} maxWidth='xs' fullWidth>
+      <Dialog open={Boolean(leaveTarget?.readOnlyEdits)} onClose={() => setLeaveTarget(null)} maxWidth='xs' fullWidth>
+        <DialogTitle>{t('map_project.leave_read_only_title')}</DialogTitle>
+        <DialogContent>
+          <Typography component='p' sx={{fontSize: '14px', color: 'surface.dark'}}>
+            {t('map_project.leave_read_only_body')}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setLeaveTarget(null)} color='secondary' sx={{textTransform: 'none'}}>
+            {t('map_project.stay')}
+          </Button>
+          <Button onClick={onLeaveUnsaved} color='error' variant='contained' sx={{textTransform: 'none'}}>
+            {t('map_project.leave')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={Boolean(leaveTarget) && !leaveTarget.readOnlyEdits && (isRunActive || !isUnsavedNew)} onClose={() => setLeaveTarget(null)} maxWidth='xs' fullWidth>
         <DialogTitle>{t('map_project.leave_while_running_title')}</DialogTitle>
         <DialogContent>
           <Typography component='p' sx={{fontSize: '14px', color: 'surface.dark'}}>
-            {t(project?.id ? 'map_project.leave_while_running_body' : 'map_project.leave_while_running_body_unsaved')}
+            {t(getRunLeaveMessageKey({projectId: project?.id, readOnly: isReadOnly}))}
           </Typography>
         </DialogContent>
         <DialogActions>
@@ -7118,8 +7309,9 @@ const MapProject = () => {
         </DialogActions>
       </Dialog>
       {
+        // Once the project is deleted, the dialog's own redirect leaves without asking.
         deleteProject && project?.id &&
-          <MapProjectDeleteConfirmDialog open={deleteProject} onClose={() => setDeleteProject(false)} onDeleted={() => { autosaveSchedulerRef.current.cancel(); refreshMapperQuotaCache() }} project={project} />
+          <MapProjectDeleteConfirmDialog open={deleteProject} onClose={() => setDeleteProject(false)} onDeleted={() => { autosaveSchedulerRef.current.cancel(); ownNavigationRef.current = true; refreshMapperQuotaCache() }} project={project} />
       }
       <ConceptDetailsPanel
         payload={showItem}
@@ -7141,6 +7333,7 @@ const MapProject = () => {
         onClose={() => setOpenImportToCollection(false)}
       />
     </div>
+    </EditLockContext.Provider>
   )
 }
 

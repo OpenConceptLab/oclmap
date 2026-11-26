@@ -13,7 +13,7 @@ const getOnlineAPIURL = () => window.OCL_ONLINE_API_URL || process.env.OCL_ONLIN
 // Records the refusal and, when online-api is configured, asks it for the
 // person's next step. Not configured, failing or nothing to offer: no action.
 // axios directly, not APIService, so online-api's errors skip its sign-out and throttling handling.
-const useLimitAction = (open, errorCode, capability) => {
+const useLimitAction = (open, errorCode, capability, owner) => {
   const { i18n } = useTranslation()
   const [action, setAction] = React.useState(null)
   const subject = getLimitSubject(errorCode, capability)
@@ -23,7 +23,7 @@ const useLimitAction = (open, errorCode, capability) => {
     if(!open)
       return undefined
     GAService.recordActionEvent('Limit', 'limit_hit', errorCode, subject)
-    const request = getLimitActionRequest({baseURL: getOnlineAPIURL(), token: currentUserToken(), errorCode, capability, lang: i18n.language})
+    const request = getLimitActionRequest({baseURL: getOnlineAPIURL(), token: currentUserToken(), errorCode, capability, owner, lang: i18n.language})
     if(!request)
       return undefined
     let current = true
@@ -33,7 +33,7 @@ const useLimitAction = (open, errorCode, capability) => {
     return () => {
       current = false
     }
-  }, [open, errorCode, capability])
+  }, [open, errorCode, capability, owner])
 
   const onActionClick = () => GAService.recordActionEvent('Limit', 'limit_action_click', errorCode, {...subject, action_kind: action?.kind})
 

@@ -10,7 +10,7 @@ import GroupHeader from '../common/GroupHeader'
 import GroupItems from '../common/GroupItems'
 
 
-const RepoSearchAutocomplete = ({onChange, label, id, required, minCharactersForSearch, size, suggested, sx, value, repoType, ownRepo, autoFocus}) => {
+const RepoSearchAutocomplete = ({onChange, label, id, required, minCharactersForSearch, size, suggested, sx, value, repoType, ownRepo, autoFocus, disabled}) => {
   const { t } = useTranslation();
   const minLength = minCharactersForSearch || 2;
   const [input, setInput] = React.useState('')
@@ -82,6 +82,7 @@ const RepoSearchAutocomplete = ({onChange, label, id, required, minCharactersFor
   return (
     <Autocomplete
       sx={sx}
+      disabled={disabled}
       filterOptions={x => x}
       openOnFocus
       blurOnSelect

@@ -350,9 +350,12 @@
     "loading_project": "Cargando proyecto...",
     "stopping_gracefully": "Deteniendo suavemente...",
     "stop_processing": "Detener Procesamiento",
+    "leave_read_only_title": "¿Salir sin tus cambios?",
+    "leave_read_only_body": "Este proyecto es de solo lectura, así que los cambios hechos desde la última vez que se guardó no se pueden guardar. Si sales, se descartan.",
     "leave_while_running_title": "Auto Match está en ejecución",
     "leave_while_running_body": "Salir de este proyecto detiene la ejecución ahora. Lo que ya se ha emparejado se guarda.",
     "leave_while_running_body_unsaved": "Este proyecto aún no se ha guardado. Salir detiene la ejecución ahora y descarta el proyecto y sus resultados.",
+    "leave_while_running_body_read_only": "Salir de este proyecto detiene la ejecución ahora. El proyecto es de solo lectura, así que lo que se ha emparejado no se guarda.",
     "stay": "Quedarse",
     "stop_and_leave": "Detener y salir",
     "leave_unsaved_title": "¿Salir sin guardar?",
@@ -589,6 +592,12 @@
     "global_registry": "Registro global"
   },
   "unknown_error": "Error desconocido",
+  "limit_notice": {
+    "fallback_title": "No se completó la solicitud",
+    "read_only": "Solo lectura",
+    "restricted": "Restringido",
+    "still_works": "Sigue funcionando"
+  },
   "quota": {
     "title_quota": "Ha alcanzado su cuota",
     "title_cap": "Ha alcanzado su límite",

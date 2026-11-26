@@ -48,6 +48,7 @@ import RerankerConfig from './RerankerConfig'
 import AIAssistantSelectorPanel from './AIAssistantSelectorPanel'
 import { getTargetRepoVersionBadges, getTargetRepoVersionReleaseDate, hasSelectedTargetRepoVersion, needsSemanticSearchWarning } from './projectTargetRepo'
 import { getPreviewAlgorithmOptions, getPreviewConfigAccessErrors } from './previewConfig'
+import { LockedFields, LockMark, LockTooltip, useEditLock } from '../common/NoticeLock'
 
 const VisuallyHiddenInput = styled('input')({
   clip: 'rect(0 0 0 0)',
@@ -76,6 +77,10 @@ const getSuggestedRepos = () => (window.REPO_SUGGESTIONS || process.env.REPO_SUG
 
 const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, name, setName, description, setDescription, repo, onRepoChange, repoVersion, setRepoVersion, showTargetRepoVersionError, versions, mappedSources, targetSourcesFromRows, algosSelected, setAlgosSelected, sx, algos, validColumns, columns, isValidColumnValue, updateColumn, configure, setConfigure, columnVisibilityModel, setColumnVisibilityModel, onSave, isSaving, candidatesScore, onScoreChange, includeDefaultFilter, setIncludeDefaultFilter, filters, setFilters, locales, setAIAssistantColumns, AIAssistantColumns, inAIAssistantGroup, lookupConfig, setLookupConfig, encoderModel, setEncoderModel, isCoreUser, requestLimits, canSelectAIModel, canSetAIOutputLocale, canBridge, canScispacy, canUseOrgProjects=true, canUseCustomAlgorithms=true, promptTemplates, promptTemplate, onPromptTemplateChange, AIModels, AIModel, setAIModel, namespace, setNamespace, promptOutputLocale, setPromptOutputLocale, inputLocale, setInputLocale, oclLocales, useLexicalVariants, setUseLexicalVariants }) => {
   const { t } = useTranslation();
+  // A read-only project's settings are shown, not changed: every field that
+  // changes them is disabled (OpenConceptLab/ocl_online#424).
+  const lock = useEditLock()
+  const locked = Boolean(lock)
   const user = getCurrentUser()
   const isLLMAlgoNotAllowed = !repoVersion?.match_algorithms?.includes('llm')
   const appliedLocales = filters?.locale ? filters?.locale?.split(',') : []
@@ -157,6 +162,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
       <Typography component="div" sx={{fontSize: '16px', fontWeight: 'bold', marginTop: '45px'}}>
         {t('map_project.project_ownership_and_name')}
       </Typography>
+      <LockedFields>
       <NamespaceDropdown
         required
         id='owner'
@@ -166,14 +172,18 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
         onChange={(event, item) => setOwner(item?.url || '')}
         asOwner
         personalOnly={!canUseOrgProjects}
+        disabled={locked}
         sx={{marginTop: '12px'}}
         helperText={projectsNote}
       />
+      </LockedFields>
       {/* announces the line when it arrives: a live region is heard only when it's there before its text */}
       <Box component='span' role='status' sx={visuallyHidden}>{projectsNote || ''}</Box>
+      <LockedFields>
       <TextField
         required
         fullWidth
+        disabled={locked}
         sx={{marginTop: '12px'}}
         label={t('common.name')}
         value={name}
@@ -181,6 +191,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
       />
       <TextField
         fullWidth
+        disabled={locked}
         sx={{marginTop: '12px'}}
         label={t('map_project.context')}
         value={description}
@@ -189,6 +200,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
         multiline
         maxRows={3}
       />
+      </LockedFields>
 
       <Typography component="div" sx={{fontSize: '16px', fontWeight: 'bold', marginTop: '20px'}}>
         {t('map_project.input_data')}
@@ -197,6 +209,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
         {t('map_project.upload_file_description')}
       </FormHelperText>
 
+      <LockedFields>
       <Button
         component="label"
         role={undefined}
@@ -205,7 +218,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
         sx={{textTransform: 'none', marginTop: '12px', width: '100%'}}
         startIcon={<JoinRightIcon />}
         endIcon={<UploadIcon />}
-        disabled={Boolean(project?.id && project.input_file_name)}
+        disabled={locked || Boolean(project?.id && project.input_file_name)}
       >
         {
           file?.name ? file.name : t('map_project.upload_file')
@@ -220,6 +233,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
       <Autocomplete
         size='small'
         id='input-locale'
+        disabled={locked}
         options={localeOptions}
         value={selectedInputLocaleOption}
         getOptionLabel={inputLocaleOptionLabel}
@@ -243,6 +257,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
           />
         )}
       />
+      </LockedFields>
 
       <Typography component="div" sx={{fontSize: '16px', fontWeight: 'bold', marginTop: '20px'}}>
         {t('map_project.target_repository')}
@@ -257,11 +272,13 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
         {t('map_project.target_repository_description')}
       </FormHelperText>
 
-      <RepoSearchAutocomplete label={t('map_project.repository')} size='small' onChange={(id, item) => onRepoChange(item)} value={repo} suggested={getSuggestedRepos()} sx={{marginTop: '12px'}}/>
+      <LockedFields>
+      <RepoSearchAutocomplete label={t('map_project.repository')} size='small' onChange={(id, item) => onRepoChange(item)} value={repo} suggested={getSuggestedRepos()} sx={{marginTop: '12px'}} disabled={locked}/>
       <RepoVersionSearchAutocomplete
         versions={versions}
         label={t('common.version')}
         size='small'
+        disabled={locked}
         onChange={(id, item) => setRepoVersion(item)}
         value={repoVersion}
         sx={{marginTop: '12px'}}
@@ -276,6 +293,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
           return releaseDate ? t('map_project.version_released_on', {date: formatDate(releaseDate)}) : ''
         }}
       />
+      </LockedFields>
       {
         effectiveTargetCanonical &&
           <Stack direction='row' spacing={0.75} sx={{alignItems: 'center', marginTop: '6px', marginLeft: '8px', minWidth: 0}}>
@@ -355,10 +373,12 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
             {t('map_project.semantic_search_not_configured', {owner: repo?.owner, repo: repo?.short_code || repo?.id, version: repoVersion?.id || repo?.version || repo?.id})}
           </FormHelperText>
       }
+          <LockedFields>
           <Autocomplete
             multiple
             size='small'
             id="locale"
+            disabled={locked}
             options={nameLocaleOptions}
             getOptionLabel={(option) => option}
             value={appliedLocales}
@@ -375,6 +395,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
               />
             )}
           />
+          </LockedFields>
       {
         repoVersion?.version_url && locales.length <= 1 &&
           <FormHelperText sx={{marginLeft: '14px'}}>
@@ -387,12 +408,14 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
         !isEmpty(repoVersion?.meta?.display?.default_filter) && repoVersion?.meta?.display?.default_filter &&
           <>
           <FormHelperText sx={{marginLeft: '8px'}}>
+            <LockedFields>
             <FormControlLabel
               size='small'
               control={
                 <Checkbox
                   size='small'
                   checked={includeDefaultFilter}
+                  disabled={locked}
                   sx={{padding: '8px 4px'}}
                   onChange={() => {
                     const newValue = !includeDefaultFilter
@@ -403,15 +426,16 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
               }
               label={t('map_project.default_filter')}
             />
+            </LockedFields>
           </FormHelperText>
             <FilterTable filters={repoVersion.meta.display.default_filter} order={repoVersion.meta.display.concept_filter_order || []} sx={{marginLeft: '4px'}} />
         </>
       }
 
-      <LookupConfig value={lookupConfig} onChange={setLookupConfig}/>
+      <LookupConfig value={lookupConfig} onChange={setLookupConfig} disabled={locked}/>
       {
         setNamespace &&
-          <AdvancedSettings namespaceValue={namespaceValue} setNamespace={setNamespace} defaultNamespace={defaultNamespace} isCoreUser={isCoreUser} useLexicalVariants={useLexicalVariants} setUseLexicalVariants={setUseLexicalVariants} />
+          <AdvancedSettings namespaceValue={namespaceValue} setNamespace={setNamespace} defaultNamespace={defaultNamespace} isCoreUser={isCoreUser} useLexicalVariants={useLexicalVariants} setUseLexicalVariants={setUseLexicalVariants} disabled={locked} />
       }
       {
         // Staff pick the prompt template and model; core, early-access and
@@ -427,6 +451,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
                   {t('map_project.ai_prompt_template_description')}
                 </FormHelperText>
             }
+            <LockedFields>
             <AIAssistantSelectorPanel
               promptTemplates={promptTemplates}
               promptTemplate={promptTemplate}
@@ -437,10 +462,12 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
               sx={{marginTop: '12px'}}
               showPickers={canSelectAIModel}
               showLocale
+              disabled={locked}
               promptOutputLocale={promptOutputLocale}
               setPromptOutputLocale={setPromptOutputLocale}
               availableLocales={localeOptions}
             />
+            </LockedFields>
             <FormHelperText sx={{marginTop: '8px', marginLeft: '8px'}}>
               {effectiveAILocales.length > 0
                 ? t('map_project.ai_effective_locales', {locales: effectiveAILocales.join(', '), defaultValue: 'AI will receive names in: {{locales}}'})
@@ -467,10 +494,11 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
         repo={repoVersion}
         isCoreUser={isCoreUser}
         requestLimits={requestLimits}
+        disabled={locked}
       />
       {
         isCoreUser &&
-          <RerankerConfig value={encoderModel} onChange={setEncoderModel} />
+          <RerankerConfig value={encoderModel} onChange={setEncoderModel} disabled={locked} />
       }
       <>
         <Typography component="div" sx={{fontSize: '16px', fontWeight: 'bold', marginTop: '20px'}}>
@@ -479,7 +507,9 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
         <FormHelperText sx={{marginTop: 0}}>
           {t('map_project.score_configuration_description')}
         </FormHelperText>
-        <ScoreConfiguration scores={candidatesScore} onChange={onScoreChange} />
+        <LockedFields>
+        <ScoreConfiguration scores={candidatesScore} onChange={onScoreChange} disabled={locked} />
+        </LockedFields>
         <div className='col-xs-12' style={{fontSize: '12px', margin: '-4px 0 16px 0'}}>
           <div className='col-xs-4' style={{padding: '6px 16px', backgroundColor: SCORES_COLOR.low_ranked}}>
             {`${t('map_project.not_recommended')} (<${candidatesScore.available}%)`}
@@ -506,6 +536,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
                 ]}
               />
             </FormHelperText>
+            <LockedFields>
             <ColumnMapTable
               sx={{marginTop: '12px'}}
               validColumns={validColumns}
@@ -519,7 +550,9 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
               setAIAssistantColumns={setAIAssistantColumns}
               AIAssistantColumns={AIAssistantColumns}
               inAIAssistantGroup={inAIAssistantGroup}
+              disabled={locked}
             />
+            </LockedFields>
           </>
       }
       {
@@ -563,14 +596,15 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
           </Alert>
       }
       <div className='col-xs-12 padding-0' style={{textAlign: 'right'}}>
+      <LockTooltip title={lock}>
       <Button
         variant='contained'
         color='primary'
         size='small'
         sx={{textTransform: 'none', margin: '20px 5px 5px 0px'}}
-        startIcon={<SaveIcon />}
+        startIcon={lock ? <LockMark /> : <SaveIcon />}
         onClick={onSave}
-        disabled={!name || !file?.name || !owner || hasConfigErrors || hasAccessErrors}
+        disabled={locked || !name || !file?.name || !owner || hasConfigErrors || hasAccessErrors}
         loading={isSaving}
         loadingPosition="start"
       >
@@ -578,6 +612,7 @@ const ConfigurationForm = ({ project, handleFileUpload, file, owner, setOwner, n
           isSaving ? t('map_project.saving') : t('map_project.save_and_close')
         }
       </Button>
+      </LockTooltip>
         </div>
     </div>
   )

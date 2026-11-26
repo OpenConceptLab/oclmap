@@ -1,7 +1,7 @@
 import React from 'react'
 import Slider from '@mui/material/Slider'
 import { SCORES_COLOR } from './constants'
-const ScoreConfiguration = ({scores, onChange}) => {
+const ScoreConfiguration = ({scores, onChange, disabled}) => {
   const _onChange = (event, newValues) => {
     if(newValues[0] === newValues[1] || newValues[1] <= newValues[0])
       return
@@ -28,6 +28,7 @@ const ScoreConfiguration = ({scores, onChange}) => {
         value={[scores.available, scores.recommended]}
         onChange={_onChange}
         valueLabelDisplay="auto"
+        disabled={disabled}
         step={1}
         marks
         disableSwap

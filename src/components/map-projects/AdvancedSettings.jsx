@@ -8,9 +8,10 @@ import Checkbox from '@mui/material/Checkbox'
 import FormHelperText from '@mui/material/FormHelperText'
 import UpIcon from '@mui/icons-material/ArrowDropUp';
 import DownIcon from '@mui/icons-material/ArrowDropDown';
+import { LockedFields } from '../common/NoticeLock'
 
 
-const AdvancedSettings = ({ namespaceValue, setNamespace, defaultNamespace, isCoreUser, useLexicalVariants, setUseLexicalVariants }) => {
+const AdvancedSettings = ({ namespaceValue, setNamespace, defaultNamespace, isCoreUser, useLexicalVariants, setUseLexicalVariants, disabled }) => {
   const { t } = useTranslation()
   const [open, setOpen] = React.useState(false)
 
@@ -20,10 +21,12 @@ const AdvancedSettings = ({ namespaceValue, setNamespace, defaultNamespace, isCo
         {t('map_project.advanced_settings')}
       </Button>
       <Collapse in={open}>
+        <LockedFields>
         <div className='col-xs-12 padding-0' style={{marginTop: '4px'}}>
           <TextField
             fullWidth
             size='small'
+            disabled={disabled}
             sx={{marginTop: '4px'}}
             label={t('map_project.resolution_namespace', 'Resolution Namespace')}
             value={namespaceValue}
@@ -42,6 +45,7 @@ const AdvancedSettings = ({ namespaceValue, setNamespace, defaultNamespace, isCo
                   control={
                     <Checkbox
                       size='small'
+                      disabled={disabled}
                       checked={Boolean(useLexicalVariants)}
                       onChange={event => setUseLexicalVariants(event.target.checked)}
                     />
@@ -52,6 +56,7 @@ const AdvancedSettings = ({ namespaceValue, setNamespace, defaultNamespace, isCo
               </>
           }
         </div>
+        </LockedFields>
       </Collapse>
     </div>
   )
